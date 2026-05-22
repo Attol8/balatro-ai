@@ -1,0 +1,16 @@
+[project]
+name = "balatro-ai-v2"
+version = "0.1.0"
+description = "Clean-slate Balatro simulator and search agent experiments."
+requires-python = ">=3.11"
+dependencies = []
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+
