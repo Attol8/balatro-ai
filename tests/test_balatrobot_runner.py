@@ -14,7 +14,7 @@ from balatro_ai_v2.balatrobot.policy import BalatroBotPolicy
 from balatro_ai_v2.balatrobot.policy_config import PolicyConfig, ShopPolicyConfig, TacticalPolicyConfig
 from balatro_ai_v2.balatrobot.runner import BalatroBotRunner
 from balatro_ai_v2.balatrobot.shop_planner import plan_pack_action, plan_shop_action
-from balatro_ai_v2.balatrobot.tactical_planner import _jokers_after_play
+from balatro_ai_v2.balatrobot.tactical_planner import _jokers_after_play, score_play_action
 from balatro_ai_v2.balatrobot.tracing import JsonlTraceWriter
 from balatro_ai_v2.fast.env import DISCARD_ACTION_OFFSET
 from balatro_ai_v2.fast.full_game import (
@@ -367,6 +367,81 @@ def test_shop_planner_prioritizes_late_open_joker_slot_over_planet() -> None:
     assert decision.action.index == 0
 
 
+def test_shop_planner_buys_economy_joker_over_marginal_late_pack() -> None:
+    state = _shop_state(
+        money=7,
+        shop_cards=[
+            {"key": "j_drunkard", "set": "JOKER", "cost": {"buy": 4, "sell": 2}},
+            {"key": "j_rocket", "set": "JOKER", "cost": {"buy": 6, "sell": 3}},
+        ],
+        packs=[
+            {"key": "p_celestial_normal_1", "set": "BOOSTER", "cost": {"buy": 4, "sell": 2}},
+        ],
+        jokers=[
+            {"key": "j_bull", "set": "JOKER", "cost": {"buy": 6, "sell": 3}},
+            {"key": "j_scholar", "set": "JOKER", "cost": {"buy": 4, "sell": 2}},
+            {"key": "j_square", "set": "JOKER", "cost": {"buy": 4, "sell": 2}},
+            {"key": "j_mystic_summit", "set": "JOKER", "cost": {"buy": 5, "sell": 2}},
+        ],
+    )
+    state["ante_num"] = 3
+
+    decision = plan_shop_action(state)
+
+    assert decision.action is not None
+    assert decision.action.kind == ActionKind.BUY_CARD
+    assert decision.action.index == 1
+
+
+def test_shop_planner_rerolls_late_without_carry_instead_of_buying_planet_pack() -> None:
+    state = _shop_state(
+        money=8,
+        shop_cards=[
+            {"key": "c_star", "set": "TAROT", "cost": {"buy": 3, "sell": 1}},
+            {"key": "j_drunkard", "set": "JOKER", "cost": {"buy": 4, "sell": 2}},
+        ],
+        packs=[
+            {"key": "p_standard_normal_1", "set": "BOOSTER", "cost": {"buy": 4, "sell": 2}},
+            {"key": "p_celestial_normal_3", "set": "BOOSTER", "cost": {"buy": 4, "sell": 2}},
+        ],
+        jokers=[
+            {"key": "j_bull", "set": "JOKER", "cost": {"buy": 6, "sell": 3}},
+            {"key": "j_scholar", "set": "JOKER", "cost": {"buy": 4, "sell": 2}},
+            {"key": "j_square", "set": "JOKER", "cost": {"buy": 4, "sell": 2}},
+            {"key": "j_mystic_summit", "set": "JOKER", "cost": {"buy": 5, "sell": 2}},
+            {"key": "j_ride_the_bus", "set": "JOKER", "cost": {"buy": 6, "sell": 3}},
+        ],
+    )
+    state["ante_num"] = 4
+    state["round"]["reroll_cost"] = 5
+
+    decision = plan_shop_action(state)
+
+    assert decision.action is not None
+    assert decision.action.kind == ActionKind.REROLL
+
+
+def test_shop_planner_can_sell_to_afford_visible_upgrade_before_slots_are_full() -> None:
+    state = _shop_state(
+        money=4,
+        shop_cards=[
+            {"key": "j_raised_fist", "set": "JOKER", "cost": {"buy": 5, "sell": 2}},
+        ],
+        jokers=[
+            {"key": "j_bull", "set": "JOKER", "cost": {"buy": 6, "sell": 3}},
+            {"key": "j_scholar", "set": "JOKER", "cost": {"buy": 4, "sell": 2}},
+            {"key": "j_square", "set": "JOKER", "cost": {"buy": 4, "sell": 2}},
+            {"key": "j_mystic_summit", "set": "JOKER", "cost": {"buy": 5, "sell": 2}},
+        ],
+    )
+    state["ante_num"] = 3
+
+    decision = plan_shop_action(state)
+
+    assert decision.action is not None
+    assert decision.action.kind == ActionKind.SELL_JOKER
+
+
 def test_policy_passes_tactical_config() -> None:
     policy = BalatroBotPolicy(
         config=PolicyConfig(tactical=TacticalPolicyConfig(beam_width=1, action_beam=1))
@@ -440,6 +515,44 @@ def test_policy_can_skip_late_negative_tag_with_carry_joker() -> None:
     action = BalatroBotPolicy().blind_action(state)
 
     assert action.kind == ActionKind.SKIP_BLIND
+
+
+def test_policy_does_not_skip_ante_five_holographic_tag_for_medium_carry() -> None:
+    state = _selecting_hand_state([], required_score=16_500)
+    state["state"] = "BLIND_SELECT"
+    state["ante_num"] = 5
+    state["money"] = 12
+    state["blinds"]["big"]["status"] = "SELECT"
+    state["blinds"]["big"]["tag_name"] = "Holographic Tag"
+    state["blinds"]["big"]["tag_effect"] = "Next base edition shop Joker is free and becomes Holographic"
+    state["jokers"] = {
+        "count": 5,
+        "limit": 5,
+        "cards": [
+            {"key": "j_bull", "set": "JOKER"},
+            {"key": "j_scholar", "set": "JOKER"},
+            {"key": "j_raised_fist", "set": "JOKER"},
+            {"key": "j_rocket", "set": "JOKER"},
+            {"key": "j_trio", "set": "JOKER"},
+        ],
+    }
+
+    action = BalatroBotPolicy().blind_action(state)
+
+    assert action.kind == ActionKind.SELECT_BLIND
+
+
+def test_policy_does_not_skip_unscoped_orbital_tag() -> None:
+    state = _selecting_hand_state([], required_score=3_000)
+    state["state"] = "BLIND_SELECT"
+    state["ante_num"] = 3
+    state["blinds"]["big"]["status"] = "SELECT"
+    state["blinds"]["big"]["tag_name"] = "Orbital Tag"
+    state["blinds"]["big"]["tag_effect"] = "Upgrade Poker Hand by 3 levels"
+
+    action = BalatroBotPolicy().blind_action(state)
+
+    assert action.kind == ActionKind.SELECT_BLIND
 
 
 def test_policy_does_not_skip_boss() -> None:
@@ -629,6 +742,38 @@ def test_tactical_beam_carries_scaling_joker_state_forward() -> None:
     assert after_four[4].scaling == 1
     assert after_straight[1].scaling == 15
     assert after_two_pair[2].scaling == 2
+
+
+def test_score_play_abstract_counts_unimplemented_jokers() -> None:
+    state = _selecting_hand_state([_card("S", "A")], required_score=300)
+    state["jokers"] = {
+        "count": 2,
+        "limit": 5,
+        "cards": [
+            {"key": "j_abstract", "set": "JOKER", "value": {"ability": {"extra": 3}}},
+            {"key": "j_rocket", "set": "JOKER", "value": {"ability": {"dollars": 3}}},
+        ],
+    }
+
+    score = score_play_action(state, _action(ActionKind.PLAY, indices=(0,)))
+
+    assert score.total == 112
+
+
+def test_score_play_blocks_non_first_hand_type_for_the_mouth() -> None:
+    state = _selecting_hand_state(
+        [_card("S", "A"), _card("H", "A"), _card("D", "Q"), _card("C", "7")],
+        required_score=70_000,
+    )
+    state["blinds"]["small"]["status"] = "DEFEATED"
+    state["blinds"]["boss"]["status"] = "CURRENT"
+    state["blinds"]["boss"]["name"] = "The Mouth"
+    state["blinds"]["boss"]["effect"] = "Play only 1 hand type this round"
+    state["hands"]["High Card"]["played_this_round"] = 1
+
+    score = score_play_action(state, _action(ActionKind.PLAY, indices=(0, 1)))
+
+    assert score.total == 0
 
 
 def test_shop_planner_uses_held_high_priestess() -> None:

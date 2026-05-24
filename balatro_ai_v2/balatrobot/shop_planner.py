@@ -16,6 +16,8 @@ from balatro_ai_v2.fast.hand import (
     TWO_PAIR,
 )
 from balatro_ai_v2.fast.jokers import IMPLEMENTED_JOKERS
+from balatro_ai_v2.fast.joker_money import DOLLAR_BONUS_JOKERS, MONEY_EVENT_JOKERS
+from balatro_ai_v2.fast.joker_run_rules import RUN_EFFECT_JOKERS
 
 
 @dataclass(frozen=True, slots=True)
@@ -37,6 +39,9 @@ def plan_shop_action(
     replacement_action = _best_joker_replacement_action(state, config)
     if replacement_action is not None:
         return replacement_action
+    sell_to_afford_action = _best_sell_to_afford_joker_action(state, config)
+    if sell_to_afford_action is not None:
+        return sell_to_afford_action
 
     candidates: list[tuple[float, int, str]] = []
     pack_candidates: list[tuple[float, int, str]] = []
@@ -44,7 +49,7 @@ def plan_shop_action(
         cost = _buy_cost(card)
         if cost > money:
             continue
-        if _is_joker_card(card) and _joker_count(state) >= _joker_limit(state):
+        if _is_joker_card(card) and not _can_add_joker_card(state, card):
             continue
         value = _shop_card_value(state, card, config)
         if value <= cost + config.min_value_margin:
@@ -105,7 +110,7 @@ def _shop_card_value(state: dict[str, Any], card: dict[str, Any], config: ShopPo
     key = str(card.get("key") or "")
     card_set = str(card.get("set") or "")
     if _is_joker_card(card):
-        return _joker_value(state, key, config)
+        return _joker_value(state, key, config, can_add=_can_add_joker_card(state, card))
     if card_set == "PLANET" or key in _PLANET_TO_HAND_KIND:
         return _planet_value(state, key, config)
     if key in _VALUABLE_NO_TARGET_CONSUMABLES and _should_buy_no_target_consumable(state, key, config):
@@ -117,7 +122,7 @@ def _pack_card_value(state: dict[str, Any], card: dict[str, Any], config: ShopPo
     key = str(card.get("key") or "")
     card_set = str(card.get("set") or "")
     if _is_joker_card(card):
-        return _joker_value(state, key, config)
+        return _joker_value(state, key, config, can_add=_can_add_joker_card(state, card))
     if card_set == "PLANET" or key in _PLANET_TO_HAND_KIND:
         return _planet_value(state, key, config)
     if key in _VALUABLE_NO_TARGET_CONSUMABLES and _should_buy_no_target_consumable(state, key, config):
@@ -138,12 +143,18 @@ def _pack_value(state: dict[str, Any], card: dict[str, Any], config: ShopPolicyC
             return 0.0
         return config.buffoon_pack_base_value + 2.0 * (spec.size - 2) + 4.0 * (spec.choices - 1)
     if spec.kind == BoosterKind.CELESTIAL:
+        if _needs_late_carry_upgrade(state):
+            return 0.0
         if _consumable_count(state) >= _consumable_limit(state):
             return 0.0
         return config.celestial_pack_base_value + 1.5 * (spec.size - 3) + 4.0 * (spec.choices - 1)
     if spec.kind == BoosterKind.STANDARD:
+        if _needs_late_carry_upgrade(state):
+            return 0.0
         return config.standard_pack_base_value + 1.0 * (spec.size - 3) + 3.0 * (spec.choices - 1)
     if spec.kind == BoosterKind.ARCANA:
+        if _needs_late_carry_upgrade(state):
+            return 0.0
         if _consumable_count(state) >= _consumable_limit(state):
             return 0.0
         return config.arcana_pack_base_value + 1.5 * (spec.size - 3) + 4.0 * (spec.choices - 1)
@@ -154,16 +165,24 @@ def _pack_value(state: dict[str, Any], card: dict[str, Any], config: ShopPolicyC
     return 0.0
 
 
-def _joker_value(state: dict[str, Any], key: str, config: ShopPolicyConfig) -> float:
-    if key not in IMPLEMENTED_JOKERS:
+def _joker_value(state: dict[str, Any], key: str, config: ShopPolicyConfig, *, can_add: bool | None = None) -> float:
+    if not _modeled_joker(key):
         return 0.0
     if key in _owned_jokers(state):
         return 0.0
-    if _joker_count(state) >= _joker_limit(state):
+    if can_add is None:
+        can_add = _joker_count(state) < _joker_limit(state)
+    if not can_add:
         return 0.0
     return _joker_base_value(state, key, config)
 
-def _joker_base_value(state: dict[str, Any], key: str, config: ShopPolicyConfig) -> float:
+def _joker_base_value(
+    state: dict[str, Any],
+    key: str,
+    config: ShopPolicyConfig,
+    *,
+    include_open_slot_bonus: bool = True,
+) -> float:
     # The value is intentionally heuristic but grounded in implemented scoring
     # surfaces. BalatroBot remains the oracle; this only decides what is worth
     # trying in a clean shop.
@@ -198,6 +217,18 @@ def _joker_base_value(state: dict[str, Any], key: str, config: ShopPolicyConfig)
         "j_blue_joker": 18.0,
         "j_bull": 20.0 + int(state.get("money") or 0) / 2.0,
         "j_bootstraps": 10.0 + int(state.get("money") or 0) / 3.0,
+        "j_rocket": 24.0 + min(ante, 6) * 2.0,
+        "j_to_the_moon": 18.0 if int(state.get("money") or 0) >= 8 else 10.0,
+        "j_golden": 18.0,
+        "j_cloud_9": 16.0,
+        "j_satellite": 14.0,
+        "j_delayed_grat": 12.0,
+        "j_chaos": 14.0,
+        "j_drunkard": 12.0,
+        "j_juggler": 14.0,
+        "j_merry_andy": 10.0,
+        "j_astronomer": 24.0,
+        "j_certificate": 8.0,
         "j_stuntman": 36.0,
         "j_acrobat": 18.0,
         "j_mystic_summit": 16.0,
@@ -209,7 +240,8 @@ def _joker_base_value(state: dict[str, Any], key: str, config: ShopPolicyConfig)
         "j_throwback": 0.0,
     }
     values.update(dict(config.joker_value_overrides))
-    return values.get(key, config.modeled_joker_fallback_value) + _open_joker_slot_bonus(state)
+    open_slot_bonus = _open_joker_slot_bonus(state) if include_open_slot_bonus else 0.0
+    return values.get(key, config.modeled_joker_fallback_value) + open_slot_bonus
 
 
 def _open_joker_slot_bonus(state: dict[str, Any]) -> float:
@@ -236,10 +268,10 @@ def _best_joker_replacement_action(state: dict[str, Any], config: ShopPolicyConf
         if not _is_joker_card(card):
             continue
         key = str(card.get("key") or "")
-        if key in _owned_jokers(state) or key not in IMPLEMENTED_JOKERS:
+        if key in _owned_jokers(state) or not _modeled_joker(key):
             continue
         cost = _buy_cost(card)
-        value = _joker_base_value(state, key, config)
+        value = _joker_base_value(state, key, config, include_open_slot_bonus=False)
         for owned_index, owned_key, owned_value, sell_value in owned:
             if money + sell_value < cost:
                 continue
@@ -257,6 +289,39 @@ def _best_joker_replacement_action(state: dict[str, Any], config: ShopPolicyConf
     return ShopDecision(GameAction(kind=ActionKind.SELL_JOKER, index=owned_index), f"sell {owned_key} for {key}")
 
 
+def _best_sell_to_afford_joker_action(state: dict[str, Any], config: ShopPolicyConfig) -> ShopDecision | None:
+    money = int(state.get("money") or 0)
+    owned = _owned_joker_replacement_values(state, config)
+    if not owned:
+        return None
+    best: tuple[float, float, int, str, str] | None = None
+    for card in _area_cards(state, "shop"):
+        if not _is_joker_card(card):
+            continue
+        key = str(card.get("key") or "")
+        if key in _owned_jokers(state) or not _modeled_joker(key):
+            continue
+        cost = _buy_cost(card)
+        if cost <= money:
+            continue
+        value = _joker_base_value(state, key, config, include_open_slot_bonus=False)
+        for owned_index, owned_key, owned_value, sell_value in owned:
+            if money + sell_value < cost:
+                continue
+            improvement = value - owned_value
+            net_gain = improvement - (cost - money)
+            if improvement <= config.replacement_min_value_margin:
+                continue
+            candidate = (improvement, net_gain, -owned_index, owned_key, key)
+            if best is None or candidate > best:
+                best = candidate
+    if best is None:
+        return None
+    _, _, negative_owned_index, owned_key, key = best
+    owned_index = -negative_owned_index
+    return ShopDecision(GameAction(kind=ActionKind.SELL_JOKER, index=owned_index), f"sell {owned_key} to afford {key}")
+
+
 def _owned_joker_replacement_values(
     state: dict[str, Any],
     config: ShopPolicyConfig,
@@ -264,9 +329,9 @@ def _owned_joker_replacement_values(
     out: list[tuple[int, str, float, int]] = []
     for index, card in enumerate(_area_cards(state, "jokers")):
         key = str(card.get("key") or "")
-        if not key or key not in IMPLEMENTED_JOKERS:
+        if not key or not _modeled_joker(key):
             continue
-        value = _joker_base_value(state, key, config) + _owned_scaling_bonus(card)
+        value = _joker_base_value(state, key, config, include_open_slot_bonus=False) + _owned_scaling_bonus(card)
         sell_value = int(((card.get("cost") or {}).get("sell") or 0))
         out.append((index, key, value, sell_value))
     out.sort(key=lambda item: item[2])
@@ -300,7 +365,7 @@ def _should_reroll_shop(state: dict[str, Any], config: ShopPolicyConfig) -> bool
     has_open_slot = _joker_count(state) < _joker_limit(state)
     if has_open_slot and ante <= 5:
         return True
-    return ante >= 3 and not _has_strong_xmult(state)
+    return _needs_late_carry_upgrade(state) or (ante >= 3 and not _has_strong_xmult(state))
 
 
 def _has_valuable_unaffordable_shop_item(state: dict[str, Any], config: ShopPolicyConfig) -> bool:
@@ -330,11 +395,17 @@ def _has_strong_xmult(state: dict[str, Any]) -> bool:
     return bool(_owned_jokers(state) & strong)
 
 
+def _needs_late_carry_upgrade(state: dict[str, Any]) -> bool:
+    return int(state.get("ante_num") or 1) >= 4 and not _has_strong_xmult(state)
+
+
 def _planet_value(state: dict[str, Any], key: str, config: ShopPolicyConfig) -> float:
     hand_kind = _PLANET_TO_HAND_KIND.get(key)
     if hand_kind is None:
         return 0.0
     played = _hand_played(state, hand_kind)
+    if _needs_late_carry_upgrade(state):
+        return 0.0
     if played > 0:
         value = config.planet_played_base_value + config.planet_played_increment * played
         if _needs_late_joker_slot_filled(state):
@@ -411,6 +482,37 @@ def _is_joker_card(card: dict[str, Any]) -> bool:
     return str(card.get("set") or "") == "JOKER" or key.startswith("j_")
 
 
+def _modeled_joker(key: str) -> bool:
+    return (
+        key in IMPLEMENTED_JOKERS
+        or key in DOLLAR_BONUS_JOKERS
+        or key in MONEY_EVENT_JOKERS
+        or key in RUN_EFFECT_JOKERS
+        or key in _NON_SCORING_JOKER_VALUES
+    )
+
+
+def _can_add_joker_card(state: dict[str, Any], card: dict[str, Any]) -> bool:
+    return _joker_count(state) < _joker_limit(state) or _is_negative_edition(card)
+
+
+def _is_negative_edition(card: dict[str, Any]) -> bool:
+    values: list[str] = []
+    modifier = card.get("modifier")
+    if isinstance(modifier, dict):
+        values.extend(str(value) for value in modifier.values())
+        values.extend(str(key) for key in modifier.keys())
+    elif isinstance(modifier, list):
+        values.extend(str(value) for value in modifier)
+    state = card.get("state")
+    if isinstance(state, dict):
+        values.extend(str(value) for value in state.values())
+        values.extend(str(key) for key in state.keys())
+    elif isinstance(state, list):
+        values.extend(str(value) for value in state)
+    return any(value.lower() in {"negative", "e_negative"} for value in values)
+
+
 def _booster_cards(state: dict[str, Any]) -> list[dict[str, Any]]:
     cards = _area_cards(state, "pack")
     if cards:
@@ -455,3 +557,17 @@ _PLANET_TO_HAND_KIND = {
     "c_earth": FULL_HOUSE,
 }
 _VALUABLE_NO_TARGET_CONSUMABLES = {"c_high_priestess"}
+_NON_SCORING_JOKER_VALUES = {
+    "j_rocket",
+    "j_to_the_moon",
+    "j_golden",
+    "j_cloud_9",
+    "j_satellite",
+    "j_delayed_grat",
+    "j_chaos",
+    "j_drunkard",
+    "j_juggler",
+    "j_merry_andy",
+    "j_astronomer",
+    "j_certificate",
+}

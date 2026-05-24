@@ -68,18 +68,26 @@ def _should_skip_blind(blind: dict[str, Any], state: dict[str, Any]) -> bool:
         return False
     tag_name = str(blind.get("tag_name") or "")
     if tag_name in {"Negative Tag", "Polychrome Tag", "Holographic Tag", "Foil Tag"}:
-        return not _late_skip_is_dangerous(state)
+        return not _late_skip_is_dangerous(blind, state)
     if tag_name == "Orbital Tag":
-        return int(state.get("ante_num") or 0) >= 3 and not _late_skip_is_dangerous(state)
+        return False
     if tag_name in {"Economy Tag", "Investment Tag", "Coupon Tag"}:
-        return int(state.get("money") or 0) < 12 and not _late_skip_is_dangerous(state)
+        return int(state.get("money") or 0) < 12 and not _late_skip_is_dangerous(blind, state)
     return False
 
 
-def _late_skip_is_dangerous(state: dict[str, Any]) -> bool:
-    if int(state.get("ante_num") or 0) < 4:
+def _late_skip_is_dangerous(blind: dict[str, Any], state: dict[str, Any]) -> bool:
+    ante = int(state.get("ante_num") or 0)
+    if ante < 4:
         return False
+    if ante >= 5 and not _late_tag_is_worth_shop_skip(blind):
+        return True
     return not _has_late_skip_carry(state)
+
+
+def _late_tag_is_worth_shop_skip(blind: dict[str, Any]) -> bool:
+    tag_name = str(blind.get("tag_name") or "")
+    return tag_name in {"Negative Tag", "Polychrome Tag"}
 
 
 def _has_late_skip_carry(state: dict[str, Any]) -> bool:

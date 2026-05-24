@@ -262,3 +262,91 @@ sample_steps: 173
 
 This is a fast-gym oracle checkpoint, not a BalatroBot solve. The same policy
 still needs clean real-game replay through `scripts/game_parity_gate.py`.
+
+## Live Policy Generalization Checkpoint
+
+The current useful path is not neural training yet. The bottleneck is still the
+oracle/live planner: it must make stronger shop, replacement, reroll, blind-skip,
+and boss-aware tactical decisions before imitation has labels worth learning.
+
+Implemented after the shop-rollout checkpoint:
+
+- Live shop planning now values modeled non-scoring/economy/run jokers such as
+  Rocket, Drunkard, Juggler, Astronomer, and Certificate instead of rejecting
+  them only because they do not directly score a hand.
+- Late weak builds now suppress marginal planet/standard/arcana purchases and
+  prefer rerolling or finding real carry/x-mult.
+- Shop planning can sell a weak joker to afford a visible upgrade before joker
+  slots are full.
+- Blind skipping is stricter: Holographic/Foil tags no longer justify skipping
+  a shop in ante 5+ unless the build already has real carry; Negative/Polychrome
+  remain worth considering. Unscoped Orbital Tags are no longer skipped because
+  visible BalatroBot state does not expose the target hand, and clean same-seed
+  runs upgraded different hands after the same skip.
+- Abstract Joker and Stencil scoring now count all live joker cards, including
+  non-scoring/unimplemented jokers, through `ScoreContext.joker_count`.
+- Tactical scoring now models boss hand restrictions such as The Mouth when
+  replaying future hands in the beam search.
+- Discard ranking is joker-aware for payoff jokers and hand-restriction bosses,
+  so it can fish for the build's actual scoring shape instead of only the base
+  hand score.
+
+Visible BalatroBot result before removing unscoped Orbital skips:
+
+```bash
+python scripts/run_balatrobot_agent.py --launch-server --fast-server --no-headless-server --deck RED --stake WHITE --seed-start 1 --seeds 1 --max-steps 500 --poll-delay 0.05 --trace-jsonl runs/red_deck_seed1_visible_fast_cached_joker_discards.jsonl
+python scripts/game_parity_gate.py runs/red_deck_seed1_visible_fast_cached_joker_discards.jsonl
+```
+
+Result:
+
+```text
+seeds: 1
+wins: 0
+avg_ante: 7.0
+avg_steps: 166.0
+parity: 166/166 transitions, 63 scores, 9 draws, 0 mismatches
+```
+
+This is still not a solve. It is a clean real-game parity checkpoint showing
+the current live planner reaches ante 7 on red deck seed 1 and dies before ante
+8. The next generalization test should be visible or trace-backed runs on seeds
+1..8 or 1..16, judged by average ante/wins, not by whether seed 1 improves.
+
+Follow-up visible rerun after the speed work exposed a reproducibility problem:
+the same seed and same Orbital skip upgraded Three of a Kind in one run and Full
+House in another. That later run passed parity but died at ante 4:
+
+```text
+seeds: 1
+wins: 0
+avg_ante: 4.0
+avg_steps: 85.0
+parity: 85/85 transitions, 35 scores, 4 draws, 0 mismatches
+```
+
+The current policy therefore avoids unscoped Orbital skips. Future performance
+claims should use fresh traces generated after that change.
+
+Fresh no-Orbital-skip visible runs on seed 1 reproduced exactly:
+
+```bash
+python scripts/run_balatrobot_agent.py --launch-server --fast-server --no-headless-server --deck RED --stake WHITE --seed-start 1 --seeds 1 --max-steps 500 --poll-delay 0.05 --trace-jsonl runs/red_deck_seed1_visible_fast_no_orbital_skip.jsonl
+python scripts/run_balatrobot_agent.py --launch-server --fast-server --no-headless-server --port 12347 --deck RED --stake WHITE --seed-start 1 --seeds 1 --max-steps 500 --poll-delay 0.05 --trace-jsonl runs/red_deck_seed1_visible_fast_no_orbital_skip_repeat.jsonl
+```
+
+Both runs ended at ante 4 in 92 steps, and their transition/action/state
+sequences were identical. Both parity gates reported 92/92 transitions, 35
+scores, 5 draws, and 0 mismatches.
+
+Speed note:
+
+- The joker-aware discard search made late decisions too slow because it was
+  reranking too many discard outcomes with full joker scoring.
+- Exact deterministic base-hand-score caching plus a 72-candidate joker-aware
+  discard shortlist preserved all 72 observed hand decisions from
+  `runs/red_deck_seed1_visible_fast_cached_joker_discards.jsonl`.
+- Offline replay of those 72 hand decisions improved from about 256s to 172s
+  with zero action mismatches. This is better but still too slow for broad live
+  sweeps; further work should optimize the discard evaluator structurally before
+  increasing search budgets.

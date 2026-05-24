@@ -39,6 +39,7 @@ class ScoreContext:
     deck_cards: tuple[int, ...] = ()
     starting_deck_size: int = 52
     playing_card_count: int = 52
+    joker_count: int | None = None
     joker_slots: int = 5
     is_final_hand: bool = False
     hands_played_this_round: int = 0
@@ -191,6 +192,7 @@ def apply_additive_jokers(
     context: ScoreContext | None = None,
 ) -> FastScore:
     context = context or ScoreContext()
+    joker_count = len(jokers) if context.joker_count is None else context.joker_count
     chips = score.chips
     mult = float(score.mult)
     x_mult = 1.0
@@ -201,7 +203,7 @@ def apply_additive_jokers(
         elif joker.key == "j_half" and selected_count <= 3:
             mult += 20
         elif joker.key == "j_stencil":
-            x_mult *= 1.0 + max(context.joker_slots - len(jokers), 0)
+            x_mult *= 1.0 + max(context.joker_slots - joker_count, 0)
         elif joker.key == "j_banner":
             chips += 30 * context.discards_left
         elif joker.key == "j_mystic_summit" and context.discards_left == 0:
@@ -209,7 +211,7 @@ def apply_additive_jokers(
         elif joker.key == "j_misprint":
             mult += joker.scaling if joker.scaling > 0 else 12
         elif joker.key == "j_abstract":
-            mult += 3 * len(jokers)
+            mult += 3 * joker_count
         elif joker.key == "j_supernova":
             mult += context.hand_times_played.get(score.kind, 0)
         elif joker.key == "j_blue_joker":
