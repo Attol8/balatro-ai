@@ -8,7 +8,7 @@ def test_load_rule_catalog_from_lua_dump_sample(tmp_path: Path) -> None:
     dump.mkdir()
     (dump / "game.lua").write_text(
         """
-        j_joker = {name = "Joker"},
+        j_joker = {name = "Joker", set = "Joker", effect = "Mult", config = {mult = 4}},
         c_fool = {name = "The Fool"},
         v_blank = {name = "Blank"},
         m_mult = {name = "Mult Card"},
@@ -18,6 +18,14 @@ def test_load_rule_catalog_from_lua_dump_sample(tmp_path: Path) -> None:
         bl_small = {name = "Small Blind"},
         tag_uncommon = {name = "Uncommon Tag"},
         stake_white = {name = "White Stake"},
+        """,
+        encoding="utf-8",
+    )
+    (dump / "card.lua").write_text(
+        """
+        if self.ability.name == 'Joker' then
+            return {mult_mod = self.ability.mult}
+        end
         """,
         encoding="utf-8",
     )
@@ -34,4 +42,9 @@ def test_load_rule_catalog_from_lua_dump_sample(tmp_path: Path) -> None:
     assert catalog.blinds == ("bl_small",)
     assert catalog.tags == ("tag_uncommon",)
     assert catalog.stakes == ("stake_white",)
-
+    assert catalog.sources["j_joker"].source_location == "game.lua:2"
+    assert catalog.sources["j_joker"].name == "Joker"
+    assert catalog.sources["j_joker"].set_name == "Joker"
+    assert catalog.sources["j_joker"].effect == "Mult"
+    assert catalog.sources["j_joker"].config_hash is not None
+    assert catalog.sources["j_joker"].behavior_refs[0].path == "card.lua"

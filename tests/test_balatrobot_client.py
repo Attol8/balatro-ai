@@ -39,6 +39,20 @@ def test_health_uses_standard_endpoint() -> None:
     assert client.health() == {"status": "ok"}
 
 
+def test_start_uses_deck_stake_and_optional_seed() -> None:
+    calls = []
+
+    def transport(payload: dict) -> dict:
+        calls.append(payload)
+        return {"jsonrpc": "2.0", "result": {"state": "BLIND_SELECT"}, "id": 1}
+
+    client = BalatroBotClient(transport=transport)
+
+    assert client.start(deck="RED", stake="WHITE", seed="1") == {"state": "BLIND_SELECT"}
+    assert calls[0]["method"] == "start"
+    assert calls[0]["params"] == {"deck": "RED", "stake": "WHITE", "seed": "1"}
+
+
 def test_rpc_error_raises_balatrobot_error() -> None:
     def transport(payload: dict) -> dict:
         return {

@@ -18,7 +18,7 @@ class BalatroBotError(RuntimeError):
 class BalatroBotClient:
     host: str = "127.0.0.1"
     port: int = 12346
-    timeout: float = 5.0
+    timeout: float = 30.0
     transport: Transport | None = None
 
     @property
@@ -48,6 +48,18 @@ class BalatroBotClient:
     def gamestate(self) -> JsonObject:
         return self.rpc("gamestate")
 
+    def menu(self) -> JsonObject:
+        return self.rpc("menu")
+
+    def start(self, *, deck: str = "RED", stake: str = "WHITE", seed: str | None = None) -> JsonObject:
+        params = {"deck": deck, "stake": stake}
+        if seed is not None:
+            params["seed"] = seed
+        return self.rpc("start", params)
+
+    def call_action(self, method: str, params: JsonObject | None = None) -> JsonObject:
+        return self.rpc(method, params)
+
     def _http_post(self, payload: JsonObject) -> JsonObject:
         body = json.dumps(payload).encode("utf-8")
         req = request.Request(
@@ -59,7 +71,7 @@ class BalatroBotClient:
         try:
             with request.urlopen(req, timeout=self.timeout) as response:
                 data = response.read().decode("utf-8")
-        except URLError as exc:
+        except (OSError, TimeoutError, URLError) as exc:
             raise BalatroBotError(f"failed to connect to BalatroBot at {self.url}: {exc}") from exc
 
         decoded = json.loads(data)

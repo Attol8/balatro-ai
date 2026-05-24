@@ -1,0 +1,184 @@
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from time import sleep
+from typing import Any
+from uuid import uuid4
+
+from balatro_ai_v2.actions import GameAction
+from balatro_ai_v2.balatrobot.client import BalatroBotClient, BalatroBotError
+from balatro_ai_v2.balatrobot.policy import BalatroBotPolicy
+from balatro_ai_v2.balatrobot.tracing import JsonlTraceWriter, action_payload
+
+
+@dataclass(frozen=True, slots=True)
+class BalatroBotRunResult:
+    won: bool
+    ante: int
+    round_num: int
+    steps: int
+    seed: str
+    final_state: dict[str, Any]
+
+
+@dataclass(slots=True)
+class BalatroBotRunner:
+    client: BalatroBotClient
+    policy: BalatroBotPolicy = field(default_factory=BalatroBotPolicy)
+    trace: bool = False
+    trace_writer: JsonlTraceWriter | None = None
+    _run_id: str = field(default="", init=False)
+
+    def start_run(self, *, deck: str = "RED", stake: str = "WHITE", seed: str | None = None) -> dict[str, Any]:
+        self.client.menu()
+        return self.client.start(deck=deck, stake=stake, seed=seed)
+
+    def play_run(
+        self,
+        *,
+        deck: str = "RED",
+        stake: str = "WHITE",
+        seed: str | None = None,
+        max_steps: int = 800,
+    ) -> BalatroBotRunResult:
+        self._run_id = f"{deck}:{stake}:{seed or ''}:{uuid4().hex}"
+        state = self.start_run(deck=deck, stake=stake, seed=seed)
+        self._record("run_start", state=state, deck=deck, stake=stake, requested_seed=seed)
+        steps = 0
+        while state.get("state") != "GAME_OVER" and steps < max_steps:
+            if self.trace:
+                print(_trace_state(state))
+            state = self.step_state(state)
+            steps += 1
+        if self.trace:
+            print(_trace_state(state))
+        self._record("run_end", state=state, steps=steps)
+        return BalatroBotRunResult(
+            won=bool(state.get("won")),
+            ante=int(state.get("ante_num") or 0),
+            round_num=int(state.get("round_num") or 0),
+            steps=steps,
+            seed=str(state.get("seed") or seed or ""),
+            final_state=state,
+        )
+
+    def step_state(self, state: dict[str, Any]) -> dict[str, Any]:
+        action: dict[str, Any]
+        match state.get("state"):
+            case "BLIND_SELECT":
+                if self.trace:
+                    print("action: select")
+                action = action_payload(method="select")
+                next_state = self.client.call_action("select")
+            case "SELECTING_HAND":
+                game_action = self.policy.tactical_action(state)
+                if self.trace:
+                    print(f"action: {game_action.kind.value} {game_action.indices}")
+                action = action_payload(game_action)
+                next_state = self._execute(game_action)
+            case "ROUND_EVAL":
+                if self.trace:
+                    print("action: cash_out")
+                action = action_payload(method="cash_out")
+                next_state = self.client.call_action("cash_out")
+            case "SHOP":
+                game_action = self.policy.shop_action(state)
+                if game_action is not None:
+                    if self.trace:
+                        print(f"action: {game_action.kind.value} {game_action.index}")
+                    action = action_payload(game_action)
+                    next_state = self._execute(game_action)
+                else:
+                    if self.trace:
+                        print("action: next_round")
+                    action = action_payload(method="next_round")
+                    next_state = self.client.call_action("next_round")
+            case "SMODS_BOOSTER_OPENED":
+                if self.trace:
+                    print("action: pack_skip")
+                action = action_payload(method="pack", params={"skip": True})
+                next_state = self.client.call_action("pack", {"skip": True})
+            case _:
+                sleep(0.2)
+                action = action_payload(method="gamestate")
+                next_state = self.client.gamestate()
+        self._record("transition", before=state, action=action, after=next_state)
+        return next_state
+
+    def _execute(self, action: GameAction) -> dict[str, Any]:
+        method, params = action.to_balatrobot_rpc()
+        try:
+            return self.client.call_action(method, params)
+        except BalatroBotError as exc:
+            if "failed to connect" not in str(exc):
+                raise
+            sleep(0.5)
+            return self.client.gamestate()
+
+    def _record(self, event: str, **payload: Any) -> None:
+        if self.trace_writer is None:
+            return
+        serializable = {"run_id": self._run_id}
+        for key, value in payload.items():
+            serializable[key] = self.trace_writer.state_payload(value) if key in {"state", "before", "after"} else value
+        self.trace_writer.record(event, **serializable)
+
+def evaluate_balatrobot(
+    seeds: list[str],
+    *,
+    client: BalatroBotClient | None = None,
+    policy: BalatroBotPolicy | None = None,
+    deck: str = "RED",
+    stake: str = "WHITE",
+    max_steps: int = 800,
+    trace: bool = False,
+    trace_writer: JsonlTraceWriter | None = None,
+) -> dict[str, float | int]:
+    runner = BalatroBotRunner(
+        client or BalatroBotClient(),
+        policy=policy or BalatroBotPolicy(),
+        trace=trace,
+        trace_writer=trace_writer,
+    )
+    wins = 0
+    antes = 0
+    steps = 0
+    for seed in seeds:
+        result = runner.play_run(deck=deck, stake=stake, seed=seed, max_steps=max_steps)
+        wins += int(result.won)
+        antes += result.ante
+        steps += result.steps
+    total = len(seeds)
+    return {
+        "seeds": total,
+        "wins": wins,
+        "win_rate": wins / max(total, 1),
+        "avg_ante": antes / max(total, 1),
+        "avg_steps": steps / max(total, 1),
+    }
+
+
+def _trace_state(state: dict[str, Any]) -> str:
+    state_name = state.get("state")
+    round_info = state.get("round") or {}
+    shop = _card_summary(state, "shop")
+    consumables = _card_summary(state, "consumables")
+    jokers = _card_summary(state, "jokers")
+    return (
+        f"state={state_name} ante={state.get('ante_num')} round={state.get('round_num')} "
+        f"money={state.get('money')} chips={round_info.get('chips')} "
+        f"hands={round_info.get('hands_left')} discards={round_info.get('discards_left')} "
+        f"shop=[{shop}] consumables=[{consumables}] jokers=[{jokers}]"
+    )
+
+
+def _card_summary(state: dict[str, Any], area: str) -> str:
+    cards = ((state.get(area) or {}).get("cards") or [])
+    parts = []
+    for card in cards:
+        if not isinstance(card, dict):
+            continue
+        key = card.get("key")
+        cost = (card.get("cost") or {}).get("buy")
+        parts.append(f"{key}:${cost}")
+    return ", ".join(parts)

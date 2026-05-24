@@ -37,10 +37,19 @@ class ScoreContext:
     hands_left: int = 0
     deck_count: int = 52
     deck_cards: tuple[int, ...] = ()
+    starting_deck_size: int = 52
+    playing_card_count: int = 52
     joker_slots: int = 5
     is_final_hand: bool = False
     hands_played_this_round: int = 0
     blinds_skipped: int = 0
+    current_ancient_suit: int | None = None
+    current_idol_rank: int | None = None
+    current_idol_suit: int | None = None
+    enhanced_card_count: int = 0
+    tarot_cards_used: int = 0
+    loyalty_remaining: int | None = None
+    all_cards_are_face: bool = False
     hand_times_played: dict[int, int] = field(default_factory=dict)
     hand_times_played_round: dict[int, int] = field(default_factory=dict)
 
@@ -141,6 +150,33 @@ IMPLEMENTED_JOKERS = frozenset(
         "j_triboulet",
         "j_arrowhead",
         "j_onyx_agate",
+        "j_baron",
+        "j_card_sharp",
+        "j_ceremonial",
+        "j_flash",
+        "j_shoot_the_moon",
+        "j_square",
+        "j_stone",
+        "j_trousers",
+        "j_ancient",
+        "j_caino",
+        "j_campfire",
+        "j_castle",
+        "j_drivers_license",
+        "j_erosion",
+        "j_flower_pot",
+        "j_fortune_teller",
+        "j_hit_the_road",
+        "j_hologram",
+        "j_idol",
+        "j_loyalty_card",
+        "j_lucky_cat",
+        "j_madness",
+        "j_pareidolia",
+        "j_raised_fist",
+        "j_red_card",
+        "j_wee",
+        "j_yorick",
     }
 )
 
@@ -182,12 +218,28 @@ def apply_additive_jokers(
             mult += 2 * (context.money // 5)
         elif joker.key == "j_ice_cream":
             chips += joker.scaling
+        elif joker.key == "j_square":
+            chips += joker.scaling
+        elif joker.key == "j_wee":
+            chips += joker.scaling
+        elif joker.key == "j_castle":
+            chips += joker.scaling
+        elif joker.key == "j_stone":
+            chips += 25 * joker.scaling
         elif joker.key == "j_runner" and score.kind == STRAIGHT:
             chips += joker.scaling
         elif joker.key == "j_green_joker":
             mult += joker.scaling
-        elif joker.key == "j_ride_the_bus" and not _has_face_card(sorted_cards):
-            mult += joker.scaling
+        elif joker.key == "j_erosion":
+            mult += max(context.starting_deck_size - context.playing_card_count, 0) * 4
+        elif joker.key == "j_fortune_teller":
+            mult += context.tarot_cards_used
+        elif joker.key == "j_ride_the_bus" and _scored_face_count(
+            sorted_cards,
+            score.scoring_mask,
+            context.all_cards_are_face or _has_joker(jokers, "j_pareidolia"),
+        ) == 0:
+            mult += joker.scaling + 1
         elif joker.key == "j_cavendish":
             x_mult *= 3.0
         elif joker.key == "j_acrobat" and context.hands_left == 0:
@@ -200,15 +252,43 @@ def apply_additive_jokers(
             mult += joker.scaling
         elif joker.key == "j_constellation":
             x_mult *= joker.x_mult
+        elif joker.key in {
+            "j_caino",
+            "j_campfire",
+            "j_hit_the_road",
+            "j_hologram",
+            "j_lucky_cat",
+            "j_madness",
+            "j_yorick",
+        }:
+            x_mult *= joker.x_mult
         elif joker.key == "j_ramen":
             x_mult *= joker.x_mult if joker.x_mult > 0 else 2.0
         elif joker.key == "j_throwback":
             x_mult *= 1.0 + 0.25 * context.blinds_skipped
         elif joker.key == "j_swashbuckler":
             mult += sum(other.sell_value for other in jokers if other is not joker)
+        elif joker.key == "j_ceremonial":
+            mult += joker.scaling
+        elif joker.key == "j_flash":
+            mult += joker.scaling
+        elif joker.key == "j_trousers":
+            mult += joker.scaling
+        elif joker.key == "j_red_card":
+            mult += joker.scaling
+        elif joker.key == "j_shoot_the_moon":
+            mult += _held_rank_count(context.held_cards, 10) * 13
+        elif joker.key == "j_raised_fist":
+            lowest_nominal = _lowest_held_nominal(context.held_cards)
+            if lowest_nominal is not None:
+                mult += 2 * lowest_nominal
         elif joker.key == "j_blackboard" and context.held_cards:
             if all(suit(card) in (0, 2) for card in context.held_cards):
                 x_mult *= 3.0
+        elif joker.key == "j_baron":
+            x_mult *= 1.5 ** _held_rank_count(context.held_cards, 11)
+        elif joker.key == "j_loyalty_card" and context.loyalty_remaining == 0:
+            x_mult *= 4.0
         elif joker.key == "j_obelisk":
             x_mult *= joker.x_mult
         elif joker.key == "j_steel_joker":
@@ -221,6 +301,10 @@ def apply_additive_jokers(
             x_mult *= joker.x_mult
         elif joker.key == "j_seeing_double" and _has_club_and_other_suit(sorted_cards, score.scoring_mask):
             x_mult *= 2.0
+        elif joker.key == "j_card_sharp" and context.hand_times_played_round.get(score.kind, 0) > 1:
+            x_mult *= 3.0
+        elif joker.key == "j_drivers_license" and context.enhanced_card_count >= 16:
+            x_mult *= 3.0
         elif joker.key == "j_even_steven":
             mult += _scored_rank_count(sorted_cards, score.scoring_mask, {0, 2, 4, 6, 8}) * 4
         elif joker.key == "j_odd_todd":
@@ -232,17 +316,46 @@ def apply_additive_jokers(
         elif joker.key == "j_fibonacci":
             mult += _scored_rank_count(sorted_cards, score.scoring_mask, {0, 1, 3, 6, 12}) * 8
         elif joker.key == "j_scary_face":
-            chips += _scored_face_count(sorted_cards, score.scoring_mask) * 30
+            chips += _scored_face_count(
+                sorted_cards,
+                score.scoring_mask,
+                context.all_cards_are_face or _has_joker(jokers, "j_pareidolia"),
+            ) * 30
         elif joker.key == "j_smiley":
-            mult += _scored_face_count(sorted_cards, score.scoring_mask) * 5
+            mult += _scored_face_count(
+                sorted_cards,
+                score.scoring_mask,
+                context.all_cards_are_face or _has_joker(jokers, "j_pareidolia"),
+            ) * 5
         elif joker.key == "j_walkie_talkie":
             count = _scored_rank_count(sorted_cards, score.scoring_mask, {2, 8})
             chips += count * 10
             mult += count * 4
-        elif joker.key == "j_photograph" and _scored_face_count(sorted_cards, score.scoring_mask) > 0:
+        elif joker.key == "j_photograph" and _scored_face_count(
+            sorted_cards,
+            score.scoring_mask,
+            context.all_cards_are_face or _has_joker(jokers, "j_pareidolia"),
+        ) > 0:
             x_mult *= 2.0
         elif joker.key == "j_bloodstone":
             x_mult *= 1.25 ** _scored_suit_count(sorted_cards, score.scoring_mask, 1)
+        elif joker.key == "j_ancient" and context.current_ancient_suit is not None:
+            x_mult *= 1.5 ** _scored_suit_count(
+                sorted_cards,
+                score.scoring_mask,
+                context.current_ancient_suit,
+            )
+        elif (
+            joker.key == "j_idol"
+            and context.current_idol_rank is not None
+            and context.current_idol_suit is not None
+        ):
+            x_mult *= 2.0 ** _scored_rank_suit_count(
+                sorted_cards,
+                score.scoring_mask,
+                context.current_idol_rank,
+                context.current_idol_suit,
+            )
         elif joker.key == "j_triboulet":
             x_mult *= 2.0 ** _scored_rank_count(sorted_cards, score.scoring_mask, {10, 11})
         elif joker.key in SUIT_MULT_JOKERS:
@@ -252,6 +365,8 @@ def apply_additive_jokers(
             chips += _scored_suit_count(sorted_cards, score.scoring_mask, 0) * 50
         elif joker.key == "j_onyx_agate":
             mult += _scored_suit_count(sorted_cards, score.scoring_mask, 2) * 7
+        elif joker.key == "j_flower_pot" and _has_all_four_suits(sorted_cards, score.scoring_mask):
+            x_mult *= 3.0
         elif joker.key in CONTAINED_TYPE_MULT_JOKERS:
             target_kind, add_mult = CONTAINED_TYPE_MULT_JOKERS[joker.key]
             if _hand_contains(score.kind, target_kind):
@@ -290,6 +405,19 @@ def _scored_suit_count(cards: tuple[int, ...], scoring_mask: int, target_suit: i
     )
 
 
+def _scored_rank_suit_count(
+    cards: tuple[int, ...],
+    scoring_mask: int,
+    target_rank: int,
+    target_suit: int,
+) -> int:
+    return sum(
+        1
+        for index, card in enumerate(cards)
+        if scoring_mask & (1 << index) and rank(card) == target_rank and suit(card) == target_suit
+    )
+
+
 def _scored_rank_count(cards: tuple[int, ...], scoring_mask: int, target_ranks: set[int]) -> int:
     return sum(
         1
@@ -298,12 +426,28 @@ def _scored_rank_count(cards: tuple[int, ...], scoring_mask: int, target_ranks: 
     )
 
 
-def _scored_face_count(cards: tuple[int, ...], scoring_mask: int) -> int:
+def _scored_face_count(cards: tuple[int, ...], scoring_mask: int, all_cards_are_face: bool = False) -> int:
+    if all_cards_are_face:
+        return scoring_mask.bit_count()
     return _scored_rank_count(cards, scoring_mask, {9, 10, 11})
 
 
 def _has_face_card(cards: tuple[int, ...]) -> bool:
     return any(rank(card) in {9, 10, 11} for card in cards)
+
+
+def _has_joker(jokers: tuple[Joker, ...], key: str) -> bool:
+    return any(joker.key == key for joker in jokers)
+
+
+def _held_rank_count(cards: tuple[int, ...], target_rank: int) -> int:
+    return sum(1 for card in cards if rank(card) == target_rank)
+
+
+def _lowest_held_nominal(cards: tuple[int, ...]) -> int | None:
+    if not cards:
+        return None
+    return min(card_chips(card) for card in cards)
 
 
 def _has_club_and_other_suit(cards: tuple[int, ...], scoring_mask: int) -> bool:
@@ -313,6 +457,15 @@ def _has_club_and_other_suit(cards: tuple[int, ...], scoring_mask: int) -> bool:
         if scoring_mask & (1 << index)
     }
     return 2 in scored_suits and len(scored_suits) > 1
+
+
+def _has_all_four_suits(cards: tuple[int, ...], scoring_mask: int) -> bool:
+    scored_suits = {
+        suit(card)
+        for index, card in enumerate(cards)
+        if scoring_mask & (1 << index)
+    }
+    return len(scored_suits) == 4
 
 
 def _hand_contains(hand_kind: int, contained_kind: int) -> bool:

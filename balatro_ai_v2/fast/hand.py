@@ -49,6 +49,7 @@ BASE_CHIPS = (5, 10, 20, 30, 30, 35, 40, 60, 100, 120, 140, 160)
 BASE_MULT = (1, 2, 2, 3, 4, 4, 4, 7, 8, 12, 14, 16)
 LEVEL_CHIPS = (10, 15, 20, 20, 30, 15, 25, 30, 40, 35, 40, 50)
 LEVEL_MULT = (1, 1, 1, 2, 3, 2, 2, 3, 4, 3, 4, 3)
+HAND_RULE_JOKERS = frozenset({"j_four_fingers", "j_shortcut", "j_smeared", "j_splash"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -67,6 +68,14 @@ class FastStateScore:
     money_delta: int = 0
 
 
+@dataclass(frozen=True, slots=True)
+class HandRuleModifiers:
+    four_fingers: bool = False
+    shortcut: bool = False
+    smeared_suits: bool = False
+    splash: bool = False
+
+
 def score_cards(cards: tuple[int, ...]) -> FastScore:
     if not 1 <= len(cards) <= 5:
         raise ValueError("a played hand must contain between 1 and 5 cards")
@@ -77,6 +86,59 @@ def score_cards(cards: tuple[int, ...]) -> FastScore:
         mult=mult,
         total=total,
         scoring_mask=scoring_mask,
+    )
+
+
+def score_cards_with_rules(cards: tuple[int, ...], rules: HandRuleModifiers) -> FastScore:
+    if not 1 <= len(cards) <= 5:
+        raise ValueError("a played hand must contain between 1 and 5 cards")
+    sorted_cards = tuple(sorted(cards))
+    kind, hand_chips, mult, total, scoring_mask = _score_values_sorted_with_rules(
+        sorted_cards,
+        rules.four_fingers,
+        rules.shortcut,
+        rules.smeared_suits,
+    )
+    if rules.splash:
+        scoring_mask = (1 << len(sorted_cards)) - 1
+        hand_chips = BASE_CHIPS[kind] + sum(chips(card) for card in sorted_cards)
+        total = hand_chips * mult
+    return FastScore(
+        kind=kind,
+        chips=hand_chips,
+        mult=mult,
+        total=total,
+        scoring_mask=scoring_mask,
+    )
+
+
+def score_cards_with_joker_rules(
+    cards: tuple[int, ...],
+    hand_levels: tuple[int, ...],
+    joker_keys: tuple[str, ...],
+) -> FastScore:
+    if len(hand_levels) != len(HAND_KIND_NAMES):
+        raise ValueError(f"hand_levels must contain {len(HAND_KIND_NAMES)} values")
+    base = score_cards_with_rules(cards, hand_rule_modifiers(joker_keys))
+    level = max(hand_levels[base.kind], 1)
+    chips_with_level = base.chips + (level - 1) * LEVEL_CHIPS[base.kind]
+    mult_with_level = base.mult + (level - 1) * LEVEL_MULT[base.kind]
+    return FastScore(
+        kind=base.kind,
+        chips=chips_with_level,
+        mult=mult_with_level,
+        total=chips_with_level * mult_with_level,
+        scoring_mask=base.scoring_mask,
+    )
+
+
+def hand_rule_modifiers(joker_keys: tuple[str, ...]) -> HandRuleModifiers:
+    key_set = set(joker_keys)
+    return HandRuleModifiers(
+        four_fingers="j_four_fingers" in key_set,
+        shortcut="j_shortcut" in key_set,
+        smeared_suits="j_smeared" in key_set,
+        splash="j_splash" in key_set,
     )
 
 
@@ -133,6 +195,65 @@ def score_cards_with_modifiers(
         mult=mult,
         total=int(hand_chips * mult),
         scoring_mask=base.scoring_mask,
+    )
+
+
+def score_cards_with_modifiers_exact(
+    cards: tuple[int, ...],
+    hand_levels: tuple[int, ...],
+    enhancements: tuple[Enhancement, ...],
+    editions: tuple[Edition, ...],
+    *,
+    lucky_mult_triggers: tuple[bool, ...] | None = None,
+    lucky_money_triggers: tuple[bool, ...] | None = None,
+) -> FastStateScore:
+    if len(cards) != len(enhancements) or len(cards) != len(editions):
+        raise ValueError("cards, enhancements, and editions must have matching lengths")
+    lucky_mult_triggers = lucky_mult_triggers or (False,) * len(cards)
+    lucky_money_triggers = lucky_money_triggers or (False,) * len(cards)
+    if len(lucky_mult_triggers) != len(cards) or len(lucky_money_triggers) != len(cards):
+        raise ValueError("lucky trigger tuples must match cards length")
+    if any(enhancement == Enhancement.STEEL for enhancement in enhancements):
+        raise NotImplementedError("Steel Card scoring applies while held in hand, not as a played card")
+
+    indexed_cards = tuple(sorted(enumerate(cards), key=lambda item: item[1]))
+    sorted_cards = tuple(card for _, card in indexed_cards)
+    base = score_cards_with_levels(sorted_cards, hand_levels)
+
+    hand_chips = base.chips
+    mult = float(base.mult)
+    money_delta = 0
+    for sorted_index, (original_index, _) in enumerate(indexed_cards):
+        if not base.scoring_mask & (1 << sorted_index):
+            continue
+        enhancement = enhancements[original_index]
+        edition = editions[original_index]
+        hand_chips += enhancement_chip_bonus(enhancement)
+        hand_chips += edition_chip_bonus(edition)
+        mult += enhancement_mult_bonus(enhancement)
+        mult += edition_mult_bonus(edition)
+        if enhancement == Enhancement.LUCKY and lucky_mult_triggers[original_index]:
+            mult += 20
+        if enhancement == Enhancement.LUCKY and lucky_money_triggers[original_index]:
+            money_delta += 20
+        mult *= enhancement_xmult(enhancement)
+        mult *= edition_xmult(edition)
+
+    final_score = FastScore(
+        kind=base.kind,
+        chips=hand_chips,
+        mult=mult,
+        total=int(hand_chips * mult),
+        scoring_mask=base.scoring_mask,
+    )
+    return FastStateScore(
+        score=final_score,
+        scoring_indices=tuple(
+            original_index
+            for sorted_index, (original_index, _) in enumerate(indexed_cards)
+            if base.scoring_mask & (1 << sorted_index)
+        ),
+        money_delta=money_delta,
     )
 
 
@@ -233,7 +354,7 @@ def score_cards_with_jokers(
     from balatro_ai_v2.fast.jokers import Joker, apply_additive_jokers
 
     sorted_cards = tuple(sorted(cards))
-    base = score_cards_with_levels(sorted_cards, hand_levels)
+    base = score_cards_with_joker_rules(sorted_cards, hand_levels, joker_keys)
     jokers = tuple(Joker(key) for key in joker_keys)
     return apply_additive_jokers(base, sorted_cards, len(cards), jokers)
 
@@ -258,34 +379,48 @@ def best_score(hand: tuple[int, ...], action_ids: tuple[int, ...]) -> tuple[int,
 
 @lru_cache(maxsize=250_000)
 def _score_values_sorted(cards: tuple[int, ...]) -> tuple[int, int, int, int, int]:
+    return _score_values_sorted_with_rules(cards, False, False, False)
+
+
+@lru_cache(maxsize=250_000)
+def _score_values_sorted_with_rules(
+    cards: tuple[int, ...],
+    four_fingers: bool,
+    shortcut: bool,
+    smeared_suits: bool,
+) -> tuple[int, int, int, int, int]:
     ranks = [rank(card) for card in cards]
-    suits = [suit(card) for card in cards]
+    suits = [_rule_suit(card, smeared_suits) for card in cards]
     counts = [0] * 13
     for card_rank in ranks:
         counts[card_rank] += 1
     groups = sorted((count for count in counts if count), reverse=True)
 
     is_five = len(cards) == 5
-    is_flush = is_five and suits.count(suits[0]) == 5
+    straight_mask = _straight_mask(cards, four_fingers=four_fingers, shortcut=shortcut)
+    flush_mask = _flush_mask(cards, suits, four_fingers=four_fingers)
+    is_flush = flush_mask != 0
     unique_ranks = sorted(rank_value for rank_value, count in enumerate(counts) if count)
-    is_straight = is_five and _is_straight(unique_ranks)
+    is_straight = straight_mask != 0
 
-    if is_flush and groups == [5]:
+    if is_five and is_flush and groups == [5]:
         return _score(FLUSH_FIVE, cards, 0b11111)
-    if is_flush and groups == [3, 2]:
+    if is_five and is_flush and groups == [3, 2]:
         return _score(FLUSH_HOUSE, cards, 0b11111)
     if groups == [5]:
         return _score(FIVE_OF_A_KIND, cards, 0b11111)
     if is_flush and is_straight:
-        return _score(STRAIGHT_FLUSH, cards, 0b11111)
+        straight_flush_mask = straight_mask & flush_mask
+        if straight_flush_mask.bit_count() >= (4 if four_fingers else 5):
+            return _score(STRAIGHT_FLUSH, cards, straight_flush_mask)
     if groups[0] == 4:
         return _score_matching_count(FOUR_OF_A_KIND, cards, counts, 4)
     if groups == [3, 2]:
         return _score(FULL_HOUSE, cards, 0b11111)
     if is_flush:
-        return _score(FLUSH, cards, 0b11111)
+        return _score(FLUSH, cards, flush_mask)
     if is_straight:
-        return _score(STRAIGHT, cards, 0b11111)
+        return _score(STRAIGHT, cards, straight_mask)
     if groups[0] == 3:
         return _score_matching_count(THREE_OF_A_KIND, cards, counts, 3)
     if groups.count(2) == 2:
@@ -322,6 +457,59 @@ def _is_straight(unique_ranks: list[int]) -> bool:
     if unique_ranks == [0, 1, 2, 3, 12]:
         return True
     return unique_ranks[-1] - unique_ranks[0] == 4
+
+
+def _straight_mask(cards: tuple[int, ...], *, four_fingers: bool, shortcut: bool) -> int:
+    required = 4 if four_fingers else 5
+    if len(cards) < required:
+        return 0
+    ranks_to_indices: dict[int, list[int]] = {}
+    for index, card in enumerate(cards):
+        ranks_to_indices.setdefault(rank(card), []).append(index)
+    unique_ranks = sorted(ranks_to_indices)
+    candidates = _straight_rank_windows(unique_ranks, required, shortcut)
+    if 12 in ranks_to_indices:
+        low_ace_ranks = sorted({-1 if card_rank == 12 else card_rank for card_rank in unique_ranks})
+        candidates.extend(_straight_rank_windows(low_ace_ranks, required, shortcut))
+    if not candidates:
+        return 0
+    chosen = max(candidates, key=lambda item: (item[-1], sum(item)))
+    mask = 0
+    for card_rank in chosen:
+        normalized_rank = 12 if card_rank == -1 else card_rank
+        mask |= 1 << ranks_to_indices[normalized_rank][0]
+    return mask
+
+
+def _straight_rank_windows(unique_ranks: list[int], required: int, shortcut: bool) -> list[tuple[int, ...]]:
+    out: list[tuple[int, ...]] = []
+    for start in range(0, len(unique_ranks) - required + 1):
+        window = tuple(unique_ranks[start : start + required])
+        diffs = [right - left for left, right in zip(window, window[1:])]
+        if all(diff == 1 for diff in diffs) or (shortcut and all(1 <= diff <= 2 for diff in diffs)):
+            out.append(window)
+    return out
+
+
+def _flush_mask(cards: tuple[int, ...], suits: list[int], *, four_fingers: bool) -> int:
+    required = 4 if four_fingers else 5
+    if len(cards) < required:
+        return 0
+    best_mask = 0
+    for target_suit in sorted(set(suits)):
+        mask = 0
+        for index, card_suit in enumerate(suits):
+            if card_suit == target_suit:
+                mask |= 1 << index
+        if mask.bit_count() >= required and mask.bit_count() > best_mask.bit_count():
+            best_mask = mask
+    return best_mask
+
+
+def _rule_suit(card: int, smeared_suits: bool) -> int:
+    if not smeared_suits:
+        return suit(card)
+    return 0 if suit(card) in {0, 2} else 1
 
 
 def _cards_from_mask(hand: tuple[int, ...], mask: int) -> tuple[int, ...]:

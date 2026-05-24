@@ -3,6 +3,8 @@ from __future__ import annotations
 from typing import Any
 
 from balatro_ai_v2.fast.cards import NUM_RANKS
+from balatro_ai_v2.fast.cards import rank as fast_rank
+from balatro_ai_v2.fast.cards import suit as fast_suit
 
 RANK_TO_FAST = {
     "2": 0,
@@ -58,3 +60,11 @@ def hand_to_fast_ids(state: dict[str, Any]) -> tuple[int, ...]:
         raise ValueError("BalatroBot state hand.cards must be a list")
     return tuple(card_to_fast_id(card) for card in cards)
 
+
+def balatro_hand_sort_key(card_id: int) -> tuple[int, int]:
+    """Balatro keeps visible hands sorted by high rank, then suit order."""
+    return (-fast_rank(card_id), fast_suit(card_id))
+
+
+def sort_balatro_hand(cards: tuple[int, ...]) -> tuple[int, ...]:
+    return tuple(sorted(cards, key=balatro_hand_sort_key))

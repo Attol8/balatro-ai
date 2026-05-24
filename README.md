@@ -19,6 +19,8 @@ useful data.
 - source-derived rule coverage inventory helpers
 - canonical action model shared by the fast env and BalatroBot
 - run/economy scaffold for blind progression, rewards, interest, and shop phase
+- deterministic full-run fast gym that advances blinds, shops, antes, and red-deck
+  ante-8 evaluation
 
 ## Fast Training Env
 
@@ -44,6 +46,56 @@ Benchmark:
 
 ```bash
 python scripts/benchmark_fast_env.py --episodes 10000
+```
+
+Full-game red-deck evaluation:
+
+```bash
+python scripts/evaluate_fast_full_game.py --deck b_red --seed-start 1 --seeds 32
+python scripts/train_fast_agent.py --deck b_red --seed-start 1 --seeds 32
+```
+
+BalatroBot reproduction, with BalatroBot serving on `127.0.0.1:12346`:
+
+```bash
+python scripts/run_balatrobot_agent.py --deck RED --stake WHITE --seed-start 1 --seeds 8
+```
+
+Clean runs can be recorded as JSONL evidence. Use compact traces for quick
+policy analysis, or omit `--trace-compact` to store full BalatroBot states.
+
+```bash
+python scripts/run_balatrobot_agent.py --deck RED --stake WHITE --seed-start 1 --seeds 3 \
+  --trace-jsonl runs/red_deck_clean.jsonl --trace-compact
+```
+
+Fast simulator results only count after replaying a full, clean BalatroBot trace
+through the parity checker. This catches scoring, draw-order, shop, round, and
+other transition mismatches between the local hot loop and the game.
+
+```bash
+python scripts/run_balatrobot_agent.py --deck RED --stake WHITE --seed-start 1 --seeds 3 \
+  --trace-jsonl runs/red_deck_full.jsonl
+python scripts/replay_balatrobot_trace.py runs/red_deck_full.jsonl
+```
+
+Use the complete gate before treating any fast result as real:
+
+```bash
+python scripts/game_parity_gate.py runs/red_deck_full.jsonl
+```
+
+If this reports unchecked transitions, those are missing simulator/parity rules.
+If rule coverage is incomplete, the fast simulator does not yet cover the full
+game object surface. Do not treat a fast ante-8 result as solved until both
+gates pass for the relevant seeds.
+
+Policy tuning should happen through config search, not one-off code edits. The
+search script evaluates sampled policy configs through clean BalatroBot runs and
+stores every candidate with its seed set and metrics.
+
+```bash
+python scripts/search_balatrobot_policy.py --deck RED --stake WHITE --seed-start 1 --seeds 3 --trials 12
 ```
 
 ## Verify

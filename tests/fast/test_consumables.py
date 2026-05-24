@@ -2,7 +2,7 @@ from balatro_ai_v2.fast.card_state import FastCardState
 from balatro_ai_v2.fast.cards import NUM_RANKS
 from balatro_ai_v2.fast.consumables import apply_consumable
 from balatro_ai_v2.fast.hand import PAIR
-from balatro_ai_v2.fast.modifiers import Enhancement, Seal
+from balatro_ai_v2.fast.modifiers import Edition, Enhancement, Seal
 
 
 def card(rank: int, suit: int) -> FastCardState:
@@ -104,3 +104,51 @@ def test_immolate_destroys_targets_and_grants_money() -> None:
 
     assert result.cards == (cards[1],)
     assert result.money_delta == 20
+
+
+def test_create_consumables_return_resolved_created_kinds_or_keys() -> None:
+    assert apply_consumable("c_fool", (), last_consumable_key="c_death").created_keys == ("c_death",)
+    assert apply_consumable("c_emperor", ()).created_kinds == ("Tarot", "Tarot")
+    assert apply_consumable("c_high_priestess", ()).created_kinds == ("Planet", "Planet")
+    assert apply_consumable("c_judgement", ()).created_kinds == ("Joker",)
+    assert apply_consumable("c_soul", ()).created_kinds == ("Legendary Joker",)
+
+    wraith = apply_consumable("c_wraith", (), money=17)
+    assert wraith.created_kinds == ("Rare Joker",)
+    assert wraith.money_delta == -17
+
+
+def test_randomized_card_spectrals_accept_resolved_source_rng_output() -> None:
+    cards = (card(1, 0), card(2, 1), card(3, 2))
+    created = (FastCardState(4), FastCardState(5))
+
+    familiar = apply_consumable("c_familiar", cards, (0,), created_cards=created)
+    sigil = apply_consumable("c_sigil", cards, chosen_suit=3)
+    ouija = apply_consumable("c_ouija", cards, chosen_rank=8)
+
+    assert familiar.cards == (cards[1], cards[2], *created)
+    assert familiar.destroyed_indices == (0,)
+    assert {card.suit for card in sigil.cards} == {3}
+    assert {card.rank for card in ouija.cards} == {8}
+    assert ouija.hand_size_delta == -1
+
+
+def test_joker_edition_spectrals_return_exact_joker_side_effects() -> None:
+    cards = (card(1, 0),)
+
+    aura = apply_consumable("c_aura", cards, (0,), chosen_edition="e_foil")
+    wheel_hit = apply_consumable("c_wheel_of_fortune", (), chosen_edition="e_holo", probability_success=True)
+    wheel_miss = apply_consumable("c_wheel_of_fortune", (), chosen_edition="e_holo", probability_success=False)
+    ankh = apply_consumable("c_ankh", ())
+    hex_result = apply_consumable("c_hex", ())
+    ectoplasm = apply_consumable("c_ectoplasm", ())
+
+    assert aura.cards[0].edition == Edition.FOIL
+    assert wheel_hit.joker_edition_key == "e_holo"
+    assert wheel_miss.joker_edition_key is None
+    assert ankh.duplicated_joker
+    assert ankh.destroy_other_jokers
+    assert hex_result.joker_edition_key == "e_polychrome"
+    assert hex_result.destroy_other_jokers
+    assert ectoplasm.joker_edition_key == "e_negative"
+    assert ectoplasm.hand_size_delta == -1

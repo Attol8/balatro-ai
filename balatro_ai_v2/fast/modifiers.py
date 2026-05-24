@@ -79,3 +79,8 @@ def edition_xmult(edition: Edition) -> float:
         return 1.5
     return 1.0
 
+
+def edition_card_limit_delta(edition: Edition) -> int:
+    if edition == Edition.NEGATIVE:
+        return 1
+    return 0

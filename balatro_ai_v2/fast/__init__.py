@@ -7,6 +7,12 @@ from balatro_ai_v2.fast.env import (
     StepResult,
     play_action,
 )
+from balatro_ai_v2.fast.full_game import (
+    FastFullGameEnv,
+    FlushRunAgent,
+    FullGameStepResult,
+    evaluate_agent,
+)
 from balatro_ai_v2.fast.hand import (
     HAND_KIND_NAMES,
     LEVEL_CHIPS,
@@ -33,7 +39,10 @@ __all__ = [
     "ACTION_SPACE_SIZE",
     "DISCARD_ACTION_OFFSET",
     "FastBalatroEnv",
+    "FastFullGameEnv",
     "FastScore",
+    "FlushRunAgent",
+    "FullGameStepResult",
     "HAND_KIND_NAMES",
     "Joker",
     "LEVEL_CHIPS",
@@ -47,6 +56,7 @@ __all__ = [
     "ShopState",
     "StepResult",
     "best_score",
+    "evaluate_agent",
     "play_action",
     "score_cards",
     "score_cards_with_levels",

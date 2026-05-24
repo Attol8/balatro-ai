@@ -5,6 +5,7 @@ from random import Random
 
 from balatro_ai_v2.fast.card_state import FastCardState
 from balatro_ai_v2.fast.cards import NUM_RANKS, shuffled_deck
+from balatro_ai_v2.fast.tags import EXACT_TAGS, tag_money_delta as _tag_money_delta
 
 
 @dataclass(frozen=True, slots=True)
@@ -19,8 +20,23 @@ class RunModifiers:
     interest_cap: int = 25
     interest_amount: int = 1
     base_reroll_cost: int = 5
+    free_rerolls: int = 0
     shop_discount: float = 1.0
     blind_requirement_multiplier: float = 1.0
+    tarot_rate: float = 4.0
+    planet_rate: float = 4.0
+    spectral_rate: float = 0.0
+    playing_card_rate: float = 0.0
+    edition_rate: float = 1.0
+    arcana_pack_spectral_chance: float = 0.0
+    telescope_guarantees_most_played_planet: bool = False
+    observatory_xmult: float = 1.0
+    boss_reroll_cost: int | None = None
+    boss_reroll_once_per_ante: bool = False
+    bankrupt_at: int = 0
+    probability_multiplier: float = 1.0
+    planets_are_free: bool = False
+    celestial_packs_are_free: bool = False
     earns_interest: bool = True
     earns_hand_money: bool = True
     earns_discard_money: bool = False
@@ -28,6 +44,7 @@ class RunModifiers:
     enhanced_playing_cards_in_shop: bool = False
     spectral_cards_in_shop: bool = False
     double_tags: bool = False
+    starting_consumables: tuple[str, ...] = ()
 
 
 VOUCHERS = frozenset(
@@ -68,29 +85,7 @@ VOUCHERS = frozenset(
 )
 
 EXACT_VOUCHERS = frozenset(
-    {
-        "v_overstock_norm",
-        "v_overstock_plus",
-        "v_clearance_sale",
-        "v_liquidation",
-        "v_reroll_surplus",
-        "v_reroll_glut",
-        "v_crystal_ball",
-        "v_grabber",
-        "v_nacho_tong",
-        "v_wasteful",
-        "v_recyclomancy",
-        "v_seed_money",
-        "v_money_tree",
-        "v_blank",
-        "v_antimatter",
-        "v_magic_trick",
-        "v_illusion",
-        "v_hieroglyph",
-        "v_petroglyph",
-        "v_paint_brush",
-        "v_palette",
-    }
+    VOUCHERS
 )
 
 DECKS = frozenset(
@@ -110,22 +105,12 @@ DECKS = frozenset(
         "b_anaglyph",
         "b_plasma",
         "b_erratic",
+        "b_challenge",
     }
 )
 
 EXACT_DECKS = frozenset(
-    {
-        "b_red",
-        "b_blue",
-        "b_yellow",
-        "b_green",
-        "b_black",
-        "b_abandoned",
-        "b_checkered",
-        "b_painted",
-        "b_plasma",
-        "b_erratic",
-    }
+    DECKS
 )
 
 TAGS = frozenset(
@@ -156,16 +141,6 @@ TAGS = frozenset(
     }
 )
 
-EXACT_TAGS = frozenset(
-    {
-        "tag_handy",
-        "tag_garbage",
-        "tag_investment",
-        "tag_economy",
-    }
-)
-
-
 def apply_deck(modifiers: RunModifiers, deck_key: str) -> RunModifiers:
     if deck_key == "b_red":
         return replace(modifiers, discards=modifiers.discards + 1)
@@ -183,11 +158,19 @@ def apply_deck(modifiers: RunModifiers, deck_key: str) -> RunModifiers:
     if deck_key == "b_black":
         return replace(modifiers, joker_slots=modifiers.joker_slots + 1, hands=modifiers.hands - 1)
     if deck_key == "b_magic":
-        return apply_voucher(modifiers, "v_crystal_ball")
+        return replace(
+            apply_voucher(modifiers, "v_crystal_ball"),
+            starting_consumables=modifiers.starting_consumables + ("c_fool", "c_fool"),
+        )
     if deck_key == "b_nebula":
         return replace(apply_voucher(modifiers, "v_telescope"), consumable_slots=modifiers.consumable_slots - 1)
     if deck_key == "b_ghost":
-        return replace(modifiers, spectral_cards_in_shop=True)
+        return replace(
+            modifiers,
+            spectral_cards_in_shop=True,
+            spectral_rate=2,
+            starting_consumables=modifiers.starting_consumables + ("c_hex",),
+        )
     if deck_key == "b_zodiac":
         out = apply_voucher(modifiers, "v_tarot_merchant")
         out = apply_voucher(out, "v_planet_merchant")
@@ -198,7 +181,7 @@ def apply_deck(modifiers: RunModifiers, deck_key: str) -> RunModifiers:
         return replace(modifiers, double_tags=True)
     if deck_key == "b_plasma":
         return replace(modifiers, blind_requirement_multiplier=2.0)
-    if deck_key in {"b_abandoned", "b_checkered", "b_erratic"}:
+    if deck_key in {"b_abandoned", "b_checkered", "b_erratic", "b_challenge"}:
         return modifiers
     raise NotImplementedError(f"deck is not implemented: {deck_key}")
 
@@ -234,20 +217,29 @@ def apply_voucher(modifiers: RunModifiers, voucher_key: str) -> RunModifiers:
         return replace(modifiers, discards=modifiers.discards - 1)
     if voucher_key in {"v_paint_brush", "v_palette"}:
         return replace(modifiers, hand_size=modifiers.hand_size + 1)
-    if voucher_key in {
-        "v_hone",
-        "v_glow_up",
-        "v_omen_globe",
-        "v_telescope",
-        "v_observatory",
-        "v_tarot_merchant",
-        "v_tarot_tycoon",
-        "v_planet_merchant",
-        "v_planet_tycoon",
-        "v_blank",
-        "v_directors_cut",
-        "v_retcon",
-    }:
+    if voucher_key == "v_tarot_merchant":
+        return replace(modifiers, tarot_rate=9.6)
+    if voucher_key == "v_tarot_tycoon":
+        return replace(modifiers, tarot_rate=32.0)
+    if voucher_key == "v_planet_merchant":
+        return replace(modifiers, planet_rate=9.6)
+    if voucher_key == "v_planet_tycoon":
+        return replace(modifiers, planet_rate=32.0)
+    if voucher_key == "v_hone":
+        return replace(modifiers, edition_rate=2.0)
+    if voucher_key == "v_glow_up":
+        return replace(modifiers, edition_rate=4.0)
+    if voucher_key == "v_omen_globe":
+        return replace(modifiers, arcana_pack_spectral_chance=0.2)
+    if voucher_key == "v_telescope":
+        return replace(modifiers, telescope_guarantees_most_played_planet=True)
+    if voucher_key == "v_observatory":
+        return replace(modifiers, observatory_xmult=1.5)
+    if voucher_key == "v_directors_cut":
+        return replace(modifiers, boss_reroll_cost=10, boss_reroll_once_per_ante=True)
+    if voucher_key == "v_retcon":
+        return replace(modifiers, boss_reroll_cost=10, boss_reroll_once_per_ante=False)
+    if voucher_key == "v_blank":
         return modifiers
     raise NotImplementedError(f"voucher is not implemented: {voucher_key}")
 
@@ -279,14 +271,9 @@ def starting_deck(deck_key: str, seed: int = 0) -> tuple[FastCardState, ...]:
 
 
 def tag_money_delta(tag_key: str, *, hands_played: int = 0, discards_unused: int = 0, money: int = 0) -> int:
-    if tag_key == "tag_handy":
-        return hands_played
-    if tag_key == "tag_garbage":
-        return discards_unused
-    if tag_key == "tag_investment":
-        return 25
-    if tag_key == "tag_economy":
-        return min(money, 40)
-    if tag_key in TAGS:
-        return 0
-    raise NotImplementedError(f"tag is not implemented: {tag_key}")
+    return _tag_money_delta(
+        tag_key,
+        hands_played=hands_played,
+        discards_unused=discards_unused,
+        money=money,
+    )

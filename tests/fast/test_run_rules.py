@@ -17,6 +17,13 @@ def test_core_vouchers_update_run_modifiers() -> None:
     modifiers = apply_voucher(modifiers, "v_grabber")
     modifiers = apply_voucher(modifiers, "v_wasteful")
     modifiers = apply_voucher(modifiers, "v_seed_money")
+    modifiers = apply_voucher(modifiers, "v_tarot_merchant")
+    modifiers = apply_voucher(modifiers, "v_planet_merchant")
+    modifiers = apply_voucher(modifiers, "v_hone")
+    modifiers = apply_voucher(modifiers, "v_omen_globe")
+    modifiers = apply_voucher(modifiers, "v_telescope")
+    modifiers = apply_voucher(modifiers, "v_observatory")
+    modifiers = apply_voucher(modifiers, "v_directors_cut")
     modifiers = apply_voucher(modifiers, "v_antimatter")
     modifiers = apply_voucher(modifiers, "v_paint_brush")
 
@@ -26,6 +33,14 @@ def test_core_vouchers_update_run_modifiers() -> None:
     assert modifiers.hands == 5
     assert modifiers.discards == 4
     assert modifiers.interest_cap == 50
+    assert modifiers.tarot_rate == 9.6
+    assert modifiers.planet_rate == 9.6
+    assert modifiers.edition_rate == 2.0
+    assert modifiers.arcana_pack_spectral_chance == 0.2
+    assert modifiers.telescope_guarantees_most_played_planet
+    assert modifiers.observatory_xmult == 1.5
+    assert modifiers.boss_reroll_cost == 10
+    assert modifiers.boss_reroll_once_per_ante
     assert modifiers.joker_slots == 6
     assert modifiers.hand_size == 9
 
@@ -35,8 +50,13 @@ def test_decks_update_starting_modifiers() -> None:
     assert apply_deck(RunModifiers(), "b_blue").hands == 5
     assert apply_deck(RunModifiers(), "b_yellow").money == 14
     assert apply_deck(RunModifiers(), "b_black").joker_slots == 6
+    assert apply_deck(RunModifiers(), "b_magic").starting_consumables == ("c_fool", "c_fool")
+    assert apply_deck(RunModifiers(), "b_nebula").telescope_guarantees_most_played_planet
+    assert apply_deck(RunModifiers(), "b_ghost").starting_consumables == ("c_hex",)
+    assert apply_deck(RunModifiers(), "b_zodiac").shop_slots == 3
     assert apply_deck(RunModifiers(), "b_painted").hand_size == 10
     assert apply_deck(RunModifiers(), "b_plasma").blind_requirement_multiplier == 2.0
+    assert apply_deck(RunModifiers(), "b_challenge") == RunModifiers()
 
 
 def test_special_starting_decks_have_expected_composition() -> None:
@@ -72,6 +92,13 @@ def test_fast_run_reset_applies_deck_modifiers() -> None:
 
     assert run.joker_slots == 6
     assert run.hands == 3
+
+
+def test_fast_run_reset_tracks_deck_voucher_state() -> None:
+    run = FastRunState(deck_key="b_magic").reset(seed=1)
+
+    assert run.consumable_slots == 3
+    assert run.starting_consumables == ("c_fool", "c_fool")
 
 
 def test_plasma_deck_doubles_blind_requirement() -> None:

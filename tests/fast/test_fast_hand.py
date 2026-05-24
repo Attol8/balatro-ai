@@ -4,6 +4,7 @@ from balatro_ai_v2.fast.cards import NUM_RANKS
 from balatro_ai_v2.fast.card_state import FastCardState
 from balatro_ai_v2.fast.hand import (
     FLUSH,
+    HIGH_CARD,
     PAIR,
     STRAIGHT,
     STRAIGHT_FLUSH,
@@ -11,10 +12,30 @@ from balatro_ai_v2.fast.hand import (
     score_cards,
     score_card_states,
     score_cards_with_levels,
+    score_cards_with_joker_rules,
     score_cards_with_jokers,
     score_cards_with_modifiers,
+    score_cards_with_modifiers_exact,
 )
-from balatro_ai_v2.fast.modifiers import Edition, Enhancement, Seal
+from balatro_ai_v2.fast.jokers import Joker, ScoreContext, apply_additive_jokers
+from balatro_ai_v2.fast.joker_money import (
+    DollarBonusContext,
+    MoneyEventContext,
+    discard_money_delta,
+    hand_money_delta,
+    joker_dollar_bonus,
+    scored_card_money_delta,
+    total_joker_dollar_bonus,
+)
+from balatro_ai_v2.fast.modifiers import (
+    Edition,
+    Enhancement,
+    Seal,
+    edition_card_limit_delta,
+    edition_chip_bonus,
+    edition_mult_bonus,
+    edition_xmult,
+)
 
 
 def card(rank: int, suit: int) -> int:
@@ -146,6 +167,32 @@ def test_probabilistic_lucky_modifier_is_not_silently_approximated() -> None:
         )
 
 
+def test_lucky_modifier_exact_path_uses_resolved_rng_triggers() -> None:
+    levels = [1] * 12
+
+    result = score_cards_with_modifiers_exact(
+        (card(12, 0),),
+        tuple(levels),
+        (Enhancement.LUCKY,),
+        (Edition.BASE,),
+        lucky_mult_triggers=(True,),
+        lucky_money_triggers=(True,),
+    )
+
+    assert result.score.chips == 16
+    assert result.score.mult == 21
+    assert result.score.total == 336
+    assert result.money_delta == 20
+
+
+def test_negative_edition_increases_card_limit_without_score_change() -> None:
+    assert edition_card_limit_delta(Edition.BASE) == 0
+    assert edition_card_limit_delta(Edition.NEGATIVE) == 1
+    assert edition_chip_bonus(Edition.NEGATIVE) == 0
+    assert edition_mult_bonus(Edition.NEGATIVE) == 0
+    assert edition_xmult(Edition.NEGATIVE) == 1.0
+
+
 def test_additive_joker_scores_flat_mult() -> None:
     levels = [1] * 12
 
@@ -153,7 +200,231 @@ def test_additive_joker_scores_flat_mult() -> None:
 
     assert result.chips == 16
     assert result.mult == 5
-    assert result.total == 80
+
+
+def test_stored_value_jokers_apply_deterministic_score_modifiers() -> None:
+    levels = [1] * 12
+    base = score_cards_with_levels((card(12, 0),), tuple(levels))
+
+    result = apply_additive_jokers(
+        base,
+        (card(12, 0),),
+        1,
+        (
+            Joker("j_ceremonial", scaling=7),
+            Joker("j_flash", scaling=4),
+            Joker("j_trousers", scaling=6),
+            Joker("j_square", scaling=12),
+            Joker("j_stone", scaling=2),
+        ),
+    )
+
+    assert result.chips == base.chips + 12 + 50
+    assert result.mult == base.mult + 7 + 4 + 6
+
+
+def test_held_card_jokers_apply_per_card_effects() -> None:
+    levels = [1] * 12
+    base = score_cards_with_levels((card(12, 0),), tuple(levels))
+
+    result = apply_additive_jokers(
+        base,
+        (card(12, 0),),
+        1,
+        (Joker("j_shoot_the_moon"), Joker("j_baron")),
+        ScoreContext(held_cards=(card(10, 0), card(11, 1), card(11, 2))),
+    )
+
+    assert result.mult == base.mult + 13
+    assert result.total == int(result.chips * result.mult * 2.25)
+
+
+def test_card_sharp_requires_repeated_hand_this_round() -> None:
+    levels = [1] * 12
+    base = score_cards_with_levels((card(12, 0),), tuple(levels))
+
+    inactive = apply_additive_jokers(
+        base,
+        (card(12, 0),),
+        1,
+        (Joker("j_card_sharp"),),
+        ScoreContext(hand_times_played_round={base.kind: 1}),
+    )
+    active = apply_additive_jokers(
+        base,
+        (card(12, 0),),
+        1,
+        (Joker("j_card_sharp"),),
+        ScoreContext(hand_times_played_round={base.kind: 2}),
+    )
+
+    assert inactive.total == base.total
+    assert active.total == base.total * 3
+
+
+def test_hand_rule_jokers_modify_hand_detection_and_scoring_mask() -> None:
+    levels = [1] * 12
+
+    four_finger_flush = score_cards_with_joker_rules(
+        (card(2, 0), card(4, 0), card(6, 0), card(8, 0), card(12, 1)),
+        tuple(levels),
+        ("j_four_fingers",),
+    )
+    shortcut_straight = score_cards_with_joker_rules(
+        (card(0, 0), card(2, 1), card(4, 2), card(6, 3), card(8, 0)),
+        tuple(levels),
+        ("j_shortcut",),
+    )
+    smeared_flush = score_cards_with_joker_rules(
+        (card(2, 0), card(4, 2), card(6, 0), card(8, 2), card(12, 0)),
+        tuple(levels),
+        ("j_smeared",),
+    )
+    splash_high_card = score_cards_with_joker_rules(
+        (card(2, 0), card(5, 1), card(8, 2)),
+        tuple(levels),
+        ("j_splash",),
+    )
+
+    assert four_finger_flush.kind == FLUSH
+    assert four_finger_flush.scoring_mask.bit_count() == 4
+    assert shortcut_straight.kind == STRAIGHT
+    assert smeared_flush.kind == FLUSH
+    assert splash_high_card.kind == HIGH_CARD
+    assert splash_high_card.scoring_mask == 0b111
+
+
+def test_pareidolia_makes_face_card_jokers_treat_all_scoring_cards_as_faces() -> None:
+    levels = [1] * 12
+    base = score_cards_with_levels((card(2, 0), card(5, 1)), tuple(levels))
+
+    result = apply_additive_jokers(
+        base,
+        tuple(sorted((card(2, 0), card(5, 1)))),
+        2,
+        (Joker("j_pareidolia"), Joker("j_scary_face"), Joker("j_smiley")),
+    )
+
+    assert result.chips == base.chips + 30
+    assert result.mult == base.mult + 5
+
+
+def test_source_backed_context_jokers_apply_score_effects() -> None:
+    levels = [1] * 12
+    played = tuple(sorted((
+        card(7, 0),
+        card(7, 1),
+        card(7, 2),
+        card(7, 3),
+        card(12, 0),
+    )))
+    base = score_cards_with_levels(played, tuple(levels))
+
+    result = apply_additive_jokers(
+        base,
+        played,
+        len(played),
+        (
+            Joker("j_ancient"),
+            Joker("j_idol"),
+            Joker("j_flower_pot"),
+            Joker("j_drivers_license"),
+            Joker("j_loyalty_card"),
+        ),
+        ScoreContext(
+            current_ancient_suit=0,
+            current_idol_rank=7,
+            current_idol_suit=1,
+            enhanced_card_count=16,
+            loyalty_remaining=0,
+        ),
+    )
+
+    assert result.total == int(result.chips * result.mult * 108)
+
+
+def test_stored_state_and_deck_count_jokers_apply_score_effects() -> None:
+    levels = [1] * 12
+    base = score_cards_with_levels((card(12, 0),), tuple(levels))
+
+    result = apply_additive_jokers(
+        base,
+        (card(12, 0),),
+        1,
+        (
+            Joker("j_erosion"),
+            Joker("j_fortune_teller"),
+            Joker("j_raised_fist"),
+            Joker("j_red_card", scaling=6),
+            Joker("j_wee", scaling=16),
+            Joker("j_castle", scaling=9),
+            Joker("j_hologram", x_mult=1.5),
+            Joker("j_campfire", x_mult=2.0),
+        ),
+        ScoreContext(
+            held_cards=(card(0, 0), card(11, 1)),
+            starting_deck_size=52,
+            playing_card_count=49,
+            tarot_cards_used=4,
+        ),
+    )
+
+    assert result.chips == base.chips + 25
+    assert result.mult == base.mult + 12 + 4 + 4 + 6
+    assert result.total == int(result.chips * result.mult * 3)
+
+
+def test_cash_out_joker_dollar_bonuses_are_source_backed() -> None:
+    context = DollarBonusContext(
+        deck_cards=(card(7, 0), card(7, 1), card(12, 0)),
+        discards_used=0,
+        discards_left=3,
+        planets_used=frozenset({"c_pluto", "c_jupiter"}),
+    )
+
+    assert joker_dollar_bonus(Joker("j_golden"), context) == 4
+    assert joker_dollar_bonus(Joker("j_cloud_9"), context) == 2
+    assert joker_dollar_bonus(Joker("j_rocket", scaling=5), context) == 5
+    assert joker_dollar_bonus(Joker("j_satellite"), context) == 2
+    assert joker_dollar_bonus(Joker("j_delayed_grat"), context) == 6
+    assert total_joker_dollar_bonus((Joker("j_golden"), Joker("j_cloud_9")), context) == 6
+
+
+def test_money_event_jokers_are_source_backed() -> None:
+    levels = [1] * 12
+    score = score_cards_with_levels((card(12, 0),), tuple(levels))
+
+    assert scored_card_money_delta(
+        Joker("j_business"),
+        card(9, 0),
+        MoneyEventContext(probability_success=True),
+    ) == 2
+    assert scored_card_money_delta(
+        Joker("j_reserved_parking"),
+        card(2, 0),
+        MoneyEventContext(probability_success=True, all_cards_are_face=True),
+    ) == 1
+    assert scored_card_money_delta(Joker("j_rough_gem"), card(2, 3)) == 1
+    assert scored_card_money_delta(
+        Joker("j_ticket"),
+        card(2, 0),
+        MoneyEventContext(card_has_gold_enhancement=True),
+    ) == 4
+    assert discard_money_delta(
+        Joker("j_mail"),
+        card(5, 0),
+        MoneyEventContext(current_mail_rank=5),
+    ) == 5
+    assert discard_money_delta(
+        Joker("j_faceless"),
+        context=MoneyEventContext(discarded_face_count=3),
+    ) == 5
+    assert discard_money_delta(
+        Joker("j_trading"),
+        context=MoneyEventContext(discards_used=0, selected_count=1),
+    ) == 3
+    assert hand_money_delta(Joker("j_matador"), score, MoneyEventContext(blind_triggered=True)) == 8
+    assert hand_money_delta(Joker("j_todo_list"), score, MoneyEventContext(todo_hand_kind=score.kind)) == 4
 
 
 def test_additive_joker_scores_type_chips_and_mult() -> None:
