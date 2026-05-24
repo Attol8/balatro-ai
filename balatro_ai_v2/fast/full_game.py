@@ -472,7 +472,7 @@ class FastFullGameEnv:
         rng = Random(self.seed * 33_689 + self.run.round_num * 2713 + self.run.ante * 3623 + _ITEM_OBS_IDS.get(pack_key, 0))
         spec = booster_spec(pack_key)
         if spec.kind == BoosterKind.BUFFOON:
-            return [rng.choice(_PACK_JOKER_POOL) for _ in range(spec.size)]
+            return _sample_joker_offers(rng, self._available_joker_pool(), spec.size)
         cards = [rng.choice(_PLANET_KEYS) for _ in range(spec.size)]
         if self.run.telescope_guarantees_most_played_planet:
             target = self._planet_target_hand_kind()
@@ -502,7 +502,7 @@ class FastFullGameEnv:
         )
         if category == "planet":
             return rng.choice(_PLANET_KEYS)
-        pool = _SHOP_CARD_POOL_BY_ANTE[0] + tuple(key for ante, key in _SHOP_CARD_POOL_BY_ANTE[1] if self.run.ante >= ante)
+        pool = self._available_shop_card_pool()
         return rng.choice(pool)
 
     def _generate_voucher(self, rng: Random) -> str | None:
@@ -558,6 +558,17 @@ class FastFullGameEnv:
             actions.append(REROLL_ACTION)
         actions.append(NEXT_ROUND_ACTION)
         return tuple(actions)
+
+    def _available_shop_card_pool(self) -> tuple[str, ...]:
+        pool = _SHOP_CARD_POOL_BY_ANTE[0] + tuple(key for ante, key in _SHOP_CARD_POOL_BY_ANTE[1] if self.run.ante >= ante)
+        owned_jokers = {joker.key for joker in self.jokers}
+        filtered = tuple(key for key in pool if not key.startswith("j_") or key not in owned_jokers)
+        return filtered or pool
+
+    def _available_joker_pool(self) -> tuple[str, ...]:
+        owned_jokers = {joker.key for joker in self.jokers}
+        filtered = tuple(key for key in _PACK_JOKER_POOL if key not in owned_jokers)
+        return filtered or _PACK_JOKER_POOL
 
     def _planet_target_hand_kind(self) -> int | None:
         best_kind = max(
@@ -799,6 +810,9 @@ class SearchRunAgent:
             value = _VOUCHER_PURCHASE_VALUES.get(env.available_voucher, 0.0) - env._item_cost(env.available_voucher)
             if value > 0:
                 return BUY_VOUCHER_ACTION
+        replacement_action = _best_replacement_sell_action(env)
+        if replacement_action is not None:
+            return replacement_action
         best: tuple[float, int] | None = None
         for index, key in enumerate(env.run.shop.item_keys):
             if env.run.money < env._item_cost(key):
@@ -828,6 +842,8 @@ class SearchRunAgent:
         best: tuple[float, int] | None = None
         for index, key in enumerate(env.pack_cards):
             if key.startswith("j_") and len(env.jokers) < env.run.joker_slots:
+                if any(joker.key == key for joker in env.jokers):
+                    continue
                 value = _JOKER_PURCHASE_VALUES.get(key, 0.0)
             elif key.startswith("c_"):
                 target = _PLANET_TO_HAND_KIND.get(key)
@@ -932,6 +948,14 @@ _PACK_JOKER_POOL = (
     "j_trousers",
     "j_cavendish",
 )
+
+
+def _sample_joker_offers(rng: Random, pool: tuple[str, ...], size: int) -> list[str]:
+    if len(pool) >= size:
+        return rng.sample(pool, size)
+    return [rng.choice(pool) for _ in range(size)]
+
+
 _SHOP_CARD_POOL_BY_ANTE = (
     (
         "j_joker",
@@ -1077,8 +1101,7 @@ def _shop_candidate_value(env: FastFullGameEnv, action: int) -> float:
         index = action - SELL_JOKER_ACTION_BASE
         if not 0 <= index < len(env.jokers):
             return -999.0
-        joker = env.jokers[index]
-        return joker.sell_value * 2.0 - _single_joker_value(joker)
+        return _replacement_sell_value(env, index)
     if USE_CONSUMABLE_ACTION_BASE <= action < USE_CONSUMABLE_ACTION_BASE + 8:
         index = action - USE_CONSUMABLE_ACTION_BASE
         if not 0 <= index < len(env.consumables):
@@ -1111,6 +1134,47 @@ def _shop_action_tie_break(action: int) -> int:
 
 def _joker_portfolio_value(env: FastFullGameEnv) -> float:
     return sum(_single_joker_value(joker) for joker in env.jokers)
+
+
+def _best_replacement_sell_action(env: FastFullGameEnv) -> int | None:
+    if len(env.jokers) < env.run.joker_slots:
+        return None
+    best: tuple[float, int] | None = None
+    for index in range(len(env.jokers)):
+        value = _replacement_sell_value(env, index)
+        if value <= 0:
+            continue
+        candidate = (value, SELL_JOKER_ACTION_BASE + index)
+        if best is None or candidate > best:
+            best = candidate
+    return None if best is None else best[1]
+
+
+def _replacement_sell_value(env: FastFullGameEnv, sell_index: int) -> float:
+    if not 0 <= sell_index < len(env.jokers):
+        return -999.0
+    joker = env.jokers[sell_index]
+    sell_value = joker.sell_value
+    owned_value = _single_joker_value(joker)
+    replacement_values: list[float] = []
+    for key in env.run.shop.item_keys:
+        if not key.startswith("j_"):
+            continue
+        if any(other.key == key for own_index, other in enumerate(env.jokers) if own_index != sell_index):
+            continue
+        cost = env._item_cost(key)
+        if env.run.money + sell_value < cost:
+            continue
+        replacement_values.append(_JOKER_PURCHASE_VALUES.get(key, 0.0) - owned_value - max(cost - sell_value, 0))
+    if env.available_voucher is not None and env.run.money + sell_value >= env._item_cost(env.available_voucher):
+        replacement_values.append(
+            _VOUCHER_PURCHASE_VALUES.get(env.available_voucher, 0.0)
+            - max(env._item_cost(env.available_voucher) - sell_value, 0)
+            - owned_value * 0.4
+        )
+    if not replacement_values:
+        return -999.0
+    return max(replacement_values)
 
 
 def _single_joker_value(joker: Joker) -> float:

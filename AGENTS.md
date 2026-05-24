@@ -148,8 +148,14 @@ solver direction is search first, model later:
 - Use `scripts/generate_fast_oracle_data.py --shop-rollout` when you want the
   slower `RolloutSearchRunAgent` shop oracle. This clones fast shop states,
   tries legal shop candidates, rolls forward cheaply, and labels the action with
-  best future progress. It is promising but not a solve: the first smoke moved
-  seeds 1..4 at 40 steps from 5.0 to 5.5 average rounds cleared.
+  best future progress. Tune its budget with `--shop-rollout-candidates` and
+  `--shop-rollout-steps`; do not broaden seed sweeps blindly if a rollout budget
+  is too slow. Current checkpoint: after replacement-aware joker sells and
+  owned-joker shop/pack filtering, `--shop-rollout --shop-rollout-candidates 4
+  --shop-rollout-steps 12 --seed-start 1 --seeds 2 --max-steps 180` produced 1
+  win, 22.5 average rounds cleared, and seed 1 cleared ante 8 in the fast gym.
+  This is still not solve evidence until the same decisions reproduce through
+  clean BalatroBot parity gates.
 - Use `scripts/generate_balatrobot_trace_oracle_data.py` to turn full-state
   BalatroBot traces into oracle-labeled `TrajectoryStep` JSONL. This is the
   current DAgger bridge for real hand/shop states. A nearest-neighbor

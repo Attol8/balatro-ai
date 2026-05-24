@@ -23,10 +23,15 @@ def main() -> None:
         action="store_true",
         help="Use the slower rollout-search shop oracle instead of the default heuristic shop oracle.",
     )
+    parser.add_argument("--shop-rollout-candidates", type=int, default=RolloutSearchRunAgent.shop_rollout_candidates)
+    parser.add_argument("--shop-rollout-steps", type=int, default=RolloutSearchRunAgent.shop_rollout_steps)
     args = parser.parse_args()
 
     seed_range = range(args.seed_start, args.seed_start + args.seeds)
     agent = RolloutSearchRunAgent() if args.shop_rollout else None
+    if agent is not None:
+        agent.shop_rollout_candidates = args.shop_rollout_candidates
+        agent.shop_rollout_steps = args.shop_rollout_steps
     args.output_jsonl.parent.mkdir(parents=True, exist_ok=True)
     count = 0
     wins = 0
@@ -43,6 +48,9 @@ def main() -> None:
     print(f"examples: {count}")
     print(f"seeds: {args.seeds}")
     print(f"shop_rollout: {bool(args.shop_rollout)}")
+    if agent is not None:
+        print(f"shop_rollout_candidates: {agent.shop_rollout_candidates}")
+        print(f"shop_rollout_steps: {agent.shop_rollout_steps}")
     print(f"terminal_wins: {wins}")
     if last_seed is not None:
         print(f"last_terminal_seed: {last_seed}")

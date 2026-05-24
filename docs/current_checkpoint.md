@@ -209,6 +209,13 @@ Started the stronger-oracle path by adding an opt-in fast shop rollout agent:
 - `scripts/generate_fast_oracle_data.py --shop-rollout` generates training rows
   from this slower oracle.
 - `scripts/train_fast_agent.py --shop-rollout` evaluates this oracle directly.
+- `--shop-rollout-candidates` and `--shop-rollout-steps` make the rollout budget
+  explicit for both generation and direct evaluation.
+- Shop replacement is now explicit: the heuristic and rollout candidate ranker
+  only sell a filled-slot joker when the visible shop/voucher state can pay off
+  the replacement.
+- Owned jokers are filtered out of generated shop joker offers and buffoon pack
+  offers so fast wins cannot rely on non-parity duplicate joker acquisition.
 
 Fast smoke:
 
@@ -236,3 +243,22 @@ Result: 160 examples, nearest-neighbor replay at 5.5 average rounds cleared.
 The linear model still failed badly on this data, so the current learning
 bottleneck is representation/model capacity, while the strategic bottleneck is
 still the oracle itself.
+
+Current stronger-oracle smoke:
+
+```bash
+python scripts/train_fast_agent.py --deck b_red --seed-start 1 --seeds 2 --max-steps 180 --shop-rollout --shop-rollout-candidates 4 --shop-rollout-steps 12
+```
+
+Result:
+
+```text
+RolloutSearchRunAgent: 1 win, 22.5 average rounds cleared
+sample_seed: 1
+sample_rounds_cleared: 24
+sample_won: True
+sample_steps: 173
+```
+
+This is a fast-gym oracle checkpoint, not a BalatroBot solve. The same policy
+still needs clean real-game replay through `scripts/game_parity_gate.py`.

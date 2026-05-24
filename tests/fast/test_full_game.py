@@ -5,12 +5,14 @@ from balatro_ai_v2.fast.full_game import (
     NEXT_ROUND_ACTION,
     PACK_SELECT_ACTION_BASE,
     REROLL_ACTION,
+    SELL_JOKER_ACTION_BASE,
     SELECT_BLIND_ACTION,
     FastFullGameEnv,
     RolloutSearchRunAgent,
     SearchRunAgent,
     evaluate_agent,
 )
+from balatro_ai_v2.fast.jokers import Joker
 from balatro_ai_v2.fast.run import RunPhase
 
 
@@ -124,6 +126,38 @@ def test_rollout_search_agent_scores_shop_candidates_without_replacing_default()
     assert action in env.legal_action_ids()
 
 
+def test_search_agent_does_not_sell_joker_without_visible_upgrade() -> None:
+    env = FastFullGameEnv(deck_key="b_red")
+    env.reset(seed=5)
+    env.run.phase = RunPhase.SHOP
+    env.run.money = 0
+    env.jokers = [Joker("j_joker", sell_value=1) for _ in range(env.run.joker_slots)]
+    env.run.shop.item_keys = ["c_pluto", "c_mercury"]
+
+    action = SearchRunAgent().act(env)
+
+    assert not SELL_JOKER_ACTION_BASE <= action < SELL_JOKER_ACTION_BASE + 8
+
+
+def test_search_agent_sells_weak_joker_for_visible_upgrade() -> None:
+    env = FastFullGameEnv(deck_key="b_red")
+    env.reset(seed=5)
+    env.run.phase = RunPhase.SHOP
+    env.run.money = 5
+    env.jokers = [
+        Joker("j_joker", sell_value=1),
+        Joker("j_square", sell_value=1),
+        Joker("j_mystic_summit", sell_value=1),
+        Joker("j_bull", sell_value=1),
+        Joker("j_abstract", sell_value=1),
+    ]
+    env.run.shop.item_keys = ["j_cavendish"]
+
+    action = SearchRunAgent().act(env)
+
+    assert SELL_JOKER_ACTION_BASE <= action < SELL_JOKER_ACTION_BASE + 8
+
+
 def test_mega_pack_allows_multiple_selections_before_returning_to_shop() -> None:
     env = FastFullGameEnv(deck_key="b_red")
     env.reset(seed=4)
@@ -140,6 +174,28 @@ def test_mega_pack_allows_multiple_selections_before_returning_to_shop() -> None
 
     assert env.run.phase == RunPhase.SHOP
     assert env.pack_cards == []
+
+
+def test_buffoon_pack_does_not_offer_owned_jokers() -> None:
+    env = FastFullGameEnv(deck_key="b_red")
+    env.reset(seed=4)
+    env.jokers = [Joker("j_joker"), Joker("j_abstract")]
+
+    cards = env._generate_pack_cards("p_buffoon_mega_1")
+
+    assert "j_joker" not in cards
+    assert "j_abstract" not in cards
+
+
+def test_shop_generation_does_not_offer_owned_jokers() -> None:
+    env = FastFullGameEnv(deck_key="b_red")
+    env.reset(seed=4)
+    env.jokers = [Joker(key) for key in ("j_joker", "j_abstract", "j_bull", "j_square", "j_mystic_summit")]
+
+    pool = env._available_shop_card_pool()
+
+    assert "j_joker" not in pool
+    assert "j_abstract" not in pool
 
 
 def test_search_agent_runs_first_red_deck_seed_without_fixed_flush_target() -> None:
