@@ -339,6 +339,43 @@ Both runs ended at ante 4 in 92 steps, and their transition/action/state
 sequences were identical. Both parity gates reported 92/92 transitions, 35
 scores, 5 draws, and 0 mismatches.
 
+## Live Score Improvement Checkpoint
+
+After the reproducible ante-4 baseline, the next useful improvement came from
+shop replacement values rather than more blind skips:
+
+- Late weak full-slot builds now accept smaller positive replacements for
+  implemented scoring jokers instead of spending the same money on blind rerolls
+  or leaving the shop.
+- Ride the Bus now has an explicit shop value as a scaling joker.
+- Type-specific jokers now scale their shop value with the observed hand family
+  play count. This made Sly valuable in the Pair-heavy seed-1 route instead of
+  treating it as a flat marginal joker.
+
+Visible BalatroBot result:
+
+```bash
+python scripts/run_balatrobot_agent.py --launch-server --fast-server --no-headless-server --port 12350 --deck RED --stake WHITE --seed-start 1 --seeds 1 --max-steps 500 --poll-delay 0.05 --trace-jsonl runs/red_deck_seed1_visible_fast_type_joker_values.jsonl
+python scripts/run_balatrobot_agent.py --launch-server --fast-server --no-headless-server --port 12352 --deck RED --stake WHITE --seed-start 1 --seeds 1 --max-steps 650 --poll-delay 0.05 --trace-jsonl runs/red_deck_seed1_visible_fast_type_joker_values_repeat.jsonl
+```
+
+Both runs reproduced exactly:
+
+```text
+seeds: 1
+wins: 0
+avg_ante: 7.0
+avg_steps: 179.0
+parity: 179/179 transitions, 65 scores, 11 draws, 0 mismatches
+```
+
+The current reproducible bottleneck is ante 7 boss The Mouth. The build reaches
+the boss with Rocket, Sly, Abstract, Trio, and Duo, but locks the round into Two
+Pair and ends around 21k/70k. The next likely improvement is tactical: The Mouth
+planning should reason harder about which first hand type to commit to, probably
+favoring Full House/Pair-family lines that exploit Duo/Trio and the existing
+Full House levels instead of settling for repeated Two Pair.
+
 Speed note:
 
 - The joker-aware discard search made late decisions too slow because it was

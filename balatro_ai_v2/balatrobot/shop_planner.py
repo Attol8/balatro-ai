@@ -189,22 +189,24 @@ def _joker_base_value(
     ante = int(state.get("ante_num") or 1)
     played_flush = _hand_played(state, FLUSH)
     played_pair = _hand_played(state, PAIR)
+    played_two_pair = _hand_played(state, TWO_PAIR)
+    played_three = _hand_played(state, THREE_OF_A_KIND)
     played_straight = _hand_played(state, STRAIGHT)
     xmult_need = 10.0 if ante >= 4 and not _has_strong_xmult(state) else 0.0
     values = {
         "j_joker": 16.0,
         "j_half": 16.0,
         "j_scholar": 18.0,
-        "j_jolly": 20.0 if played_pair else 12.0,
-        "j_sly": 18.0 if played_pair else 10.0,
-        "j_mad": 18.0 if _hand_played(state, TWO_PAIR) else 10.0,
-        "j_clever": 18.0 if _hand_played(state, TWO_PAIR) else 10.0,
-        "j_zany": 18.0 if _hand_played(state, THREE_OF_A_KIND) else 8.0,
-        "j_wily": 18.0 if _hand_played(state, THREE_OF_A_KIND) else 8.0,
-        "j_crazy": 18.0 if played_straight else 10.0,
-        "j_devious": 18.0 if played_straight else 10.0,
-        "j_droll": 24.0 if played_flush else 14.0,
-        "j_crafty": 24.0 if played_flush else 14.0,
+        "j_jolly": _type_joker_value(12.0, played_pair, per_play=2.0),
+        "j_sly": _type_joker_value(10.0, played_pair, per_play=2.5),
+        "j_mad": _type_joker_value(10.0, played_two_pair, per_play=2.0),
+        "j_clever": _type_joker_value(10.0, played_two_pair, per_play=2.5),
+        "j_zany": _type_joker_value(8.0, played_three, per_play=2.0),
+        "j_wily": _type_joker_value(8.0, played_three, per_play=2.5),
+        "j_crazy": _type_joker_value(10.0, played_straight, per_play=2.0),
+        "j_devious": _type_joker_value(10.0, played_straight, per_play=2.5),
+        "j_droll": _type_joker_value(14.0, played_flush, per_play=2.0),
+        "j_crafty": _type_joker_value(14.0, played_flush, per_play=2.5),
         "j_duo": 34.0 + xmult_need,
         "j_trio": 28.0 + xmult_need,
         "j_order": 32.0 + xmult_need if played_straight else 18.0 + xmult_need,
@@ -234,6 +236,7 @@ def _joker_base_value(
         "j_mystic_summit": 16.0,
         "j_raised_fist": 24.0,
         "j_green_joker": 22.0,
+        "j_ride_the_bus": 22.0,
         "j_runner": 24.0 if played_straight else 14.0,
         "j_trousers": 24.0 if _hand_played(state, TWO_PAIR) else 14.0,
         "j_constellation": 24.0 + xmult_need,
@@ -253,6 +256,12 @@ def _open_joker_slot_bonus(state: dict[str, Any]) -> float:
     if ante >= 3:
         return 8.0
     return 0.0
+
+
+def _type_joker_value(base: float, played: int, *, per_play: float) -> float:
+    if played <= 0:
+        return base
+    return base + 8.0 + per_play * min(played, 12)
 
 
 def _best_joker_replacement_action(state: dict[str, Any], config: ShopPolicyConfig) -> ShopDecision | None:
@@ -277,7 +286,7 @@ def _best_joker_replacement_action(state: dict[str, Any], config: ShopPolicyConf
                 continue
             improvement = value - owned_value
             net_gain = improvement - max(cost - sell_value, 0)
-            if improvement <= config.replacement_min_value_margin:
+            if improvement <= _replacement_min_value_margin(state, config, key):
                 continue
             candidate = (improvement, -owned_value, -owned_index, net_gain, owned_key, shop_index, key)
             if best is None or candidate > best:
@@ -310,7 +319,7 @@ def _best_sell_to_afford_joker_action(state: dict[str, Any], config: ShopPolicyC
                 continue
             improvement = value - owned_value
             net_gain = improvement - (cost - money)
-            if improvement <= config.replacement_min_value_margin:
+            if improvement <= _replacement_min_value_margin(state, config, key):
                 continue
             candidate = (improvement, net_gain, -owned_index, owned_key, key)
             if best is None or candidate > best:
@@ -350,6 +359,12 @@ def _owned_scaling_bonus(card: dict[str, Any]) -> float:
     if key == "j_runner":
         return float(ability.get("chips") or ability.get("extra") or 0) / 8.0
     return 0.0
+
+
+def _replacement_min_value_margin(state: dict[str, Any], config: ShopPolicyConfig, target_key: str) -> float:
+    if _needs_late_carry_upgrade(state) and target_key in IMPLEMENTED_JOKERS:
+        return 1.0
+    return config.replacement_min_value_margin
 
 
 def _should_reroll_shop(state: dict[str, Any], config: ShopPolicyConfig) -> bool:

@@ -442,6 +442,52 @@ def test_shop_planner_can_sell_to_afford_visible_upgrade_before_slots_are_full()
     assert decision.action.kind == ActionKind.SELL_JOKER
 
 
+def test_shop_planner_accepts_small_late_replacement_when_build_has_no_carry() -> None:
+    state = _shop_state(
+        money=10,
+        shop_cards=[
+            {"key": "j_sly", "set": "JOKER", "cost": {"buy": 4, "sell": 2}},
+        ],
+        jokers=[
+            {"key": "j_bull", "set": "JOKER", "cost": {"buy": 6, "sell": 3}},
+            {"key": "j_scholar", "set": "JOKER", "cost": {"buy": 4, "sell": 2}},
+            {"key": "j_mystic_summit", "set": "JOKER", "cost": {"buy": 5, "sell": 2}},
+            {"key": "j_raised_fist", "set": "JOKER", "cost": {"buy": 5, "sell": 2}},
+            {"key": "j_rocket", "set": "JOKER", "cost": {"buy": 6, "sell": 3}},
+        ],
+    )
+    state["ante_num"] = 4
+    state["hands"]["Pair"]["played"] = 8
+
+    decision = plan_shop_action(state)
+
+    assert decision.action is not None
+    assert decision.action.kind == ActionKind.SELL_JOKER
+
+
+def test_shop_planner_values_type_joker_for_established_hand_family() -> None:
+    state = _shop_state(
+        money=6,
+        shop_cards=[
+            {"key": "j_sly", "set": "JOKER", "cost": {"buy": 4, "sell": 2}},
+        ],
+        jokers=[
+            {"key": "j_bull", "set": "JOKER", "cost": {"buy": 6, "sell": 3}},
+            {"key": "j_scholar", "set": "JOKER", "cost": {"buy": 4, "sell": 2}},
+            {"key": "j_raised_fist", "set": "JOKER", "cost": {"buy": 5, "sell": 2}},
+            {"key": "j_rocket", "set": "JOKER", "cost": {"buy": 6, "sell": 3}},
+            {"key": "j_ride_the_bus", "set": "JOKER", "cost": {"buy": 6, "sell": 3}},
+        ],
+    )
+    state["ante_num"] = 4
+    state["hands"]["Pair"]["played"] = 12
+
+    decision = plan_shop_action(state)
+
+    assert decision.action is not None
+    assert decision.action.kind == ActionKind.SELL_JOKER
+
+
 def test_policy_passes_tactical_config() -> None:
     policy = BalatroBotPolicy(
         config=PolicyConfig(tactical=TacticalPolicyConfig(beam_width=1, action_beam=1))
