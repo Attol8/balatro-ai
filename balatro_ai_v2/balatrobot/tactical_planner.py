@@ -1,15 +1,24 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import lru_cache
 from typing import Any
 
 from balatro_ai_v2.actions import ActionKind, GameAction
 from balatro_ai_v2.balatrobot.adapter import card_to_fast_id, hand_to_fast_ids, sort_balatro_hand
 from balatro_ai_v2.balatrobot.policy_config import DEFAULT_POLICY_CONFIG, TacticalPolicyConfig
 from balatro_ai_v2.fast.cards import chips as card_chips
-from balatro_ai_v2.fast.cards import suit
+from balatro_ai_v2.fast.cards import rank, suit
 from balatro_ai_v2.fast.env import MAX_SELECTED_CARDS
-from balatro_ai_v2.fast.hand import HAND_KIND_NAMES, FastScore, score_cards_with_levels
+from balatro_ai_v2.fast.hand import (
+    FULL_HOUSE,
+    HAND_KIND_NAMES,
+    STRAIGHT,
+    TWO_PAIR,
+    FastScore,
+    score_cards_with_joker_rules,
+    score_cards_with_levels,
+)
 from balatro_ai_v2.fast.jokers import IMPLEMENTED_JOKERS, Joker, ScoreContext, apply_additive_jokers
 
 
@@ -24,6 +33,7 @@ def plan_tactical_action(
     state: dict[str, Any],
     *,
     config: TacticalPolicyConfig = DEFAULT_POLICY_CONFIG.tactical,
+    _use_cache: bool = True,
 ) -> TacticalPlan:
     hand = hand_to_fast_ids(state)
     if not hand:
@@ -40,39 +50,134 @@ def plan_tactical_action(
     money = int(state.get("money") or 0)
     joker_slots = int(((state.get("jokers") or {}).get("limit") or 5))
     debuffed_suits = _active_debuffed_suits(state)
-    states: list[tuple[GameAction | None, tuple[int, ...], tuple[int, ...], int, int, int]] = [
-        (None, hand, deck, current_score, hands_left, discards_left)
+    states: list[tuple[GameAction | None, tuple[int, ...], tuple[int, ...], int, int, int, tuple[Joker, ...]]] = [
+        (None, hand, deck, current_score, hands_left, discards_left, jokers)
     ]
     best_action: GameAction | None = None
     best_score = current_score
     clears = current_score >= required
+    ranked_cache: dict[
+        tuple[
+            tuple[int, ...],
+            int,
+            tuple[int, ...],
+            tuple[Joker, ...],
+            int,
+            int,
+            int,
+            int,
+            int,
+            frozenset[int],
+            int,
+        ],
+        tuple[tuple[int, FastScore], ...],
+    ] = {}
+    discard_cache: dict[tuple[tuple[int, ...], tuple[int, ...], int, tuple[int, ...], int], tuple[int, ...]] = {}
+    replace_cache: dict[tuple[tuple[int, ...], tuple[int, ...], int], tuple[tuple[int, ...], tuple[int, ...]]] = {}
+    selected_cache: dict[tuple[tuple[int, ...], int], tuple[int, ...]] = {}
+    action_cache: dict[tuple[int, bool], GameAction] = {}
+
+    def ranked_play_masks_cached(
+        hand_value: tuple[int, ...],
+        jokers_value: tuple[Joker, ...],
+        discards_value: int,
+        hands_value: int,
+        deck_count_value: int,
+    ) -> tuple[tuple[int, FastScore], ...]:
+        key = (
+            hand_value,
+            highlighted_limit,
+            levels,
+            jokers_value,
+            money,
+            discards_value,
+            hands_value,
+            deck_count_value,
+            joker_slots,
+            debuffed_suits,
+            config.action_beam,
+        )
+        if _use_cache and key in ranked_cache:
+            return ranked_cache[key]
+        result = _ranked_play_masks(
+            hand_value,
+            highlighted_limit,
+            levels,
+            jokers_value,
+            money,
+            discards_value,
+            hands_value,
+            deck_count_value,
+            joker_slots,
+            debuffed_suits,
+            config.action_beam,
+        )
+        if _use_cache:
+            ranked_cache[key] = result
+        return result
+
+    def discard_candidates_cached(hand_value: tuple[int, ...], deck_value: tuple[int, ...]) -> tuple[int, ...]:
+        key = (hand_value, deck_value, highlighted_limit, levels, config.action_beam)
+        if _use_cache and key in discard_cache:
+            return discard_cache[key]
+        result = _discard_candidates(hand_value, deck_value, highlighted_limit, levels, config.action_beam)
+        if _use_cache:
+            discard_cache[key] = result
+        return result
+
+    def replace_selected_cached(
+        hand_value: tuple[int, ...],
+        deck_value: tuple[int, ...],
+        mask_value: int,
+    ) -> tuple[tuple[int, ...], tuple[int, ...]]:
+        key = (hand_value, deck_value, mask_value)
+        if _use_cache and key in replace_cache:
+            return replace_cache[key]
+        result = _replace_selected(hand_value, deck_value, mask_value)
+        if _use_cache:
+            replace_cache[key] = result
+        return result
+
+    def selected_cards_cached(hand_value: tuple[int, ...], mask_value: int) -> tuple[int, ...]:
+        key = (hand_value, mask_value)
+        if _use_cache and key in selected_cache:
+            return selected_cache[key]
+        result = tuple(card for index, card in enumerate(hand_value) if mask_value & (1 << index))
+        if _use_cache:
+            selected_cache[key] = result
+        return result
+
+    def action_from_mask_cached(mask_value: int, *, is_discard: bool) -> GameAction:
+        key = (mask_value, is_discard)
+        if _use_cache and key in action_cache:
+            return action_cache[key]
+        result = _action_from_mask(mask_value, is_discard=is_discard)
+        if _use_cache:
+            action_cache[key] = result
+        return result
 
     max_depth = max(hands_left + discards_left, 1)
     for _ in range(max_depth):
-        next_states: list[tuple[GameAction, tuple[int, ...], tuple[int, ...], int, int, int]] = []
-        for first_action, hand_state, deck_state, score_state, hands_state, discards_state in states:
+        next_states: list[tuple[GameAction, tuple[int, ...], tuple[int, ...], int, int, int, tuple[Joker, ...]]] = []
+        for first_action, hand_state, deck_state, score_state, hands_state, discards_state, jokers_state in states:
             if score_state >= required:
                 assert first_action is not None
                 return TacticalPlan(first_action, clears=True, projected_score=score_state)
             if hands_state <= 0 or not hand_state:
                 continue
 
-            for mask, scored in _ranked_play_masks(
+            for mask, scored in ranked_play_masks_cached(
                 hand_state,
-                highlighted_limit,
-                levels,
-                jokers,
-                money,
+                jokers_state,
                 discards_state,
                 hands_state,
                 len(deck_state),
-                joker_slots,
-                debuffed_suits,
-                config.action_beam,
             ):
-                action = _action_from_mask(mask, is_discard=False)
-                next_hand, next_deck = _replace_selected(hand_state, deck_state, mask)
+                action = action_from_mask_cached(mask, is_discard=False)
+                selected = selected_cards_cached(hand_state, mask)
+                next_hand, next_deck = replace_selected_cached(hand_state, deck_state, mask)
                 next_score = score_state + scored.total
+                next_jokers = _jokers_after_play(jokers_state, scored, selected)
                 candidate_first = first_action or action
                 if next_score > best_score:
                     best_score = next_score
@@ -81,16 +186,17 @@ def plan_tactical_action(
                 if next_score >= required:
                     return TacticalPlan(candidate_first, clears=True, projected_score=next_score)
                 next_states.append(
-                    (candidate_first, next_hand, next_deck, next_score, hands_state - 1, discards_state)
+                    (candidate_first, next_hand, next_deck, next_score, hands_state - 1, discards_state, next_jokers)
                 )
 
             if discards_state > 0:
-                for mask in _discard_candidates(hand_state, deck_state, highlighted_limit, levels, config.action_beam):
-                    action = _action_from_mask(mask, is_discard=True)
-                    next_hand, next_deck = _replace_selected(hand_state, deck_state, mask)
+                for mask in discard_candidates_cached(hand_state, deck_state):
+                    action = action_from_mask_cached(mask, is_discard=True)
+                    next_hand, next_deck = replace_selected_cached(hand_state, deck_state, mask)
                     candidate_first = first_action or action
+                    next_jokers = _jokers_after_discard(jokers_state)
                     next_states.append(
-                        (candidate_first, next_hand, next_deck, score_state, hands_state, discards_state - 1)
+                        (candidate_first, next_hand, next_deck, score_state, hands_state, discards_state - 1, next_jokers)
                     )
 
         if not next_states:
@@ -184,7 +290,7 @@ def _score_mask(
     selected = tuple(card for index, card in enumerate(hand) if mask & (1 << index))
     sorted_cards = tuple(sorted(selected))
     base = _apply_debuffs(
-        score_cards_with_levels(sorted_cards, levels),
+        score_cards_with_joker_rules(sorted_cards, levels, tuple(joker.key for joker in jokers)),
         sorted_cards,
         debuffed_suits,
         debuffed_card_ids,
@@ -197,6 +303,8 @@ def _score_mask(
         deck_count=deck_count,
         joker_slots=joker_slots,
         is_final_hand=hands_left <= 0,
+        debuffed_held_suits=debuffed_suits,
+        debuffed_held_cards=debuffed_card_ids,
     )
     return apply_additive_jokers(base, sorted_cards, len(selected), jokers, context)
 
@@ -248,16 +356,69 @@ def _discard_candidates(
         next_hand, _ = _replace_selected(hand, deck, mask)
         if not next_hand:
             continue
-        best_next = max(
-            score_cards_with_levels(
-                tuple(sorted(card for index, card in enumerate(next_hand) if play_mask & (1 << index))),
-                levels,
-            ).total
-            for play_mask in _legal_masks(len(next_hand), highlighted_limit)
-        )
+        best_next = _best_score_with_levels(next_hand, highlighted_limit, levels)
         scored.append((best_next, mask))
     scored.sort(reverse=True)
     return tuple(mask for _, mask in scored[:beam])
+
+
+@lru_cache(maxsize=4096)
+def _best_score_with_levels(hand: tuple[int, ...], highlighted_limit: int, levels: tuple[int, ...]) -> int:
+    return max(
+        score_cards_with_levels(
+            tuple(sorted(card for index, card in enumerate(hand) if play_mask & (1 << index))),
+            levels,
+        ).total
+        for play_mask in _legal_masks(len(hand), highlighted_limit)
+    )
+
+
+def _jokers_after_play(jokers: tuple[Joker, ...], score: FastScore, selected: tuple[int, ...]) -> tuple[Joker, ...]:
+    out: list[Joker] = []
+    selected_count = len(selected)
+    has_scored_face = any(
+        score.scoring_mask & (1 << index) and rank(card) in {9, 10, 11}
+        for index, card in enumerate(tuple(sorted(selected)))
+    )
+    for joker in jokers:
+        if joker.key == "j_square" and selected_count == 4:
+            out.append(_replace_joker(joker, scaling=joker.scaling + 4))
+        elif joker.key == "j_runner" and score.kind == STRAIGHT:
+            out.append(_replace_joker(joker, scaling=joker.scaling + 15))
+        elif joker.key == "j_trousers" and score.kind in {TWO_PAIR, FULL_HOUSE}:
+            out.append(_replace_joker(joker, scaling=joker.scaling + 2))
+        elif joker.key == "j_green_joker":
+            out.append(_replace_joker(joker, scaling=joker.scaling + 1))
+        elif joker.key == "j_ride_the_bus" and not has_scored_face:
+            out.append(_replace_joker(joker, scaling=joker.scaling + 1))
+        else:
+            out.append(joker)
+    return tuple(out)
+
+
+def _jokers_after_discard(jokers: tuple[Joker, ...]) -> tuple[Joker, ...]:
+    out: list[Joker] = []
+    for joker in jokers:
+        if joker.key == "j_green_joker":
+            out.append(_replace_joker(joker, scaling=max(joker.scaling - 1, 0)))
+        else:
+            out.append(joker)
+    return tuple(out)
+
+
+def _replace_joker(
+    joker: Joker,
+    *,
+    scaling: int | None = None,
+    x_mult: float | None = None,
+) -> Joker:
+    return Joker(
+        key=joker.key,
+        scaling=joker.scaling if scaling is None else scaling,
+        x_mult=joker.x_mult if x_mult is None else x_mult,
+        sell_value=joker.sell_value,
+        edition=joker.edition,
+    )
 
 
 def _replace_selected(
@@ -272,6 +433,7 @@ def _replace_selected(
     return sort_balatro_hand(kept + drawn), next_deck
 
 
+@lru_cache(maxsize=32)
 def _legal_masks(hand_len: int, highlighted_limit: int) -> tuple[int, ...]:
     max_selected = min(highlighted_limit, MAX_SELECTED_CARDS, hand_len)
     return tuple(

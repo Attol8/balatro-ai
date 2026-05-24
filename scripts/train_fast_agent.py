@@ -6,8 +6,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from balatro_ai_v2.fast.full_game import FastFullGameEnv, FlushRunAgent, evaluate_agent
-from balatro_ai_v2.fast.hand import FLUSH
+from balatro_ai_v2.fast.full_game import FastFullGameEnv, SearchRunAgent, evaluate_agent
 
 
 def main() -> None:
@@ -15,23 +14,22 @@ def main() -> None:
     parser.add_argument("--deck", default="b_red")
     parser.add_argument("--seed-start", type=int, default=1)
     parser.add_argument("--seeds", type=int, default=32)
+    parser.add_argument("--max-steps", type=int, default=600)
     args = parser.parse_args()
 
-    # The current local training surface is a deterministic policy sweep over
-    # target hand families. Flush is retained as the shipped baseline because it
-    # is the first strategy that clears ante 8 consistently in this gym.
+    # This is a deterministic search baseline, not a trained model. It is meant
+    # to generate broad trajectories without forcing one hand family.
     seeds = range(args.seed_start, args.seed_start + args.seeds)
-    metrics = evaluate_agent(seeds, deck_key=args.deck)
-    print("agent: FlushRunAgent")
-    print(f"target_hand_kind: {FLUSH}")
+    metrics = evaluate_agent(seeds, deck_key=args.deck, max_steps=args.max_steps)
+    print("agent: SearchRunAgent")
     for key, value in metrics.items():
         print(f"{key}: {value}")
 
     env = FastFullGameEnv(deck_key=args.deck)
     env.reset(seed=args.seed_start)
-    agent = FlushRunAgent()
+    agent = SearchRunAgent()
     steps = 0
-    while not env.run.won and env.run.phase.name != "GAME_OVER":
+    while steps < args.max_steps and not env.run.won and env.run.phase.name != "GAME_OVER":
         result = env.step(agent.act(env))
         steps += 1
         if result.terminated:

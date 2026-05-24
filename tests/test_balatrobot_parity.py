@@ -105,6 +105,43 @@ def test_score_play_ride_the_bus_uses_current_mult_not_extra() -> None:
     assert score.total == 612
 
 
+def test_score_play_disables_raised_fist_when_lowest_held_card_is_debuffed() -> None:
+    state = _selecting_hand_state(
+        [
+            _card("D", "A", debuffed=True),
+            _card("S", "Q"),
+            _card("S", "J"),
+            _card("D", "J", debuffed=True),
+            _card("D", "9", debuffed=True),
+            _card("D", "8", debuffed=True),
+            _card("D", "5", debuffed=True),
+            _card("H", "4"),
+        ],
+        chips=0,
+    )
+    state["money"] = 76
+    state["round"]["discards_left"] = 4
+    state["blinds"]["small"]["status"] = "DEFEATED"
+    state["blinds"]["boss"]["status"] = "CURRENT"
+    state["blinds"]["boss"]["name"] = "The Window"
+    state["blinds"]["boss"]["effect"] = "All Diamond cards are debuffed"
+    state["jokers"] = {
+        "count": 5,
+        "limit": 5,
+        "cards": [
+            {"key": "j_bull", "set": "JOKER", "value": {"ability": {"extra": 2}}},
+            {"key": "j_scholar", "set": "JOKER", "value": {"ability": {"chips": 20, "mult": 4}}},
+            {"key": "j_square", "set": "JOKER", "value": {"ability": {"chips": 20}}},
+            {"key": "j_mystic_summit", "set": "JOKER", "value": {"ability": {"mult": 15}}},
+            {"key": "j_raised_fist", "set": "JOKER", "value": {"ability": {}}},
+        ],
+    }
+
+    score = score_play_action(state, GameAction(kind=ActionKind.PLAY, indices=(6, 7)))
+
+    assert score.total == 177
+
+
 def test_replay_trace_checks_discard_draw_order(tmp_path) -> None:
     before = _selecting_hand_state(
         [_card("S", "A"), _card("H", "2"), _card("D", "3")],

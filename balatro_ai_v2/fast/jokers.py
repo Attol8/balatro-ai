@@ -46,6 +46,8 @@ class ScoreContext:
     current_ancient_suit: int | None = None
     current_idol_rank: int | None = None
     current_idol_suit: int | None = None
+    debuffed_held_suits: frozenset[int] = frozenset()
+    debuffed_held_cards: frozenset[int] = frozenset()
     enhanced_card_count: int = 0
     tarot_cards_used: int = 0
     loyalty_remaining: int | None = None
@@ -219,17 +221,17 @@ def apply_additive_jokers(
         elif joker.key == "j_ice_cream":
             chips += joker.scaling
         elif joker.key == "j_square":
-            chips += joker.scaling
+            chips += joker.scaling + (4 if selected_count == 4 else 0)
         elif joker.key == "j_wee":
             chips += joker.scaling
         elif joker.key == "j_castle":
             chips += joker.scaling
         elif joker.key == "j_stone":
             chips += 25 * joker.scaling
-        elif joker.key == "j_runner" and score.kind == STRAIGHT:
-            chips += joker.scaling
+        elif joker.key == "j_runner" and _hand_contains(score.kind, STRAIGHT):
+            chips += joker.scaling + 15
         elif joker.key == "j_green_joker":
-            mult += joker.scaling
+            mult += joker.scaling + 1
         elif joker.key == "j_erosion":
             mult += max(context.starting_deck_size - context.playing_card_count, 0) * 4
         elif joker.key == "j_fortune_teller":
@@ -273,13 +275,17 @@ def apply_additive_jokers(
         elif joker.key == "j_flash":
             mult += joker.scaling
         elif joker.key == "j_trousers":
-            mult += joker.scaling
+            mult += joker.scaling + (2 if _hand_contains(score.kind, TWO_PAIR) else 0)
         elif joker.key == "j_red_card":
             mult += joker.scaling
         elif joker.key == "j_shoot_the_moon":
             mult += _held_rank_count(context.held_cards, 10) * 13
         elif joker.key == "j_raised_fist":
-            lowest_nominal = _lowest_held_nominal(context.held_cards)
+            lowest_nominal = _lowest_held_nominal(
+                context.held_cards,
+                context.debuffed_held_suits,
+                context.debuffed_held_cards,
+            )
             if lowest_nominal is not None:
                 mult += 2 * lowest_nominal
         elif joker.key == "j_blackboard" and context.held_cards:
@@ -444,10 +450,23 @@ def _held_rank_count(cards: tuple[int, ...], target_rank: int) -> int:
     return sum(1 for card in cards if rank(card) == target_rank)
 
 
-def _lowest_held_nominal(cards: tuple[int, ...]) -> int | None:
+def _lowest_held_nominal(
+    cards: tuple[int, ...],
+    debuffed_suits: frozenset[int] = frozenset(),
+    debuffed_cards: frozenset[int] = frozenset(),
+) -> int | None:
     if not cards:
         return None
-    return min(card_chips(card) for card in cards)
+    lowest_card = cards[0]
+    lowest_rank = rank(lowest_card)
+    for card in cards:
+        card_rank = rank(card)
+        if card_rank <= lowest_rank:
+            lowest_card = card
+            lowest_rank = card_rank
+    if suit(lowest_card) in debuffed_suits or lowest_card in debuffed_cards:
+        return None
+    return card_chips(lowest_card)
 
 
 def _has_club_and_other_suit(cards: tuple[int, ...], scoring_mask: int) -> bool:

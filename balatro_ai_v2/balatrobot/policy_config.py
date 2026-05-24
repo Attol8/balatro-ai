@@ -15,13 +15,21 @@ class TacticalPolicyConfig:
 @dataclass(frozen=True, slots=True)
 class ShopPolicyConfig:
     min_value_margin: float = 0.0
+    replacement_min_value_margin: float = 8.0
     modeled_joker_fallback_value: float = 10.0
     valuable_no_target_consumable_value: float = 16.0
+    buffoon_pack_base_value: float = 18.0
+    celestial_pack_base_value: float = 12.0
+    standard_pack_base_value: float = 0.0
+    arcana_pack_base_value: float = 0.0
+    spectral_pack_base_value: float = 0.0
     high_priestess_min_money: int = 14
     planet_played_base_value: float = 18.0
     planet_played_increment: float = 6.0
     planet_common_unplayed_value: float = 12.0
     planet_unplayed_value: float = 4.0
+    reroll_max_cost: int = 7
+    reroll_min_money_after: int = 3
     joker_value_overrides: tuple[tuple[str, float], ...] = ()
 
 
@@ -63,6 +71,9 @@ def policy_config_from_dict(data: dict[str, Any]) -> PolicyConfig:
         ),
         shop=ShopPolicyConfig(
             min_value_margin=float(shop_data.get("min_value_margin", ShopPolicyConfig.min_value_margin)),
+            replacement_min_value_margin=float(
+                shop_data.get("replacement_min_value_margin", ShopPolicyConfig.replacement_min_value_margin)
+            ),
             modeled_joker_fallback_value=float(
                 shop_data.get("modeled_joker_fallback_value", ShopPolicyConfig.modeled_joker_fallback_value)
             ),
@@ -75,6 +86,19 @@ def policy_config_from_dict(data: dict[str, Any]) -> PolicyConfig:
             high_priestess_min_money=int(
                 shop_data.get("high_priestess_min_money", ShopPolicyConfig.high_priestess_min_money)
             ),
+            buffoon_pack_base_value=float(
+                shop_data.get("buffoon_pack_base_value", ShopPolicyConfig.buffoon_pack_base_value)
+            ),
+            celestial_pack_base_value=float(
+                shop_data.get("celestial_pack_base_value", ShopPolicyConfig.celestial_pack_base_value)
+            ),
+            standard_pack_base_value=float(
+                shop_data.get("standard_pack_base_value", ShopPolicyConfig.standard_pack_base_value)
+            ),
+            arcana_pack_base_value=float(shop_data.get("arcana_pack_base_value", ShopPolicyConfig.arcana_pack_base_value)),
+            spectral_pack_base_value=float(
+                shop_data.get("spectral_pack_base_value", ShopPolicyConfig.spectral_pack_base_value)
+            ),
             planet_played_base_value=float(
                 shop_data.get("planet_played_base_value", ShopPolicyConfig.planet_played_base_value)
             ),
@@ -85,6 +109,10 @@ def policy_config_from_dict(data: dict[str, Any]) -> PolicyConfig:
                 shop_data.get("planet_common_unplayed_value", ShopPolicyConfig.planet_common_unplayed_value)
             ),
             planet_unplayed_value=float(shop_data.get("planet_unplayed_value", ShopPolicyConfig.planet_unplayed_value)),
+            reroll_max_cost=int(shop_data.get("reroll_max_cost", ShopPolicyConfig.reroll_max_cost)),
+            reroll_min_money_after=int(
+                shop_data.get("reroll_min_money_after", ShopPolicyConfig.reroll_min_money_after)
+            ),
             joker_value_overrides=overrides,
         ),
     )

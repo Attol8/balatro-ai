@@ -5,7 +5,7 @@ from time import sleep
 from typing import Any
 from uuid import uuid4
 
-from balatro_ai_v2.actions import GameAction
+from balatro_ai_v2.actions import ActionKind, GameAction
 from balatro_ai_v2.balatrobot.client import BalatroBotClient, BalatroBotError
 from balatro_ai_v2.balatrobot.policy import BalatroBotPolicy
 from balatro_ai_v2.balatrobot.tracing import JsonlTraceWriter, action_payload
@@ -27,6 +27,8 @@ class BalatroBotRunner:
     policy: BalatroBotPolicy = field(default_factory=BalatroBotPolicy)
     trace: bool = False
     trace_writer: JsonlTraceWriter | None = None
+    poll_delay: float = 0.02
+    retry_delay: float = 0.05
     _run_id: str = field(default="", init=False)
 
     def start_run(self, *, deck: str = "RED", stake: str = "WHITE", seed: str | None = None) -> dict[str, Any]:
@@ -66,10 +68,11 @@ class BalatroBotRunner:
         action: dict[str, Any]
         match state.get("state"):
             case "BLIND_SELECT":
+                game_action = self.policy.blind_action(state)
                 if self.trace:
-                    print("action: select")
-                action = action_payload(method="select")
-                next_state = self.client.call_action("select")
+                    print(f"action: {game_action.kind.value}")
+                action = action_payload(game_action)
+                next_state = self._execute(game_action)
             case "SELECTING_HAND":
                 game_action = self.policy.tactical_action(state)
                 if self.trace:
@@ -77,10 +80,11 @@ class BalatroBotRunner:
                 action = action_payload(game_action)
                 next_state = self._execute(game_action)
             case "ROUND_EVAL":
+                game_action = self.policy.round_eval_action(state)
                 if self.trace:
-                    print("action: cash_out")
-                action = action_payload(method="cash_out")
-                next_state = self.client.call_action("cash_out")
+                    print(f"action: {game_action.kind.value}")
+                action = action_payload(game_action)
+                next_state = self._execute(game_action)
             case "SHOP":
                 game_action = self.policy.shop_action(state)
                 if game_action is not None:
@@ -93,13 +97,18 @@ class BalatroBotRunner:
                         print("action: next_round")
                     action = action_payload(method="next_round")
                     next_state = self.client.call_action("next_round")
-            case "SMODS_BOOSTER_OPENED":
+            case "SMODS_BOOSTER_OPENED" | "PLANET_PACK" | "TAROT_PACK" | "SPECTRAL_PACK" | "STANDARD_PACK" | "BUFFOON_PACK":
+                game_action = self.policy.pack_action(state)
                 if self.trace:
-                    print("action: pack_skip")
-                action = action_payload(method="pack", params={"skip": True})
-                next_state = self.client.call_action("pack", {"skip": True})
+                    if game_action.kind == ActionKind.PACK_SKIP:
+                        print("action: pack_skip")
+                    else:
+                        print(f"action: pack {game_action.index}")
+                action = action_payload(game_action)
+                next_state = self._execute(game_action)
             case _:
-                sleep(0.2)
+                if self.poll_delay > 0:
+                    sleep(self.poll_delay)
                 action = action_payload(method="gamestate")
                 next_state = self.client.gamestate()
         self._record("transition", before=state, action=action, after=next_state)
@@ -112,7 +121,8 @@ class BalatroBotRunner:
         except BalatroBotError as exc:
             if "failed to connect" not in str(exc):
                 raise
-            sleep(0.5)
+            if self.retry_delay > 0:
+                sleep(self.retry_delay)
             return self.client.gamestate()
 
     def _record(self, event: str, **payload: Any) -> None:
@@ -133,12 +143,16 @@ def evaluate_balatrobot(
     max_steps: int = 800,
     trace: bool = False,
     trace_writer: JsonlTraceWriter | None = None,
+    poll_delay: float = 0.02,
+    retry_delay: float = 0.05,
 ) -> dict[str, float | int]:
     runner = BalatroBotRunner(
         client or BalatroBotClient(),
         policy=policy or BalatroBotPolicy(),
         trace=trace,
         trace_writer=trace_writer,
+        poll_delay=poll_delay,
+        retry_delay=retry_delay,
     )
     wins = 0
     antes = 0
@@ -162,13 +176,14 @@ def _trace_state(state: dict[str, Any]) -> str:
     state_name = state.get("state")
     round_info = state.get("round") or {}
     shop = _card_summary(state, "shop")
+    pack = _card_summary(state, "pack")
     consumables = _card_summary(state, "consumables")
     jokers = _card_summary(state, "jokers")
     return (
         f"state={state_name} ante={state.get('ante_num')} round={state.get('round_num')} "
         f"money={state.get('money')} chips={round_info.get('chips')} "
         f"hands={round_info.get('hands_left')} discards={round_info.get('discards_left')} "
-        f"shop=[{shop}] consumables=[{consumables}] jokers=[{jokers}]"
+        f"shop=[{shop}] pack=[{pack}] consumables=[{consumables}] jokers=[{jokers}]"
     )
 
 

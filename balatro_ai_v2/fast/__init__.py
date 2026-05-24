@@ -9,8 +9,8 @@ from balatro_ai_v2.fast.env import (
 )
 from balatro_ai_v2.fast.full_game import (
     FastFullGameEnv,
-    FlushRunAgent,
     FullGameStepResult,
+    SearchRunAgent,
     evaluate_agent,
 )
 from balatro_ai_v2.fast.hand import (
@@ -41,7 +41,6 @@ __all__ = [
     "FastBalatroEnv",
     "FastFullGameEnv",
     "FastScore",
-    "FlushRunAgent",
     "FullGameStepResult",
     "HAND_KIND_NAMES",
     "Joker",
@@ -53,6 +52,7 @@ __all__ = [
     "BlindKind",
     "FastRunState",
     "RunPhase",
+    "SearchRunAgent",
     "ShopState",
     "StepResult",
     "best_score",

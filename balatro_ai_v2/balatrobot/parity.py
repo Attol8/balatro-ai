@@ -292,7 +292,7 @@ def _check_buy(line_num: int, before: dict[str, Any], after: dict[str, Any], pay
         index = int(params["card"])
     elif "pack" in params:
         area = "packs"
-        destination = "SMODS_BOOSTER_OPENED"
+        destination = "BOOSTER_OPENED"
         index = int(params["pack"])
     elif "voucher" in params:
         area = "vouchers"
@@ -308,9 +308,9 @@ def _check_buy(line_num: int, before: dict[str, Any], after: dict[str, Any], pay
     cost = int(((bought.get("cost") or {}).get("buy") or 0))
     if int(after.get("money") or 0) != int(before.get("money") or 0) - cost:
         return _mismatch(line_num, "money", "buy money delta did not match visible cost", -cost, int(after.get("money") or 0) - int(before.get("money") or 0))
-    if destination == "SMODS_BOOSTER_OPENED":
-        if after.get("state") != "SMODS_BOOSTER_OPENED":
-            return _mismatch(line_num, "pack", "buying a pack did not open booster state", "SMODS_BOOSTER_OPENED", after.get("state"))
+    if destination == "BOOSTER_OPENED":
+        if not _is_booster_state(after.get("state")):
+            return _mismatch(line_num, "pack", "buying a pack did not open booster state", "booster state", after.get("state"))
         return None
     if destination in {"jokers", "consumables"}:
         if str(bought.get("key")) not in set(_area_keys(after, destination) or []):
@@ -380,20 +380,31 @@ def _check_use(line_num: int, before: dict[str, Any], after: dict[str, Any], pay
 def _check_pack(line_num: int, before: dict[str, Any], after: dict[str, Any], payload: dict[str, Any]) -> ParityMismatch | None:
     params = payload.get("params") or {}
     if params.get("skip") is True:
-        if before.get("state") != "SMODS_BOOSTER_OPENED" or after.get("state") != "SHOP":
-            return _mismatch(line_num, "pack", "pack skip did not return to shop", "SMODS_BOOSTER_OPENED->SHOP", _states(before, after))
+        if not _is_booster_state(before.get("state")) or after.get("state") != "SHOP":
+            return _mismatch(line_num, "pack", "pack skip did not return to shop", "booster state->SHOP", _states(before, after))
         return None
     if "card" not in params:
         return _mismatch(line_num, "pack", "pack params did not name card or skip", "card|skip", params)
-    if before.get("state") != "SMODS_BOOSTER_OPENED":
-        return _mismatch(line_num, "state", "pack select was not issued from booster state", "SMODS_BOOSTER_OPENED", before.get("state"))
+    if not _is_booster_state(before.get("state")):
+        return _mismatch(line_num, "state", "pack select was not issued from booster state", "booster state", before.get("state"))
     cards = _area_cards(before, "pack") or _area_cards(before, "packs")
     index = int(params["card"])
     if cards is not None and cards and not 0 <= index < len(cards):
         return _mismatch(line_num, "pack", "pack selected card index outside booster cards", f"0..{len(cards) - 1}", index)
-    if after.get("state") not in {"SMODS_BOOSTER_OPENED", "SHOP"}:
-        return _mismatch(line_num, "state", "pack select entered unexpected state", "SMODS_BOOSTER_OPENED|SHOP", after.get("state"))
+    if not (_is_booster_state(after.get("state")) or after.get("state") == "SHOP"):
+        return _mismatch(line_num, "state", "pack select entered unexpected state", "booster state|SHOP", after.get("state"))
     return None
+
+
+def _is_booster_state(state: Any) -> bool:
+    return state in {
+        "SMODS_BOOSTER_OPENED",
+        "PLANET_PACK",
+        "TAROT_PACK",
+        "SPECTRAL_PACK",
+        "STANDARD_PACK",
+        "BUFFOON_PACK",
+    }
 
 
 def _action_from_trace(payload: dict[str, Any]) -> GameAction | None:

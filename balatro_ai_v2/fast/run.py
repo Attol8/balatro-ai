@@ -14,6 +14,7 @@ class RunPhase(IntEnum):
     ROUND_EVAL = 2
     SHOP = 3
     GAME_OVER = 4
+    PACK = 5
 
 
 class BlindKind(IntEnum):

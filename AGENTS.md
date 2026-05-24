@@ -112,10 +112,49 @@ When a BalatroBot trace finds a mismatch, fix the simulator or planner model and
 add a regression test. When a trace contains an unchecked transition, add a
 parity check or explicitly document why the simulator cannot yet cover it.
 
+Do not use the old flush-first baseline as the main solving strategy. A
+flush-ish tactical policy plus simple shop values is only a debugging baseline:
+it can expose parity bugs, but it is too narrow to solve Balatro robustly. The
+solver direction is search first, model later:
+
+- Tactical choices should score all legal hand families and discard masks, not
+  force a suit lane.
+- Shop and pack choices should be evaluated from current joker synergies,
+  economy, hand levels, observed hand frequencies, scaling potential, and boss
+  constraints.
+- The fast gym should produce candidate trajectories with a broad evaluator;
+  those trajectories can train a model only after they reproduce through
+  BalatroBot.
+- Use `scripts/generate_fast_oracle_data.py`,
+  `scripts/train_fast_imitation_policy.py`, and
+  `scripts/evaluate_fast_imitation_policy.py` as the dependency-free first
+  training loop. The fast full-game gym now exposes explicit run actions:
+  select/skip blind, cash out, next round, reroll, buy cards/packs/vouchers,
+  sell jokers, use consumables, and select/skip opened packs. The default model is a
+  linear legal-action ranker; the nearest neighbor mode is for
+  memorization/debugging only. This loop imitates the current search oracle;
+  improve the oracle/evaluator before treating model accuracy as strategically
+  meaningful.
+- Use `scripts/run_balatrobot_agent.py --full-action-model ...` for real-game
+  replay of full-run policies. The older `--imitation-model` path only controls
+  tactical play/discard decisions and is not enough to validate fast full-action
+  policy strength.
+- The explicit fast shop is still a deterministic parity-shaped approximation,
+  not the real Balatro shop RNG. It currently models weighted joker/planet shop
+  cards, booster specs, persistent shop vouchers, rerolls, discounts, extra
+  hands/discards/slots, economy vouchers, and pack choices that fit the current
+  8-card tactical action encoding. Use it to train full-action policies, then
+  validate and correct behavior with BalatroBot traces.
+- A policy result is not a solve until the exact policy clears ante 8 through
+  clean BalatroBot runs on the first deck across multiple seeds and the trace
+  passes `scripts/game_parity_gate.py`.
+
 The order of work is:
 
 1. Capture clean full-state BalatroBot traces.
 2. Replay them through the parity checker with `--require-complete`.
 3. Fill missing rules and joker/shop/pack effects until complete parity passes.
-4. Only then use the fast gym/search loop to train or tune a policy.
-5. Validate the trained policy back through clean BalatroBot on multiple seeds.
+4. Use the fast gym/search loop to generate broad candidate policies; avoid
+   fixed hand-family strategies as the shipped baseline.
+5. Validate the trained or searched policy back through clean BalatroBot on
+   multiple seeds.

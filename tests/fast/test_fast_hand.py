@@ -223,6 +223,51 @@ def test_stored_value_jokers_apply_deterministic_score_modifiers() -> None:
     assert result.mult == base.mult + 7 + 4 + 6
 
 
+def test_growing_jokers_apply_current_hand_increment_before_scoring() -> None:
+    levels = [1] * 12
+    four_cards = tuple(sorted((
+        card(8, 0),
+        card(8, 1),
+        card(6, 2),
+        card(6, 3),
+    )))
+    base_two_pair = score_cards_with_levels(four_cards, tuple(levels))
+
+    square_trousers = apply_additive_jokers(
+        base_two_pair,
+        four_cards,
+        len(four_cards),
+        (
+            Joker("j_square", scaling=12),
+            Joker("j_trousers", scaling=6),
+        ),
+    )
+
+    assert square_trousers.chips == base_two_pair.chips + 16
+    assert square_trousers.mult == base_two_pair.mult + 8
+
+    straight_cards = tuple(sorted((
+        card(4, 0),
+        card(5, 1),
+        card(6, 2),
+        card(7, 3),
+        card(8, 0),
+    )))
+    base_straight = score_cards_with_levels(straight_cards, tuple(levels))
+    runner_green = apply_additive_jokers(
+        base_straight,
+        straight_cards,
+        len(straight_cards),
+        (
+            Joker("j_runner", scaling=30),
+            Joker("j_green_joker", scaling=4),
+        ),
+    )
+
+    assert runner_green.chips == base_straight.chips + 45
+    assert runner_green.mult == base_straight.mult + 5
+
+
 def test_held_card_jokers_apply_per_card_effects() -> None:
     levels = [1] * 12
     base = score_cards_with_levels((card(12, 0),), tuple(levels))
@@ -237,6 +282,29 @@ def test_held_card_jokers_apply_per_card_effects() -> None:
 
     assert result.mult == base.mult + 13
     assert result.total == int(result.chips * result.mult * 2.25)
+
+
+def test_raised_fist_is_disabled_when_lowest_held_card_is_debuffed() -> None:
+    levels = [1] * 12
+    base = score_cards_with_levels((card(12, 0),), tuple(levels))
+
+    active = apply_additive_jokers(
+        base,
+        (card(12, 0),),
+        1,
+        (Joker("j_raised_fist"),),
+        ScoreContext(held_cards=(card(6, 3), card(10, 0))),
+    )
+    debuffed_lowest = apply_additive_jokers(
+        base,
+        (card(12, 0),),
+        1,
+        (Joker("j_raised_fist"),),
+        ScoreContext(held_cards=(card(6, 3), card(10, 0)), debuffed_held_suits=frozenset({3})),
+    )
+
+    assert active.mult == base.mult + 16
+    assert debuffed_lowest.mult == base.mult
 
 
 def test_card_sharp_requires_repeated_hand_this_round() -> None:
