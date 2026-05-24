@@ -194,3 +194,45 @@ data-aggregation tool that proves real trace states can train/replay through the
 same full-action policy contract. The next strategic work is improving the
 oracle/shop/tactical planner so the labels themselves can clear ante 8 across
 multiple real seeds.
+
+## Shop Rollout Oracle
+
+Started the stronger-oracle path by adding an opt-in fast shop rollout agent:
+
+- `RolloutSearchRunAgent` subclasses `SearchRunAgent`.
+- The default `SearchRunAgent` remains fast and heuristic.
+- `RolloutSearchRunAgent` only performs rollout at shop states.
+- For each candidate shop action, it clones the fast environment, applies the
+  candidate, rolls forward with cheap greedy/tactical heuristics, and scores
+  final progress by rounds cleared, ante, blind progress, money, joker
+  portfolio, hand levels, and survival.
+- `scripts/generate_fast_oracle_data.py --shop-rollout` generates training rows
+  from this slower oracle.
+- `scripts/train_fast_agent.py --shop-rollout` evaluates this oracle directly.
+
+Fast smoke:
+
+```bash
+python scripts/train_fast_agent.py --deck b_red --seed-start 1 --seeds 4 --max-steps 40
+python scripts/train_fast_agent.py --deck b_red --seed-start 1 --seeds 4 --max-steps 40 --shop-rollout
+```
+
+Result:
+
+```text
+SearchRunAgent:        0 wins, 5.0 average rounds cleared
+RolloutSearchRunAgent: 0 wins, 5.5 average rounds cleared
+```
+
+Training smoke:
+
+```bash
+python scripts/generate_fast_oracle_data.py --deck b_red --seed-start 1 --seeds 4 --max-steps 40 --shop-rollout --output-jsonl /private/tmp/balatro_rollout_oracle_smoke.jsonl
+python scripts/train_fast_imitation_policy.py --data-jsonl /private/tmp/balatro_rollout_oracle_smoke.jsonl --output-model /private/tmp/balatro_rollout_nearest_smoke.json --model-type nearest
+python scripts/evaluate_fast_imitation_policy.py --model /private/tmp/balatro_rollout_nearest_smoke.json --deck b_red --seed-start 1 --seeds 4 --max-steps 40
+```
+
+Result: 160 examples, nearest-neighbor replay at 5.5 average rounds cleared.
+The linear model still failed badly on this data, so the current learning
+bottleneck is representation/model capacity, while the strategic bottleneck is
+still the oracle itself.

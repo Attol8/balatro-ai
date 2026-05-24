@@ -7,6 +7,7 @@ from balatro_ai_v2.fast.full_game import (
     REROLL_ACTION,
     SELECT_BLIND_ACTION,
     FastFullGameEnv,
+    RolloutSearchRunAgent,
     SearchRunAgent,
     evaluate_agent,
 )
@@ -102,6 +103,25 @@ def test_search_agent_can_choose_high_value_voucher_before_cards() -> None:
     env.run.shop.item_keys = ["c_pluto", "c_mercury"]
 
     assert SearchRunAgent().act(env) == BUY_VOUCHER_ACTION
+
+
+def test_rollout_search_agent_scores_shop_candidates_without_replacing_default() -> None:
+    class TinyRolloutAgent(RolloutSearchRunAgent):
+        shop_rollout_candidates = 2
+        shop_rollout_steps = 2
+
+    env = FastFullGameEnv(deck_key="b_red")
+    env.reset(seed=3)
+    env.run.phase = RunPhase.SHOP
+    env.run.money = 8
+    env.available_voucher = None
+    env.run.shop.item_keys = ["j_joker", "c_pluto"]
+
+    action = TinyRolloutAgent().act(env)
+
+    assert SearchRunAgent.shop_rollout_candidates == 0
+    assert RolloutSearchRunAgent.shop_rollout_candidates > 0
+    assert action in env.legal_action_ids()
 
 
 def test_mega_pack_allows_multiple_selections_before_returning_to_shop() -> None:

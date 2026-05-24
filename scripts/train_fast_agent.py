@@ -6,7 +6,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from balatro_ai_v2.fast.full_game import FastFullGameEnv, SearchRunAgent, evaluate_agent
+from balatro_ai_v2.fast.full_game import FastFullGameEnv, RolloutSearchRunAgent, SearchRunAgent, evaluate_agent
 
 
 def main() -> None:
@@ -15,19 +15,20 @@ def main() -> None:
     parser.add_argument("--seed-start", type=int, default=1)
     parser.add_argument("--seeds", type=int, default=32)
     parser.add_argument("--max-steps", type=int, default=600)
+    parser.add_argument("--shop-rollout", action="store_true")
     args = parser.parse_args()
 
     # This is a deterministic search baseline, not a trained model. It is meant
     # to generate broad trajectories without forcing one hand family.
     seeds = range(args.seed_start, args.seed_start + args.seeds)
-    metrics = evaluate_agent(seeds, deck_key=args.deck, max_steps=args.max_steps)
-    print("agent: SearchRunAgent")
+    agent = RolloutSearchRunAgent() if args.shop_rollout else SearchRunAgent()
+    metrics = evaluate_agent(seeds, deck_key=args.deck, max_steps=args.max_steps, agent=agent)
+    print(f"agent: {type(agent).__name__}")
     for key, value in metrics.items():
         print(f"{key}: {value}")
 
     env = FastFullGameEnv(deck_key=args.deck)
     env.reset(seed=args.seed_start)
-    agent = SearchRunAgent()
     steps = 0
     while steps < args.max_steps and not env.run.won and env.run.phase.name != "GAME_OVER":
         result = env.step(agent.act(env))

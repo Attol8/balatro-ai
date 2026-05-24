@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from copy import deepcopy
 from dataclasses import dataclass, field
 from functools import lru_cache
 from random import Random
@@ -635,6 +636,8 @@ class SearchRunAgent:
 
     beam_width: int = 4
     action_beam: int = 3
+    shop_rollout_candidates: int = 0
+    shop_rollout_steps: int = 0
 
     def act(self, env: FastFullGameEnv) -> int:
         if env.run.phase == RunPhase.BLIND_SELECT:
@@ -703,6 +706,92 @@ class SearchRunAgent:
         return best_action if best_action is not None else env.greedy_play_action()
 
     def _shop_action(self, env: FastFullGameEnv) -> int:
+        if self.shop_rollout_candidates <= 0 or self.shop_rollout_steps <= 0:
+            return self._heuristic_shop_action(env)
+        return self._rollout_shop_action(env)
+
+    def _rollout_shop_action(self, env: FastFullGameEnv) -> int:
+        legal = set(env.legal_action_ids())
+        candidates = [
+            action
+            for action in self._ranked_shop_candidates(env)
+            if action in legal
+        ][: self.shop_rollout_candidates]
+        if NEXT_ROUND_ACTION in legal and NEXT_ROUND_ACTION not in candidates:
+            candidates.append(NEXT_ROUND_ACTION)
+        if not candidates:
+            return NEXT_ROUND_ACTION
+
+        best: tuple[float, int, int] | None = None
+        for action in candidates:
+            clone = deepcopy(env)
+            try:
+                result = clone.step(action)
+            except ValueError:
+                continue
+            score = self._rollout_score(clone, terminated=result.terminated)
+            steps = 1
+            while not result.terminated and steps < self.shop_rollout_steps:
+                try:
+                    next_action = self._rollout_policy_action(clone)
+                    result = clone.step(next_action)
+                except ValueError:
+                    break
+                score = self._rollout_score(clone, terminated=result.terminated)
+                steps += 1
+            candidate = (score, -_shop_action_tie_break(action), -action)
+            if best is None or candidate > best:
+                best = candidate
+        if best is None:
+            return self._heuristic_shop_action(env)
+        return -best[2]
+
+    def _rollout_policy_action(self, env: FastFullGameEnv) -> int:
+        if env.run.phase == RunPhase.BLIND_SELECT:
+            return SELECT_BLIND_ACTION
+        if env.run.phase == RunPhase.ROUND_EVAL:
+            return CASH_OUT_ACTION
+        if env.run.phase == RunPhase.SHOP:
+            return self._heuristic_shop_action(env)
+        if env.run.phase == RunPhase.PACK:
+            return self._pack_action(env)
+        if env.run.phase == RunPhase.GAME_OVER:
+            raise ValueError("cannot act after game over")
+        return env.greedy_play_action()
+
+    def _rollout_score(self, env: FastFullGameEnv, *, terminated: bool) -> float:
+        progress = (
+            env.rounds_cleared * 10_000.0
+            + env.run.ante * 1_000.0
+            + int(env.run.blind_kind) * 250.0
+        )
+        if env.won:
+            progress += 1_000_000.0
+        elif terminated and env.run.phase == RunPhase.GAME_OVER:
+            progress -= 25_000.0
+        score_progress = env.run.score / max(env.run.required_score, 1)
+        return (
+            progress
+            + min(score_progress, 1.5) * 300.0
+            + env.run.money * 12.0
+            + _joker_portfolio_value(env) * 18.0
+            + sum(max(level - 1, 0) for level in env.hand_levels) * 40.0
+            + len(env.consumables) * 15.0
+        )
+
+    def _ranked_shop_candidates(self, env: FastFullGameEnv) -> tuple[int, ...]:
+        scored = []
+        legal = set(env.legal_action_ids())
+        heuristic = self._heuristic_shop_action(env)
+        for action in legal:
+            value = _shop_candidate_value(env, action)
+            if action == heuristic:
+                value += 25.0
+            scored.append((value, -_shop_action_tie_break(action), -action, action))
+        scored.sort(reverse=True)
+        return tuple(action for _, _, _, action in scored)
+
+    def _heuristic_shop_action(self, env: FastFullGameEnv) -> int:
         for index, key in enumerate(env.consumables):
             if key.startswith("c_"):
                 return USE_CONSUMABLE_ACTION_BASE + index
@@ -753,13 +842,21 @@ class SearchRunAgent:
         return PACK_SKIP_ACTION
 
 
+class RolloutSearchRunAgent(SearchRunAgent):
+    """Shop rollout oracle used for stronger but slower training labels."""
+
+    shop_rollout_candidates: int = 4
+    shop_rollout_steps: int = 16
+
+
 def evaluate_agent(
     seeds: range | tuple[int, ...] | list[int],
     *,
     deck_key: str = "b_red",
     max_steps: int = 600,
+    agent: SearchRunAgent | None = None,
 ) -> dict[str, float | int]:
-    agent = SearchRunAgent()
+    agent = agent or SearchRunAgent()
     wins = 0
     rounds = 0
     steps_total = 0
@@ -936,6 +1033,95 @@ def _best_pack_action(env: FastFullGameEnv) -> int | None:
     if best is not None and best[0] > 0:
         return best[1]
     return None
+
+
+def _shop_candidate_value(env: FastFullGameEnv, action: int) -> float:
+    if action == NEXT_ROUND_ACTION:
+        return 5.0 + env.run.money * 0.5
+    if action == REROLL_ACTION:
+        open_slots = max(env.run.joker_slots - len(env.jokers), 0)
+        return 10.0 + open_slots * 8.0 - env.run.shop.reroll_cost * 1.5
+    if action == BUY_VOUCHER_ACTION and env.available_voucher is not None:
+        return _VOUCHER_PURCHASE_VALUES.get(env.available_voucher, 0.0) - env._item_cost(env.available_voucher)
+    if BUY_CARD_ACTION_BASE <= action < BUY_CARD_ACTION_BASE + 8:
+        index = action - BUY_CARD_ACTION_BASE
+        if not 0 <= index < len(env.run.shop.item_keys):
+            return -999.0
+        key = env.run.shop.item_keys[index]
+        cost = env._item_cost(key)
+        if key.startswith("j_"):
+            return _JOKER_PURCHASE_VALUES.get(key, 0.0) - cost
+        target = _PLANET_TO_HAND_KIND.get(key)
+        if target is not None:
+            return 16.0 + 5.0 * env.hand_play_counts[target] + 4.0 * (env.hand_levels[target] - 1) - cost
+        return -999.0
+    if BUY_PACK_ACTION_BASE <= action < BUY_PACK_ACTION_BASE + 8:
+        index = action - BUY_PACK_ACTION_BASE
+        pack_keys = env._pack_keys()
+        if not 0 <= index < len(pack_keys):
+            return -999.0
+        key = pack_keys[index]
+        try:
+            spec = booster_spec(key)
+        except NotImplementedError:
+            return -999.0
+        cost = env._item_cost(key)
+        if spec.kind == BoosterKind.BUFFOON:
+            return 12.0 + max(env.run.joker_slots - len(env.jokers), 0) * 8.0 + spec.choices * 5.0 - cost
+        if spec.kind == BoosterKind.CELESTIAL:
+            target = env._planet_target_hand_kind()
+            played = 0 if target is None else env.hand_play_counts[target]
+            return 10.0 + played * 5.0 + spec.choices * 5.0 - cost
+        return -999.0
+    if SELL_JOKER_ACTION_BASE <= action < SELL_JOKER_ACTION_BASE + 8:
+        index = action - SELL_JOKER_ACTION_BASE
+        if not 0 <= index < len(env.jokers):
+            return -999.0
+        joker = env.jokers[index]
+        return joker.sell_value * 2.0 - _single_joker_value(joker)
+    if USE_CONSUMABLE_ACTION_BASE <= action < USE_CONSUMABLE_ACTION_BASE + 8:
+        index = action - USE_CONSUMABLE_ACTION_BASE
+        if not 0 <= index < len(env.consumables):
+            return -999.0
+        key = env.consumables[index]
+        target = _PLANET_TO_HAND_KIND.get(key)
+        if target is None:
+            return 10.0
+        return 18.0 + env.hand_play_counts[target] * 5.0
+    return -999.0
+
+
+def _shop_action_tie_break(action: int) -> int:
+    if action == NEXT_ROUND_ACTION:
+        return 0
+    if USE_CONSUMABLE_ACTION_BASE <= action < USE_CONSUMABLE_ACTION_BASE + 8:
+        return 1
+    if BUY_CARD_ACTION_BASE <= action < BUY_CARD_ACTION_BASE + 8:
+        return 2
+    if BUY_PACK_ACTION_BASE <= action < BUY_PACK_ACTION_BASE + 8:
+        return 3
+    if action == BUY_VOUCHER_ACTION:
+        return 4
+    if action == REROLL_ACTION:
+        return 5
+    if SELL_JOKER_ACTION_BASE <= action < SELL_JOKER_ACTION_BASE + 8:
+        return 6
+    return 7
+
+
+def _joker_portfolio_value(env: FastFullGameEnv) -> float:
+    return sum(_single_joker_value(joker) for joker in env.jokers)
+
+
+def _single_joker_value(joker: Joker) -> float:
+    base = _JOKER_PURCHASE_VALUES.get(joker.key, 8.0)
+    if joker.key == "j_cavendish":
+        base += 20.0
+    if joker.key in {"j_square", "j_runner"}:
+        base += joker.scaling / 8.0
+    if joker.key in {"j_ride_the_bus", "j_green_joker", "j_trousers"}:
+        base += joker.scaling * 1.5
+    return base
 
 
 def _run_modifiers(run: FastRunState) -> RunModifiers:

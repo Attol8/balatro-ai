@@ -10,6 +10,7 @@ from balatro_ai_v2.fast.env import (
 from balatro_ai_v2.fast.full_game import (
     FastFullGameEnv,
     FullGameStepResult,
+    RolloutSearchRunAgent,
     SearchRunAgent,
     evaluate_agent,
 )
@@ -52,6 +53,7 @@ __all__ = [
     "BlindKind",
     "FastRunState",
     "RunPhase",
+    "RolloutSearchRunAgent",
     "SearchRunAgent",
     "ShopState",
     "StepResult",

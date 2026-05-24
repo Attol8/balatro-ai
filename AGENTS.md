@@ -145,6 +145,11 @@ solver direction is search first, model later:
   hands/discards/slots, economy vouchers, and pack choices that fit the current
   8-card tactical action encoding. Use it to train full-action policies, then
   validate and correct behavior with BalatroBot traces.
+- Use `scripts/generate_fast_oracle_data.py --shop-rollout` when you want the
+  slower `RolloutSearchRunAgent` shop oracle. This clones fast shop states,
+  tries legal shop candidates, rolls forward cheaply, and labels the action with
+  best future progress. It is promising but not a solve: the first smoke moved
+  seeds 1..4 at 40 steps from 5.0 to 5.5 average rounds cleared.
 - Use `scripts/generate_balatrobot_trace_oracle_data.py` to turn full-state
   BalatroBot traces into oracle-labeled `TrajectoryStep` JSONL. This is the
   current DAgger bridge for real hand/shop states. A nearest-neighbor
