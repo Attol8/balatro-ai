@@ -400,6 +400,48 @@ def test_policy_skips_high_value_non_boss_tag() -> None:
     assert action.kind == ActionKind.SKIP_BLIND
 
 
+def test_policy_does_not_skip_late_negative_tag_with_weak_build() -> None:
+    state = _selecting_hand_state([], required_score=5_000)
+    state["state"] = "BLIND_SELECT"
+    state["ante_num"] = 4
+    state["money"] = 2
+    state["blinds"]["small"]["status"] = "SELECT"
+    state["blinds"]["small"]["tag_name"] = "Negative Tag"
+    state["blinds"]["small"]["tag_effect"] = "Next base edition shop Joker is free and becomes Negative"
+    state["jokers"] = {
+        "count": 5,
+        "limit": 5,
+        "cards": [
+            {"key": "j_bull", "set": "JOKER"},
+            {"key": "j_scholar", "set": "JOKER"},
+            {"key": "j_square", "set": "JOKER"},
+            {"key": "j_mystic_summit", "set": "JOKER"},
+            {"key": "j_ride_the_bus", "set": "JOKER"},
+        ],
+    }
+
+    action = BalatroBotPolicy().blind_action(state)
+
+    assert action.kind == ActionKind.SELECT_BLIND
+
+
+def test_policy_can_skip_late_negative_tag_with_carry_joker() -> None:
+    state = _selecting_hand_state([], required_score=5_000)
+    state["state"] = "BLIND_SELECT"
+    state["ante_num"] = 4
+    state["blinds"]["small"]["status"] = "SELECT"
+    state["blinds"]["small"]["tag_name"] = "Negative Tag"
+    state["jokers"] = {
+        "count": 1,
+        "limit": 5,
+        "cards": [{"key": "j_cavendish", "set": "JOKER"}],
+    }
+
+    action = BalatroBotPolicy().blind_action(state)
+
+    assert action.kind == ActionKind.SKIP_BLIND
+
+
 def test_policy_does_not_skip_boss() -> None:
     state = _selecting_hand_state([], required_score=300)
     state["state"] = "BLIND_SELECT"

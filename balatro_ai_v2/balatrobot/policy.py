@@ -68,9 +68,40 @@ def _should_skip_blind(blind: dict[str, Any], state: dict[str, Any]) -> bool:
         return False
     tag_name = str(blind.get("tag_name") or "")
     if tag_name in {"Negative Tag", "Polychrome Tag", "Holographic Tag", "Foil Tag"}:
-        return True
+        return not _late_skip_is_dangerous(state)
     if tag_name == "Orbital Tag":
-        return int(state.get("ante_num") or 0) >= 3
+        return int(state.get("ante_num") or 0) >= 3 and not _late_skip_is_dangerous(state)
     if tag_name in {"Economy Tag", "Investment Tag", "Coupon Tag"}:
-        return int(state.get("money") or 0) < 12
+        return int(state.get("money") or 0) < 12 and not _late_skip_is_dangerous(state)
+    return False
+
+
+def _late_skip_is_dangerous(state: dict[str, Any]) -> bool:
+    if int(state.get("ante_num") or 0) < 4:
+        return False
+    return not _has_late_skip_carry(state)
+
+
+def _has_late_skip_carry(state: dict[str, Any]) -> bool:
+    owned = {
+        str(card.get("key") or "")
+        for card in (((state.get("jokers") or {}).get("cards") or []))
+        if isinstance(card, dict)
+    }
+    if owned & {
+        "j_cavendish",
+        "j_duo",
+        "j_trio",
+        "j_order",
+        "j_tribe",
+        "j_blackboard",
+        "j_card_sharp",
+        "j_constellation",
+        "j_acrobat",
+        "j_stuntman",
+    }:
+        return True
+    money = int(state.get("money") or 0)
+    if money >= 20 and owned & {"j_bull", "j_bootstraps"}:
+        return True
     return False
