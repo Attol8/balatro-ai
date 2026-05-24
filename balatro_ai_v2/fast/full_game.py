@@ -267,7 +267,8 @@ class FastFullGameEnv:
         shop_ids = tuple(_ITEM_OBS_IDS.get(key, 0) for key in self.run.shop.item_keys)
         padded_shop = (shop_ids + (0,) * MAX_SHOP_OBS)[:MAX_SHOP_OBS]
         voucher_id = 0 if self.available_voucher is None else _ITEM_OBS_IDS.get(self.available_voucher, 0)
-        pack_ids = tuple(_ITEM_OBS_IDS.get(key, 0) for key in self.pack_cards)
+        visible_pack_keys = self._pack_keys() if self.run.phase == RunPhase.SHOP else tuple(self.pack_cards)
+        pack_ids = tuple(_ITEM_OBS_IDS.get(key, 0) for key in visible_pack_keys)
         padded_pack = (pack_ids + (0,) * MAX_PACK_OBS)[:MAX_PACK_OBS]
         return (
             int(self.run.phase),

@@ -145,6 +145,14 @@ solver direction is search first, model later:
   hands/discards/slots, economy vouchers, and pack choices that fit the current
   8-card tactical action encoding. Use it to train full-action policies, then
   validate and correct behavior with BalatroBot traces.
+- Use `scripts/generate_balatrobot_trace_oracle_data.py` to turn full-state
+  BalatroBot traces into oracle-labeled `TrajectoryStep` JSONL. This is the
+  current DAgger bridge for real hand/shop states. A nearest-neighbor
+  full-action model is acceptable for parity/debug replay only; it is not a
+  solve strategy. As of 2026-05-24, DAgger nearest replay matched
+  `BalatroBotPolicy()` exactly on visible red-deck seed 1 through ante 4
+  (`diffs 0`, parity 71/71), but still lost because the planner/oracle itself
+  is not strong enough.
 - A policy result is not a solve until the exact policy clears ante 8 through
   clean BalatroBot runs on the first deck across multiple seeds and the trace
   passes `scripts/game_parity_gate.py`.

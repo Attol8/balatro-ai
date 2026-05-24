@@ -144,3 +144,53 @@ Next root-cause work: make `FastFullGameEnv` consume BalatroBot-compatible deck
 order and shop/voucher generation for a seed, or build replay training from
 BalatroBot traces instead of treating the current deterministic fast RNG as
 reproduction evidence.
+
+## Real-State DAgger Replay
+
+The hand-phase failure was confirmed. On the live seed-1 first hand, the
+full-action linear model discarded five cards, while the BalatroBot planner
+would play the pair of 2s. A second failure appeared after the first correction:
+nearest-neighbor replay fixed that first hand, then drifted on later hand states
+and lost even faster.
+
+Implemented a real-state training bridge:
+
+- `balatro_ai_v2.learning.balatrobot_traces` converts full-state BalatroBot
+  JSONL traces into the same `TrajectoryStep` JSONL rows used by the existing
+  trainer.
+- `scripts/generate_balatrobot_trace_oracle_data.py` labels each recorded
+  BalatroBot `transition.before` state with the current `BalatroBotPolicy`
+  oracle, validates the label against live legal full-action ids, and writes
+  training rows.
+- `game_action_to_full_fast_action()` maps planner `GameAction`s back to full
+  fast action ids so live oracle labels can train the same policy interface.
+- Full-action observations now include visible shop pack offers in both fast
+  and live BalatroBot adapters.
+- State-action features now include target item identity/slot features so shop
+  actions can distinguish buying slot 0 from buying slot 1.
+
+Visible real-game DAgger result on seed 1:
+
+```bash
+python scripts/run_balatrobot_agent.py --launch-server --fast-server --no-headless-server --deck RED --stake WHITE --seed-start 1 --seeds 1 --max-steps 120 --poll-delay 0.05 --trace-jsonl /private/tmp/balatro_dagger2_live_seed1.jsonl --full-action-model /private/tmp/balatro_dagger2_nearest.json
+python scripts/game_parity_gate.py /private/tmp/balatro_dagger2_live_seed1.jsonl
+```
+
+Result: 0 wins, ante 4, 71 steps. Parity checked 71/71 transitions, 28 scores,
+and 3 draws with 0 mismatches and 0 unchecked transitions. A direct replay diff
+against `BalatroBotPolicy()` showed 0 action differences. This means the trained
+full-action replay can now reproduce the planner on the real visible path; the
+remaining bottleneck is planner/oracle strength past ante 4, not BalatroBot
+action replay parity.
+
+Fast smoke after DAgger nearest replay:
+
+```text
+seeds 1..8, max_steps=120: 0 wins, 6.5 average rounds cleared
+```
+
+Do not treat the nearest-neighbor model as a solve candidate. It is a parity and
+data-aggregation tool that proves real trace states can train/replay through the
+same full-action policy contract. The next strategic work is improving the
+oracle/shop/tactical planner so the labels themselves can clear ante 8 across
+multiple real seeds.

@@ -1,9 +1,10 @@
 import json
 
-from balatro_ai_v2.fast.full_game import FastFullGameEnv
+from balatro_ai_v2.fast.full_game import BUY_CARD_ACTION_BASE, FastFullGameEnv
 from balatro_ai_v2.fast.run import RunPhase
 from balatro_ai_v2.learning.imitation import (
     ImitationRunAgent,
+    action_features,
     load_action_policy,
     train_linear_policy,
     train_nearest_neighbor_policy,
@@ -64,3 +65,15 @@ def test_saved_imitation_policy_can_drive_fast_env(tmp_path) -> None:
 
     assert result is not None
     assert result.info["selected"]
+
+
+def test_action_features_distinguish_shop_item_slots() -> None:
+    env = FastFullGameEnv(deck_key="b_red")
+    env.reset(seed=1)
+    env.run.phase = RunPhase.SHOP
+    env.run.shop.item_keys = ["j_joker", "c_jupiter"]
+
+    first = action_features(env.observation(), BUY_CARD_ACTION_BASE)
+    second = action_features(env.observation(), BUY_CARD_ACTION_BASE + 1)
+
+    assert first != second

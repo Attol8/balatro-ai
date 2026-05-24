@@ -57,7 +57,8 @@ def balatrobot_state_to_full_fast_observation(state: dict[str, Any]) -> tuple[in
     consumable_ids = tuple(_ITEM_OBS_IDS.get(key, 0) for key in _area_card_keys(state, "consumables"))
     shop_ids = tuple(_ITEM_OBS_IDS.get(key, 0) for key in _area_card_keys(state, "shop"))
     voucher_keys = _area_card_keys(state, "vouchers")
-    pack_ids = tuple(_ITEM_OBS_IDS.get(key, 0) for key in _area_card_keys(state, "pack"))
+    pack_area = "packs" if state.get("state") == "SHOP" else "pack"
+    pack_ids = tuple(_ITEM_OBS_IDS.get(key, 0) for key in _area_card_keys(state, pack_area))
     return (
         int(_run_phase(state)),
         int(state.get("ante_num") or 1),
@@ -152,6 +153,38 @@ def full_fast_action_to_game_action(action: int) -> GameAction:
     if action == PACK_SKIP_ACTION:
         return GameAction(kind=ActionKind.PACK_SKIP)
     raise ValueError(f"unsupported full fast action id: {action}")
+
+
+def game_action_to_full_fast_action(action: GameAction | None) -> int:
+    if action is None:
+        return NEXT_ROUND_ACTION
+    if action.kind in {ActionKind.PLAY, ActionKind.DISCARD}:
+        return action.to_fast_action_id()
+    if action.kind == ActionKind.SELECT_BLIND:
+        return SELECT_BLIND_ACTION
+    if action.kind == ActionKind.SKIP_BLIND:
+        return SKIP_BLIND_ACTION
+    if action.kind == ActionKind.CASH_OUT:
+        return CASH_OUT_ACTION
+    if action.kind == ActionKind.NEXT_ROUND:
+        return NEXT_ROUND_ACTION
+    if action.kind == ActionKind.REROLL:
+        return REROLL_ACTION
+    if action.kind == ActionKind.BUY_VOUCHER:
+        return BUY_VOUCHER_ACTION
+    if action.kind == ActionKind.BUY_CARD:
+        return BUY_CARD_ACTION_BASE + _required_action_index(action)
+    if action.kind == ActionKind.BUY_PACK:
+        return BUY_PACK_ACTION_BASE + _required_action_index(action)
+    if action.kind == ActionKind.SELL_JOKER:
+        return SELL_JOKER_ACTION_BASE + _required_action_index(action)
+    if action.kind == ActionKind.USE_CONSUMABLE:
+        return USE_CONSUMABLE_ACTION_BASE + _required_action_index(action)
+    if action.kind == ActionKind.PACK_SELECT:
+        return PACK_SELECT_ACTION_BASE + _required_action_index(action)
+    if action.kind == ActionKind.PACK_SKIP:
+        return PACK_SKIP_ACTION
+    raise ValueError(f"unsupported game action kind: {action.kind}")
 
 
 def balatrobot_state_to_fast_observation(state: dict[str, Any]) -> tuple[int, ...]:
@@ -289,6 +322,12 @@ def _area_card_keys(state: dict[str, Any], area: str) -> tuple[str, ...]:
 
 def _buy_cost(card: dict[str, Any]) -> int:
     return int(((card.get("cost") or {}).get("buy") or 0))
+
+
+def _required_action_index(action: GameAction) -> int:
+    if action.index is None:
+        raise ValueError(f"{action.kind.value} action requires index")
+    return action.index
 
 
 _PACK_STATES = {

@@ -12,6 +12,11 @@ from balatro_ai_v2.fast.full_game import (
     BUY_PACK_ACTION_BASE,
     BUY_VOUCHER_ACTION,
     CASH_OUT_ACTION,
+    MAX_CONSUMABLE_OBS,
+    MAX_HAND_OBS,
+    MAX_JOKER_OBS,
+    MAX_PACK_OBS,
+    MAX_SHOP_OBS,
     NEXT_ROUND_ACTION,
     PACK_SELECT_ACTION_BASE,
     PACK_SKIP_ACTION,
@@ -21,6 +26,7 @@ from balatro_ai_v2.fast.full_game import (
     SKIP_BLIND_ACTION,
     USE_CONSUMABLE_ACTION_BASE,
     FastFullGameEnv,
+    _ITEM_OBS_IDS,
 )
 from balatro_ai_v2.fast.hand import HAND_KIND_NAMES, score_cards_with_levels
 from balatro_ai_v2.learning.trajectories import TrajectoryStep
@@ -119,6 +125,36 @@ class ImitationRunAgent:
         return self.policy.predict(env.observation(), env.legal_action_ids())
 
 
+_LEVEL_START = 10
+_PLAY_COUNT_START = _LEVEL_START + len(HAND_KIND_NAMES)
+_JOKER_START = _PLAY_COUNT_START + len(HAND_KIND_NAMES)
+_CONSUMABLE_START = _JOKER_START + MAX_JOKER_OBS
+_SHOP_START = _CONSUMABLE_START + MAX_CONSUMABLE_OBS
+_VOUCHER_INDEX = _SHOP_START + MAX_SHOP_OBS
+_PACK_START = _VOUCHER_INDEX + 1
+_HAND_START = _PACK_START + MAX_PACK_OBS
+_ITEM_KEY_BY_OBS_ID = {value: key for key, value in _ITEM_OBS_IDS.items()}
+_MAX_ITEM_OBS_ID = max(_ITEM_OBS_IDS.values(), default=1)
+_HIGH_IMPACT_ITEM_KEYS = {
+    "j_abstract",
+    "j_bull",
+    "j_cavendish",
+    "j_joker",
+    "j_mystic_summit",
+    "j_square",
+    "p_buffoon_normal_1",
+    "p_buffoon_normal_2",
+    "p_celestial_jumbo_1",
+    "p_celestial_jumbo_2",
+    "p_celestial_mega_1",
+    "p_celestial_mega_2",
+    "v_antimatter",
+    "v_crystal_ball",
+    "v_grabber",
+    "v_overstock_norm",
+}
+
+
 def train_linear_policy(
     steps: Iterable[TrajectoryStep],
     *,
@@ -188,6 +224,7 @@ def observation_features(observation: Sequence[int]) -> tuple[float, ...]:
 
 def action_features(observation: Sequence[int], action: int) -> tuple[float, ...]:
     action_kind_features = _action_kind_features(action)
+    item_features = _target_item_features(observation, action)
     if action >= SELECT_BLIND_ACTION:
         return tuple(
             [
@@ -208,6 +245,7 @@ def action_features(observation: Sequence[int], action: int) -> tuple[float, ...
                 *([0.0] * 4),
                 *([0.0] * len(HAND_KIND_NAMES)),
                 *([0.0] * 8),
+                *item_features,
                 *action_kind_features,
             ]
         )
@@ -249,9 +287,68 @@ def action_features(observation: Sequence[int], action: int) -> tuple[float, ...
             *suit_counts,
             *hand_kind_features,
             *selected_positions,
+            *item_features,
             *action_kind_features,
         ]
     )
+
+
+def _target_item_features(observation: Sequence[int], action: int) -> tuple[float, ...]:
+    target_id = _target_item_id(observation, action)
+    target_key = _ITEM_KEY_BY_OBS_ID.get(target_id, "")
+    target_slot = _target_slot(action)
+    return (
+        target_id / max(_MAX_ITEM_OBS_ID, 1),
+        target_slot / 8.0,
+        1.0 if target_key.startswith("j_") else 0.0,
+        1.0 if target_key.startswith("c_") else 0.0,
+        1.0 if target_key.startswith("p_") else 0.0,
+        1.0 if target_key.startswith("v_") else 0.0,
+        1.0 if target_key in _HIGH_IMPACT_ITEM_KEYS else 0.0,
+        _visible_item_count(observation, _JOKER_START, MAX_JOKER_OBS) / MAX_JOKER_OBS,
+        _visible_item_count(observation, _CONSUMABLE_START, MAX_CONSUMABLE_OBS) / MAX_CONSUMABLE_OBS,
+        _visible_item_count(observation, _SHOP_START, MAX_SHOP_OBS) / MAX_SHOP_OBS,
+    )
+
+
+def _target_item_id(observation: Sequence[int], action: int) -> int:
+    if BUY_CARD_ACTION_BASE <= action < BUY_CARD_ACTION_BASE + MAX_SHOP_OBS:
+        return _observation_at(observation, _SHOP_START + action - BUY_CARD_ACTION_BASE)
+    if action == BUY_VOUCHER_ACTION:
+        return _observation_at(observation, _VOUCHER_INDEX)
+    if BUY_PACK_ACTION_BASE <= action < BUY_PACK_ACTION_BASE + MAX_PACK_OBS:
+        return _observation_at(observation, _PACK_START + action - BUY_PACK_ACTION_BASE)
+    if SELL_JOKER_ACTION_BASE <= action < SELL_JOKER_ACTION_BASE + MAX_JOKER_OBS:
+        return _observation_at(observation, _JOKER_START + action - SELL_JOKER_ACTION_BASE)
+    if USE_CONSUMABLE_ACTION_BASE <= action < USE_CONSUMABLE_ACTION_BASE + MAX_CONSUMABLE_OBS:
+        return _observation_at(observation, _CONSUMABLE_START + action - USE_CONSUMABLE_ACTION_BASE)
+    if PACK_SELECT_ACTION_BASE <= action < PACK_SELECT_ACTION_BASE + MAX_PACK_OBS:
+        return _observation_at(observation, _PACK_START + action - PACK_SELECT_ACTION_BASE)
+    return 0
+
+
+def _target_slot(action: int) -> int:
+    if BUY_CARD_ACTION_BASE <= action < BUY_CARD_ACTION_BASE + 8:
+        return action - BUY_CARD_ACTION_BASE
+    if BUY_PACK_ACTION_BASE <= action < BUY_PACK_ACTION_BASE + 8:
+        return action - BUY_PACK_ACTION_BASE
+    if SELL_JOKER_ACTION_BASE <= action < SELL_JOKER_ACTION_BASE + 8:
+        return action - SELL_JOKER_ACTION_BASE
+    if USE_CONSUMABLE_ACTION_BASE <= action < USE_CONSUMABLE_ACTION_BASE + 8:
+        return action - USE_CONSUMABLE_ACTION_BASE
+    if PACK_SELECT_ACTION_BASE <= action < PACK_SELECT_ACTION_BASE + 8:
+        return action - PACK_SELECT_ACTION_BASE
+    return 0
+
+
+def _visible_item_count(observation: Sequence[int], start: int, count: int) -> int:
+    return sum(1 for index in range(start, start + count) if _observation_at(observation, index) > 0)
+
+
+def _observation_at(observation: Sequence[int], index: int) -> int:
+    if 0 <= index < len(observation):
+        return int(observation[index])
+    return 0
 
 
 def _action_kind_features(action: int) -> tuple[float, ...]:

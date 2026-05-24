@@ -7,6 +7,7 @@ from balatro_ai_v2.balatrobot.imitation_policy import (
     balatrobot_state_to_full_fast_observation,
     fast_legal_full_actions,
     fast_legal_tactical_actions,
+    game_action_to_full_fast_action,
 )
 from balatro_ai_v2.balatrobot.client import BalatroBotClient
 from balatro_ai_v2.balatrobot.policy import BalatroBotPolicy
@@ -16,9 +17,18 @@ from balatro_ai_v2.balatrobot.shop_planner import plan_pack_action, plan_shop_ac
 from balatro_ai_v2.balatrobot.tactical_planner import _jokers_after_play
 from balatro_ai_v2.balatrobot.tracing import JsonlTraceWriter
 from balatro_ai_v2.fast.env import DISCARD_ACTION_OFFSET
-from balatro_ai_v2.fast.full_game import BUY_CARD_ACTION_BASE, BUY_PACK_ACTION_BASE, BUY_VOUCHER_ACTION, NEXT_ROUND_ACTION
+from balatro_ai_v2.fast.full_game import (
+    BUY_CARD_ACTION_BASE,
+    BUY_PACK_ACTION_BASE,
+    BUY_VOUCHER_ACTION,
+    CASH_OUT_ACTION,
+    NEXT_ROUND_ACTION,
+    SELECT_BLIND_ACTION,
+    _ITEM_OBS_IDS,
+)
 from balatro_ai_v2.fast.hand import FOUR_OF_A_KIND, STRAIGHT, TWO_PAIR, FastScore
 from balatro_ai_v2.fast.jokers import Joker
+from balatro_ai_v2.learning.balatrobot_traces import iter_balatrobot_trace_oracle_steps
 
 
 def test_policy_plays_when_discard_cannot_improve_unwinnable_round() -> None:
@@ -465,6 +475,51 @@ def test_policy_can_use_full_action_model_to_leave_shop() -> None:
     assert action.kind == ActionKind.NEXT_ROUND
 
 
+def test_game_action_to_full_fast_action_encodes_all_full_action_families() -> None:
+    assert game_action_to_full_fast_action(None) == NEXT_ROUND_ACTION
+    assert game_action_to_full_fast_action(BalatroBotPolicy().round_eval_action({})) == CASH_OUT_ACTION
+    assert game_action_to_full_fast_action(
+        BalatroBotPolicy().blind_action({"state": "BLIND_SELECT"})
+    ) == SELECT_BLIND_ACTION
+    assert game_action_to_full_fast_action(
+        _action(ActionKind.BUY_CARD, index=2)
+    ) == BUY_CARD_ACTION_BASE + 2
+    assert game_action_to_full_fast_action(
+        _action(ActionKind.BUY_PACK, index=1)
+    ) == BUY_PACK_ACTION_BASE + 1
+
+
+def test_balatrobot_trace_oracle_data_labels_live_hand_with_legal_planner_action() -> None:
+    state = _selecting_hand_state(
+        [
+            _card("S", "A"),
+            _card("S", "9"),
+            _card("D", "8"),
+            _card("H", "7"),
+            _card("S", "5"),
+            _card("D", "3"),
+            _card("H", "2"),
+            _card("C", "2"),
+        ],
+        required_score=300,
+    )
+    rows = [
+        {
+            "event": "transition",
+            "before": state,
+            "action": {"method": "discard", "params": {"cards": [0, 4, 5, 6, 7]}},
+            "after": {"state": "SELECTING_HAND", "round_num": 1, "seed": "1"},
+        }
+    ]
+
+    steps = list(iter_balatrobot_trace_oracle_steps(rows))
+
+    assert len(steps) == 1
+    assert steps[0].action in steps[0].legal_actions
+    assert steps[0].action == _action(ActionKind.PLAY, indices=(6, 7)).to_fast_action_id()
+    assert steps[0].info["executed_method"] == "discard"
+
+
 def test_live_imitation_observation_includes_hand_levels_and_play_counts() -> None:
     state = _selecting_hand_state([_card("S", "A")], required_score=300)
     state["hands"]["Pair"] = {"level": 3, "played": 2}
@@ -492,6 +547,9 @@ def test_full_action_observation_includes_shop_voucher_pack_and_hand_tail() -> N
 
     assert observation[0] == 3
     assert observation[-8:] == (-1, -1, -1, -1, -1, -1, -1, -1)
+    assert _ITEM_OBS_IDS["j_joker"] in observation
+    assert _ITEM_OBS_IDS["p_buffoon_normal_1"] in observation
+    assert _ITEM_OBS_IDS["v_grabber"] in observation
     legal_actions = fast_legal_full_actions(state)
     assert BUY_CARD_ACTION_BASE in legal_actions
     assert BUY_PACK_ACTION_BASE in legal_actions
@@ -595,6 +653,12 @@ def _shop_state(
         "cards": jokers or [],
     }
     return state
+
+
+def _action(kind: ActionKind, *, indices: tuple[int, ...] = (), index: int | None = None):
+    from balatro_ai_v2.actions import GameAction
+
+    return GameAction(kind=kind, indices=indices, index=index)
 
 
 def _card(suit: str, rank: str) -> dict:
