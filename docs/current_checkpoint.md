@@ -101,3 +101,46 @@ The replay contract now exists, but policy quality is still poor. The next
 useful work is to compare fast and live action choices on the same seed and fix
 remaining observation/action mismatches before improving oracle search or
 training quality.
+
+## Fast-vs-Live Policy Gap
+
+A follow-up comparison used the same scratch full-action model on fast seed 1
+and visible BalatroBot seed 1.
+
+Fast seed 1 did not fail early. It reached 7 cleared rounds within the 80-step
+cap:
+
+```text
+FAST seed=1 won=False rounds=7 ante=3 phase=SELECTING_HAND steps=80
+```
+
+Visible BalatroBot seed 1 still failed at ante 1 in 16 steps:
+
+```text
+LIVE seed=1 won=False ante=1 round_num=2 state=GAME_OVER steps=16
+```
+
+The divergence begins at the first hand, before shop logic:
+
+```text
+fast first hand: H_A C_K H_K S_Q C_J D_J D_8 C_4
+live first hand: S_A S_9 D_8 H_7 S_5 D_3 H_2 C_2
+```
+
+Consequences:
+
+- Fast predicted an immediate play on the first hand.
+- Live predicted two discards, then a play.
+- Fast reached the first shop with $8 and bought `j_mystic_summit`.
+- Live reached the first shop with $10, making the voucher legal, and bought
+  `v_crystal_ball`, leaving $0.
+
+This explains why the fast 5.75 average did not reproduce: the trained policy is
+being evaluated on a fake fast card stream and fake fast shop stream. The
+BalatroBot trace itself still passes transition parity for observed actions, but
+the fast rollout is not starting from equivalent hidden deck/shop RNG state.
+
+Next root-cause work: make `FastFullGameEnv` consume BalatroBot-compatible deck
+order and shop/voucher generation for a seed, or build replay training from
+BalatroBot traces instead of treating the current deterministic fast RNG as
+reproduction evidence.
