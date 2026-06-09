@@ -39,6 +39,7 @@ from balatro_ai_v2.fast.jokers import (
     Joker,
     ScoreContext,
     apply_additive_jokers,
+    sort_jokers_canonically,
 )
 from balatro_ai_v2.fast.joker_money import (
     DOLLAR_BONUS_JOKERS,
@@ -536,6 +537,7 @@ class FastFullGameEnv:
                     self.jokers.append(_make_joker(joker_key))
                     if joker_key in RUN_EFFECT_JOKERS:
                         self._recompute_run_modifiers()
+                self.jokers = sort_jokers_canonically(self.jokers)
             elif rule.hand_levels:
                 rng = Random(self.seed * 379 + self.run.round_num * 67 + len(self.tags))
                 self.hand_levels[rng.randrange(len(self.hand_levels))] += rule.hand_levels
@@ -623,6 +625,7 @@ class FastFullGameEnv:
                     edition=edition,
                 )
             self.jokers.append(joker)
+            self.jokers = sort_jokers_canonically(self.jokers)
             if key in RUN_EFFECT_JOKERS:
                 self._recompute_run_modifiers()
         elif key.startswith("c_"):
@@ -709,6 +712,7 @@ class FastFullGameEnv:
         key = self.pack_cards[index]
         if key.startswith("j_") and len(self.jokers) < self.run.joker_slots:
             self.jokers.append(_make_joker(key))
+            self.jokers = sort_jokers_canonically(self.jokers)
             if key in RUN_EFFECT_JOKERS:
                 self._recompute_run_modifiers()
         elif key.startswith("c_"):
@@ -887,12 +891,14 @@ class FastFullGameEnv:
             self.jokers.append(_make_joker(self._available_joker_pool()[0]))
             if self.jokers[-1].key in RUN_EFFECT_JOKERS:
                 self._recompute_run_modifiers()
+            self.jokers = sort_jokers_canonically(self.jokers)
         elif key == "c_wraith" and len(self.jokers) < self.run.joker_slots:
             rare_pool = tuple(key for key in self._available_joker_pool() if _source_joker_rarities().get(key, 1) == 3)
             self.jokers.append(_make_joker((rare_pool or self._available_joker_pool())[0]))
             self.run.money = 0
             if self.jokers[-1].key in RUN_EFFECT_JOKERS:
                 self._recompute_run_modifiers()
+            self.jokers = sort_jokers_canonically(self.jokers)
         elif key == "c_immolate":
             targets = self._target_cards_for_consumable(key)
             self._remove_hand_cards(targets)

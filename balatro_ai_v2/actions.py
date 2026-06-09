@@ -22,6 +22,7 @@ class ActionKind(str, Enum):
     USE_CONSUMABLE = "use_consumable"
     PACK_SELECT = "pack_select"
     PACK_SKIP = "pack_skip"
+    REARRANGE_JOKERS = "rearrange_jokers"
 
 
 @dataclass(frozen=True, slots=True)
@@ -56,6 +57,8 @@ class GameAction:
             return "select", {}
         if self.kind == ActionKind.SKIP_BLIND:
             return "skip", {}
+        if self.kind == ActionKind.REARRANGE_JOKERS:
+            return "rearrange", {"jokers": list(self.indices)}
         if self.kind == ActionKind.CASH_OUT:
             return "cash_out", {}
         if self.kind == ActionKind.NEXT_ROUND:

@@ -46,3 +46,31 @@ def test_non_target_actions_unchanged() -> None:
     state: dict = {}
     action = GameAction(kind=ActionKind.NEXT_ROUND)
     assert _with_required_targets(state, action) is action
+
+
+def test_joker_rearrange_moves_xmult_right() -> None:
+    from balatro_ai_v2.planner.live_policy import PlannerPolicy
+
+    policy = PlannerPolicy()
+    state = {
+        "jokers": {
+            "cards": [
+                {"key": "j_duo"},
+                {"key": "j_joker"},
+                {"key": "j_mad"},
+            ]
+        }
+    }
+    action = policy._joker_rearrange(state)
+    assert action is not None
+    assert action.kind.value == "rearrange_jokers"
+    assert action.indices == (1, 2, 0)
+    assert action.to_balatrobot_rpc() == ("rearrange", {"jokers": [1, 2, 0]})
+
+
+def test_joker_rearrange_noop_when_canonical() -> None:
+    from balatro_ai_v2.planner.live_policy import PlannerPolicy
+
+    policy = PlannerPolicy()
+    state = {"jokers": {"cards": [{"key": "j_joker"}, {"key": "j_duo"}]}}
+    assert policy._joker_rearrange(state) is None

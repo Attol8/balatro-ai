@@ -21,6 +21,7 @@ from balatro_ai_v2.balatrobot.imitation_policy import (
 from balatro_ai_v2.balatrobot.policy import BalatroBotPolicy
 from balatro_ai_v2.balatrobot.shop_planner import _playing_card_value, _targeted_tarot_targets
 from balatro_ai_v2.fast.consumables import TAROT_TARGET_LIMITS
+from balatro_ai_v2.fast.jokers import canonical_joker_order
 
 # Spectral cards that require explicit hand targets in the live RPC; the
 # value is the number of targets. Targets default to the highest-value cards.
@@ -49,7 +50,20 @@ class PlannerPolicy:
         self._core = PlannerCore(config=self.config)
 
     def blind_action(self, state: dict[str, Any]) -> GameAction:
+        rearrange = self._joker_rearrange(state)
+        if rearrange is not None:
+            return rearrange
         return self._decide(state, default=lambda: self.fallback.blind_action(state))
+
+    def _joker_rearrange(self, state: dict[str, Any]) -> GameAction | None:
+        """Keep x-mult jokers rightmost; sequential scoring multiplies last."""
+        keys = [str(card.get("key") or "") for card in _area_cards(state, "jokers")]
+        if len(keys) < 2:
+            return None
+        order = canonical_joker_order(keys)
+        if order == tuple(range(len(keys))):
+            return None
+        return GameAction(kind=ActionKind.REARRANGE_JOKERS, indices=order)
 
     def tactical_action(self, state: dict[str, Any]) -> GameAction:
         # Targeted tarots can only be used while the hand is visible; holding
@@ -79,6 +93,9 @@ class PlannerPolicy:
         return None
 
     def shop_action(self, state: dict[str, Any]) -> GameAction | None:
+        rearrange = self._joker_rearrange(state)
+        if rearrange is not None:
+            return rearrange
         return self._decide(state, default=lambda: self.fallback.shop_action(state))
 
     def pack_action(self, state: dict[str, Any]) -> GameAction:

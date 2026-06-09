@@ -140,3 +140,16 @@ def test_constellation_grows_when_planet_used() -> None:
 
     assert env.jokers[0].x_mult == 1.1
     assert "c_pluto" in env.planets_used
+
+
+def test_env_keeps_xmult_jokers_rightmost_on_buy() -> None:
+    env = FastFullGameEnv(deck_key="b_red")
+    env.reset(seed=1)
+    env.run.phase = RunPhase.SHOP
+    env.run.money = 50
+    env.jokers = [Joker(key="j_duo", sell_value=3)]
+    env.run.shop.item_keys = ["j_joker"]
+
+    env.step(BUY_CARD_ACTION_BASE)
+
+    assert [joker.key for joker in env.jokers] == ["j_joker", "j_duo"]

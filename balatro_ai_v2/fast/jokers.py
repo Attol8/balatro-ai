@@ -121,6 +121,54 @@ CONTAINED_TYPE_XMULT_JOKERS = {
 # score parity — so the planner never buys them.
 PROBABILISTIC_SCORE_JOKERS = frozenset({"j_bloodstone"})
 
+# Joker-phase x-mult jokers: under sequential left-to-right scoring these
+# belong rightmost so every additive mult lands before they multiply.
+JOKER_PHASE_XMULT_JOKERS = frozenset(
+    {
+        "j_cavendish",
+        "j_acrobat",
+        "j_family",
+        "j_constellation",
+        "j_caino",
+        "j_campfire",
+        "j_hit_the_road",
+        "j_hologram",
+        "j_lucky_cat",
+        "j_madness",
+        "j_yorick",
+        "j_ramen",
+        "j_throwback",
+        "j_blackboard",
+        "j_loyalty_card",
+        "j_obelisk",
+        "j_steel_joker",
+        "j_vampire",
+        "j_glass",
+        "j_seeing_double",
+        "j_card_sharp",
+        "j_drivers_license",
+        "j_flower_pot",
+        "j_stencil",
+        "j_duo",
+        "j_trio",
+        "j_order",
+        "j_tribe",
+        "j_baseball",
+    }
+)
+
+
+def canonical_joker_order(keys) -> tuple[int, ...]:
+    """Stable order with joker-phase x-mult jokers last."""
+    indexed = list(enumerate(keys))
+    indexed.sort(key=lambda item: (item[1] in JOKER_PHASE_XMULT_JOKERS, item[0]))
+    return tuple(index for index, _ in indexed)
+
+
+def sort_jokers_canonically(jokers):
+    order = canonical_joker_order([joker.key for joker in jokers])
+    return [jokers[index] for index in order]
+
 IMPLEMENTED_JOKERS = frozenset(
     {
         # Hand-rule jokers are applied inside score_cards_with_joker_rules.

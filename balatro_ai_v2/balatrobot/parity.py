@@ -149,6 +149,11 @@ def replay_balatrobot_trace(path: str | Path, *, score_tolerance: int = 0) -> Pa
             checked_transitions += 1
             if mismatch is not None:
                 mismatches.append(mismatch)
+        elif method == "rearrange":
+            mismatch = _check_rearrange(line_num, before, after, action_payload)
+            checked_transitions += 1
+            if mismatch is not None:
+                mismatches.append(mismatch)
         elif method == "gamestate":
             if pending_draw is not None and _area_keys(before, "hand") != _area_keys(after, "hand"):
                 expected, source = pending_draw
@@ -398,6 +403,21 @@ def _check_reroll(line_num: int, before: dict[str, Any], after: dict[str, Any]) 
     if _area_keys(before, "shop") == _area_keys(after, "shop") and cost > 0:
         return _mismatch(line_num, "shop", "reroll did not change visible shop cards", "changed shop", _area_keys(after, "shop"))
     return None
+
+
+def _check_rearrange(line_num: int, before: dict[str, Any], after: dict[str, Any], payload: dict[str, Any]) -> ParityMismatch | None:
+    params = payload.get("params") or {}
+    for area_param, area in (("jokers", "jokers"), ("consumables", "consumables"), ("hand", "hand")):
+        order = params.get(area_param)
+        if order is None:
+            continue
+        before_keys = _area_keys(before, area) or []
+        after_keys = _area_keys(after, area) or []
+        expected = [before_keys[index] for index in order if 0 <= index < len(before_keys)]
+        if after_keys != expected:
+            return _mismatch(line_num, "rearrange", f"{area} order did not match requested permutation", expected, after_keys)
+        return None
+    return _mismatch(line_num, "rearrange", "rearrange params named no area", "jokers|consumables|hand", params)
 
 
 def _check_skip(line_num: int, before: dict[str, Any], after: dict[str, Any]) -> ParityMismatch | None:

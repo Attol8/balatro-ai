@@ -23,8 +23,9 @@ from balatro_ai_v2.fast.hand import HAND_KIND_NAMES
 from balatro_ai_v2.fast.jokers import IMPLEMENTED_JOKERS, PROBABILISTIC_SCORE_JOKERS, Joker
 
 # Jokers the live planner must never buy because exact score replay is
-# impossible (probabilistic triggers).
-LIVE_UNSAFE_JOKERS = PROBABILISTIC_SCORE_JOKERS
+# impossible: probabilistic triggers, or float-drift state the snapshot
+# reports rounded (Ramen's x_mult decays by 0.01 in Lua floats).
+LIVE_UNSAFE_JOKERS = PROBABILISTIC_SCORE_JOKERS | {"j_ramen"}
 from balatro_ai_v2.fast.run import BlindKind, RunPhase
 
 
