@@ -26,12 +26,12 @@ from balatro_ai_v2.fast.run import BlindKind, RunPhase, _ante_base_chips
 class RunValueWeights:
     progress: float = 10_000.0
     survival_margin: float = 4_000.0
-    money: float = 12.0
-    interest_band: float = 3.0
+    money: float = 18.0
+    interest_band: float = 6.0
     scaling_rate: float = 600.0
     hand_levels: float = 40.0
     build_commitment: float = 1.0
-    portfolio: float = 6.0
+    portfolio: float = 3.0
     blind_progress: float = 300.0
     churn_penalty: float = 5.0
     unmodeled_boss_penalty: float = 300.0
@@ -39,6 +39,8 @@ class RunValueWeights:
     loss_penalty: float = 25_000.0
     hand_budget_factor: float = 0.45
     margin_decay: float = 0.6
+    margin_floor: float = -6.0
+    margin_ceiling: float = 2.0
 
 
 DEFAULT_WEIGHTS = RunValueWeights()
@@ -181,7 +183,8 @@ def survival_margin(env: FastFullGameEnv, weights: RunValueWeights = DEFAULT_WEI
     margin = 0.0
     for offset, requirement in enumerate(requirement_curve(env)):
         ratio = projected / max(requirement, 1)
-        clamped = max(-3.0, min(2.0, log2(ratio) if ratio > 0 else -3.0))
+        raw = log2(ratio) if ratio > 0 else weights.margin_floor
+        clamped = max(weights.margin_floor, min(weights.margin_ceiling, raw))
         margin += (weights.margin_decay**offset) * clamped
     return margin
 

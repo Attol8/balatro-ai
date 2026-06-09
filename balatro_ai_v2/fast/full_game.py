@@ -152,6 +152,7 @@ class FastFullGameEnv:
     free_shop_item_indices: set[int] = field(init=False)
     coupon_active: bool = field(default=False, init=False)
     d6_active: bool = field(default=False, init=False)
+    bought_pack_indices: set[int] = field(init=False)
 
     def __post_init__(self) -> None:
         self.run = FastRunState(deck_key=self.deck_key)
@@ -171,6 +172,7 @@ class FastFullGameEnv:
         self.tags = []
         self.shop_item_editions = {}
         self.free_shop_item_indices = set()
+        self.bought_pack_indices = set()
 
     def reset(self, seed: int | None = None) -> tuple[int, ...]:
         if seed is not None:
@@ -204,6 +206,7 @@ class FastFullGameEnv:
         self.free_shop_item_indices = set()
         self.coupon_active = False
         self.d6_active = False
+        self.bought_pack_indices = set()
         self._select_boss_for_ante()
         self._sync_required_score()
         return self.observation()
@@ -633,11 +636,14 @@ class FastFullGameEnv:
         pack_keys = self._pack_keys()
         if not 0 <= index < len(pack_keys):
             raise ValueError("pack index out of range")
+        if index in self.bought_pack_indices:
+            raise ValueError("pack already bought this shop")
         key = pack_keys[index]
         cost = 0 if self.coupon_active else self._item_cost(key)
         if self.run.money < cost:
             raise ValueError("not enough money")
         self.run.money -= cost
+        self.bought_pack_indices.add(index)
         self.pack_cards = self._generate_pack_cards(key)
         self.pack_choices = booster_spec(key).choices
         self.run.phase = RunPhase.PACK
@@ -757,6 +763,7 @@ class FastFullGameEnv:
         self.rounds_cleared += 1
         self.run.phase = RunPhase.SHOP
         self.run.shop = ShopState(reroll_cost=self.run.base_reroll_cost)
+        self.bought_pack_indices = set()
         self._populate_shop()
 
     def _populate_shop(self, *, refresh_voucher: bool = True) -> None:
@@ -1139,7 +1146,9 @@ class FastFullGameEnv:
         if self.available_voucher is not None and self.run.money >= self._item_cost(self.available_voucher):
             actions.append(BUY_VOUCHER_ACTION)
         for index, key in enumerate(self._pack_keys()):
-            if self.run.money >= self._item_cost(key):
+            if index in self.bought_pack_indices:
+                continue
+            if self.run.money >= (0 if self.coupon_active else self._item_cost(key)):
                 actions.append(BUY_PACK_ACTION_BASE + index)
         for index in range(len(self.jokers)):
             actions.append(SELL_JOKER_ACTION_BASE + index)

@@ -286,6 +286,29 @@ def test_shop_generation_uses_source_shaped_joker_pool() -> None:
     assert all(key in IMPLEMENTED_JOKERS for key in pool if key.startswith("j_"))
 
 
+def test_packs_deplete_when_bought() -> None:
+    env = FastFullGameEnv(deck_key="b_red")
+    env.reset(seed=1)
+    env.run.phase = RunPhase.SHOP
+    env.run.money = 50
+
+    pack_actions = [a for a in env.legal_action_ids() if BUY_PACK_ACTION_BASE <= a < BUY_PACK_ACTION_BASE + 8]
+    assert pack_actions
+    env.step(pack_actions[0])
+    while env.run.phase == RunPhase.PACK:
+        env.step(env.legal_action_ids()[-1])
+
+    remaining = [a for a in env.legal_action_ids() if BUY_PACK_ACTION_BASE <= a < BUY_PACK_ACTION_BASE + 8]
+    assert pack_actions[0] not in remaining
+
+    try:
+        env.step(pack_actions[0])
+        raised = False
+    except ValueError:
+        raised = True
+    assert raised
+
+
 def test_voucher_generation_respects_upgrade_requirements() -> None:
     env = FastFullGameEnv(deck_key="b_red")
     env.reset(seed=4)
