@@ -104,6 +104,11 @@ CONTAINED_TYPE_XMULT_JOKERS = {
     "j_tribe": (FLUSH, 2.0),
 }
 
+# Jokers whose score contribution is a random roll in the live game. The sim
+# scores them at expected value, which is fine for valuation but breaks exact
+# score parity — so the planner never buys them.
+PROBABILISTIC_SCORE_JOKERS = frozenset({"j_bloodstone"})
+
 IMPLEMENTED_JOKERS = frozenset(
     {
         "j_joker",

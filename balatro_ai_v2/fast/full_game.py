@@ -33,7 +33,13 @@ from balatro_ai_v2.fast.hand import (
     FastScore,
     score_cards_with_joker_rules,
 )
-from balatro_ai_v2.fast.jokers import IMPLEMENTED_JOKERS, Joker, ScoreContext, apply_additive_jokers
+from balatro_ai_v2.fast.jokers import (
+    IMPLEMENTED_JOKERS,
+    PROBABILISTIC_SCORE_JOKERS,
+    Joker,
+    ScoreContext,
+    apply_additive_jokers,
+)
 from balatro_ai_v2.fast.joker_money import (
     DOLLAR_BONUS_JOKERS,
     MONEY_EVENT_JOKERS,
@@ -1177,7 +1183,9 @@ class FastFullGameEnv:
         pool = tuple(
             key
             for key in _source_keys("jokers")
-            if _source_joker_rarities().get(key, 1) < 4 and key in IMPLEMENTED_JOKERS
+            if _source_joker_rarities().get(key, 1) < 4
+            and key in IMPLEMENTED_JOKERS
+            and key not in PROBABILISTIC_SCORE_JOKERS
         ) or (
             _SHOP_CARD_POOL_BY_ANTE[0] + tuple(key for ante, key in _SHOP_CARD_POOL_BY_ANTE[1] if self.run.ante >= ante)
         )
@@ -1749,7 +1757,9 @@ _PACK_WEIGHTS = tuple(
 _PACK_JOKER_POOL = tuple(
     key
     for key in _source_keys("jokers")
-    if _source_joker_rarities().get(key, 1) < 4 and key in IMPLEMENTED_JOKERS
+    if _source_joker_rarities().get(key, 1) < 4
+    and key in IMPLEMENTED_JOKERS
+    and key not in PROBABILISTIC_SCORE_JOKERS
 ) or (
     "j_joker",
     "j_abstract",

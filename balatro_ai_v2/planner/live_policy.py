@@ -41,6 +41,12 @@ class PlannerPolicy:
         return self._decide(state, default=lambda: self.fallback.blind_action(state))
 
     def tactical_action(self, state: dict[str, Any]) -> GameAction:
+        # The fast action-id contract encodes at most 8 hand positions; larger
+        # live hands (Juggle tag, vouchers) go to the heuristic beam planner,
+        # which works on indices directly.
+        hand_len = len(((state.get("hand") or {}).get("cards")) or [])
+        if hand_len > 8:
+            return self.fallback.tactical_action(state)
         return self._decide(state, default=lambda: self.fallback.tactical_action(state))
 
     def shop_action(self, state: dict[str, Any]) -> GameAction | None:
