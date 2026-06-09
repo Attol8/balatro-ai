@@ -403,17 +403,18 @@ def _check_use(line_num: int, before: dict[str, Any], after: dict[str, Any], pay
         if actual_money != expected_money:
             return _mismatch(line_num, "money", "Hermit money delta did not match source rule", expected_money, actual_money)
         return None
-    # Generic shape check for consumables without an exact effect model:
-    # the used card must leave its slot (The Fool may add a copy of the
-    # last planet/tarot, so the count can stay level but never grow).
+    # Generic shape check for consumables without an exact effect model: the
+    # used card leaves its slot; generative consumables may add new cards
+    # (High Priestess/Emperor create up to 2, The Fool copies 1).
+    allowed_new_cards = {"c_high_priestess": 2, "c_emperor": 2, "c_fool": 1}.get(key, 0)
     before_count = len(consumables)
     after_count = len(_area_cards(after, "consumables") or [])
-    if after_count > before_count:
+    if after_count > before_count - 1 + allowed_new_cards:
         return _mismatch(
             line_num,
             "use",
             f"consumable use {key} grew the consumable area",
-            f"<= {before_count}",
+            f"<= {before_count - 1 + allowed_new_cards}",
             after_count,
         )
     return None

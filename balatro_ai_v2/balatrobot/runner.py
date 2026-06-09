@@ -146,7 +146,10 @@ class BalatroBotRunner:
         try:
             return self.client.call_action(method, params)
         except BalatroBotError as exc:
-            if "failed to connect" not in str(exc):
+            message = str(exc)
+            # The game can advance between the poll and the action (async
+            # animations); re-read state instead of crashing the run.
+            if "failed to connect" not in message and "requires one of these states" not in message:
                 raise
             if self.retry_delay > 0:
                 sleep(self.retry_delay)
