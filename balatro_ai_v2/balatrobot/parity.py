@@ -292,6 +292,16 @@ def _check_next_round(line_num: int, before: dict[str, Any], after: dict[str, An
     return None
 
 
+def _coupon_tag_skipped(state: dict[str, Any]) -> bool:
+    blinds = state.get("blinds") or {}
+    return any(
+        isinstance(blind, dict)
+        and blind.get("status") == "SKIPPED"
+        and str(blind.get("tag_name") or "") == "Coupon Tag"
+        for blind in blinds.values()
+    )
+
+
 def _check_buy(line_num: int, before: dict[str, Any], after: dict[str, Any], payload: dict[str, Any]) -> ParityMismatch | None:
     params = payload.get("params") or {}
     if "card" in params:
@@ -314,8 +324,12 @@ def _check_buy(line_num: int, before: dict[str, Any], after: dict[str, Any], pay
         return _mismatch(line_num, "buy", f"buy index outside {area}", f"0..{len(cards or []) - 1}", index)
     bought = cards[index]
     cost = int(((bought.get("cost") or {}).get("buy") or 0))
-    if int(after.get("money") or 0) != int(before.get("money") or 0) - cost:
-        return _mismatch(line_num, "money", "buy money delta did not match visible cost", -cost, int(after.get("money") or 0) - int(before.get("money") or 0))
+    money_delta = int(after.get("money") or 0) - int(before.get("money") or 0)
+    if money_delta != -cost:
+        # A Coupon Tag from a skipped blind this ante makes the next shop's
+        # items free; accept a zero delta in that case.
+        if not (money_delta == 0 and _coupon_tag_skipped(before)):
+            return _mismatch(line_num, "money", "buy money delta did not match visible cost", -cost, money_delta)
     if destination == "BOOSTER_OPENED":
         if not _is_booster_state(after.get("state")):
             return _mismatch(line_num, "pack", "buying a pack did not open booster state", "booster state", after.get("state"))
