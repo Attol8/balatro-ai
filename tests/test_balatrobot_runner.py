@@ -758,7 +758,7 @@ def test_shop_planner_rerolls_late_without_carry_instead_of_buying_planet_pack()
         money=8,
         shop_cards=[
             {"key": "c_star", "set": "TAROT", "cost": {"buy": 3, "sell": 1}},
-            {"key": "j_drunkard", "set": "JOKER", "cost": {"buy": 4, "sell": 2}},
+            {"key": "j_8_ball", "set": "JOKER", "cost": {"buy": 4, "sell": 2}},
         ],
         packs=[
             {"key": "p_standard_normal_1", "set": "BOOSTER", "cost": {"buy": 4, "sell": 2}},

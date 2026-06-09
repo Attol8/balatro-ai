@@ -290,8 +290,8 @@ def test_held_card_jokers_apply_per_card_effects() -> None:
         ScoreContext(held_cards=(card(10, 0), card(11, 1), card(11, 2))),
     )
 
-    assert result.mult == base.mult + 13
-    assert result.total == int(result.chips * result.mult * 2.25)
+    assert result.mult == (base.mult + 13) * 2.25
+    assert result.total == int(result.chips * result.mult)
 
 
 def test_raised_fist_is_disabled_when_lowest_held_card_is_debuffed() -> None:
@@ -418,7 +418,8 @@ def test_source_backed_context_jokers_apply_score_effects() -> None:
         ),
     )
 
-    assert result.total == int(result.chips * result.mult * 108)
+    assert result.mult == base.mult * 108
+    assert result.total == int(result.chips * result.mult)
 
 
 def test_stored_state_and_deck_count_jokers_apply_score_effects() -> None:
@@ -448,8 +449,8 @@ def test_stored_state_and_deck_count_jokers_apply_score_effects() -> None:
     )
 
     assert result.chips == base.chips + 25
-    assert result.mult == base.mult + 12 + 4 + 4 + 6
-    assert result.total == int(result.chips * result.mult * 3)
+    assert result.mult == (base.mult + 12 + 4 + 4 + 6) * 3
+    assert result.total == int(result.chips * result.mult)
 
 
 def test_cash_out_joker_dollar_bonuses_are_source_backed() -> None:
@@ -592,7 +593,7 @@ def test_global_xmult_joker_scores_hand_family() -> None:
     )
 
     assert result.chips == 32
-    assert result.mult == 2
+    assert result.mult == 2 * 2
     assert result.total == 32 * 2 * 2
 
 
@@ -671,7 +672,7 @@ def test_joker_editions_score_as_joker_effects() -> None:
     )
 
     assert result.chips == 16 + 50
-    assert result.mult == 1 + 4 + 10
+    assert result.mult == (1 + 4 + 10) * 4
     assert result.total == int((16 + 50) * (1 + 4 + 10) * 4)
 
 

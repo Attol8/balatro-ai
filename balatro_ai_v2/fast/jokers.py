@@ -18,7 +18,16 @@ from balatro_ai_v2.fast.hand import (
     TWO_PAIR,
     FastScore,
 )
-from balatro_ai_v2.fast.modifiers import Edition, edition_chip_bonus, edition_mult_bonus, edition_xmult
+from balatro_ai_v2.fast.modifiers import (
+    Edition,
+    Enhancement,
+    edition_chip_bonus,
+    edition_mult_bonus,
+    edition_xmult,
+    enhancement_chip_bonus,
+    enhancement_mult_bonus,
+    enhancement_xmult,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -56,6 +65,9 @@ class ScoreContext:
     all_cards_are_face: bool = False
     hand_times_played: dict[int, int] = field(default_factory=dict)
     hand_times_played_round: dict[int, int] = field(default_factory=dict)
+    # Enhancement/Edition ids aligned with the sorted scoring cards.
+    scoring_enhancements: tuple[int, ...] = ()
+    scoring_editions: tuple[int, ...] = ()
 
 
 SUIT_MULT_JOKERS = {
@@ -191,6 +203,22 @@ IMPLEMENTED_JOKERS = frozenset(
         "j_red_card",
         "j_wee",
         "j_yorick",
+        # Deterministic run-effect and economy jokers: inert for play scoring,
+        # their effects are modeled by joker_run_rules/joker_money.
+        "j_credit_card",
+        "j_chaos",
+        "j_drunkard",
+        "j_juggler",
+        "j_to_the_moon",
+        "j_astronomer",
+        "j_troubadour",
+        "j_merry_andy",
+        "j_golden",
+        "j_rocket",
+        "j_cloud_9",
+        "j_delayed_grat",
+        "j_satellite",
+        "j_egg",
     }
 )
 
@@ -202,106 +230,83 @@ def apply_additive_jokers(
     jokers: tuple[Joker, ...],
     context: ScoreContext | None = None,
 ) -> FastScore:
+    """Score played cards through Balatro's phased trigger order.
+
+    Card phase: each scoring card fires its own enhancement/edition, then
+    every joker's per-card trigger, left to right. Held phase: held-card
+    triggers. Joker phase: each joker fires once, left to right — additive
+    and x-mult effects apply IN ORDER (an x-mult joker left of an additive
+    joker multiplies before the addition; verified against live traces).
+    """
     context = context or ScoreContext()
     joker_count = len(jokers) if context.joker_count is None else context.joker_count
     chips = score.chips
     mult = float(score.mult)
-    x_mult = 1.0
+    all_faces = context.all_cards_are_face or _has_joker(jokers, "j_pareidolia")
 
-    # Card-phase x-mults trigger while the cards score, before any joker adds
-    # its mult (verified against live traces: Photograph doubles the base
-    # mult, not the post-joker total).
-    if any(joker.key == "j_photograph" for joker in jokers) and _scored_face_count(
-        sorted_cards,
-        score.scoring_mask,
-        context.all_cards_are_face or _has_joker(jokers, "j_pareidolia"),
-    ) > 0:
-        mult *= 2.0
+    # ---- card phase -------------------------------------------------------
+    photograph_used = False
+    for index, card in enumerate(sorted_cards):
+        if not score.scoring_mask & (1 << index):
+            continue
+        if index < len(context.scoring_enhancements):
+            enhancement = Enhancement(context.scoring_enhancements[index])
+            chips += enhancement_chip_bonus(enhancement)
+            mult += enhancement_mult_bonus(enhancement)
+            mult *= enhancement_xmult(enhancement)
+        if index < len(context.scoring_editions):
+            edition = Edition(context.scoring_editions[index])
+            chips += edition_chip_bonus(edition)
+            mult += edition_mult_bonus(edition)
+            mult *= edition_xmult(edition)
+        card_rank = rank(card)
+        card_suit = suit(card)
+        is_face = all_faces or card_rank in {9, 10, 11}
+        for joker in jokers:
+            key = joker.key
+            if key in SUIT_MULT_JOKERS:
+                target_suit, add_mult = SUIT_MULT_JOKERS[key]
+                if card_suit == target_suit:
+                    mult += add_mult
+            elif key == "j_arrowhead" and card_suit == 0:
+                chips += 50
+            elif key == "j_onyx_agate" and card_suit == 2:
+                mult += 7
+            elif key == "j_even_steven" and card_rank in {0, 2, 4, 6, 8}:
+                mult += 4
+            elif key == "j_odd_todd" and card_rank in {1, 3, 5, 7, 12}:
+                chips += 31
+            elif key == "j_scholar" and card_rank == 12:
+                chips += 20
+                mult += 4
+            elif key == "j_fibonacci" and card_rank in {0, 1, 3, 6, 12}:
+                mult += 8
+            elif key == "j_scary_face" and is_face:
+                chips += 30
+            elif key == "j_smiley" and is_face:
+                mult += 5
+            elif key == "j_walkie_talkie" and card_rank in {2, 8}:
+                chips += 10
+                mult += 4
+            elif key == "j_photograph" and is_face and not photograph_used:
+                mult *= 2.0
+                photograph_used = True
+            elif key == "j_bloodstone" and card_suit == 1:
+                mult *= 1.25
+            elif key == "j_ancient" and context.current_ancient_suit == card_suit:
+                mult *= 1.5
+            elif (
+                key == "j_idol"
+                and card_rank == context.current_idol_rank
+                and card_suit == context.current_idol_suit
+            ):
+                mult *= 2.0
+            elif key == "j_triboulet" and card_rank in {10, 11}:
+                mult *= 2.0
 
+    # ---- held phase -------------------------------------------------------
     for joker in jokers:
-        if joker.key == "j_joker":
-            mult += 4
-        elif joker.key == "j_half" and selected_count <= 3:
-            mult += 20
-        elif joker.key == "j_stencil":
-            x_mult *= 1.0 + max(context.joker_slots - joker_count, 0)
-        elif joker.key == "j_banner":
-            chips += 30 * context.discards_left
-        elif joker.key == "j_mystic_summit" and context.discards_left == 0:
-            mult += 15
-        elif joker.key == "j_misprint":
-            mult += joker.scaling if joker.scaling > 0 else 12
-        elif joker.key == "j_abstract":
-            mult += 3 * joker_count
-        elif joker.key == "j_supernova":
-            mult += context.hand_times_played.get(score.kind, 0)
-        elif joker.key == "j_blue_joker":
-            chips += 2 * context.deck_count
-        elif joker.key == "j_bull":
-            chips += 2 * context.money
-        elif joker.key == "j_bootstraps":
-            mult += 2 * (context.money // 5)
-        elif joker.key == "j_ice_cream":
-            chips += joker.scaling
-        elif joker.key == "j_square":
-            chips += joker.scaling + (4 if selected_count == 4 else 0)
-        elif joker.key == "j_wee":
-            chips += joker.scaling
-        elif joker.key == "j_castle":
-            chips += joker.scaling
-        elif joker.key == "j_stone":
-            chips += 25 * joker.scaling
-        elif joker.key == "j_runner":
-            chips += joker.scaling + (15 if _hand_contains(score.kind, STRAIGHT) else 0)
-        elif joker.key == "j_green_joker":
-            mult += joker.scaling + 1
-        elif joker.key == "j_erosion":
-            mult += max(context.starting_deck_size - context.playing_card_count, 0) * 4
-        elif joker.key == "j_fortune_teller":
-            mult += context.tarot_cards_used
-        elif joker.key == "j_ride_the_bus" and _scored_face_count(
-            sorted_cards,
-            score.scoring_mask,
-            context.all_cards_are_face or _has_joker(jokers, "j_pareidolia"),
-        ) == 0:
-            mult += joker.scaling + 1
-        elif joker.key == "j_cavendish":
-            x_mult *= 3.0
-        elif joker.key == "j_acrobat" and context.hands_left == 0:
-            x_mult *= 3.0
-        elif joker.key == "j_family" and score.kind == FOUR_OF_A_KIND:
-            x_mult *= 4.0
-        elif joker.key == "j_stuntman":
-            chips += 250
-        elif joker.key == "j_popcorn":
-            mult += joker.scaling
-        elif joker.key == "j_constellation":
-            x_mult *= joker.x_mult
-        elif joker.key in {
-            "j_caino",
-            "j_campfire",
-            "j_hit_the_road",
-            "j_hologram",
-            "j_lucky_cat",
-            "j_madness",
-            "j_yorick",
-        }:
-            x_mult *= joker.x_mult
-        elif joker.key == "j_ramen":
-            x_mult *= joker.x_mult if joker.x_mult > 0 else 2.0
-        elif joker.key == "j_throwback":
-            x_mult *= 1.0 + 0.25 * context.blinds_skipped
-        elif joker.key == "j_swashbuckler":
-            mult += sum(other.sell_value for other in jokers if other is not joker)
-        elif joker.key == "j_ceremonial":
-            mult += joker.scaling
-        elif joker.key == "j_flash":
-            mult += joker.scaling
-        elif joker.key == "j_trousers":
-            mult += joker.scaling + (2 if _hand_contains(score.kind, TWO_PAIR) else 0)
-        elif joker.key == "j_red_card":
-            mult += joker.scaling
-        elif joker.key == "j_shoot_the_moon":
+        if joker.key == "j_shoot_the_moon":
             mult += _held_rank_count(context.held_cards, 10) * 13
         elif joker.key == "j_raised_fist":
             lowest_nominal = _lowest_held_nominal(
@@ -311,118 +316,172 @@ def apply_additive_jokers(
             )
             if lowest_nominal is not None:
                 mult += 2 * lowest_nominal
-        elif joker.key == "j_blackboard" and context.held_cards:
-            if all(suit(card) in (0, 2) for card in context.held_cards):
-                x_mult *= 3.0
         elif joker.key == "j_baron":
-            x_mult *= 1.5 ** _held_rank_count(context.held_cards, 11)
-        elif joker.key == "j_loyalty_card" and context.loyalty_remaining == 0:
-            x_mult *= 4.0
-        elif joker.key == "j_obelisk":
-            x_mult *= joker.x_mult
-        elif joker.key == "j_steel_joker":
-            x_mult *= 1.0 + 0.2 * joker.scaling
-        elif joker.key == "j_gros_michel":
+            mult *= 1.5 ** _held_rank_count(context.held_cards, 11)
+
+    # ---- joker phase (left to right, sequential) ---------------------------
+    _CARD_OR_HELD_PHASE = frozenset(
+        {
+            "j_arrowhead",
+            "j_onyx_agate",
+            "j_even_steven",
+            "j_odd_todd",
+            "j_scholar",
+            "j_fibonacci",
+            "j_scary_face",
+            "j_smiley",
+            "j_walkie_talkie",
+            "j_photograph",
+            "j_bloodstone",
+            "j_ancient",
+            "j_idol",
+            "j_triboulet",
+            "j_shoot_the_moon",
+            "j_raised_fist",
+            "j_baron",
+            *SUIT_MULT_JOKERS.keys(),
+        }
+    )
+    for joker in jokers:
+        key = joker.key
+        if key in _CARD_OR_HELD_PHASE:
+            pass
+        elif key == "j_joker":
+            mult += 4
+        elif key == "j_half" and selected_count <= 3:
+            mult += 20
+        elif key == "j_stencil":
+            mult *= 1.0 + max(context.joker_slots - joker_count, 0)
+        elif key == "j_banner":
+            chips += 30 * context.discards_left
+        elif key == "j_mystic_summit" and context.discards_left == 0:
             mult += 15
-        elif joker.key == "j_vampire":
-            x_mult *= joker.x_mult
-        elif joker.key == "j_glass":
-            x_mult *= joker.x_mult
-        elif joker.key == "j_seeing_double" and _has_club_and_other_suit(sorted_cards, score.scoring_mask):
-            x_mult *= 2.0
-        elif joker.key == "j_card_sharp" and context.hand_times_played_round.get(score.kind, 0) > 1:
-            x_mult *= 3.0
-        elif joker.key == "j_drivers_license" and context.enhanced_card_count >= 16:
-            x_mult *= 3.0
-        elif joker.key == "j_even_steven":
-            mult += _scored_rank_count(sorted_cards, score.scoring_mask, {0, 2, 4, 6, 8}) * 4
-        elif joker.key == "j_odd_todd":
-            chips += _scored_rank_count(sorted_cards, score.scoring_mask, {1, 3, 5, 7, 12}) * 31
-        elif joker.key == "j_scholar":
-            aces = _scored_rank_count(sorted_cards, score.scoring_mask, {12})
-            chips += aces * 20
-            mult += aces * 4
-        elif joker.key == "j_fibonacci":
-            mult += _scored_rank_count(sorted_cards, score.scoring_mask, {0, 1, 3, 6, 12}) * 8
-        elif joker.key == "j_scary_face":
-            chips += _scored_face_count(
-                sorted_cards,
-                score.scoring_mask,
-                context.all_cards_are_face or _has_joker(jokers, "j_pareidolia"),
-            ) * 30
-        elif joker.key == "j_smiley":
-            mult += _scored_face_count(
-                sorted_cards,
-                score.scoring_mask,
-                context.all_cards_are_face or _has_joker(jokers, "j_pareidolia"),
-            ) * 5
-        elif joker.key == "j_walkie_talkie":
-            count = _scored_rank_count(sorted_cards, score.scoring_mask, {2, 8})
-            chips += count * 10
-            mult += count * 4
-        elif joker.key == "j_photograph":
-            pass  # applied in the card phase above
-        elif joker.key == "j_bloodstone":
-            x_mult *= 1.25 ** _scored_suit_count(sorted_cards, score.scoring_mask, 1)
-        elif joker.key == "j_ancient" and context.current_ancient_suit is not None:
-            x_mult *= 1.5 ** _scored_suit_count(
-                sorted_cards,
-                score.scoring_mask,
-                context.current_ancient_suit,
-            )
-        elif (
-            joker.key == "j_idol"
-            and context.current_idol_rank is not None
-            and context.current_idol_suit is not None
-        ):
-            x_mult *= 2.0 ** _scored_rank_suit_count(
-                sorted_cards,
-                score.scoring_mask,
-                context.current_idol_rank,
-                context.current_idol_suit,
-            )
-        elif joker.key == "j_triboulet":
-            x_mult *= 2.0 ** _scored_rank_count(sorted_cards, score.scoring_mask, {10, 11})
-        elif joker.key in SUIT_MULT_JOKERS:
-            target_suit, add_mult = SUIT_MULT_JOKERS[joker.key]
-            mult += _scored_suit_count(sorted_cards, score.scoring_mask, target_suit) * add_mult
-        elif joker.key == "j_arrowhead":
-            chips += _scored_suit_count(sorted_cards, score.scoring_mask, 0) * 50
-        elif joker.key == "j_onyx_agate":
-            mult += _scored_suit_count(sorted_cards, score.scoring_mask, 2) * 7
-        elif joker.key == "j_flower_pot" and _has_all_four_suits(sorted_cards, score.scoring_mask):
-            x_mult *= 3.0
-        elif joker.key in CONTAINED_TYPE_MULT_JOKERS:
-            target_kind, add_mult = CONTAINED_TYPE_MULT_JOKERS[joker.key]
+        elif key == "j_misprint":
+            mult += joker.scaling if joker.scaling > 0 else 12
+        elif key == "j_abstract":
+            mult += 3 * joker_count
+        elif key == "j_supernova":
+            mult += context.hand_times_played.get(score.kind, 0)
+        elif key == "j_blue_joker":
+            chips += 2 * context.deck_count
+        elif key == "j_bull":
+            chips += 2 * context.money
+        elif key == "j_bootstraps":
+            mult += 2 * (context.money // 5)
+        elif key == "j_ice_cream":
+            chips += joker.scaling
+        elif key == "j_square":
+            chips += joker.scaling + (4 if selected_count == 4 else 0)
+        elif key == "j_wee":
+            chips += joker.scaling
+        elif key == "j_castle":
+            chips += joker.scaling
+        elif key == "j_stone":
+            chips += 25 * joker.scaling
+        elif key == "j_runner":
+            chips += joker.scaling + (15 if _hand_contains(score.kind, STRAIGHT) else 0)
+        elif key == "j_green_joker":
+            mult += joker.scaling + 1
+        elif key == "j_erosion":
+            mult += max(context.starting_deck_size - context.playing_card_count, 0) * 4
+        elif key == "j_fortune_teller":
+            mult += context.tarot_cards_used
+        elif key == "j_ride_the_bus" and _scored_face_count(
+            sorted_cards,
+            score.scoring_mask,
+            all_faces,
+        ) == 0:
+            mult += joker.scaling + 1
+        elif key == "j_cavendish":
+            mult *= 3.0
+        elif key == "j_acrobat" and context.hands_left == 0:
+            mult *= 3.0
+        elif key == "j_family" and score.kind == FOUR_OF_A_KIND:
+            mult *= 4.0
+        elif key == "j_stuntman":
+            chips += 250
+        elif key == "j_popcorn":
+            mult += joker.scaling
+        elif key == "j_constellation":
+            mult *= joker.x_mult
+        elif key in {
+            "j_caino",
+            "j_campfire",
+            "j_hit_the_road",
+            "j_hologram",
+            "j_lucky_cat",
+            "j_madness",
+            "j_yorick",
+        }:
+            mult *= joker.x_mult
+        elif key == "j_ramen":
+            mult *= joker.x_mult if joker.x_mult > 0 else 2.0
+        elif key == "j_throwback":
+            mult *= 1.0 + 0.25 * context.blinds_skipped
+        elif key == "j_swashbuckler":
+            mult += sum(other.sell_value for other in jokers if other is not joker)
+        elif key == "j_ceremonial":
+            mult += joker.scaling
+        elif key == "j_flash":
+            mult += joker.scaling
+        elif key == "j_trousers":
+            mult += joker.scaling + (2 if _hand_contains(score.kind, TWO_PAIR) else 0)
+        elif key == "j_red_card":
+            mult += joker.scaling
+        elif key == "j_blackboard" and context.held_cards:
+            if all(suit(card) in (0, 2) for card in context.held_cards):
+                mult *= 3.0
+        elif key == "j_loyalty_card" and context.loyalty_remaining == 0:
+            mult *= 4.0
+        elif key == "j_obelisk":
+            mult *= joker.x_mult
+        elif key == "j_steel_joker":
+            mult *= 1.0 + 0.2 * joker.scaling
+        elif key == "j_gros_michel":
+            mult += 15
+        elif key == "j_vampire":
+            mult *= joker.x_mult
+        elif key == "j_glass":
+            mult *= joker.x_mult
+        elif key == "j_seeing_double" and _has_club_and_other_suit(sorted_cards, score.scoring_mask):
+            mult *= 2.0
+        elif key == "j_card_sharp" and context.hand_times_played_round.get(score.kind, 0) > 1:
+            mult *= 3.0
+        elif key == "j_drivers_license" and context.enhanced_card_count >= 16:
+            mult *= 3.0
+        elif key == "j_flower_pot" and _has_all_four_suits(sorted_cards, score.scoring_mask):
+            mult *= 3.0
+        elif key in CONTAINED_TYPE_MULT_JOKERS:
+            target_kind, add_mult = CONTAINED_TYPE_MULT_JOKERS[key]
             if _hand_contains(score.kind, target_kind):
                 mult += add_mult
-        elif joker.key in CONTAINED_TYPE_CHIP_JOKERS:
-            target_kind, add_chips = CONTAINED_TYPE_CHIP_JOKERS[joker.key]
+        elif key in CONTAINED_TYPE_CHIP_JOKERS:
+            target_kind, add_chips = CONTAINED_TYPE_CHIP_JOKERS[key]
             if _hand_contains(score.kind, target_kind):
                 chips += add_chips
-        elif joker.key in CONTAINED_TYPE_XMULT_JOKERS:
-            target_kind, add_xmult = CONTAINED_TYPE_XMULT_JOKERS[joker.key]
+        elif key in CONTAINED_TYPE_XMULT_JOKERS:
+            target_kind, add_xmult = CONTAINED_TYPE_XMULT_JOKERS[key]
             if _hand_contains(score.kind, target_kind):
-                x_mult *= add_xmult
-        elif joker.key in TYPE_MULT_JOKERS:
-            target_kind, add_mult = TYPE_MULT_JOKERS[joker.key]
+                mult *= add_xmult
+        elif key in TYPE_MULT_JOKERS:
+            target_kind, add_mult = TYPE_MULT_JOKERS[key]
             if score.kind == target_kind:
                 mult += add_mult
-        elif joker.key in TYPE_CHIP_JOKERS:
-            target_kind, add_chips = TYPE_CHIP_JOKERS[joker.key]
+        elif key in TYPE_CHIP_JOKERS:
+            target_kind, add_chips = TYPE_CHIP_JOKERS[key]
             if score.kind == target_kind:
                 chips += add_chips
 
         edition = Edition(joker.edition)
         chips += edition_chip_bonus(edition)
         mult += edition_mult_bonus(edition)
-        x_mult *= edition_xmult(edition)
+        mult *= edition_xmult(edition)
 
     return FastScore(
         kind=score.kind,
         chips=chips,
         mult=mult,
-        total=int(chips * mult * x_mult),
+        total=int(chips * mult),
         scoring_mask=score.scoring_mask,
     )
 

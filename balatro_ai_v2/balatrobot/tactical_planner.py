@@ -25,7 +25,45 @@ from balatro_ai_v2.fast.hand import (
     score_cards_with_levels,
 )
 from balatro_ai_v2.fast.jokers import IMPLEMENTED_JOKERS, Joker, ScoreContext, apply_additive_jokers
-from balatro_ai_v2.fast.modifiers import Edition
+from balatro_ai_v2.fast.modifiers import (
+    Edition,
+    Enhancement,
+    edition_chip_bonus,
+    edition_mult_bonus,
+    edition_xmult,
+    enhancement_chip_bonus,
+    enhancement_mult_bonus,
+    enhancement_xmult,
+)
+
+_LIVE_ENHANCEMENTS = {
+    "BONUS": Enhancement.BONUS,
+    "MULT": Enhancement.MULT,
+    "WILD": Enhancement.WILD,
+    "GLASS": Enhancement.GLASS,
+    "STEEL": Enhancement.STEEL,
+    "STONE": Enhancement.STONE,
+    "GOLD": Enhancement.GOLD,
+    "LUCKY": Enhancement.LUCKY,
+}
+
+_LIVE_EDITIONS = {
+    "FOIL": Edition.FOIL,
+    "HOLO": Edition.HOLOGRAPHIC,
+    "HOLOGRAPHIC": Edition.HOLOGRAPHIC,
+    "POLYCHROME": Edition.POLYCHROME,
+    "NEGATIVE": Edition.NEGATIVE,
+}
+
+
+def _card_modifiers(card: dict[str, Any]) -> tuple[Enhancement, Edition]:
+    modifier = card.get("modifier")
+    enhancement = Enhancement.BASE
+    edition = Edition.BASE
+    if isinstance(modifier, dict):
+        enhancement = _LIVE_ENHANCEMENTS.get(str(modifier.get("enhancement") or "").upper(), Enhancement.BASE)
+        edition = _LIVE_EDITIONS.get(str(modifier.get("edition") or "").upper(), Edition.BASE)
+    return enhancement, edition
 
 
 @dataclass(frozen=True, slots=True)
@@ -370,6 +408,17 @@ def score_play_action(
     if mask.bit_count() > _highlighted_limit(state):
         raise ValueError("play action exceeds highlighted card limit")
     levels = _hand_levels(state)
+    hand_cards = (state.get("hand") or {}).get("cards") or []
+    selected_pairs = sorted(
+        (
+            (hand[index], *_card_modifiers(hand_cards[index]))
+            for index in action.indices
+            if index < len(hand_cards)
+        ),
+        key=lambda item: item[0],
+    )
+    selected_enhancements = tuple(int(pair[1]) for pair in selected_pairs)
+    selected_editions = tuple(int(pair[2]) for pair in selected_pairs)
     if _active_blind_key(state) == "bl_arm":
         # The Arm lowers the played hand's level before it scores.
         selected = tuple(sorted(card for index, card in enumerate(hand) if mask & (1 << index)))
@@ -385,6 +434,8 @@ def score_play_action(
         mask,
         levels=levels,
         tarot_cards_used=tarot_cards_used,
+        selected_enhancements=selected_enhancements,
+        selected_editions=selected_editions,
         jokers=_jokers(state),
         money=int(state.get("money") or 0),
         discards_left=int((state.get("round") or {}).get("discards_left") or 0),
@@ -416,6 +467,8 @@ def _score_mask(
     debuffed_suits: frozenset[int] = frozenset(),
     debuffed_card_ids: frozenset[int] = frozenset(),
     tarot_cards_used: int = 0,
+    selected_enhancements: tuple[int, ...] = (),
+    selected_editions: tuple[int, ...] = (),
 ) -> FastScore:
     selected = tuple(card for index, card in enumerate(hand) if mask & (1 << index))
     sorted_cards = tuple(sorted(selected))
@@ -436,6 +489,8 @@ def _score_mask(
         debuffed_suits,
         debuffed_card_ids,
         tarot_cards_used,
+        selected_enhancements,
+        selected_editions,
     )
 
 
@@ -455,6 +510,8 @@ def _score_selected_held(
     debuffed_suits: frozenset[int],
     debuffed_card_ids: frozenset[int],
     tarot_cards_used: int = 0,
+    selected_enhancements: tuple[int, ...] = (),
+    selected_editions: tuple[int, ...] = (),
 ) -> FastScore:
     base = _apply_debuffs(
         _base_score_cached(sorted_cards, levels, tuple(joker.key for joker in jokers)),
@@ -484,6 +541,8 @@ def _score_selected_held(
         debuffed_held_suits=debuffed_suits,
         debuffed_held_cards=debuffed_card_ids,
         tarot_cards_used=tarot_cards_used,
+        scoring_enhancements=selected_enhancements,
+        scoring_editions=selected_editions,
     )
     return apply_additive_jokers(base, sorted_cards, len(sorted_cards), jokers, context)
 
@@ -874,6 +933,16 @@ def _jokers(state: dict[str, Any]) -> tuple[Joker, ...]:
             continue
         key = card.get("key")
         if key not in IMPLEMENTED_JOKERS:
+            # Unmodeled jokers stay as inert slot-holders: they score nothing
+            # themselves, but their edition bonus (foil/holo/poly) always
+            # applies in the live game and must be replayed.
+            jokers.append(
+                Joker(
+                    key=str(key or ""),
+                    sell_value=int(((card.get("cost") or {}).get("sell") or 0)),
+                    edition=int(_joker_edition(card)),
+                )
+            )
             continue
         ability = (card.get("value") or {}).get("ability") or {}
         if key == "j_ride_the_bus":

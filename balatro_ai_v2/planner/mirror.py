@@ -21,6 +21,10 @@ from balatro_ai_v2.fast.blinds import BLIND_RULES
 from balatro_ai_v2.fast.full_game import FastFullGameEnv, MAX_SHOP_OBS
 from balatro_ai_v2.fast.hand import HAND_KIND_NAMES
 from balatro_ai_v2.fast.jokers import IMPLEMENTED_JOKERS, PROBABILISTIC_SCORE_JOKERS, Joker
+
+# Jokers the live planner must never buy because exact score replay is
+# impossible (probabilistic triggers).
+LIVE_UNSAFE_JOKERS = PROBABILISTIC_SCORE_JOKERS
 from balatro_ai_v2.fast.run import BlindKind, RunPhase
 
 
@@ -186,7 +190,7 @@ def _mirror_shop(env: FastFullGameEnv, state: dict[str, Any]) -> None:
         # (probabilistic) must never be bought live; price them unaffordable
         # instead of dropping them so shop indices stay aligned.
         if key.startswith("j_") and (
-            key not in IMPLEMENTED_JOKERS or key in PROBABILISTIC_SCORE_JOKERS
+            key not in IMPLEMENTED_JOKERS or key in LIVE_UNSAFE_JOKERS
         ):
             costs[key] = 999
         else:
