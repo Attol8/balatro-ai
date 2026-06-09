@@ -403,8 +403,9 @@ def _check_reroll(line_num: int, before: dict[str, Any], after: dict[str, Any]) 
 def _check_skip(line_num: int, before: dict[str, Any], after: dict[str, Any]) -> ParityMismatch | None:
     if before.get("state") != "BLIND_SELECT":
         return _mismatch(line_num, "state", "skip was not issued from blind select", "BLIND_SELECT", before.get("state"))
-    if after.get("state") not in {"BLIND_SELECT", "SHOP", "GAME_OVER"}:
-        return _mismatch(line_num, "state", "skip entered unexpected state", "BLIND_SELECT|SHOP|GAME_OVER", after.get("state"))
+    if after.get("state") not in {"BLIND_SELECT", "SHOP", "GAME_OVER"} and not _is_booster_state(after.get("state")):
+        # Skip tags (Charm/Ethereal/...) can open their free pack immediately.
+        return _mismatch(line_num, "state", "skip entered unexpected state", "BLIND_SELECT|SHOP|GAME_OVER|booster", after.get("state"))
     return None
 
 

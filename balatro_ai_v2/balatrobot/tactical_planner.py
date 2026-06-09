@@ -945,8 +945,12 @@ def _jokers(state: dict[str, Any]) -> tuple[Joker, ...]:
             )
             continue
         ability = (card.get("value") or {}).get("ability") or {}
-        if key == "j_ride_the_bus":
-            scaling = _ability_number(ability, "mult")
+        # Scaling jokers report both their step size ('extra'/'chip_mod') and
+        # their CURRENT value under a specific key; reading the wrong one
+        # mis-scores the joker by its entire accumulated state.
+        priority = _ABILITY_KEY_PRIORITY.get(key)
+        if priority is not None:
+            scaling = _ability_number(ability, *priority)
         else:
             scaling = _ability_number(ability, "extra", "mult", "chips", "t_mult", "t_chips")
         x_mult = float(ability.get("Xmult") or ability.get("x_mult") or 1.0)
@@ -961,6 +965,24 @@ def _jokers(state: dict[str, Any]) -> tuple[Joker, ...]:
             )
         )
     return tuple(jokers)
+
+
+# Current-value ability key per scaling joker (default priority reads
+# 'extra' first, which for these jokers is the per-trigger step, not state).
+_ABILITY_KEY_PRIORITY: dict[str, tuple[str, ...]] = {
+    "j_ride_the_bus": ("mult",),
+    "j_green_joker": ("mult",),
+    "j_popcorn": ("mult",),
+    "j_red_card": ("mult",),
+    "j_flash": ("mult",),
+    "j_ceremonial": ("mult",),
+    "j_misprint": ("mult",),
+    "j_ice_cream": ("chips",),
+    "j_square": ("chips",),
+    "j_runner": ("chips",),
+    "j_wee": ("chips",),
+    "j_castle": ("chips",),
+}
 
 
 def _joker_card_count(state: dict[str, Any]) -> int:
