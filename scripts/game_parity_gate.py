@@ -17,6 +17,11 @@ def main() -> None:
     parser.add_argument("--score-tolerance", type=int, default=0)
     parser.add_argument("--show-missing", action="store_true")
     parser.add_argument("--source-details", action="store_true")
+    parser.add_argument(
+        "--require-complete",
+        action="store_true",
+        help="Fail unless every transition is checked with zero mismatches (this is already the default; the flag exists so documented commands are explicit).",
+    )
     args = parser.parse_args()
 
     trace_report = replay_balatrobot_trace(args.trace_jsonl, score_tolerance=args.score_tolerance)

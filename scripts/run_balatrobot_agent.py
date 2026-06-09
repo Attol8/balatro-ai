@@ -16,6 +16,8 @@ from balatro_ai_v2.balatrobot.policy_config import load_policy_config
 from balatro_ai_v2.balatrobot.runner import evaluate_balatrobot
 from balatro_ai_v2.balatrobot.tracing import JsonlTraceWriter
 from balatro_ai_v2.learning.imitation import load_action_policy
+from balatro_ai_v2.planner.core import PlannerConfig
+from balatro_ai_v2.planner.live_policy import PlannerPolicy
 
 
 FAST_SERVER_ARGS = (
@@ -64,11 +66,17 @@ def main() -> None:
         seeds = [str(seed) for seed in range(args.seed_start, args.seed_start + args.seeds)]
         tactical_model = load_action_policy(args.imitation_model) if args.imitation_model is not None else None
         full_action_model = load_action_policy(args.full_action_model) if args.full_action_model is not None else None
-        policy = BalatroBotPolicy(
-            config=load_policy_config(args.policy_config),
-            tactical_model=tactical_model,
-            full_action_model=full_action_model,
-        )
+        if args.planner:
+            policy = PlannerPolicy(
+                config=PlannerConfig(determinizations=args.planner_determinizations),
+                fallback=BalatroBotPolicy(config=load_policy_config(args.policy_config)),
+            )
+        else:
+            policy = BalatroBotPolicy(
+                config=load_policy_config(args.policy_config),
+                tactical_model=tactical_model,
+                full_action_model=full_action_model,
+            )
         trace_writer = (
             JsonlTraceWriter(args.trace_jsonl, include_states=not args.trace_compact)
             if args.trace_jsonl is not None
@@ -118,6 +126,17 @@ def build_parser() -> argparse.ArgumentParser:
         "--full-action-model",
         type=Path,
         help="Use a trained fast full-action policy for all BalatroBot phases.",
+    )
+    parser.add_argument(
+        "--planner",
+        action="store_true",
+        help="Drive all decisions with the planner core over the mirrored fast sim.",
+    )
+    parser.add_argument(
+        "--planner-determinizations",
+        type=int,
+        default=3,
+        help="Hidden-RNG samples per planner rollout candidate when live.",
     )
     parser.add_argument(
         "--launch-server",

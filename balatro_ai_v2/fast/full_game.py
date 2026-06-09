@@ -153,6 +153,10 @@ class FastFullGameEnv:
     coupon_active: bool = field(default=False, init=False)
     d6_active: bool = field(default=False, init=False)
     bought_pack_indices: set[int] = field(init=False)
+    # Live-mirror overrides: exact visible prices/pack offers from the real
+    # game take precedence over source costs for the current shop only.
+    cost_overrides: dict[str, int] = field(init=False)
+    pack_keys_override: tuple[str, ...] | None = field(default=None, init=False)
 
     def __post_init__(self) -> None:
         self.run = FastRunState(deck_key=self.deck_key)
@@ -173,6 +177,7 @@ class FastFullGameEnv:
         self.shop_item_editions = {}
         self.free_shop_item_indices = set()
         self.bought_pack_indices = set()
+        self.cost_overrides = {}
 
     def reset(self, seed: int | None = None) -> tuple[int, ...]:
         if seed is not None:
@@ -207,6 +212,8 @@ class FastFullGameEnv:
         self.coupon_active = False
         self.d6_active = False
         self.bought_pack_indices = set()
+        self.cost_overrides = {}
+        self.pack_keys_override = None
         self._select_boss_for_ante()
         self._sync_required_score()
         return self.observation()
@@ -764,6 +771,8 @@ class FastFullGameEnv:
         self.run.phase = RunPhase.SHOP
         self.run.shop = ShopState(reroll_cost=self.run.base_reroll_cost)
         self.bought_pack_indices = set()
+        self.cost_overrides = {}
+        self.pack_keys_override = None
         self._populate_shop()
 
     def _populate_shop(self, *, refresh_voucher: bool = True) -> None:
@@ -818,6 +827,8 @@ class FastFullGameEnv:
                 self.run.shop.reroll_cost = 0
 
     def _pack_keys(self) -> tuple[str, ...]:
+        if self.pack_keys_override is not None:
+            return self.pack_keys_override
         rng = Random(self.seed * 65_537 + self.run.round_num * 1231 + self.run.ante * 4567)
         if self.run.ante == 1 and self.run.round_num == 0:
             first_buffoon = f"p_buffoon_normal_{rng.randrange(1, 3)}"
@@ -1026,6 +1037,8 @@ class FastFullGameEnv:
         return rng.choice(candidates)
 
     def _item_cost(self, key: str) -> int:
+        if key in self.cost_overrides:
+            return self.cost_overrides[key]
         if key.startswith("p_celestial") and self.run.celestial_packs_are_free:
             return 0
         if key.startswith("c_") and self.run.planets_are_free:
