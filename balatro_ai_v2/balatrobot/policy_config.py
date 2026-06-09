@@ -21,7 +21,7 @@ class ShopPolicyConfig:
     buffoon_pack_base_value: float = 18.0
     celestial_pack_base_value: float = 12.0
     standard_pack_base_value: float = 0.0
-    arcana_pack_base_value: float = 0.0
+    arcana_pack_base_value: float = 10.0
     spectral_pack_base_value: float = 0.0
     high_priestess_min_money: int = 14
     planet_played_base_value: float = 18.0

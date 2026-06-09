@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from math import exp
 from pathlib import Path
 from typing import Iterable, Protocol, Sequence
 
@@ -26,9 +27,11 @@ from balatro_ai_v2.fast.full_game import (
     SKIP_BLIND_ACTION,
     USE_CONSUMABLE_ACTION_BASE,
     FastFullGameEnv,
+    SearchRunAgent,
     _ITEM_OBS_IDS,
 )
 from balatro_ai_v2.fast.hand import HAND_KIND_NAMES, score_cards_with_levels
+from balatro_ai_v2.fast.run import RunPhase
 from balatro_ai_v2.learning.trajectories import TrajectoryStep
 
 
@@ -125,6 +128,17 @@ class ImitationRunAgent:
         return self.policy.predict(env.observation(), env.legal_action_ids())
 
 
+@dataclass(slots=True)
+class HybridImitationRunAgent:
+    policy: ActionPolicy
+    tactical_agent: SearchRunAgent
+
+    def act(self, env: FastFullGameEnv) -> int:
+        if env.run.phase in {RunPhase.SHOP, RunPhase.PACK}:
+            return self.policy.predict(env.observation(), env.legal_action_ids())
+        return self.tactical_agent.act(env)
+
+
 _LEVEL_START = 10
 _PLAY_COUNT_START = _LEVEL_START + len(HAND_KIND_NAMES)
 _JOKER_START = _PLAY_COUNT_START + len(HAND_KIND_NAMES)
@@ -153,6 +167,7 @@ _HIGH_IMPACT_ITEM_KEYS = {
     "v_grabber",
     "v_overstock_norm",
 }
+_TARGET_ITEM_KEYS = tuple(sorted(_ITEM_KEY_BY_OBS_ID.values()))
 
 
 def train_linear_policy(
@@ -176,6 +191,45 @@ def train_linear_policy(
             predicted_features = action_features(step.observation, predicted)
             _add_scaled(policy.weights, target_features, learning_rate)
             _add_scaled(policy.weights, predicted_features, -learning_rate)
+            updates += 1
+    accuracy = imitation_accuracy(policy, data)
+    return policy, {
+        "examples": len(data),
+        "epochs": epochs,
+        "updates": updates,
+        "train_accuracy": accuracy,
+    }
+
+
+def train_softmax_linear_policy(
+    steps: Iterable[TrajectoryStep],
+    *,
+    epochs: int = 20,
+    learning_rate: float = 0.05,
+) -> tuple[LinearActionPolicy, dict[str, float | int]]:
+    data = list(steps)
+    if not data:
+        raise ValueError("cannot train imitation policy from empty data")
+    feature_count = len(action_features(data[0].observation, data[0].action))
+    policy = LinearActionPolicy.new(feature_count)
+    updates = 0
+    for _ in range(epochs):
+        for step in data:
+            legal_features = [
+                (action, action_features(step.observation, action))
+                for action in step.legal_actions
+            ]
+            scores = [
+                sum(weight * value for weight, value in zip(policy.weights, features))
+                for _, features in legal_features
+            ]
+            max_score = max(scores)
+            weights = [exp(min(score - max_score, 40.0)) for score in scores]
+            total = sum(weights) or 1.0
+            target_features = action_features(step.observation, step.action)
+            _add_scaled(policy.weights, target_features, learning_rate)
+            for (_, features), weight in zip(legal_features, weights):
+                _add_scaled(policy.weights, features, -learning_rate * weight / total)
             updates += 1
     accuracy = imitation_accuracy(policy, data)
     return policy, {
@@ -225,6 +279,7 @@ def observation_features(observation: Sequence[int]) -> tuple[float, ...]:
 def action_features(observation: Sequence[int], action: int) -> tuple[float, ...]:
     action_kind_features = _action_kind_features(action)
     item_features = _target_item_features(observation, action)
+    context_action_features = _context_action_features(observation, action_kind_features, item_features)
     if action >= SELECT_BLIND_ACTION:
         return tuple(
             [
@@ -247,6 +302,7 @@ def action_features(observation: Sequence[int], action: int) -> tuple[float, ...
                 *([0.0] * 8),
                 *item_features,
                 *action_kind_features,
+                *context_action_features,
             ]
         )
     is_discard = action >= DISCARD_ACTION_OFFSET
@@ -289,6 +345,7 @@ def action_features(observation: Sequence[int], action: int) -> tuple[float, ...
             *selected_positions,
             *item_features,
             *action_kind_features,
+            *context_action_features,
         ]
     )
 
@@ -308,6 +365,7 @@ def _target_item_features(observation: Sequence[int], action: int) -> tuple[floa
         _visible_item_count(observation, _JOKER_START, MAX_JOKER_OBS) / MAX_JOKER_OBS,
         _visible_item_count(observation, _CONSUMABLE_START, MAX_CONSUMABLE_OBS) / MAX_CONSUMABLE_OBS,
         _visible_item_count(observation, _SHOP_START, MAX_SHOP_OBS) / MAX_SHOP_OBS,
+        *(1.0 if target_key == key else 0.0 for key in _TARGET_ITEM_KEYS),
     )
 
 
@@ -380,6 +438,50 @@ def _action_kind_features(action: int) -> tuple[float, ...]:
     elif PACK_SELECT_ACTION_BASE <= action < PACK_SELECT_ACTION_BASE + 8 or action == PACK_SKIP_ACTION:
         buckets[8] = 1.0
     return tuple(buckets)
+
+
+def _context_action_features(
+    observation: Sequence[int],
+    action_kind_features: Sequence[float],
+    item_features: Sequence[float],
+) -> tuple[float, ...]:
+    context = _run_context_features(observation)
+    action_context = [value * action_flag for action_flag in action_kind_features for value in context]
+    target_item_context = [value * item_flag for item_flag in item_features[:7] for value in context]
+    return tuple(action_context + target_item_context)
+
+
+def _run_context_features(observation: Sequence[int]) -> tuple[float, ...]:
+    score = _observation_at(observation, 5)
+    required = max(_observation_at(observation, 6), 1)
+    levels = [_observation_at(observation, index) for index in range(_LEVEL_START, _PLAY_COUNT_START)]
+    play_counts = [_observation_at(observation, index) for index in range(_PLAY_COUNT_START, _JOKER_START)]
+    joker_count = _visible_item_count(observation, _JOKER_START, MAX_JOKER_OBS)
+    consumable_count = _visible_item_count(observation, _CONSUMABLE_START, MAX_CONSUMABLE_OBS)
+    shop_count = _visible_item_count(observation, _SHOP_START, MAX_SHOP_OBS)
+    pack_count = _visible_item_count(observation, _PACK_START, MAX_PACK_OBS)
+    return (
+        1.0,
+        _observation_at(observation, 0) / 5.0,
+        _observation_at(observation, 1) / 8.0,
+        _observation_at(observation, 2) / 2.0,
+        _observation_at(observation, 3) / 24.0,
+        _observation_at(observation, 4) / 50.0,
+        min(score / required, 2.0),
+        _observation_at(observation, 7) / 5.0,
+        _observation_at(observation, 8) / 5.0,
+        _observation_at(observation, 9) / 52.0,
+        joker_count / MAX_JOKER_OBS,
+        max(5 - joker_count, 0) / 5.0,
+        consumable_count / MAX_CONSUMABLE_OBS,
+        max(2 - consumable_count, 0) / 2.0,
+        shop_count / MAX_SHOP_OBS,
+        pack_count / MAX_PACK_OBS,
+        sum(max(level - 1, 0) for level in levels) / 24.0,
+        max(levels, default=1) / 12.0,
+        sum(play_counts) / 40.0,
+        max(play_counts, default=0) / 20.0,
+    )
 
 
 def _scale_observation_value(index: int, value: int) -> float:

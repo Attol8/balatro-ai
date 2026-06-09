@@ -6,7 +6,7 @@ from typing import Any
 from balatro_ai_v2.actions import ActionKind, GameAction
 from balatro_ai_v2.balatrobot.imitation_policy import trained_full_action, trained_tactical_action
 from balatro_ai_v2.balatrobot.policy_config import DEFAULT_POLICY_CONFIG, PolicyConfig
-from balatro_ai_v2.balatrobot.shop_planner import plan_pack_action, plan_shop_action
+from balatro_ai_v2.balatrobot.shop_planner import plan_consumable_action, plan_pack_action, plan_shop_action
 from balatro_ai_v2.balatrobot.tactical_planner import best_play_action, plan_tactical_action
 from balatro_ai_v2.fast.hand import FastScore
 from balatro_ai_v2.learning.imitation import ActionPolicy
@@ -31,6 +31,9 @@ class BalatroBotPolicy:
             return trained_full_action(state, self.full_action_model)
         if self.tactical_model is not None:
             return trained_tactical_action(state, self.tactical_model)
+        consumable_action = plan_consumable_action(state, config=self.config.shop)
+        if consumable_action is not None:
+            return consumable_action.action
         return plan_tactical_action(
             state,
             config=self.config.tactical,

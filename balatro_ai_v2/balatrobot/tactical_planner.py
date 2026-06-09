@@ -12,8 +12,12 @@ from balatro_ai_v2.fast.cards import chips as card_chips
 from balatro_ai_v2.fast.cards import rank, suit
 from balatro_ai_v2.fast.env import MAX_SELECTED_CARDS
 from balatro_ai_v2.fast.hand import (
+    BASE_CHIPS,
+    BASE_MULT,
     FULL_HOUSE,
     HAND_KIND_NAMES,
+    LEVEL_CHIPS,
+    LEVEL_MULT,
     STRAIGHT,
     TWO_PAIR,
     FastScore,
@@ -21,6 +25,7 @@ from balatro_ai_v2.fast.hand import (
     score_cards_with_levels,
 )
 from balatro_ai_v2.fast.jokers import IMPLEMENTED_JOKERS, Joker, ScoreContext, apply_additive_jokers
+from balatro_ai_v2.fast.modifiers import Edition
 
 
 @dataclass(frozen=True, slots=True)
@@ -52,6 +57,7 @@ def plan_tactical_action(
     money = int(state.get("money") or 0)
     joker_slots = int(((state.get("jokers") or {}).get("limit") or 5))
     debuffed_suits = _active_debuffed_suits(state)
+    debuffed_card_ids = _debuffed_card_ids(state, "hand") | _debuffed_card_ids(state, "cards")
     active_blind_key = _active_blind_key(state)
     previous_hand_names = _played_hand_names_this_round(state)
     states: list[tuple[GameAction | None, tuple[int, ...], tuple[int, ...], int, int, int, tuple[Joker, ...], tuple[str, ...]]] = [
@@ -74,6 +80,7 @@ def plan_tactical_action(
             int,
             int,
             str,
+            frozenset[int],
             frozenset[int],
             int,
         ],
@@ -106,6 +113,7 @@ def plan_tactical_action(
             joker_count,
             active_blind_key or "",
             debuffed_suits,
+            debuffed_card_ids,
             config.action_beam,
         )
         if _use_cache and key in ranked_cache:
@@ -124,6 +132,7 @@ def plan_tactical_action(
             joker_count,
             active_blind_key,
             debuffed_suits,
+            debuffed_card_ids,
             config.action_beam,
         )
         if _use_cache:
@@ -152,6 +161,7 @@ def plan_tactical_action(
             joker_count,
             active_blind_key or "",
             debuffed_suits,
+            debuffed_card_ids,
             config.action_beam,
         )
         if _use_cache and key in discard_cache:
@@ -170,6 +180,7 @@ def plan_tactical_action(
             active_blind_key,
             previous_hand_names_value,
             debuffed_suits,
+            debuffed_card_ids,
             config.action_beam,
         )
         if _use_cache:
@@ -293,11 +304,25 @@ def plan_tactical_action(
     if best_action is None:
         best_action, best_play = best_play_action(state)
         best_score = current_score + best_play.total
+    if not clears and _should_retry_wide_search(config, hands_left, discards_left):
+        wide_config = TacticalPolicyConfig(
+            beam_width=max(config.beam_width, 96),
+            action_beam=max(config.action_beam, 96),
+        )
+        wide_plan = plan_tactical_action(state, config=wide_config, _use_cache=_use_cache)
+        if wide_plan.clears or wide_plan.projected_score > best_score:
+            return wide_plan
     return TacticalPlan(
         action=best_action,
         clears=clears,
         projected_score=best_score,
     )
+
+
+def _should_retry_wide_search(config: TacticalPolicyConfig, hands_left: int, discards_left: int) -> bool:
+    if config.beam_width >= 96 and config.action_beam >= 96:
+        return False
+    return hands_left >= 2 and discards_left > 0
 
 
 def best_play_action(state: dict[str, Any]) -> tuple[GameAction, FastScore]:
@@ -425,6 +450,8 @@ def _score_selected_held(
         first_hand_name=previous_hand_names[0] if previous_hand_names else None,
     ):
         return FastScore(kind=base.kind, chips=0, mult=0, total=0, scoring_mask=0)
+    if active_blind_key and BLIND_RULES[active_blind_key].halves_base_score:
+        base = _halve_base_score(base, levels)
     context = ScoreContext(
         held_cards=held_cards,
         money=money,
@@ -438,6 +465,23 @@ def _score_selected_held(
         debuffed_held_cards=debuffed_card_ids,
     )
     return apply_additive_jokers(base, sorted_cards, len(sorted_cards), jokers, context)
+
+
+def _halve_base_score(score: FastScore, levels: tuple[int, ...]) -> FastScore:
+    level = max(levels[score.kind], 1)
+    hand_chips = BASE_CHIPS[score.kind] + (level - 1) * LEVEL_CHIPS[score.kind]
+    hand_mult = BASE_MULT[score.kind] + (level - 1) * LEVEL_MULT[score.kind]
+    card_chips = score.chips - hand_chips
+    halved_chips = max(int(hand_chips * 0.5 + 0.5), 0)
+    halved_mult = max(int(hand_mult * 0.5 + 0.5), 1)
+    chips = halved_chips + card_chips
+    return FastScore(
+        kind=score.kind,
+        chips=chips,
+        mult=halved_mult,
+        total=int(chips * halved_mult),
+        scoring_mask=score.scoring_mask,
+    )
 
 
 @lru_cache(maxsize=262_144)
@@ -463,6 +507,7 @@ def _ranked_play_masks(
     joker_count: int | None,
     active_blind_key: str | None,
     debuffed_suits: frozenset[int],
+    debuffed_card_ids: frozenset[int],
     beam: int,
 ) -> tuple[tuple[int, FastScore], ...]:
     scored = [
@@ -482,6 +527,7 @@ def _ranked_play_masks(
                 active_blind_key=active_blind_key,
                 previous_hand_names=previous_hand_names,
                 debuffed_suits=debuffed_suits,
+                debuffed_card_ids=debuffed_card_ids,
             ),
         )
         for mask in _legal_masks(len(hand), highlighted_limit)
@@ -504,6 +550,7 @@ def _discard_candidates(
     active_blind_key: str | None,
     previous_hand_names: tuple[str, ...],
     debuffed_suits: frozenset[int],
+    debuffed_card_ids: frozenset[int],
     beam: int,
 ) -> tuple[int, ...]:
     base_scored: list[tuple[int, int]] = []
@@ -535,6 +582,7 @@ def _discard_candidates(
                 active_blind_key,
                 previous_hand_names,
                 debuffed_suits,
+                debuffed_card_ids,
             ),
             mask,
         ))
@@ -564,6 +612,7 @@ def _best_score_after_discard(
     active_blind_key: str | None,
     previous_hand_names: tuple[str, ...],
     debuffed_suits: frozenset[int],
+    debuffed_card_ids: frozenset[int],
 ) -> int:
     return max(
         (
@@ -581,6 +630,7 @@ def _best_score_after_discard(
                 active_blind_key=active_blind_key,
                 previous_hand_names=previous_hand_names,
                 debuffed_suits=debuffed_suits,
+                debuffed_card_ids=debuffed_card_ids,
             ).total
             for play_mask in _legal_masks(len(hand), highlighted_limit)
         ),
@@ -811,7 +861,15 @@ def _jokers(state: dict[str, Any]) -> tuple[Joker, ...]:
             scaling = _ability_number(ability, "extra", "mult", "chips", "t_mult", "t_chips")
         x_mult = float(ability.get("Xmult") or ability.get("x_mult") or 1.0)
         sell_value = int(((card.get("cost") or {}).get("sell") or 0))
-        jokers.append(Joker(key=key, scaling=scaling, x_mult=x_mult, sell_value=sell_value))
+        jokers.append(
+            Joker(
+                key=key,
+                scaling=scaling,
+                x_mult=x_mult,
+                sell_value=sell_value,
+                edition=int(_joker_edition(card)),
+            )
+        )
     return tuple(jokers)
 
 
@@ -827,6 +885,29 @@ def _ability_number(ability: dict[str, Any], *keys: str) -> int:
         if isinstance(value, (int, float)):
             return int(value)
     return 0
+
+
+def _joker_edition(card: dict[str, Any]) -> Edition:
+    values: list[str] = []
+    modifier = card.get("modifier")
+    if isinstance(modifier, dict):
+        values.extend(str(value) for value in modifier.values())
+        values.extend(str(key) for key in modifier.keys())
+    state = card.get("state")
+    if isinstance(state, dict):
+        values.extend(str(value) for value in state.values())
+        values.extend(str(key) for key in state.keys())
+
+    normalized = {value.lower() for value in values}
+    if normalized & {"foil", "e_foil"}:
+        return Edition.FOIL
+    if normalized & {"holo", "holographic", "e_holo"}:
+        return Edition.HOLOGRAPHIC
+    if normalized & {"polychrome", "e_polychrome"}:
+        return Edition.POLYCHROME
+    if normalized & {"negative", "e_negative"}:
+        return Edition.NEGATIVE
+    return Edition.BASE
 
 
 def _highlighted_limit(state: dict[str, Any]) -> int:

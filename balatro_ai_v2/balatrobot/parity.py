@@ -198,6 +198,14 @@ def _check_play_score(
     actual_delta = after_chips - before_chips
     if abs(expected_delta - actual_delta) <= tolerance:
         return None
+    before_money = int(before.get("money") or 0)
+    after_money = int(after.get("money") or before_money)
+    if after_money > before_money and _score_uses_current_money(before):
+        adjusted_before = {**before, "money": after_money}
+        adjusted_delta = score_play_action(adjusted_before, action).total
+        if abs(adjusted_delta - actual_delta) <= tolerance:
+            return None
+        expected_delta = adjusted_delta
     return ParityMismatch(
         line=line_num,
         kind="score",
@@ -374,6 +382,13 @@ def _check_use(line_num: int, before: dict[str, Any], after: dict[str, Any], pay
         if after_level != before_level + 1:
             return _mismatch(line_num, "planet", "planet use did not increment expected hand level", before_level + 1, after_level)
         return None
+    if key == "c_hermit":
+        before_money = int(before.get("money") or 0)
+        expected_money = before_money + min(before_money, 20)
+        actual_money = int(after.get("money") or 0)
+        if actual_money != expected_money:
+            return _mismatch(line_num, "money", "Hermit money delta did not match source rule", expected_money, actual_money)
+        return None
     return ParityMismatch(line_num, "unchecked", f"no parity checker for consumable use {key}", key, None)
 
 
@@ -473,6 +488,10 @@ def _trace_rows(path: str | Path) -> Iterable[tuple[int, dict[str, Any]]]:
 def _round_chips(state: dict[str, Any]) -> int | None:
     chips = (state.get("round") or {}).get("chips")
     return int(chips) if isinstance(chips, (int, float)) else None
+
+
+def _score_uses_current_money(state: dict[str, Any]) -> bool:
+    return any(key in {"j_bull", "j_bootstraps"} for key in (_area_keys(state, "jokers") or []))
 
 
 def _area_keys(state: dict[str, Any], area: str) -> list[str] | None:

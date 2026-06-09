@@ -1,5 +1,8 @@
+from random import Random
+
 from balatro_ai_v2.fast.full_game import (
     BUY_CARD_ACTION_BASE,
+    BUY_PACK_ACTION_BASE,
     BUY_VOUCHER_ACTION,
     CASH_OUT_ACTION,
     NEXT_ROUND_ACTION,
@@ -7,6 +10,7 @@ from balatro_ai_v2.fast.full_game import (
     REROLL_ACTION,
     SELL_JOKER_ACTION_BASE,
     SELECT_BLIND_ACTION,
+    USE_CONSUMABLE_ACTION_BASE,
     FastFullGameEnv,
     RolloutSearchRunAgent,
     SearchRunAgent,
@@ -123,6 +127,8 @@ def test_rollout_search_agent_scores_shop_candidates_without_replacing_default()
 
     assert SearchRunAgent.shop_rollout_candidates == 0
     assert RolloutSearchRunAgent.shop_rollout_candidates > 0
+    assert RolloutSearchRunAgent.beam_width == 2
+    assert RolloutSearchRunAgent.action_beam == 1
     assert action in env.legal_action_ids()
 
 
@@ -176,6 +182,73 @@ def test_mega_pack_allows_multiple_selections_before_returning_to_shop() -> None
     assert env.pack_cards == []
 
 
+def test_mega_pack_applies_two_consumables_immediately() -> None:
+    env = FastFullGameEnv(deck_key="b_red")
+    env.reset(seed=4)
+    env.run.phase = RunPhase.PACK
+    env.run.money = 10
+    env.pack_cards = ["c_hermit", "c_mercury", "c_jupiter"]
+    env.pack_choices = 2
+
+    env.step(PACK_SELECT_ACTION_BASE)
+
+    assert env.run.phase == RunPhase.PACK
+    assert env.run.money == 20
+    assert env.consumables == []
+
+    env.step(PACK_SELECT_ACTION_BASE)
+
+    assert env.run.phase == RunPhase.SHOP
+    assert env.hand_levels[1] == 2
+
+
+def test_fast_pack_generation_includes_arcana_tarots() -> None:
+    env = FastFullGameEnv(deck_key="b_red")
+    env.reset(seed=4)
+
+    cards = env._generate_pack_cards("p_arcana_mega_1")
+
+    assert cards
+    assert all(key.startswith("c_") for key in cards)
+    assert any(key in {"c_hermit", "c_high_priestess", "c_judgement"} for key in cards)
+
+
+def test_first_shop_pack_has_source_buffoon_guarantee() -> None:
+    env = FastFullGameEnv(deck_key="b_red")
+    env.reset(seed=4)
+    env.run.phase = RunPhase.SHOP
+    env.run.ante = 1
+    env.run.round_num = 0
+
+    assert env._pack_keys()[0].startswith("p_buffoon_normal_")
+
+
+def test_search_agent_buys_arcana_pack() -> None:
+    env = FastFullGameEnv(deck_key="b_red")
+    env.reset(seed=3)
+    env.run.phase = RunPhase.SHOP
+    env.run.money = 12
+    env.run.shop.item_keys = []
+
+    action = SearchRunAgent().act(env)
+
+    assert action == BUY_PACK_ACTION_BASE
+
+
+def test_search_agent_does_not_go_broke_on_arcana_pack() -> None:
+    env = FastFullGameEnv(deck_key="b_red")
+    env.reset(seed=3)
+    env.run.phase = RunPhase.SHOP
+    env.run.ante = 2
+    env.run.round_num = 1
+    env.run.money = 6
+    env.run.shop.item_keys = []
+
+    action = SearchRunAgent().act(env)
+
+    assert action != BUY_PACK_ACTION_BASE
+
+
 def test_buffoon_pack_does_not_offer_owned_jokers() -> None:
     env = FastFullGameEnv(deck_key="b_red")
     env.reset(seed=4)
@@ -196,6 +269,66 @@ def test_shop_generation_does_not_offer_owned_jokers() -> None:
 
     assert "j_joker" not in pool
     assert "j_abstract" not in pool
+
+
+def test_shop_generation_uses_source_shaped_joker_pool() -> None:
+    env = FastFullGameEnv(deck_key="b_red")
+    env.reset(seed=4)
+
+    pool = env._available_shop_card_pool()
+
+    assert len(pool) > 50
+    assert "j_photograph" in pool
+    # Unimplemented source jokers are excluded so rollouts never buy dead cards.
+    assert "j_blueprint" not in pool
+    from balatro_ai_v2.fast.jokers import IMPLEMENTED_JOKERS
+
+    assert all(key in IMPLEMENTED_JOKERS for key in pool if key.startswith("j_"))
+
+
+def test_voucher_generation_respects_upgrade_requirements() -> None:
+    env = FastFullGameEnv(deck_key="b_red")
+    env.reset(seed=4)
+
+    seen = {env._generate_voucher(Random(seed)) for seed in range(100)}
+
+    assert "v_overstock_plus" not in seen
+    env.purchased_vouchers.append("v_overstock_norm")
+    seen_after_purchase = {env._generate_voucher(Random(seed)) for seed in range(100)}
+    assert "v_overstock_plus" in seen_after_purchase
+
+
+def test_full_game_targeted_tarots_mutate_persistent_deck_cards() -> None:
+    env = FastFullGameEnv(deck_key="b_red")
+    env.reset(seed=4)
+    env.run.phase = RunPhase.SHOP
+    env.run.hand = [0, 12, 25, 38]
+    env.deck_cards = [0, 12, 25, 38, 5]
+    env.consumables = ["c_hanged_man"]
+
+    env.step(USE_CONSUMABLE_ACTION_BASE)
+
+    assert len(env.deck_cards) == 3
+    assert 0 not in env.deck_cards
+    assert 12 not in env.deck_cards
+
+
+def test_full_game_death_and_strength_modify_deck_composition() -> None:
+    env = FastFullGameEnv(deck_key="b_red")
+    env.reset(seed=4)
+    env.run.phase = RunPhase.SHOP
+    env.run.hand = [0, 5, 12]
+    env.deck_cards = [0, 5, 12]
+    env.consumables = ["c_death", "c_strength"]
+
+    env.step(USE_CONSUMABLE_ACTION_BASE)
+
+    assert 12 in env.deck_cards
+    assert 0 not in env.deck_cards
+
+    env.step(USE_CONSUMABLE_ACTION_BASE)
+
+    assert any(card % 13 == 6 for card in env.deck_cards)
 
 
 def test_search_agent_runs_first_red_deck_seed_without_fixed_flush_target() -> None:

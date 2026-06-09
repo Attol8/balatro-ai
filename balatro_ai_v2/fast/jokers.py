@@ -18,6 +18,7 @@ from balatro_ai_v2.fast.hand import (
     TWO_PAIR,
     FastScore,
 )
+from balatro_ai_v2.fast.modifiers import Edition, edition_chip_bonus, edition_mult_bonus, edition_xmult
 
 
 @dataclass(frozen=True, slots=True)
@@ -230,8 +231,8 @@ def apply_additive_jokers(
             chips += joker.scaling
         elif joker.key == "j_stone":
             chips += 25 * joker.scaling
-        elif joker.key == "j_runner" and _hand_contains(score.kind, STRAIGHT):
-            chips += joker.scaling + 15
+        elif joker.key == "j_runner":
+            chips += joker.scaling + (15 if _hand_contains(score.kind, STRAIGHT) else 0)
         elif joker.key == "j_green_joker":
             mult += joker.scaling + 1
         elif joker.key == "j_erosion":
@@ -395,6 +396,11 @@ def apply_additive_jokers(
             target_kind, add_chips = TYPE_CHIP_JOKERS[joker.key]
             if score.kind == target_kind:
                 chips += add_chips
+
+        edition = Edition(joker.edition)
+        chips += edition_chip_bonus(edition)
+        mult += edition_mult_bonus(edition)
+        x_mult *= edition_xmult(edition)
 
     return FastScore(
         kind=score.kind,

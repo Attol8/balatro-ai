@@ -31,7 +31,7 @@ def plan_shop_action(
     *,
     config: ShopPolicyConfig = DEFAULT_POLICY_CONFIG.shop,
 ) -> ShopDecision:
-    consumable_action = _best_consumable_action(state)
+    consumable_action = plan_consumable_action(state, config=config)
     if consumable_action is not None:
         return consumable_action
 
@@ -43,8 +43,7 @@ def plan_shop_action(
     if sell_to_afford_action is not None:
         return sell_to_afford_action
 
-    candidates: list[tuple[float, int, str]] = []
-    pack_candidates: list[tuple[float, int, str]] = []
+    candidates: list[tuple[float, float, int, int, ActionKind, str]] = []
     for index, card in enumerate(_area_cards(state, "shop")):
         cost = _buy_cost(card)
         if cost > money:
@@ -54,7 +53,7 @@ def plan_shop_action(
         value = _shop_card_value(state, card, config)
         if value <= cost + config.min_value_margin:
             continue
-        candidates.append((value - cost, index, str(card.get("key") or "")))
+        candidates.append((value - cost, value, 30, -index, ActionKind.BUY_CARD, str(card.get("key") or "")))
     for index, card in enumerate(_area_cards(state, "packs")):
         cost = _buy_cost(card)
         if cost > money:
@@ -62,19 +61,24 @@ def plan_shop_action(
         value = _pack_value(state, card, config)
         if value <= cost + config.min_value_margin:
             continue
-        pack_candidates.append((value - cost, index, str(card.get("key") or "")))
+        candidates.append((value - cost, value, 20, -index, ActionKind.BUY_PACK, str(card.get("key") or "")))
+    for index, card in enumerate(_area_cards(state, "vouchers")):
+        cost = _buy_cost(card)
+        if cost > money:
+            continue
+        key = str(card.get("key") or "")
+        value = _voucher_value(state, key, config)
+        if value <= cost + config.min_value_margin:
+            continue
+        candidates.append((value - cost, value, 40, -index, ActionKind.BUY_VOUCHER, key))
 
-    if not candidates and not pack_candidates:
+    if not candidates:
         if _should_reroll_shop(state, config):
             return ShopDecision(GameAction(kind=ActionKind.REROLL), "reroll dead shop")
         return ShopDecision(None)
-    if not candidates:
-        pack_candidates.sort(reverse=True)
-        _, index, key = pack_candidates[0]
-        return ShopDecision(GameAction(kind=ActionKind.BUY_PACK, index=index), f"buy {key}")
     candidates.sort(reverse=True)
-    _, index, key = candidates[0]
-    return ShopDecision(GameAction(kind=ActionKind.BUY_CARD, index=index), f"buy {key}")
+    _, _, _, negative_index, kind, key = candidates[0]
+    return ShopDecision(GameAction(kind=kind, index=-negative_index), f"buy {key}")
 
 
 def plan_pack_action(
@@ -82,23 +86,27 @@ def plan_pack_action(
     *,
     config: ShopPolicyConfig = DEFAULT_POLICY_CONFIG.shop,
 ) -> ShopDecision:
-    candidates: list[tuple[float, int, str]] = []
+    candidates: list[tuple[float, int, str, tuple[int, ...]]] = []
     for index, card in enumerate(_booster_cards(state)):
-        value = _pack_card_value(state, card, config)
+        value, targets = _pack_card_value_and_targets(state, card, config)
         if value <= 0:
             continue
-        candidates.append((value, index, str(card.get("key") or "")))
+        candidates.append((value, index, str(card.get("key") or ""), targets))
     if not candidates:
         return ShopDecision(GameAction(kind=ActionKind.PACK_SKIP), "skip pack")
     candidates.sort(reverse=True)
-    _, index, key = candidates[0]
-    return ShopDecision(GameAction(kind=ActionKind.PACK_SELECT, index=index), f"pick {key}")
+    _, index, key, targets = candidates[0]
+    return ShopDecision(GameAction(kind=ActionKind.PACK_SELECT, index=index, indices=targets), f"pick {key}")
 
 
-def _best_consumable_action(state: dict[str, Any]) -> ShopDecision | None:
+def plan_consumable_action(
+    state: dict[str, Any],
+    *,
+    config: ShopPolicyConfig = DEFAULT_POLICY_CONFIG.shop,
+) -> ShopDecision | None:
     for index, card in enumerate(_area_cards(state, "consumables")):
-        key = card.get("key")
-        if key in _PLANET_TO_HAND_KIND or key in _VALUABLE_NO_TARGET_CONSUMABLES:
+        key = str(card.get("key") or "")
+        if key in _PLANET_TO_HAND_KIND or _no_target_tarot_value(state, key, config, held=True) > 0:
             return ShopDecision(
                 GameAction(kind=ActionKind.USE_CONSUMABLE, index=index),
                 f"use {key}",
@@ -113,23 +121,32 @@ def _shop_card_value(state: dict[str, Any], card: dict[str, Any], config: ShopPo
         return _joker_value(state, key, config, can_add=_can_add_joker_card(state, card))
     if card_set == "PLANET" or key in _PLANET_TO_HAND_KIND:
         return _planet_value(state, key, config)
-    if key in _VALUABLE_NO_TARGET_CONSUMABLES and _should_buy_no_target_consumable(state, key, config):
-        return config.valuable_no_target_consumable_value
+    if _is_tarot_card(card):
+        return _shop_tarot_value(state, key, config)
     return 0.0
 
 
 def _pack_card_value(state: dict[str, Any], card: dict[str, Any], config: ShopPolicyConfig) -> float:
+    value, _ = _pack_card_value_and_targets(state, card, config)
+    return value
+
+
+def _pack_card_value_and_targets(
+    state: dict[str, Any],
+    card: dict[str, Any],
+    config: ShopPolicyConfig,
+) -> tuple[float, tuple[int, ...]]:
     key = str(card.get("key") or "")
     card_set = str(card.get("set") or "")
     if _is_joker_card(card):
-        return _joker_value(state, key, config, can_add=_can_add_joker_card(state, card))
+        return _joker_value(state, key, config, can_add=_can_add_joker_card(state, card)), ()
     if card_set == "PLANET" or key in _PLANET_TO_HAND_KIND:
-        return _planet_value(state, key, config)
-    if key in _VALUABLE_NO_TARGET_CONSUMABLES and _should_buy_no_target_consumable(state, key, config):
-        return config.valuable_no_target_consumable_value
+        return _planet_value(state, key, config), ()
+    if _is_tarot_card(card):
+        return _pack_tarot_value_and_targets(state, key, config)
     if card_set == "DEFAULT":
-        return _playing_card_value(card)
-    return 0.0
+        return _playing_card_value(card), ()
+    return 0.0, ()
 
 
 def _pack_value(state: dict[str, Any], card: dict[str, Any], config: ShopPolicyConfig) -> float:
@@ -155,7 +172,7 @@ def _pack_value(state: dict[str, Any], card: dict[str, Any], config: ShopPolicyC
     if spec.kind == BoosterKind.ARCANA:
         if _needs_late_carry_upgrade(state):
             return 0.0
-        if _consumable_count(state) >= _consumable_limit(state):
+        if _buy_cost(card) > 0 and int(state.get("money") or 0) - _buy_cost(card) < config.reroll_min_money_after:
             return 0.0
         return config.arcana_pack_base_value + 1.5 * (spec.size - 3) + 4.0 * (spec.choices - 1)
     if spec.kind == BoosterKind.SPECTRAL:
@@ -163,6 +180,53 @@ def _pack_value(state: dict[str, Any], card: dict[str, Any], config: ShopPolicyC
             return 0.0
         return config.spectral_pack_base_value + 2.0 * (spec.size - 2) + 4.0 * (spec.choices - 1)
     return 0.0
+
+
+def _voucher_value(state: dict[str, Any], key: str, config: ShopPolicyConfig) -> float:
+    if not key or key in _owned_vouchers(state):
+        return 0.0
+    ante = int(state.get("ante_num") or 1)
+    money = int(state.get("money") or 0)
+    values = {
+        "v_overstock_norm": 18.0,
+        "v_overstock_plus": 14.0,
+        "v_clearance_sale": 24.0,
+        "v_liquidation": 26.0,
+        "v_reroll_surplus": 14.0,
+        "v_reroll_glut": 16.0,
+        "v_crystal_ball": 10.0,
+        "v_grabber": 30.0,
+        "v_nacho_tong": 28.0,
+        "v_wasteful": 14.0,
+        "v_recyclomancy": 12.0,
+        "v_planet_merchant": 14.0,
+        "v_planet_tycoon": 12.0,
+        "v_tarot_merchant": 14.0,
+        "v_tarot_tycoon": 12.0,
+        "v_seed_money": 10.0 + min(money, 25) / 5.0,
+        "v_money_tree": 12.0 + min(money, 40) / 5.0,
+        "v_telescope": 14.0,
+        "v_observatory": 18.0,
+        "v_antimatter": 30.0,
+        "v_hone": 12.0,
+        "v_glow_up": 12.0,
+        "v_omen_globe": 8.0,
+        "v_magic_trick": 4.0,
+        "v_illusion": 6.0,
+        "v_paint_brush": 24.0,
+        "v_palette": 20.0,
+        "v_directors_cut": 10.0 if ante >= 5 else 5.0,
+        "v_retcon": 12.0 if ante >= 5 else 6.0,
+        "v_hieroglyph": 12.0 if ante <= 4 else 3.0,
+        "v_petroglyph": 8.0 if ante <= 4 else 2.0,
+        "v_blank": 0.0,
+    }
+    value = values.get(key, 0.0)
+    if _needs_late_carry_upgrade(state) and key not in {"v_antimatter", "v_paint_brush", "v_palette"}:
+        return min(value, 10.0)
+    if _needs_late_joker_slot_filled(state) and key in {"v_planet_merchant", "v_tarot_merchant", "v_telescope"}:
+        return min(value, 8.0)
+    return value
 
 
 def _joker_value(state: dict[str, Any], key: str, config: ShopPolicyConfig, *, can_add: bool | None = None) -> float:
@@ -435,6 +499,137 @@ def _planet_value(state: dict[str, Any], key: str, config: ShopPolicyConfig) -> 
     return value
 
 
+def _shop_tarot_value(state: dict[str, Any], key: str, config: ShopPolicyConfig) -> float:
+    if _consumable_count(state) >= _consumable_limit(state):
+        return 0.0
+    if _needs_late_carry_upgrade(state) and key not in {"c_judgement", "c_hermit", "c_temperance"}:
+        return 0.0
+    return max(_no_target_tarot_value(state, key, config), _targeted_tarot_hold_value(key))
+
+
+def _pack_tarot_value(state: dict[str, Any], key: str, config: ShopPolicyConfig) -> float:
+    value, _ = _pack_tarot_value_and_targets(state, key, config)
+    return value
+
+
+def _pack_tarot_value_and_targets(
+    state: dict[str, Any],
+    key: str,
+    config: ShopPolicyConfig,
+) -> tuple[float, tuple[int, ...]]:
+    no_target_value = _no_target_tarot_value(state, key, config)
+    if no_target_value > 0:
+        return no_target_value, ()
+    targets = _targeted_tarot_targets(state, key)
+    if not targets:
+        return 0.0, ()
+    return _targeted_tarot_value(state, key, targets), targets
+
+
+def _no_target_tarot_value(
+    state: dict[str, Any],
+    key: str,
+    config: ShopPolicyConfig,
+    *,
+    held: bool = False,
+) -> float:
+    money = int(state.get("money") or 0)
+    joker_count = _joker_count(state)
+    joker_room = joker_count < _joker_limit(state)
+    consumable_room = _consumable_count(state) < _consumable_limit(state)
+    if key == "c_high_priestess":
+        if held:
+            return config.valuable_no_target_consumable_value
+        return config.valuable_no_target_consumable_value if _should_buy_no_target_consumable(state, key, config) else 0.0
+    if key == "c_hermit":
+        return float(min(money, 20))
+    if key == "c_temperance":
+        sell_total = sum(int(((card.get("cost") or {}).get("sell") or 0)) for card in _area_cards(state, "jokers"))
+        return float(min(sell_total, 50))
+    if key == "c_emperor":
+        if held:
+            return 0.0
+        return 10.0 if consumable_room else 0.0
+    if key == "c_judgement":
+        return 24.0 if joker_room else 0.0
+    if key == "c_wheel_of_fortune":
+        return 0.0
+    return 0.0
+
+
+def _targeted_tarot_hold_value(key: str) -> float:
+    if key in {"c_hanged_man", "c_death"}:
+        return 12.0
+    if key in {"c_empress", "c_heirophant", "c_magician", "c_justice", "c_chariot"}:
+        return 10.0
+    if key in {"c_world", "c_sun", "c_moon", "c_star", "c_strength"}:
+        return 8.0
+    if key in {"c_lovers", "c_tower", "c_devil"}:
+        return 6.0
+    return 0.0
+
+
+def _targeted_tarot_value(state: dict[str, Any], key: str, targets: tuple[int, ...]) -> float:
+    if not targets:
+        return 0.0
+    if key == "c_hanged_man":
+        return 16.0
+    if key == "c_death":
+        return 14.0
+    if key == "c_empress":
+        return 14.0
+    if key == "c_heirophant":
+        return 12.0
+    if key in {"c_justice", "c_chariot"}:
+        return 12.0
+    if key == "c_magician":
+        return 8.0
+    if key == "c_strength":
+        return 8.0
+    if key in {"c_world", "c_sun", "c_moon", "c_star"}:
+        return _suit_conversion_value(state, targets)
+    if key in {"c_lovers", "c_tower", "c_devil"}:
+        return 6.0
+    return 0.0
+
+
+def _targeted_tarot_targets(state: dict[str, Any], key: str) -> tuple[int, ...]:
+    hand = _area_cards(state, "hand")
+    if not hand:
+        return ()
+    ranked = sorted(range(len(hand)), key=lambda index: (_playing_card_value(hand[index]), -index))
+    reverse_ranked = tuple(reversed(ranked))
+    if key == "c_hanged_man":
+        return tuple(ranked[:2]) if len(ranked) >= 2 else ()
+    if key == "c_death":
+        if len(ranked) < 2:
+            return ()
+        return (ranked[0], reverse_ranked[0])
+    if key in {"c_heirophant", "c_empress", "c_magician"}:
+        return reverse_ranked[: min(2, len(reverse_ranked))]
+    if key in {"c_justice", "c_chariot", "c_lovers"}:
+        return reverse_ranked[:1]
+    if key in {"c_tower", "c_devil"}:
+        return tuple(ranked[:1])
+    if key == "c_strength":
+        non_aces = [index for index in reverse_ranked if _rank_name(hand[index]) != "A"]
+        return tuple(non_aces[:2])
+    if key in {"c_world", "c_sun", "c_moon", "c_star"}:
+        target_suit = _TAROT_TO_SUIT[key]
+        off_suit = [index for index in ranked if _suit_name(hand[index]) != target_suit]
+        same_suit_count = sum(1 for card in hand if _suit_name(card) == target_suit)
+        if same_suit_count < 2:
+            return ()
+        return tuple(off_suit[: min(3, len(off_suit))])
+    return ()
+
+
+def _suit_conversion_value(state: dict[str, Any], targets: tuple[int, ...]) -> float:
+    if not targets:
+        return 0.0
+    return 6.0 + 2.0 * len(targets)
+
+
 def _needs_late_joker_slot_filled(state: dict[str, Any]) -> bool:
     return int(state.get("ante_num") or 1) >= 4 and _joker_count(state) < _joker_limit(state)
 
@@ -457,6 +652,14 @@ def _owned_jokers(state: dict[str, Any]) -> set[str]:
     return {
         str(card.get("key"))
         for card in _area_cards(state, "jokers")
+        if isinstance(card.get("key"), str)
+    }
+
+
+def _owned_vouchers(state: dict[str, Any]) -> set[str]:
+    return {
+        str(card.get("key"))
+        for card in _area_cards(state, "used_vouchers")
         if isinstance(card.get("key"), str)
     }
 
@@ -497,6 +700,11 @@ def _is_joker_card(card: dict[str, Any]) -> bool:
     return str(card.get("set") or "") == "JOKER" or key.startswith("j_")
 
 
+def _is_tarot_card(card: dict[str, Any]) -> bool:
+    key = str(card.get("key") or "")
+    return str(card.get("set") or "") == "TAROT" or key in _NO_TARGET_TAROTS or key in _TARGETED_TAROTS
+
+
 def _modeled_joker(key: str) -> bool:
     return (
         key in IMPLEMENTED_JOKERS
@@ -530,6 +738,8 @@ def _is_negative_edition(card: dict[str, Any]) -> bool:
 
 def _booster_cards(state: dict[str, Any]) -> list[dict[str, Any]]:
     cards = _area_cards(state, "pack")
+    if str(state.get("state") or "") in _PACK_STATES:
+        return cards
     if cards:
         return cards
     return _area_cards(state, "packs")
@@ -546,6 +756,14 @@ def _playing_card_value(card: dict[str, Any]) -> float:
         "T": 10,
     }.get(rank_name, int(rank_name) if rank_name.isdigit() else 0)
     return float(rank_value)
+
+
+def _rank_name(card: dict[str, Any]) -> str:
+    return str((card.get("value") or {}).get("rank") or "")
+
+
+def _suit_name(card: dict[str, Any]) -> str:
+    return str((card.get("value") or {}).get("suit") or "")
 
 
 def _buy_cost(card: dict[str, Any]) -> int:
@@ -571,7 +789,46 @@ _PLANET_TO_HAND_KIND = {
     "c_jupiter": FLUSH,
     "c_earth": FULL_HOUSE,
 }
-_VALUABLE_NO_TARGET_CONSUMABLES = {"c_high_priestess"}
+
+_PACK_STATES = {
+    "SMODS_BOOSTER_OPENED",
+    "PLANET_PACK",
+    "TAROT_PACK",
+    "SPECTRAL_PACK",
+    "STANDARD_PACK",
+    "BUFFOON_PACK",
+}
+_NO_TARGET_TAROTS = {
+    "c_high_priestess",
+    "c_hermit",
+    "c_temperance",
+    "c_emperor",
+    "c_judgement",
+    "c_wheel_of_fortune",
+}
+_TARGETED_TAROTS = {
+    "c_world",
+    "c_sun",
+    "c_moon",
+    "c_star",
+    "c_heirophant",
+    "c_empress",
+    "c_lovers",
+    "c_justice",
+    "c_chariot",
+    "c_tower",
+    "c_devil",
+    "c_magician",
+    "c_strength",
+    "c_hanged_man",
+    "c_death",
+}
+_TAROT_TO_SUIT = {
+    "c_world": "S",
+    "c_sun": "H",
+    "c_moon": "C",
+    "c_star": "D",
+}
 _NON_SCORING_JOKER_VALUES = {
     "j_rocket",
     "j_to_the_moon",

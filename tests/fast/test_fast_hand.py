@@ -267,6 +267,16 @@ def test_growing_jokers_apply_current_hand_increment_before_scoring() -> None:
     assert runner_green.chips == base_straight.chips + 45
     assert runner_green.mult == base_straight.mult + 5
 
+    base_non_straight = score_cards_with_levels((card(12, 0),), tuple(levels))
+    runner_non_straight = apply_additive_jokers(
+        base_non_straight,
+        (card(12, 0),),
+        1,
+        (Joker("j_runner", scaling=30),),
+    )
+
+    assert runner_non_straight.chips == base_non_straight.chips + 30
+
 
 def test_held_card_jokers_apply_per_card_effects() -> None:
     levels = [1] * 12
@@ -648,6 +658,21 @@ def test_state_scorer_red_seal_retriggers_scored_card() -> None:
     assert result.score.chips == 16 + 50 + 50
     assert result.score.mult == 1 + 4 + 4
     assert result.score.total == 116 * 9
+
+
+def test_joker_editions_score_as_joker_effects() -> None:
+    base = score_cards_with_levels((card(12, 0),), (1,) * 12)
+    result = apply_additive_jokers(
+        base,
+        (card(12, 0),),
+        1,
+        (Joker("j_joker", edition=Edition.HOLOGRAPHIC), Joker("j_stencil", edition=Edition.FOIL)),
+        context=ScoreContext(joker_count=2, joker_slots=5),
+    )
+
+    assert result.chips == 16 + 50
+    assert result.mult == 1 + 4 + 10
+    assert result.total == int((16 + 50) * (1 + 4 + 10) * 4)
 
 
 def test_state_scorer_gold_seal_grants_money_when_scored() -> None:

@@ -61,6 +61,40 @@ def test_replay_trace_reports_score_mismatch(tmp_path) -> None:
     assert report.mismatches[0].kind == "score"
 
 
+def test_replay_trace_allows_observed_money_before_bull_score(tmp_path) -> None:
+    before = _selecting_hand_state([_card("S", "K")], chips=0)
+    before["money"] = 3
+    before["jokers"] = {
+        "count": 2,
+        "limit": 5,
+        "cards": [
+            {"key": "j_bull", "set": "JOKER", "value": {"ability": {"extra": 2}}},
+            {"key": "j_business", "set": "JOKER", "value": {"ability": {}}},
+        ],
+    }
+    action = GameAction(kind=ActionKind.PLAY, indices=(0,))
+    adjusted_before = {**before, "money": 5}
+    after = {**before, "money": 5, "round": {**before["round"]}}
+    after["round"]["chips"] = score_play_action(adjusted_before, action).total
+    trace_path = tmp_path / "trace.jsonl"
+    _write_rows(
+        trace_path,
+        [
+            {
+                "event": "transition",
+                "before": before,
+                "action": {"method": "play", "params": {"cards": [0]}},
+                "after": after,
+            }
+        ],
+    )
+
+    report = replay_balatrobot_trace(trace_path)
+
+    assert report.passed
+    assert report.mismatches == ()
+
+
 def test_score_play_honors_explicit_debuffed_scoring_cards() -> None:
     state = _selecting_hand_state(
         [
@@ -103,6 +137,20 @@ def test_score_play_ride_the_bus_uses_current_mult_not_extra() -> None:
     score = score_play_action(state, GameAction(kind=ActionKind.PLAY, indices=(0,)))
 
     assert score.total == 612
+
+
+def test_score_play_applies_flint_to_base_chips_and_mult_only() -> None:
+    state = _selecting_hand_state([_card("S", "A")], chips=0)
+    state["blinds"]["small"]["status"] = "DEFEATED"
+    state["blinds"]["boss"]["status"] = "CURRENT"
+    state["blinds"]["boss"]["name"] = "The Flint"
+    state["blinds"]["boss"]["effect"] = "Base Chips and Mult are halved"
+
+    score = score_play_action(state, GameAction(kind=ActionKind.PLAY, indices=(0,)))
+
+    assert score.chips == 14
+    assert score.mult == 1
+    assert score.total == 14
 
 
 def test_score_play_disables_raised_fist_when_lowest_held_card_is_debuffed() -> None:
@@ -330,6 +378,34 @@ def test_replay_trace_checks_skip_state(tmp_path) -> None:
     report = replay_balatrobot_trace(trace_path)
 
     assert report.passed
+    assert report.checked_transitions == 1
+
+
+def test_replay_trace_checks_hermit_money_use(tmp_path) -> None:
+    before = _shop_state(money=12, shop_cards=[], jokers=[])
+    before["consumables"] = {
+        "count": 1,
+        "limit": 2,
+        "cards": [{"key": "c_hermit", "set": "TAROT", "cost": {"buy": 3, "sell": 1}}],
+    }
+    after = {**before, "money": 24, "consumables": {"count": 0, "limit": 2, "cards": []}}
+    trace_path = tmp_path / "trace.jsonl"
+    _write_rows(
+        trace_path,
+        [
+            {
+                "event": "transition",
+                "before": before,
+                "action": {"method": "use", "params": {"consumable": 0}},
+                "after": after,
+            }
+        ],
+    )
+
+    report = replay_balatrobot_trace(trace_path)
+
+    assert report.passed
+    assert not report.unchecked
     assert report.checked_transitions == 1
 
 

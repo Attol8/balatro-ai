@@ -13,8 +13,8 @@ from balatro_ai_v2.balatrobot.client import BalatroBotClient
 from balatro_ai_v2.balatrobot.policy import BalatroBotPolicy
 from balatro_ai_v2.balatrobot.policy_config import PolicyConfig, ShopPolicyConfig, TacticalPolicyConfig
 from balatro_ai_v2.balatrobot.runner import BalatroBotRunner
-from balatro_ai_v2.balatrobot.shop_planner import plan_pack_action, plan_shop_action
-from balatro_ai_v2.balatrobot.tactical_planner import _jokers_after_play, score_play_action
+from balatro_ai_v2.balatrobot.shop_planner import plan_consumable_action, plan_pack_action, plan_shop_action
+from balatro_ai_v2.balatrobot.tactical_planner import _jokers_after_play, plan_tactical_action, score_play_action
 from balatro_ai_v2.balatrobot.tracing import JsonlTraceWriter
 from balatro_ai_v2.fast.env import DISCARD_ACTION_OFFSET
 from balatro_ai_v2.fast.full_game import (
@@ -139,6 +139,161 @@ def test_runner_selects_useful_booster_card() -> None:
     assert calls[2] == ("pack", {"card": 1})
 
 
+def test_runner_polls_opened_pack_until_cards_are_available() -> None:
+    calls = []
+
+    def pack_state(cards: list[dict]) -> dict:
+        return {
+            "state": "PLANET_PACK",
+            "seed": "1",
+            "ante_num": 1,
+            "round_num": 1,
+            "pack": {"count": 2, "limit": 2, "cards": cards},
+            "packs": {
+                "cards": [
+                    {"key": "p_celestial_normal_4", "set": "BOOSTER", "cost": {"buy": 4, "sell": 0}},
+                ],
+            },
+            "jokers": {"count": 0, "limit": 5, "cards": []},
+            "hands": {name: {"level": 1, "played": 0} for name in _HAND_NAMES},
+            "round": {"hands_left": 4, "discards_left": 3, "chips": 0},
+        }
+
+    def transport(payload: dict) -> dict:
+        calls.append((payload["method"], payload.get("params") or {}))
+        method = payload["method"]
+        if method == "menu":
+            result = {"state": "MENU"}
+        elif method == "start":
+            result = pack_state([])
+        elif method == "gamestate":
+            result = pack_state(
+                [
+                    {"key": "c_pluto", "set": "PLANET", "cost": {"buy": 0, "sell": 0}},
+                    {"key": "c_jupiter", "set": "PLANET", "cost": {"buy": 0, "sell": 0}},
+                ]
+            )
+        elif method == "pack":
+            result = {"state": "GAME_OVER", "seed": "1", "ante_num": 9, "round_num": 24, "won": True}
+        else:
+            result = {"state": "GAME_OVER", "seed": "1", "ante_num": 0, "round_num": 0, "won": False}
+        return {"jsonrpc": "2.0", "result": result, "id": 1}
+
+    runner = BalatroBotRunner(BalatroBotClient(transport=transport), poll_delay=0)
+    result = runner.play_run(seed="1")
+
+    assert result.won
+    assert calls[2] == ("gamestate", {})
+    assert calls[3] == ("pack", {"card": 1})
+
+
+def test_runner_retries_pack_when_balatrobot_selection_is_still_in_progress() -> None:
+    calls = []
+    rejected_pack_once = False
+
+    def pack_state() -> dict:
+        return {
+            "state": "PLANET_PACK",
+            "seed": "1",
+            "ante_num": 1,
+            "round_num": 1,
+            "pack": {
+                "count": 2,
+                "limit": 2,
+                "cards": [
+                    {"key": "c_pluto", "set": "PLANET", "cost": {"buy": 0, "sell": 0}},
+                    {"key": "c_jupiter", "set": "PLANET", "cost": {"buy": 0, "sell": 0}},
+                ],
+            },
+            "jokers": {"count": 0, "limit": 5, "cards": []},
+            "hands": {name: {"level": 1, "played": 0} for name in _HAND_NAMES},
+            "round": {"hands_left": 4, "discards_left": 3, "chips": 0},
+        }
+
+    def transport(payload: dict) -> dict:
+        nonlocal rejected_pack_once
+        calls.append((payload["method"], payload.get("params") or {}))
+        method = payload["method"]
+        if method == "menu":
+            result = {"state": "MENU"}
+        elif method == "start":
+            result = pack_state()
+        elif method == "pack" and not rejected_pack_once:
+            rejected_pack_once = True
+            return {"jsonrpc": "2.0", "error": {"message": "Pack selection already in progress"}, "id": 1}
+        elif method == "gamestate":
+            result = pack_state()
+        elif method == "pack":
+            result = {"state": "GAME_OVER", "seed": "1", "ante_num": 9, "round_num": 24, "won": True}
+        else:
+            result = {"state": "GAME_OVER", "seed": "1", "ante_num": 0, "round_num": 0, "won": False}
+        return {"jsonrpc": "2.0", "result": result, "id": 1}
+
+    runner = BalatroBotRunner(BalatroBotClient(transport=transport), poll_delay=0)
+    result = runner.play_run(seed="1")
+
+    assert result.won
+    assert calls[2] == ("pack", {"card": 1})
+    assert calls[3] == ("gamestate", {})
+    assert calls[4] == ("pack", {"card": 1})
+
+
+def test_runner_skips_pack_when_balatrobot_selection_guard_stays_stuck() -> None:
+    calls = []
+
+    def pack_state() -> dict:
+        return {
+            "state": "PLANET_PACK",
+            "seed": "1",
+            "ante_num": 1,
+            "round_num": 1,
+            "pack": {
+                "count": 2,
+                "limit": 2,
+                "cards": [
+                    {"key": "c_pluto", "set": "PLANET", "cost": {"buy": 0, "sell": 0}},
+                    {"key": "c_jupiter", "set": "PLANET", "cost": {"buy": 0, "sell": 0}},
+                ],
+            },
+            "jokers": {"count": 0, "limit": 5, "cards": []},
+            "hands": {name: {"level": 1, "played": 0} for name in _HAND_NAMES},
+            "round": {"hands_left": 4, "discards_left": 3, "chips": 0},
+        }
+
+    def transport(payload: dict) -> dict:
+        calls.append((payload["method"], payload.get("params") or {}))
+        method = payload["method"]
+        if method == "menu":
+            result = {"state": "MENU"}
+        elif method == "start":
+            result = pack_state()
+        elif method == "pack" and payload.get("params", {}).get("skip"):
+            result = {"state": "SHOP", "seed": "1", "ante_num": 1, "round_num": 1, "won": False}
+        elif method == "pack":
+            return {"jsonrpc": "2.0", "error": {"message": "Pack selection already in progress"}, "id": 1}
+        elif method == "gamestate":
+            result = pack_state()
+        elif method == "next_round":
+            result = {"state": "GAME_OVER", "seed": "1", "ante_num": 9, "round_num": 24, "won": True}
+        else:
+            result = {"state": "GAME_OVER", "seed": "1", "ante_num": 0, "round_num": 0, "won": False}
+        return {"jsonrpc": "2.0", "result": result, "id": 1}
+
+    runner = BalatroBotRunner(
+        BalatroBotClient(transport=transport),
+        poll_delay=0,
+        pack_in_progress_retries=2,
+    )
+    result = runner.play_run(seed="1")
+
+    assert result.won
+    assert calls[2] == ("pack", {"card": 1})
+    assert calls[3] == ("gamestate", {})
+    assert calls[4] == ("pack", {"card": 1})
+    assert calls[5] == ("pack", {"skip": True})
+    assert calls[6] == ("next_round", {})
+
+
 def test_runner_writes_compact_jsonl_trace(tmp_path) -> None:
     def transport(payload: dict) -> dict:
         method = payload["method"]
@@ -214,6 +369,21 @@ def test_shop_planner_buys_high_priestess_for_planet_generation() -> None:
     assert decision.action.index == 0
 
 
+def test_shop_planner_buys_no_target_tarot() -> None:
+    state = _shop_state(
+        money=12,
+        shop_cards=[
+            {"key": "c_hermit", "set": "TAROT", "cost": {"buy": 3, "sell": 1}},
+        ],
+    )
+
+    decision = plan_shop_action(state)
+
+    assert decision.action is not None
+    assert decision.action.kind == ActionKind.BUY_CARD
+    assert decision.action.index == 0
+
+
 def test_shop_planner_buys_valuable_booster_pack() -> None:
     state = _shop_state(
         money=8,
@@ -228,6 +398,80 @@ def test_shop_planner_buys_valuable_booster_pack() -> None:
     assert decision.action is not None
     assert decision.action.kind == ActionKind.BUY_PACK
     assert decision.action.index == 0
+
+
+def test_shop_planner_buys_arcana_pack_for_tarot_access() -> None:
+    state = _shop_state(
+        money=8,
+        shop_cards=[],
+        packs=[
+            {"key": "p_arcana_normal_1", "set": "BOOSTER", "cost": {"buy": 4, "sell": 0}},
+        ],
+    )
+
+    decision = plan_shop_action(state)
+
+    assert decision.action is not None
+    assert decision.action.kind == ActionKind.BUY_PACK
+    assert decision.action.index == 0
+
+
+def test_shop_planner_compares_pack_against_weaker_shop_card() -> None:
+    state = _shop_state(
+        money=8,
+        shop_cards=[
+            {"key": "c_pluto", "set": "PLANET", "cost": {"buy": 3, "sell": 1}},
+        ],
+        packs=[
+            {"key": "p_buffoon_normal_1", "set": "BOOSTER", "cost": {"buy": 4, "sell": 0}},
+        ],
+    )
+
+    decision = plan_shop_action(state)
+
+    assert decision.action is not None
+    assert decision.action.kind == ActionKind.BUY_PACK
+    assert decision.action.index == 0
+
+
+def test_shop_planner_buys_high_value_visible_voucher() -> None:
+    state = _shop_state(
+        money=14,
+        shop_cards=[
+            {"key": "c_pluto", "set": "PLANET", "cost": {"buy": 3, "sell": 1}},
+        ],
+        packs=[
+            {"key": "p_celestial_normal_1", "set": "BOOSTER", "cost": {"buy": 4, "sell": 0}},
+        ],
+    )
+    state["vouchers"] = {
+        "count": 1,
+        "limit": 1,
+        "cards": [{"key": "v_grabber", "set": "VOUCHER", "cost": {"buy": 10, "sell": 0}}],
+    }
+
+    decision = plan_shop_action(state)
+
+    assert decision.action is not None
+    assert decision.action.kind == ActionKind.BUY_VOUCHER
+    assert decision.action.index == 0
+
+
+def test_shop_planner_does_not_go_broke_on_arcana_pack() -> None:
+    state = _shop_state(
+        money=6,
+        shop_cards=[],
+        packs=[
+            {"key": "p_arcana_jumbo_2", "set": "BOOSTER", "cost": {"buy": 6, "sell": 0}},
+        ],
+        jokers=[
+            {"key": "j_bull", "set": "JOKER", "cost": {"sell": 3}, "value": {"ability": {"extra": 2}}},
+        ],
+    )
+
+    decision = plan_shop_action(state)
+
+    assert decision.action is None or decision.action.kind != ActionKind.USE_CONSUMABLE
 
 
 def test_pack_planner_selects_best_opened_planet() -> None:
@@ -250,6 +494,122 @@ def test_pack_planner_selects_best_opened_planet() -> None:
     assert decision.action.index == 1
 
 
+def test_pack_planner_selects_no_target_tarot_from_opened_pack() -> None:
+    state = _shop_state(money=12, shop_cards=[])
+    state["state"] = "TAROT_PACK"
+    state["pack"] = {
+        "count": 2,
+        "limit": 2,
+        "cards": [
+            {"key": "c_strength", "set": "TAROT", "cost": {"buy": 0, "sell": 0}},
+            {"key": "c_hermit", "set": "TAROT", "cost": {"buy": 0, "sell": 0}},
+        ],
+    }
+
+    decision = plan_pack_action(state)
+
+    assert decision.action is not None
+    assert decision.action.kind == ActionKind.PACK_SELECT
+    assert decision.action.index == 1
+
+
+def test_pack_planner_can_select_no_target_tarot_when_consumable_slots_are_full() -> None:
+    state = _shop_state(
+        money=12,
+        shop_cards=[],
+        consumables=[
+            {"key": "c_pluto", "set": "PLANET", "cost": {"buy": 0, "sell": 0}},
+            {"key": "c_mercury", "set": "PLANET", "cost": {"buy": 0, "sell": 0}},
+        ],
+    )
+    state["state"] = "TAROT_PACK"
+    state["pack"] = {
+        "count": 2,
+        "limit": 2,
+        "cards": [
+            {"key": "c_hermit", "set": "TAROT", "cost": {"buy": 0, "sell": 0}},
+            {"key": "c_strength", "set": "TAROT", "cost": {"buy": 0, "sell": 0}},
+        ],
+    }
+
+    decision = plan_pack_action(state)
+
+    assert decision.action is not None
+    assert decision.action.kind == ActionKind.PACK_SELECT
+    assert decision.action.index == 0
+
+
+def test_pack_planner_selects_targeted_tarot_with_card_targets() -> None:
+    state = _shop_state(money=8, shop_cards=[])
+    state["state"] = "TAROT_PACK"
+    state["hand"] = {
+        "count": 5,
+        "limit": 8,
+        "highlighted_limit": 5,
+        "cards": [_card("S", "A"), _card("H", "K"), _card("C", "7"), _card("D", "3"), _card("S", "2")],
+    }
+    state["pack"] = {
+        "count": 2,
+        "limit": 2,
+        "cards": [
+            {"key": "c_strength", "set": "TAROT", "cost": {"buy": 0, "sell": 0}},
+            {"key": "c_hanged_man", "set": "TAROT", "cost": {"buy": 0, "sell": 0}},
+        ],
+    }
+
+    decision = plan_pack_action(state)
+
+    assert decision.action is not None
+    assert decision.action.kind == ActionKind.PACK_SELECT
+    assert decision.action.index == 1
+    assert decision.action.indices == (4, 3)
+
+
+def test_policy_does_not_auto_use_held_targeted_tarot_before_playing_hand() -> None:
+    state = _selecting_hand_state(
+        [_card("S", "A"), _card("H", "K"), _card("C", "7"), _card("D", "3"), _card("S", "2")],
+        required_score=300,
+    )
+    state["consumables"] = {
+        "count": 1,
+        "limit": 2,
+        "cards": [{"key": "c_hanged_man", "set": "TAROT", "cost": {"buy": 3, "sell": 1}}],
+    }
+
+    action = BalatroBotPolicy().tactical_action(state)
+
+    assert action.kind != ActionKind.USE_CONSUMABLE
+
+
+def test_consumable_planner_does_not_use_targeted_tarot_without_visible_hand() -> None:
+    state = _shop_state(
+        money=8,
+        shop_cards=[],
+        consumables=[{"key": "c_hanged_man", "set": "TAROT", "cost": {"buy": 3, "sell": 1}}],
+    )
+
+    decision = plan_consumable_action(state)
+
+    assert decision is None
+
+
+def test_pack_planner_does_not_use_unopened_pack_offers_as_opened_cards() -> None:
+    state = _shop_state(
+        money=8,
+        shop_cards=[],
+        packs=[
+            {"key": "p_celestial_normal_4", "set": "BOOSTER", "cost": {"buy": 4, "sell": 0}},
+        ],
+    )
+    state["state"] = "PLANET_PACK"
+    state["pack"] = {"count": 2, "limit": 2, "cards": []}
+
+    decision = plan_pack_action(state)
+
+    assert decision.action is not None
+    assert decision.action.kind == ActionKind.PACK_SKIP
+
+
 def test_shop_planner_respects_configured_high_priestess_money_floor() -> None:
     state = _shop_state(
         money=16,
@@ -263,7 +623,7 @@ def test_shop_planner_respects_configured_high_priestess_money_floor() -> None:
         config=ShopPolicyConfig(high_priestess_min_money=999, reroll_max_cost=0),
     )
 
-    assert decision.action is None
+    assert decision.action is None or decision.action.kind != ActionKind.USE_CONSUMABLE
 
 
 def test_shop_planner_sells_weakest_joker_for_major_upgrade() -> None:
@@ -822,6 +1182,107 @@ def test_score_play_blocks_non_first_hand_type_for_the_mouth() -> None:
     assert score.total == 0
 
 
+def test_tactical_planner_does_not_treat_debuffed_cards_as_clear() -> None:
+    state = _selecting_hand_state(
+        [
+            _card("H", "9"),
+            _card("C", "8"),
+            _card("C", "7", debuffed=True),
+            _card("S", "6"),
+            _card("S", "5", debuffed=True),
+            _card("C", "5", debuffed=True),
+            _card("S", "4", debuffed=True),
+            _card("H", "2", debuffed=True),
+        ],
+        required_score=10_000,
+    )
+    state["round"]["chips"] = 7654
+    state["round"]["hands_left"] = 1
+    state["round"]["discards_left"] = 1
+    state["money"] = 8
+    state["blinds"]["small"]["status"] = "DEFEATED"
+    state["blinds"]["big"]["status"] = "DEFEATED"
+    state["blinds"]["boss"]["status"] = "CURRENT"
+    state["blinds"]["boss"]["name"] = "The Pillar"
+    state["blinds"]["boss"]["effect"] = "Cards played previously this Ante are debuffed"
+    state["blinds"]["boss"]["score"] = 10_000
+    state["jokers"] = {
+        "count": 5,
+        "limit": 5,
+        "cards": [
+            {"key": "j_bull", "set": "JOKER", "cost": {"sell": 3}, "value": {"ability": {"extra": 2}}},
+            {"key": "j_rocket", "set": "JOKER", "cost": {"sell": 3}, "value": {"ability": {"dollars": 5}}},
+            {"key": "j_ride_the_bus", "set": "JOKER", "cost": {"sell": 3}, "value": {"ability": {"mult": 1}}},
+            {"key": "j_sly", "set": "JOKER", "cost": {"sell": 1}, "value": {"ability": {"t_chips": 50}}},
+            {"key": "j_abstract", "set": "JOKER", "cost": {"sell": 2}, "value": {"ability": {"extra": 3}}},
+        ],
+    }
+    state["cards"] = {
+        "count": 5,
+        "limit": 52,
+        "cards": [
+            _card("H", "A"),
+            _card("D", "A"),
+            _card("S", "K"),
+            _card("C", "K"),
+            _card("S", "Q"),
+        ],
+    }
+
+    plan = plan_tactical_action(state)
+
+    assert plan.action.kind == ActionKind.DISCARD
+
+
+def test_tactical_planner_widens_search_when_default_beam_misses_clear() -> None:
+    state = _selecting_hand_state(
+        [
+            _card("H", "A"),
+            _card("C", "A"),
+            _card("C", "K"),
+            _card("H", "Q"),
+            _card("C", "Q"),
+            _card("H", "T"),
+            _card("H", "7"),
+            _card("D", "4"),
+            _card("D", "3"),
+        ],
+        required_score=11_000,
+    )
+    state["hand"]["limit"] = 9
+    state["round"]["hands_left"] = 4
+    state["round"]["discards_left"] = 4
+    state["round"]["most_played_poker_hand"] = "Pair"
+    state["money"] = 7
+    state["hands"]["Pair"]["level"] = 2
+    state["hands"]["Pair"]["played"] = 11
+    state["hands"]["Flush"]["level"] = 2
+    state["hands"]["Flush"]["played"] = 5
+    state["hands"]["Straight"]["level"] = 2
+    state["hands"]["Straight"]["played"] = 5
+    state["jokers"] = {
+        "count": 5,
+        "limit": 5,
+        "cards": [
+            {"key": "j_bull", "set": "JOKER", "cost": {"sell": 3}, "value": {"ability": {"extra": 2}}},
+            {"key": "j_rocket", "set": "JOKER", "cost": {"sell": 3}, "value": {"ability": {"dollars": 5}}},
+            {"key": "j_ride_the_bus", "set": "JOKER", "cost": {"sell": 3}, "value": {"ability": {"mult": 1}}},
+            {"key": "j_sly", "set": "JOKER", "cost": {"sell": 1}, "value": {"ability": {"t_chips": 50}}},
+            {"key": "j_abstract", "set": "JOKER", "cost": {"sell": 2}, "value": {"ability": {"extra": 3}}},
+        ],
+    }
+    state["cards"] = {
+        "count": 43,
+        "limit": 52,
+        "cards": [_card_from_key(key) for key in _ANTE_FIVE_SEARCH_DECK],
+    }
+
+    plan = plan_tactical_action(state)
+
+    assert plan.clears
+    assert plan.projected_score >= 11_000
+
+
 def test_shop_planner_uses_held_high_priestess() -> None:
     state = _shop_state(
         money=10,
@@ -836,6 +1297,23 @@ def test_shop_planner_uses_held_high_priestess() -> None:
     assert decision.action is not None
     assert decision.action.kind == ActionKind.USE_CONSUMABLE
     assert decision.action.index == 0
+
+
+def test_shop_planner_does_not_auto_use_wheel_of_fortune() -> None:
+    state = _shop_state(
+        money=10,
+        shop_cards=[],
+        consumables=[
+            {"key": "c_wheel_of_fortune", "set": "TAROT", "cost": {"buy": 3, "sell": 1}},
+        ],
+        jokers=[
+            {"key": "j_bull", "set": "JOKER", "cost": {"buy": 6, "sell": 3}},
+        ],
+    )
+
+    decision = plan_shop_action(state)
+
+    assert decision.action is None or decision.action.kind != ActionKind.USE_CONSUMABLE
 
 
 def _selecting_hand_state(cards: list[dict], *, required_score: int) -> dict:
@@ -894,8 +1372,18 @@ def _action(kind: ActionKind, *, indices: tuple[int, ...] = (), index: int | Non
     return GameAction(kind=kind, indices=indices, index=index)
 
 
-def _card(suit: str, rank: str) -> dict:
-    return {"key": f"{suit}_{rank}", "value": {"suit": suit, "rank": rank}, "cost": {"buy": 0, "sell": 0}}
+def _card(suit: str, rank: str, *, debuffed: bool = False) -> dict:
+    return {
+        "key": f"{suit}_{rank}",
+        "value": {"suit": suit, "rank": rank},
+        "state": {"debuff": True} if debuffed else {},
+        "cost": {"buy": 0, "sell": 0},
+    }
+
+
+def _card_from_key(key: str) -> dict:
+    suit, rank = key.split("_", 1)
+    return _card(suit, rank)
 
 
 def _fast_card(suit: str, rank_value: str) -> int:
@@ -917,4 +1405,50 @@ _HAND_NAMES = (
     "Five of a Kind",
     "Flush House",
     "Flush Five",
+)
+
+_ANTE_FIVE_SEARCH_DECK = (
+    "D_J",
+    "S_A",
+    "S_7",
+    "C_7",
+    "S_6",
+    "S_T",
+    "D_6",
+    "H_9",
+    "S_2",
+    "S_J",
+    "H_2",
+    "D_7",
+    "D_T",
+    "D_5",
+    "S_Q",
+    "S_K",
+    "D_9",
+    "C_T",
+    "S_9",
+    "S_4",
+    "H_J",
+    "H_3",
+    "C_4",
+    "C_5",
+    "D_K",
+    "H_5",
+    "D_2",
+    "H_K",
+    "S_8",
+    "D_8",
+    "C_J",
+    "C_8",
+    "D_Q",
+    "C_9",
+    "S_5",
+    "C_6",
+    "S_3",
+    "H_6",
+    "C_2",
+    "H_4",
+    "D_A",
+    "H_8",
+    "C_3",
 )

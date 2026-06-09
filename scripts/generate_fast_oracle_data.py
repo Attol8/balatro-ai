@@ -8,6 +8,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from balatro_ai_v2.fast.full_game import RolloutSearchRunAgent
+from balatro_ai_v2.fast.full_game import SearchRunAgent
 from balatro_ai_v2.learning.trajectories import collect_oracle_trajectories
 
 
@@ -25,11 +26,15 @@ def main() -> None:
     )
     parser.add_argument("--shop-rollout-candidates", type=int, default=RolloutSearchRunAgent.shop_rollout_candidates)
     parser.add_argument("--shop-rollout-steps", type=int, default=RolloutSearchRunAgent.shop_rollout_steps)
+    parser.add_argument("--beam-width", type=int, default=SearchRunAgent.beam_width)
+    parser.add_argument("--action-beam", type=int, default=SearchRunAgent.action_beam)
     args = parser.parse_args()
 
     seed_range = range(args.seed_start, args.seed_start + args.seeds)
-    agent = RolloutSearchRunAgent() if args.shop_rollout else None
-    if agent is not None:
+    agent = RolloutSearchRunAgent() if args.shop_rollout else SearchRunAgent()
+    agent.beam_width = args.beam_width
+    agent.action_beam = args.action_beam
+    if args.shop_rollout:
         agent.shop_rollout_candidates = args.shop_rollout_candidates
         agent.shop_rollout_steps = args.shop_rollout_steps
     args.output_jsonl.parent.mkdir(parents=True, exist_ok=True)
@@ -48,7 +53,9 @@ def main() -> None:
     print(f"examples: {count}")
     print(f"seeds: {args.seeds}")
     print(f"shop_rollout: {bool(args.shop_rollout)}")
-    if agent is not None:
+    print(f"beam_width: {agent.beam_width}")
+    print(f"action_beam: {agent.action_beam}")
+    if args.shop_rollout:
         print(f"shop_rollout_candidates: {agent.shop_rollout_candidates}")
         print(f"shop_rollout_steps: {agent.shop_rollout_steps}")
     print(f"terminal_wins: {wins}")

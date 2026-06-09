@@ -29,7 +29,9 @@ class BalatroBotRunner:
     trace_writer: JsonlTraceWriter | None = None
     poll_delay: float = 0.02
     retry_delay: float = 0.05
+    pack_in_progress_retries: int = 10
     _run_id: str = field(default="", init=False)
+    _pack_retry_counts: dict[tuple[Any, ...], int] = field(default_factory=dict, init=False)
 
     def start_run(self, *, deck: str = "RED", stake: str = "WHITE", seed: str | None = None) -> dict[str, Any]:
         self.client.menu()
@@ -44,6 +46,7 @@ class BalatroBotRunner:
         max_steps: int = 800,
     ) -> BalatroBotRunResult:
         self._run_id = f"{deck}:{stake}:{seed or ''}:{uuid4().hex}"
+        self._pack_retry_counts.clear()
         state = self.start_run(deck=deck, stake=stake, seed=seed)
         self._record("run_start", state=state, deck=deck, stake=stake, requested_seed=seed)
         steps = 0
@@ -98,14 +101,38 @@ class BalatroBotRunner:
                     action = action_payload(method="next_round")
                     next_state = self.client.call_action("next_round")
             case "SMODS_BOOSTER_OPENED" | "PLANET_PACK" | "TAROT_PACK" | "SPECTRAL_PACK" | "STANDARD_PACK" | "BUFFOON_PACK":
-                game_action = self.policy.pack_action(state)
-                if self.trace:
-                    if game_action.kind == ActionKind.PACK_SKIP:
-                        print("action: pack_skip")
-                    else:
-                        print(f"action: pack {game_action.index}")
-                action = action_payload(game_action)
-                next_state = self._execute(game_action)
+                if not _pack_cards_available(state):
+                    if self.poll_delay > 0:
+                        sleep(self.poll_delay)
+                    action = action_payload(method="gamestate")
+                    next_state = self.client.gamestate()
+                else:
+                    game_action = self.policy.pack_action(state)
+                    if self.trace:
+                        if game_action.kind == ActionKind.PACK_SKIP:
+                            print("action: pack_skip")
+                        else:
+                            print(f"action: pack {game_action.index}")
+                    action = action_payload(game_action)
+                    try:
+                        next_state = self._execute(game_action)
+                        self._pack_retry_counts.pop(_pack_retry_key(state), None)
+                    except BalatroBotError as exc:
+                        if "Pack selection already in progress" not in str(exc):
+                            raise
+                        key = _pack_retry_key(state)
+                        retries = self._pack_retry_counts.get(key, 0) + 1
+                        self._pack_retry_counts[key] = retries
+                        if retries < self.pack_in_progress_retries:
+                            if self.poll_delay > 0:
+                                sleep(self.poll_delay)
+                            action = action_payload(method="gamestate")
+                            next_state = self.client.gamestate()
+                        else:
+                            self._pack_retry_counts.pop(key, None)
+                            game_action = GameAction(kind=ActionKind.PACK_SKIP)
+                            action = action_payload(game_action)
+                            next_state = self._execute(game_action)
             case _:
                 if self.poll_delay > 0:
                     sleep(self.poll_delay)
@@ -132,6 +159,21 @@ class BalatroBotRunner:
         for key, value in payload.items():
             serializable[key] = self.trace_writer.state_payload(value) if key in {"state", "before", "after"} else value
         self.trace_writer.record(event, **serializable)
+
+
+def _pack_cards_available(state: dict[str, Any]) -> bool:
+    cards = ((state.get("pack") or {}).get("cards") or [])
+    return any(isinstance(card, dict) for card in cards)
+
+
+def _pack_retry_key(state: dict[str, Any]) -> tuple[Any, ...]:
+    cards = tuple(
+        (card.get("id"), card.get("key"))
+        for card in ((state.get("pack") or {}).get("cards") or [])
+        if isinstance(card, dict)
+    )
+    return (state.get("seed"), state.get("ante_num"), state.get("round_num"), state.get("state"), cards)
+
 
 def evaluate_balatrobot(
     seeds: list[str],
