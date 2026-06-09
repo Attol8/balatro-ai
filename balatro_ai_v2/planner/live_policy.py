@@ -14,10 +14,13 @@ from typing import Any
 
 from balatro_ai_v2.actions import ActionKind, GameAction
 from balatro_ai_v2.balatrobot.imitation_policy import (
+    _area_cards,
     fast_legal_full_actions,
     full_fast_action_to_game_action,
 )
 from balatro_ai_v2.balatrobot.policy import BalatroBotPolicy
+from balatro_ai_v2.balatrobot.shop_planner import _targeted_tarot_targets
+from balatro_ai_v2.fast.consumables import TAROT_TARGET_LIMITS
 from balatro_ai_v2.planner.core import PlannerConfig, PlannerCore
 from balatro_ai_v2.planner.mirror import mirror_live_state
 
@@ -58,7 +61,7 @@ class PlannerPolicy:
                 raise ValueError(
                     f"planner chose illegal action {action_id} (legal: {sorted(legal)[:12]}...)"
                 )
-            return full_fast_action_to_game_action(action_id)
+            return _with_required_targets(state, full_fast_action_to_game_action(action_id))
         except Exception as exc:  # noqa: BLE001 - live runs must never crash on a mirror gap
             self.fallback_count += 1
             if self.log_fallbacks:
@@ -68,3 +71,28 @@ class PlannerPolicy:
                     file=sys.stderr,
                 )
             return default()
+
+
+def _with_required_targets(state: dict[str, Any], action: GameAction) -> GameAction:
+    """Attach target cards to actions that need them in the live RPC.
+
+    The fast env applies targeted tarots abstractly; the live game requires
+    explicit target hand cards. Raising when no targets exist routes the
+    decision to the heuristic fallback instead of crashing the run.
+    """
+    if action.kind == ActionKind.PACK_SELECT:
+        area = "pack"
+    elif action.kind == ActionKind.USE_CONSUMABLE:
+        area = "consumables"
+    else:
+        return action
+    cards = _area_cards(state, area)
+    if action.index is None or not 0 <= action.index < len(cards):
+        return action
+    key = str(cards[action.index].get("key") or "")
+    if key not in TAROT_TARGET_LIMITS:
+        return action
+    targets = _targeted_tarot_targets(state, key)
+    if not targets:
+        raise ValueError(f"{key} requires hand targets but none are available")
+    return GameAction(kind=action.kind, index=action.index, indices=targets)
