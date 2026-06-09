@@ -403,7 +403,20 @@ def _check_use(line_num: int, before: dict[str, Any], after: dict[str, Any], pay
         if actual_money != expected_money:
             return _mismatch(line_num, "money", "Hermit money delta did not match source rule", expected_money, actual_money)
         return None
-    return ParityMismatch(line_num, "unchecked", f"no parity checker for consumable use {key}", key, None)
+    # Generic shape check for consumables without an exact effect model:
+    # the used card must leave its slot (The Fool may add a copy of the
+    # last planet/tarot, so the count can stay level but never grow).
+    before_count = len(consumables)
+    after_count = len(_area_cards(after, "consumables") or [])
+    if after_count > before_count:
+        return _mismatch(
+            line_num,
+            "use",
+            f"consumable use {key} grew the consumable area",
+            f"<= {before_count}",
+            after_count,
+        )
+    return None
 
 
 def _check_pack(line_num: int, before: dict[str, Any], after: dict[str, Any], payload: dict[str, Any]) -> ParityMismatch | None:

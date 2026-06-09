@@ -111,6 +111,11 @@ PROBABILISTIC_SCORE_JOKERS = frozenset({"j_bloodstone"})
 
 IMPLEMENTED_JOKERS = frozenset(
     {
+        # Hand-rule jokers are applied inside score_cards_with_joker_rules.
+        "j_four_fingers",
+        "j_shortcut",
+        "j_smeared",
+        "j_splash",
         "j_joker",
         "j_half",
         "j_even_steven",

@@ -2171,6 +2171,10 @@ def _replacement_sell_value(env: FastFullGameEnv, sell_index: int) -> float:
 
 
 def _single_joker_value(joker: Joker) -> float:
+    if joker.key not in IMPLEMENTED_JOKERS:
+        # Mirrored unmodeled jokers score nothing in-sim; only their sell
+        # value is real, so packs/replacements should not prize them.
+        return float(joker.sell_value)
     base = _JOKER_PURCHASE_VALUES.get(joker.key, 8.0)
     if joker.key == "j_cavendish":
         base += 20.0

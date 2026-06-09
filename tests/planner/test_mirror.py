@@ -52,9 +52,15 @@ def test_mirror_shop_states_use_live_offers_and_costs() -> None:
             str(card.get("key") or "") for card in ((state.get("shop") or {}).get("cards") or [])
         ]
         assert env.run.shop.item_keys == live_shop_keys[:4]
+        from balatro_ai_v2.fast.jokers import IMPLEMENTED_JOKERS, PROBABILISTIC_SCORE_JOKERS
+
         for card in ((state.get("shop") or {}).get("cards") or [])[:4]:
             key = str(card.get("key") or "")
-            assert env._item_cost(key) == int(((card.get("cost") or {}).get("buy") or 0))
+            unbuyable = key.startswith("j_") and (
+                key not in IMPLEMENTED_JOKERS or key in PROBABILISTIC_SCORE_JOKERS
+            )
+            expected = 999 if unbuyable else int(((card.get("cost") or {}).get("buy") or 0))
+            assert env._item_cost(key) == expected
         live_packs = [
             str(card.get("key") or "") for card in ((state.get("packs") or {}).get("cards") or [])
         ]

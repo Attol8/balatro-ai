@@ -20,7 +20,7 @@ from balatro_ai_v2.balatrobot.tactical_planner import (
 from balatro_ai_v2.fast.blinds import BLIND_RULES
 from balatro_ai_v2.fast.full_game import FastFullGameEnv, MAX_SHOP_OBS
 from balatro_ai_v2.fast.hand import HAND_KIND_NAMES
-from balatro_ai_v2.fast.jokers import PROBABILISTIC_SCORE_JOKERS, Joker
+from balatro_ai_v2.fast.jokers import IMPLEMENTED_JOKERS, PROBABILISTIC_SCORE_JOKERS, Joker
 from balatro_ai_v2.fast.run import BlindKind, RunPhase
 
 
@@ -182,9 +182,12 @@ def _mirror_shop(env: FastFullGameEnv, state: dict[str, Any]) -> None:
     for card in shop_cards:
         key = str(card.get("key") or "")
         run.shop.item_keys.append(key)
-        # Probabilistic-score jokers would break exact score parity, so make
-        # them unaffordable instead of dropping them (indices must align).
-        if key in PROBABILISTIC_SCORE_JOKERS:
+        # Jokers the sim cannot score (unmodeled) or cannot score exactly
+        # (probabilistic) must never be bought live; price them unaffordable
+        # instead of dropping them so shop indices stay aligned.
+        if key.startswith("j_") and (
+            key not in IMPLEMENTED_JOKERS or key in PROBABILISTIC_SCORE_JOKERS
+        ):
             costs[key] = 999
         else:
             costs[key] = _buy_cost(card)
