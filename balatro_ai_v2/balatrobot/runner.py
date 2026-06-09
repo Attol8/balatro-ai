@@ -30,8 +30,10 @@ class BalatroBotRunner:
     poll_delay: float = 0.02
     retry_delay: float = 0.05
     pack_in_progress_retries: int = 10
+    shop_settle_retries: int = 8
     _run_id: str = field(default="", init=False)
     _pack_retry_counts: dict[tuple[Any, ...], int] = field(default_factory=dict, init=False)
+    _shop_settle_count: int = field(default=0, init=False)
 
     def start_run(self, *, deck: str = "RED", stake: str = "WHITE", seed: str | None = None) -> dict[str, Any]:
         self.client.menu()
@@ -88,7 +90,16 @@ class BalatroBotRunner:
                     print(f"action: {game_action.kind.value}")
                 next_state, executed = self._execute_tracked(game_action)
                 action = action_payload(game_action) if executed else action_payload(method="gamestate")
+            case "SHOP" if not _shop_settled(state) and self._shop_settle_count < self.shop_settle_retries:
+                # Right after cash-out the shop and payout land asynchronously;
+                # acting on the stale snapshot shops with understated money.
+                self._shop_settle_count += 1
+                if self.poll_delay > 0:
+                    sleep(self.poll_delay)
+                action = action_payload(method="gamestate")
+                next_state = self.client.gamestate()
             case "SHOP":
+                self._shop_settle_count = 0
                 game_action = self.policy.shop_action(state)
                 if game_action is not None:
                     if self.trace:
@@ -166,6 +177,13 @@ class BalatroBotRunner:
         for key, value in payload.items():
             serializable[key] = self.trace_writer.state_payload(value) if key in {"state", "before", "after"} else value
         self.trace_writer.record(event, **serializable)
+
+
+def _shop_settled(state: dict[str, Any]) -> bool:
+    for area in ("shop", "packs", "vouchers"):
+        if ((state.get(area) or {}).get("cards")) :
+            return True
+    return False
 
 
 def _pack_cards_available(state: dict[str, Any]) -> bool:

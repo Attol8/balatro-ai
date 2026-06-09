@@ -88,7 +88,15 @@ def test_runner_executes_balatrobot_state_machine() -> None:
         elif method == "play":
             result = {"state": "ROUND_EVAL", "seed": "1", "ante_num": 1, "round_num": 1, "won": False}
         elif method == "cash_out":
-            result = {"state": "SHOP", "seed": "1", "ante_num": 1, "round_num": 1, "won": False}
+            result = {
+                "state": "SHOP",
+                "seed": "1",
+                "ante_num": 1,
+                "round_num": 1,
+                "won": False,
+                "money": 0,
+                "shop": {"cards": [{"key": "j_joker", "cost": {"buy": 999}}]},
+            }
         elif method == "next_round":
             result = {"state": "GAME_OVER", "seed": "1", "ante_num": 9, "round_num": 24, "won": True}
         else:
@@ -268,7 +276,15 @@ def test_runner_skips_pack_when_balatrobot_selection_guard_stays_stuck() -> None
         elif method == "start":
             result = pack_state()
         elif method == "pack" and payload.get("params", {}).get("skip"):
-            result = {"state": "SHOP", "seed": "1", "ante_num": 1, "round_num": 1, "won": False}
+            result = {
+                "state": "SHOP",
+                "seed": "1",
+                "ante_num": 1,
+                "round_num": 1,
+                "won": False,
+                "money": 0,
+                "shop": {"cards": [{"key": "j_joker", "cost": {"buy": 999}}]},
+            }
         elif method == "pack":
             return {"jsonrpc": "2.0", "error": {"message": "Pack selection already in progress"}, "id": 1}
         elif method == "gamestate":

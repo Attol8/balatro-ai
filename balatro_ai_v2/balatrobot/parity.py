@@ -60,11 +60,15 @@ def replay_balatrobot_trace(path: str | Path, *, score_tolerance: int = 0) -> Pa
     unchecked: list[UncheckedTransition] = []
     pending_draw: tuple[list[str], list[str]] | None = None
     tarots_used = 0
+    pending_tags: list[str] = []
+    pending_next_round = False
 
     for line_num, row in _trace_rows(path):
         if row.get("event") == "run_start":
             run_starts += 1
             tarots_used = 0
+            pending_tags = []
+            pending_next_round = False
             continue
         if row.get("event") == "run_end":
             run_ends += 1
@@ -86,10 +90,13 @@ def replay_balatrobot_trace(path: str | Path, *, score_tolerance: int = 0) -> Pa
         if before.get("state") == "SELECTING_HAND" and action is not None and action.kind == ActionKind.PLAY:
             mismatch = _check_play_score(line_num, before, after, action, score_tolerance, tarots_used)
             pending_draw = _pending_replacement_draw(before, after, action)
-            checked_scores += 1
-            checked_transitions += 1
-            if mismatch is not None:
-                mismatches.append(mismatch)
+            if mismatch is not None and mismatch.kind == "skip":
+                skipped += 1
+            else:
+                checked_scores += 1
+                checked_transitions += 1
+                if mismatch is not None:
+                    mismatches.append(mismatch)
         elif before.get("state") == "SELECTING_HAND" and action is not None and action.kind == ActionKind.DISCARD:
             mismatch = _check_discard_draw(line_num, before, after, action)
             if mismatch is None:
@@ -116,8 +123,12 @@ def replay_balatrobot_trace(path: str | Path, *, score_tolerance: int = 0) -> Pa
             checked_transitions += 1
             if mismatch is not None:
                 mismatches.append(mismatch)
+            elif after.get("state") == "SHOP":
+                # Stale snapshot accepted: the transition is still in flight
+                # and will surface in a later response.
+                pending_next_round = True
         elif method == "buy":
-            mismatch = _check_buy(line_num, before, after, action_payload)
+            mismatch = _check_buy(line_num, before, after, action_payload, pending_tags)
             checked_transitions += 1
             if mismatch is not None:
                 mismatches.append(mismatch)
@@ -127,11 +138,14 @@ def replay_balatrobot_trace(path: str | Path, *, score_tolerance: int = 0) -> Pa
             if mismatch is not None:
                 mismatches.append(mismatch)
         elif method == "reroll":
-            mismatch = _check_reroll(line_num, before, after)
+            mismatch = _check_reroll(line_num, before, after, pending_tags, pending_next_round=pending_next_round)
             checked_transitions += 1
             if mismatch is not None:
                 mismatches.append(mismatch)
         elif method == "skip":
+            tag = _skipped_blind_tag(before)
+            if tag:
+                pending_tags.append(tag)
             mismatch = _check_skip(line_num, before, after)
             checked_transitions += 1
             if mismatch is not None:
@@ -178,6 +192,9 @@ def replay_balatrobot_trace(path: str | Path, *, score_tolerance: int = 0) -> Pa
         else:
             unchecked.append(_unchecked(line_num, before, method, "no parity checker for action/state pair"))
 
+        if method != "next_round" and after.get("state") != "SHOP":
+            pending_next_round = False
+
     return ParityReport(
         run_starts=run_starts,
         run_ends=run_ends,
@@ -203,6 +220,15 @@ def _check_play_score(
     after_chips = _round_chips(after)
     if before_chips is None or after_chips is None:
         return ParityMismatch(line_num, "skip", "missing round chip totals", None, None)
+    joker_keys = {str(card.get("key") or "") for card in _area_cards(before, "jokers")}
+    # Pre-ban traces can own jokers whose exact replay is impossible (these
+    # are LIVE_UNSAFE now and never bought): Ramen's x_mult drifts in Lua
+    # floats (off-by-one chips); Raised Fist under The Hook depends on the
+    # boss's random pre-score discards (unbounded divergence).
+    if "j_ramen" in joker_keys:
+        tolerance = max(tolerance, 1)
+    if "j_raised_fist" in joker_keys and _current_boss_name(before) == "The Hook":
+        return ParityMismatch(line_num, "skip", "Raised Fist under The Hook is not exactly replayable", None, None)
     expected_delta = score_play_action(before, action, tarot_cards_used=tarots_used).total
     actual_delta = after_chips - before_chips
     if abs(expected_delta - actual_delta) <= tolerance:
@@ -222,6 +248,15 @@ def _check_play_score(
         expected=expected_delta,
         actual=actual_delta,
     )
+
+
+def _current_boss_name(state: dict[str, Any]) -> str | None:
+    for name, blind in (state.get("blinds") or {}).items():
+        if not isinstance(blind, dict) or blind.get("status") != "CURRENT":
+            continue
+        if "BOSS" in str(blind.get("type") or name).upper():
+            return str(blind.get("name") or "")
+    return None
 
 
 def _check_discard_draw(
@@ -303,7 +338,10 @@ def _check_next_round(line_num: int, before: dict[str, Any], after: dict[str, An
     if after.get("state") not in {"BLIND_SELECT", "GAME_OVER"}:
         # Async lag: the RPC can answer with a stale pre-transition snapshot;
         # the actual transition shows up in the following poll.
-        if after.get("state") == "SHOP" and _area_keys(after, "shop") == _area_keys(before, "shop"):
+        if after.get("state") == "SHOP" and (
+            _area_keys(after, "shop") == _area_keys(before, "shop")
+            or not _area_keys(before, "shop")  # issued from an unsettled shop snapshot
+        ):
             return None
         return _mismatch(line_num, "state", "next_round did not enter blind select or game over", "BLIND_SELECT|GAME_OVER", after.get("state"))
     return None
@@ -339,6 +377,14 @@ def _edition_tag_skipped(state: dict[str, Any]) -> bool:
     )
 
 
+def _skipped_blind_tag(state: dict[str, Any]) -> str:
+    blinds = state.get("blinds") or {}
+    for blind in blinds.values():
+        if isinstance(blind, dict) and blind.get("status") == "SELECT":
+            return str(blind.get("tag_name") or "")
+    return ""
+
+
 def _coupon_tag_skipped(state: dict[str, Any]) -> bool:
     blinds = state.get("blinds") or {}
     return any(
@@ -349,7 +395,13 @@ def _coupon_tag_skipped(state: dict[str, Any]) -> bool:
     )
 
 
-def _check_buy(line_num: int, before: dict[str, Any], after: dict[str, Any], payload: dict[str, Any]) -> ParityMismatch | None:
+def _check_buy(
+    line_num: int,
+    before: dict[str, Any],
+    after: dict[str, Any],
+    payload: dict[str, Any],
+    pending_tags: list[str] | None = None,
+) -> ParityMismatch | None:
     params = payload.get("params") or {}
     if "card" in params:
         area = "shop"
@@ -375,8 +427,17 @@ def _check_buy(line_num: int, before: dict[str, Any], after: dict[str, Any], pay
     if money_delta != -cost:
         # Coupon Tag makes the next shop free; edition tags (Foil/Holo/
         # Polychrome/Negative) make the tagged shop joker free.
-        free_plausible = _coupon_tag_skipped(before) or (
-            str(bought.get("key") or "").startswith("j_") and _edition_tag_skipped(before)
+        pending = pending_tags or []
+        free_plausible = (
+            _coupon_tag_skipped(before)
+            or "Coupon Tag" in pending
+            or (
+                str(bought.get("key") or "").startswith("j_")
+                and (
+                    _edition_tag_skipped(before)
+                    or any(tag in pending for tag in ("Foil Tag", "Holographic Tag", "Polychrome Tag", "Negative Tag"))
+                )
+            )
         )
         if not (money_delta == 0 and free_plausible):
             return _mismatch(line_num, "money", "buy money delta did not match visible cost", -cost, money_delta)
@@ -405,19 +466,45 @@ def _check_sell(line_num: int, before: dict[str, Any], after: dict[str, Any], pa
         return _mismatch(line_num, "sell", f"sell index outside {area}", f"0..{len(cards or []) - 1}", index)
     sold = cards[index]
     sell_value = int(((sold.get("cost") or {}).get("sell") or 0))
-    if int(after.get("money") or 0) != int(before.get("money") or 0) + sell_value:
-        return _mismatch(line_num, "money", "sell money delta did not match visible sell value", sell_value, int(after.get("money") or 0) - int(before.get("money") or 0))
+    delta = int(after.get("money") or 0) - int(before.get("money") or 0)
+    if delta != sell_value:
+        # An unsettled post-cash-out snapshot (empty shop areas) can fold the
+        # round payout into the next observed money delta.
+        unsettled = not any(_area_keys(before, area) for area in ("shop", "packs", "vouchers"))
+        if not (unsettled and delta >= sell_value):
+            return _mismatch(line_num, "money", "sell money delta did not match visible sell value", sell_value, delta)
     if str(sold.get("key")) in set(_area_keys(after, area) or []):
         return _mismatch(line_num, "sell", f"sold card still present in {area}", sold.get("key"), _area_keys(after, area))
     return None
 
 
-def _check_reroll(line_num: int, before: dict[str, Any], after: dict[str, Any]) -> ParityMismatch | None:
+def _check_reroll(
+    line_num: int,
+    before: dict[str, Any],
+    after: dict[str, Any],
+    pending_tags: list[str] | None = None,
+    *,
+    pending_next_round: bool = False,
+) -> ParityMismatch | None:
     if before.get("state") != "SHOP" or after.get("state") != "SHOP":
+        # A next_round issued earlier on a stale snapshot can land between the
+        # reroll's poll and its response: the reroll is superseded (no money
+        # spent) and the answer shows the queued blind-select transition.
+        if (
+            pending_next_round
+            and after.get("state") in {"BLIND_SELECT", "GAME_OVER"}
+            and int(after.get("money") or 0) == int(before.get("money") or 0)
+        ):
+            return None
         return _mismatch(line_num, "state", "reroll did not stay in shop", "SHOP->SHOP", _states(before, after))
     cost = int(((before.get("round") or {}).get("reroll_cost") or 0))
-    if int(after.get("money") or 0) != int(before.get("money") or 0) - cost:
-        return _mismatch(line_num, "money", "reroll money delta did not match visible reroll cost", -cost, int(after.get("money") or 0) - int(before.get("money") or 0))
+    delta = int(after.get("money") or 0) - int(before.get("money") or 0)
+    if delta != -cost:
+        # A D6 Tag makes the next shop's rerolls start at $0 and climb by $1;
+        # the visible reroll_cost field does not reflect it.
+        d6_active = pending_tags is not None and "D6 Tag" in pending_tags
+        if not (d6_active and -cost <= delta <= 0):
+            return _mismatch(line_num, "money", "reroll money delta did not match visible reroll cost", -cost, delta)
     if _area_keys(before, "shop") == _area_keys(after, "shop") and cost > 0:
         return _mismatch(line_num, "shop", "reroll did not change visible shop cards", "changed shop", _area_keys(after, "shop"))
     return None
