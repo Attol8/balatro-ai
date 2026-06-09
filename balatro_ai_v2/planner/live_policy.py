@@ -19,8 +19,19 @@ from balatro_ai_v2.balatrobot.imitation_policy import (
     full_fast_action_to_game_action,
 )
 from balatro_ai_v2.balatrobot.policy import BalatroBotPolicy
-from balatro_ai_v2.balatrobot.shop_planner import _targeted_tarot_targets
+from balatro_ai_v2.balatrobot.shop_planner import _playing_card_value, _targeted_tarot_targets
 from balatro_ai_v2.fast.consumables import TAROT_TARGET_LIMITS
+
+# Spectral cards that require explicit hand targets in the live RPC; the
+# value is the number of targets. Targets default to the highest-value cards.
+_SPECTRAL_TARGET_LIMITS = {
+    "c_cryptid": 1,
+    "c_aura": 1,
+    "c_talisman": 1,
+    "c_deja_vu": 1,
+    "c_trance": 1,
+    "c_medium": 1,
+}
 from balatro_ai_v2.planner.core import PlannerConfig, PlannerCore
 from balatro_ai_v2.planner.mirror import mirror_live_state
 
@@ -96,9 +107,14 @@ def _with_required_targets(state: dict[str, Any], action: GameAction) -> GameAct
     if action.index is None or not 0 <= action.index < len(cards):
         return action
     key = str(cards[action.index].get("key") or "")
-    if key not in TAROT_TARGET_LIMITS:
+    if key in TAROT_TARGET_LIMITS:
+        targets = _targeted_tarot_targets(state, key)
+    elif key in _SPECTRAL_TARGET_LIMITS:
+        hand = _area_cards(state, "hand")
+        ranked = sorted(range(len(hand)), key=lambda i: -_playing_card_value(hand[i]))
+        targets = tuple(ranked[: _SPECTRAL_TARGET_LIMITS[key]])
+    else:
         return action
-    targets = _targeted_tarot_targets(state, key)
     if not targets:
         raise ValueError(f"{key} requires hand targets but none are available")
     return GameAction(kind=action.kind, index=action.index, indices=targets)
