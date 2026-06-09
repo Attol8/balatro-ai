@@ -301,6 +301,10 @@ def _check_next_round(line_num: int, before: dict[str, Any], after: dict[str, An
     if before.get("state") != "SHOP":
         return _mismatch(line_num, "state", "next_round was not issued from shop", "SHOP", before.get("state"))
     if after.get("state") not in {"BLIND_SELECT", "GAME_OVER"}:
+        # Async lag: the RPC can answer with a stale pre-transition snapshot;
+        # the actual transition shows up in the following poll.
+        if after.get("state") == "SHOP" and _area_keys(after, "shop") == _area_keys(before, "shop"):
+            return None
         return _mismatch(line_num, "state", "next_round did not enter blind select or game over", "BLIND_SELECT|GAME_OVER", after.get("state"))
     return None
 

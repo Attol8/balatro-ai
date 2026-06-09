@@ -74,27 +74,27 @@ class BalatroBotRunner:
                 game_action = self.policy.blind_action(state)
                 if self.trace:
                     print(f"action: {game_action.kind.value}")
-                action = action_payload(game_action)
-                next_state = self._execute(game_action)
+                next_state, executed = self._execute_tracked(game_action)
+                action = action_payload(game_action) if executed else action_payload(method="gamestate")
             case "SELECTING_HAND":
                 game_action = self.policy.tactical_action(state)
                 if self.trace:
                     print(f"action: {game_action.kind.value} {game_action.indices}")
-                action = action_payload(game_action)
-                next_state = self._execute(game_action)
+                next_state, executed = self._execute_tracked(game_action)
+                action = action_payload(game_action) if executed else action_payload(method="gamestate")
             case "ROUND_EVAL":
                 game_action = self.policy.round_eval_action(state)
                 if self.trace:
                     print(f"action: {game_action.kind.value}")
-                action = action_payload(game_action)
-                next_state = self._execute(game_action)
+                next_state, executed = self._execute_tracked(game_action)
+                action = action_payload(game_action) if executed else action_payload(method="gamestate")
             case "SHOP":
                 game_action = self.policy.shop_action(state)
                 if game_action is not None:
                     if self.trace:
                         print(f"action: {game_action.kind.value} {game_action.index}")
-                    action = action_payload(game_action)
-                    next_state = self._execute(game_action)
+                    next_state, executed = self._execute_tracked(game_action)
+                    action = action_payload(game_action) if executed else action_payload(method="gamestate")
                 else:
                     if self.trace:
                         print("action: next_round")
@@ -142,9 +142,13 @@ class BalatroBotRunner:
         return next_state
 
     def _execute(self, action: GameAction) -> dict[str, Any]:
+        state, _executed = self._execute_tracked(action)
+        return state
+
+    def _execute_tracked(self, action: GameAction) -> tuple[dict[str, Any], bool]:
         method, params = action.to_balatrobot_rpc()
         try:
-            return self.client.call_action(method, params)
+            return self.client.call_action(method, params), True
         except BalatroBotError as exc:
             message = str(exc)
             # The game can advance between the poll and the action (async
@@ -153,7 +157,7 @@ class BalatroBotRunner:
                 raise
             if self.retry_delay > 0:
                 sleep(self.retry_delay)
-            return self.client.gamestate()
+            return self.client.gamestate(), False
 
     def _record(self, event: str, **payload: Any) -> None:
         if self.trace_writer is None:
