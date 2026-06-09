@@ -208,6 +208,16 @@ def apply_additive_jokers(
     mult = float(score.mult)
     x_mult = 1.0
 
+    # Card-phase x-mults trigger while the cards score, before any joker adds
+    # its mult (verified against live traces: Photograph doubles the base
+    # mult, not the post-joker total).
+    if any(joker.key == "j_photograph" for joker in jokers) and _scored_face_count(
+        sorted_cards,
+        score.scoring_mask,
+        context.all_cards_are_face or _has_joker(jokers, "j_pareidolia"),
+    ) > 0:
+        mult *= 2.0
+
     for joker in jokers:
         if joker.key == "j_joker":
             mult += 4
@@ -350,12 +360,8 @@ def apply_additive_jokers(
             count = _scored_rank_count(sorted_cards, score.scoring_mask, {2, 8})
             chips += count * 10
             mult += count * 4
-        elif joker.key == "j_photograph" and _scored_face_count(
-            sorted_cards,
-            score.scoring_mask,
-            context.all_cards_are_face or _has_joker(jokers, "j_pareidolia"),
-        ) > 0:
-            x_mult *= 2.0
+        elif joker.key == "j_photograph":
+            pass  # applied in the card phase above
         elif joker.key == "j_bloodstone":
             x_mult *= 1.25 ** _scored_suit_count(sorted_cards, score.scoring_mask, 1)
         elif joker.key == "j_ancient" and context.current_ancient_suit is not None:

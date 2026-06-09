@@ -2437,8 +2437,8 @@ def _jokers_after_play(jokers: tuple[Joker, ...], score: FastScore, selected: tu
             out.append(_replace_joker(joker, scaling=joker.scaling + 2))
         elif joker.key == "j_green_joker":
             out.append(_replace_joker(joker, scaling=joker.scaling + 1))
-        elif joker.key == "j_ride_the_bus" and not has_scored_face:
-            out.append(_replace_joker(joker, scaling=joker.scaling + 1))
+        elif joker.key == "j_ride_the_bus":
+            out.append(_replace_joker(joker, scaling=0 if has_scored_face else joker.scaling + 1))
         elif joker.key == "j_wee" and scored_two_count:
             out.append(_replace_joker(joker, scaling=joker.scaling + 8 * scored_two_count))
         elif joker.key == "j_ice_cream":

@@ -353,7 +353,12 @@ def best_play_action(state: dict[str, Any]) -> tuple[GameAction, FastScore]:
     return _action_from_mask(best_mask, is_discard=False), best_score
 
 
-def score_play_action(state: dict[str, Any], action: GameAction) -> FastScore:
+def score_play_action(
+    state: dict[str, Any],
+    action: GameAction,
+    *,
+    tarot_cards_used: int = 0,
+) -> FastScore:
     if action.kind != ActionKind.PLAY:
         raise ValueError(f"cannot score non-play action: {action.kind.value}")
     hand = hand_to_fast_ids(state)
@@ -364,10 +369,22 @@ def score_play_action(state: dict[str, Any], action: GameAction) -> FastScore:
         raise ValueError("play action references cards outside current hand")
     if mask.bit_count() > _highlighted_limit(state):
         raise ValueError("play action exceeds highlighted card limit")
+    levels = _hand_levels(state)
+    if _active_blind_key(state) == "bl_arm":
+        # The Arm lowers the played hand's level before it scores.
+        selected = tuple(sorted(card for index, card in enumerate(hand) if mask & (1 << index)))
+        kind = score_cards_with_joker_rules(
+            selected, levels, tuple(joker.key for joker in _jokers(state))
+        ).kind
+        if levels[kind] > 1:
+            levels = tuple(
+                level - 1 if index == kind else level for index, level in enumerate(levels)
+            )
     return _score_mask(
         hand,
         mask,
-        levels=_hand_levels(state),
+        levels=levels,
+        tarot_cards_used=tarot_cards_used,
         jokers=_jokers(state),
         money=int(state.get("money") or 0),
         discards_left=int((state.get("round") or {}).get("discards_left") or 0),
@@ -398,6 +415,7 @@ def _score_mask(
     previous_hand_names: tuple[str, ...] = (),
     debuffed_suits: frozenset[int] = frozenset(),
     debuffed_card_ids: frozenset[int] = frozenset(),
+    tarot_cards_used: int = 0,
 ) -> FastScore:
     selected = tuple(card for index, card in enumerate(hand) if mask & (1 << index))
     sorted_cards = tuple(sorted(selected))
@@ -417,6 +435,7 @@ def _score_mask(
         previous_hand_names,
         debuffed_suits,
         debuffed_card_ids,
+        tarot_cards_used,
     )
 
 
@@ -435,6 +454,7 @@ def _score_selected_held(
     previous_hand_names: tuple[str, ...],
     debuffed_suits: frozenset[int],
     debuffed_card_ids: frozenset[int],
+    tarot_cards_used: int = 0,
 ) -> FastScore:
     base = _apply_debuffs(
         _base_score_cached(sorted_cards, levels, tuple(joker.key for joker in jokers)),
@@ -463,6 +483,7 @@ def _score_selected_held(
         is_final_hand=hands_left <= 0,
         debuffed_held_suits=debuffed_suits,
         debuffed_held_cards=debuffed_card_ids,
+        tarot_cards_used=tarot_cards_used,
     )
     return apply_additive_jokers(base, sorted_cards, len(sorted_cards), jokers, context)
 
@@ -665,8 +686,8 @@ def _jokers_after_play(jokers: tuple[Joker, ...], score: FastScore, selected: tu
             out.append(_replace_joker(joker, scaling=joker.scaling + 2))
         elif joker.key == "j_green_joker":
             out.append(_replace_joker(joker, scaling=joker.scaling + 1))
-        elif joker.key == "j_ride_the_bus" and not has_scored_face:
-            out.append(_replace_joker(joker, scaling=joker.scaling + 1))
+        elif joker.key == "j_ride_the_bus":
+            out.append(_replace_joker(joker, scaling=0 if has_scored_face else joker.scaling + 1))
         else:
             out.append(joker)
     return tuple(out)

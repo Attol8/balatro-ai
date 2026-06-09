@@ -52,6 +52,11 @@ class PlannerPolicy:
         return self._decide(state, default=lambda: self.fallback.blind_action(state))
 
     def tactical_action(self, state: dict[str, Any]) -> GameAction:
+        # Targeted tarots can only be used while the hand is visible; holding
+        # them otherwise deadlocks the slot, so spend them here.
+        tarot_use = self._held_targeted_tarot_use(state)
+        if tarot_use is not None:
+            return tarot_use
         # The fast action-id contract encodes at most 8 hand positions; larger
         # live hands (Juggle tag, vouchers) go to the heuristic beam planner,
         # which works on indices directly.
@@ -59,6 +64,19 @@ class PlannerPolicy:
         if hand_len > 8:
             return self.fallback.tactical_action(state)
         return self._decide(state, default=lambda: self.fallback.tactical_action(state))
+
+    def _held_targeted_tarot_use(self, state: dict[str, Any]) -> GameAction | None:
+        for index, card in enumerate(_area_cards(state, "consumables")):
+            key = str(card.get("key") or "")
+            if key not in TAROT_TARGET_LIMITS and key not in _SPECTRAL_TARGET_LIMITS:
+                continue
+            try:
+                return _with_required_targets(
+                    state, GameAction(kind=ActionKind.USE_CONSUMABLE, index=index)
+                )
+            except ValueError:
+                continue
+        return None
 
     def shop_action(self, state: dict[str, Any]) -> GameAction | None:
         return self._decide(state, default=lambda: self.fallback.shop_action(state))

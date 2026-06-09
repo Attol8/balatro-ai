@@ -59,10 +59,12 @@ def replay_balatrobot_trace(path: str | Path, *, score_tolerance: int = 0) -> Pa
     mismatches: list[ParityMismatch] = []
     unchecked: list[UncheckedTransition] = []
     pending_draw: tuple[list[str], list[str]] | None = None
+    tarots_used = 0
 
     for line_num, row in _trace_rows(path):
         if row.get("event") == "run_start":
             run_starts += 1
+            tarots_used = 0
             continue
         if row.get("event") == "run_end":
             run_ends += 1
@@ -80,8 +82,9 @@ def replay_balatrobot_trace(path: str | Path, *, score_tolerance: int = 0) -> Pa
         method = str(action_payload.get("method") or "")
 
         action = _action_from_trace(action_payload)
+        tarots_used += _tarots_used_in_transition(before, action_payload)
         if before.get("state") == "SELECTING_HAND" and action is not None and action.kind == ActionKind.PLAY:
-            mismatch = _check_play_score(line_num, before, after, action, score_tolerance)
+            mismatch = _check_play_score(line_num, before, after, action, score_tolerance, tarots_used)
             pending_draw = _pending_replacement_draw(before, after, action)
             checked_scores += 1
             checked_transitions += 1
@@ -189,12 +192,13 @@ def _check_play_score(
     after: dict[str, Any],
     action: GameAction,
     tolerance: int,
+    tarots_used: int = 0,
 ) -> ParityMismatch | None:
     before_chips = _round_chips(before)
     after_chips = _round_chips(after)
     if before_chips is None or after_chips is None:
         return ParityMismatch(line_num, "skip", "missing round chip totals", None, None)
-    expected_delta = score_play_action(before, action).total
+    expected_delta = score_play_action(before, action, tarot_cards_used=tarots_used).total
     actual_delta = after_chips - before_chips
     if abs(expected_delta - actual_delta) <= tolerance:
         return None
@@ -202,7 +206,7 @@ def _check_play_score(
     after_money = int(after.get("money") or before_money)
     if after_money > before_money and _score_uses_current_money(before):
         adjusted_before = {**before, "money": after_money}
-        adjusted_delta = score_play_action(adjusted_before, action).total
+        adjusted_delta = score_play_action(adjusted_before, action, tarot_cards_used=tarots_used).total
         if abs(adjusted_delta - actual_delta) <= tolerance:
             return None
         expected_delta = adjusted_delta
@@ -265,6 +269,10 @@ def _pending_replacement_draw(
 
 
 def _check_select_blind(line_num: int, before: dict[str, Any], after: dict[str, Any]) -> ParityMismatch | None:
+    if before.get("state") == "BLIND_SELECT" and _is_booster_state(after.get("state")):
+        # A pending skip-tag pack (Charm/Ethereal/...) opens on blind select
+        # and returns to blind select once resolved.
+        return None
     if before.get("state") != "BLIND_SELECT" or after.get("state") != "SELECTING_HAND":
         return _mismatch(line_num, "state", "select did not enter hand selection", "BLIND_SELECT->SELECTING_HAND", _states(before, after))
     current = _current_blind(after)
@@ -290,6 +298,25 @@ def _check_next_round(line_num: int, before: dict[str, Any], after: dict[str, An
     if after.get("state") not in {"BLIND_SELECT", "GAME_OVER"}:
         return _mismatch(line_num, "state", "next_round did not enter blind select or game over", "BLIND_SELECT|GAME_OVER", after.get("state"))
     return None
+
+
+def _tarots_used_in_transition(before: dict[str, Any], payload: dict[str, Any]) -> int:
+    """Tarot cards consumed by this transition (Fortune Teller counts them)."""
+    from balatro_ai_v2.balatrobot.shop_planner import _is_tarot_card
+
+    params = payload.get("params") or {}
+    method = str(payload.get("method") or "")
+    if method == "use" and "consumable" in params:
+        cards = _area_cards(before, "consumables") or []
+        index = int(params["consumable"])
+        if 0 <= index < len(cards) and _is_tarot_card(cards[index]):
+            return 1
+    if method == "pack" and "card" in params:
+        cards = _area_cards(before, "pack") or _area_cards(before, "packs") or []
+        index = int(params["card"])
+        if 0 <= index < len(cards) and _is_tarot_card(cards[index]):
+            return 1
+    return 0
 
 
 def _coupon_tag_skipped(state: dict[str, Any]) -> bool:
@@ -423,8 +450,8 @@ def _check_use(line_num: int, before: dict[str, Any], after: dict[str, Any], pay
 def _check_pack(line_num: int, before: dict[str, Any], after: dict[str, Any], payload: dict[str, Any]) -> ParityMismatch | None:
     params = payload.get("params") or {}
     if params.get("skip") is True:
-        if not _is_booster_state(before.get("state")) or after.get("state") != "SHOP":
-            return _mismatch(line_num, "pack", "pack skip did not return to shop", "booster state->SHOP", _states(before, after))
+        if not _is_booster_state(before.get("state")) or after.get("state") not in {"SHOP", "BLIND_SELECT"}:
+            return _mismatch(line_num, "pack", "pack skip did not return to shop", "booster state->SHOP|BLIND_SELECT", _states(before, after))
         return None
     if "card" not in params:
         return _mismatch(line_num, "pack", "pack params did not name card or skip", "card|skip", params)
@@ -434,8 +461,8 @@ def _check_pack(line_num: int, before: dict[str, Any], after: dict[str, Any], pa
     index = int(params["card"])
     if cards is not None and cards and not 0 <= index < len(cards):
         return _mismatch(line_num, "pack", "pack selected card index outside booster cards", f"0..{len(cards) - 1}", index)
-    if not (_is_booster_state(after.get("state")) or after.get("state") == "SHOP"):
-        return _mismatch(line_num, "state", "pack select entered unexpected state", "booster state|SHOP", after.get("state"))
+    if not (_is_booster_state(after.get("state")) or after.get("state") in {"SHOP", "BLIND_SELECT"}):
+        return _mismatch(line_num, "state", "pack select entered unexpected state", "booster state|SHOP|BLIND_SELECT", after.get("state"))
     return None
 
 
