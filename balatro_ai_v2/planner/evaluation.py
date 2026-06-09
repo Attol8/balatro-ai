@@ -25,10 +25,10 @@ from balatro_ai_v2.fast.run import BlindKind, RunPhase, _ante_base_chips
 @dataclass(frozen=True, slots=True)
 class RunValueWeights:
     progress: float = 10_000.0
-    survival_margin: float = 4_000.0
+    survival_margin: float = 5_000.0
     money: float = 18.0
     interest_band: float = 6.0
-    scaling_rate: float = 600.0
+    scaling_rate: float = 900.0
     hand_levels: float = 40.0
     build_commitment: float = 1.0
     portfolio: float = 3.0

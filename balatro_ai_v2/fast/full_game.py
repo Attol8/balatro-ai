@@ -710,7 +710,9 @@ class FastFullGameEnv:
         if not 0 <= index < len(self.pack_cards):
             raise ValueError("pack card index out of range")
         key = self.pack_cards[index]
-        if key.startswith("j_") and len(self.jokers) < self.run.joker_slots:
+        if key.startswith("j_") and len(self.jokers) >= self.run.joker_slots:
+            raise ValueError("cannot select joker from pack: joker slots are full")
+        if key.startswith("j_"):
             self.jokers.append(_make_joker(key))
             self.jokers = sort_jokers_canonically(self.jokers)
             if key in RUN_EFFECT_JOKERS:

@@ -353,9 +353,15 @@ def apply_additive_jokers(
                 mult *= 2.0
 
     # ---- held phase -------------------------------------------------------
+    active_held = tuple(
+        card
+        for card in context.held_cards
+        if suit(card) not in context.debuffed_held_suits
+        and card not in context.debuffed_held_cards
+    )
     for joker in jokers:
         if joker.key == "j_shoot_the_moon":
-            mult += _held_rank_count(context.held_cards, 10) * 13
+            mult += _held_rank_count(active_held, 10) * 13
         elif joker.key == "j_raised_fist":
             lowest_nominal = _lowest_held_nominal(
                 context.held_cards,
@@ -365,7 +371,7 @@ def apply_additive_jokers(
             if lowest_nominal is not None:
                 mult += 2 * lowest_nominal
         elif joker.key == "j_baron":
-            mult *= 1.5 ** _held_rank_count(context.held_cards, 11)
+            mult *= 1.5 ** _held_rank_count(active_held, 11)
 
     # ---- joker phase (left to right, sequential) ---------------------------
     _CARD_OR_HELD_PHASE = frozenset(

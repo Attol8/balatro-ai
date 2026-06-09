@@ -324,6 +324,17 @@ def _tarots_used_in_transition(before: dict[str, Any], payload: dict[str, Any]) 
     return 0
 
 
+def _edition_tag_skipped(state: dict[str, Any]) -> bool:
+    blinds = state.get("blinds") or {}
+    edition_tags = {"Foil Tag", "Holographic Tag", "Polychrome Tag", "Negative Tag"}
+    return any(
+        isinstance(blind, dict)
+        and blind.get("status") == "SKIPPED"
+        and str(blind.get("tag_name") or "") in edition_tags
+        for blind in blinds.values()
+    )
+
+
 def _coupon_tag_skipped(state: dict[str, Any]) -> bool:
     blinds = state.get("blinds") or {}
     return any(
@@ -358,9 +369,12 @@ def _check_buy(line_num: int, before: dict[str, Any], after: dict[str, Any], pay
     cost = int(((bought.get("cost") or {}).get("buy") or 0))
     money_delta = int(after.get("money") or 0) - int(before.get("money") or 0)
     if money_delta != -cost:
-        # A Coupon Tag from a skipped blind this ante makes the next shop's
-        # items free; accept a zero delta in that case.
-        if not (money_delta == 0 and _coupon_tag_skipped(before)):
+        # Coupon Tag makes the next shop free; edition tags (Foil/Holo/
+        # Polychrome/Negative) make the tagged shop joker free.
+        free_plausible = _coupon_tag_skipped(before) or (
+            str(bought.get("key") or "").startswith("j_") and _edition_tag_skipped(before)
+        )
+        if not (money_delta == 0 and free_plausible):
             return _mismatch(line_num, "money", "buy money delta did not match visible cost", -cost, money_delta)
     if destination == "BOOSTER_OPENED":
         if not _is_booster_state(after.get("state")):
