@@ -125,7 +125,7 @@ CONTAINED_TYPE_XMULT_JOKERS = {
 # Jokers whose score contribution is a random roll in the live game. The sim
 # scores them at expected value, which is fine for valuation but breaks exact
 # score parity — so the planner never buys them.
-PROBABILISTIC_SCORE_JOKERS = frozenset({"j_bloodstone"})
+PROBABILISTIC_SCORE_JOKERS = frozenset({"j_bloodstone", "j_misprint"})
 
 # Copy jokers resolve to the joker they mimic at scoring time.
 COPY_JOKERS = frozenset({"j_blueprint", "j_brainstorm"})
@@ -430,8 +430,19 @@ def apply_additive_jokers(
             total_played_card_repetitions,
         )
 
-        scoring_indices = tuple(
+        scoring_positions = [
             index for index in range(len(sorted_cards)) if score.scoring_mask & (1 << index)
+        ]
+        # "First" scoring card means first in DISPLAY order (rank descending,
+        # suit ascending on ties), not in the engine's ascending sort —
+        # verified live (Hanging Chad, seed 38).
+        display_first = max(
+            scoring_positions,
+            key=lambda index: (rank(sorted_cards[index]), -suit(sorted_cards[index])),
+            default=0,
+        )
+        scoring_indices = (display_first,) + tuple(
+            index for index in scoring_positions if index != display_first
         )
         repetition_context = RepetitionContext(
             scoring_indices=scoring_indices,
@@ -439,12 +450,17 @@ def apply_additive_jokers(
             held_card_has_effect=True,
             all_cards_are_face=all_faces,
         )
-    first_face_index: int | None = None
-    for index, card in enumerate(sorted_cards):
-        if not score.scoring_mask & (1 << index):
-            continue
-        if first_face_index is None and (all_faces or rank(card) in {9, 10, 11}):
-            first_face_index = index
+    # Photograph's "first" face is also display-order first.
+    scoring_faces = [
+        index
+        for index, card in enumerate(sorted_cards)
+        if score.scoring_mask & (1 << index) and (all_faces or rank(card) in {9, 10, 11})
+    ]
+    first_face_index: int | None = (
+        max(scoring_faces, key=lambda index: (rank(sorted_cards[index]), -suit(sorted_cards[index])))
+        if scoring_faces
+        else None
+    )
     for index, card in enumerate(sorted_cards):
         if not score.scoring_mask & (1 << index):
             continue

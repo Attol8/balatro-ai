@@ -237,6 +237,10 @@ def _check_play_score(
         tolerance = max(tolerance, 1)
     if "j_raised_fist" in joker_keys and _current_boss_name(before) == "The Hook":
         return ParityMismatch(line_num, "waived", "Raised Fist under The Hook is not exactly replayable", None, None)
+    if "j_misprint" in joker_keys:
+        # Misprint rolls a random 0-23 mult every play (now banned from
+        # purchase; pre-ban traces are unreplayable by design).
+        return ParityMismatch(line_num, "waived", "Misprint rolls a random mult each play", None, None)
     if _current_boss_name(before) == "Cerulean Bell":
         # The bell forces a random extra card into every selection; the
         # actually-played cards are not recoverable from the snapshot.
