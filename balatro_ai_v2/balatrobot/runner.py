@@ -148,7 +148,15 @@ class BalatroBotRunner:
                         next_state = self._execute(game_action)
                         self._pack_retry_counts.pop(_pack_retry_key(state), None)
                     except BalatroBotError as exc:
-                        if "Pack selection already in progress" not in str(exc):
+                        message = str(exc)
+                        # "Card index out of range": the pack area in the
+                        # snapshot can be stale leftovers from a previous
+                        # pack right after buying a new one; re-poll.
+                        recoverable = (
+                            "Pack selection already in progress" in message
+                            or "Card index out of range" in message
+                        )
+                        if not recoverable:
                             raise
                         key = _pack_retry_key(state)
                         retries = self._pack_retry_counts.get(key, 0) + 1

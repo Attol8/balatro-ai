@@ -1541,3 +1541,52 @@ def test_runner_suppresses_consumable_after_repeated_use_refusals() -> None:
     assert "c_heirophant" in policy.suppressed_consumables
     assert [m for m, _ in calls].count("use") == 3
     assert calls[-1][0] == "play"
+
+
+def test_runner_repolls_pack_when_card_index_is_stale() -> None:
+    calls = []
+
+    def pack_state(cards: list[dict]) -> dict:
+        return {
+            "state": "TAROT_PACK",
+            "seed": "1",
+            "ante_num": 1,
+            "round_num": 1,
+            "pack": {"count": len(cards), "limit": 5, "cards": cards},
+            "jokers": {"count": 0, "limit": 5, "cards": []},
+            "hands": {name: {"level": 1, "played": 0} for name in _HAND_NAMES},
+            "round": {"hands_left": 4, "discards_left": 3, "chips": 0},
+        }
+
+    stale = [{"key": k, "set": "TAROT", "cost": {"buy": 0, "sell": 0}} for k in
+             ("c_death", "c_strength", "c_moon", "c_star", "c_judgement")]
+    fresh = [{"key": k, "set": "TAROT", "cost": {"buy": 0, "sell": 0}} for k in
+             ("c_hermit", "c_temperance", "c_emperor")]
+
+    def transport(payload: dict) -> dict:
+        calls.append((payload["method"], payload.get("params") or {}))
+        method = payload["method"]
+        if method == "menu":
+            result = {"state": "MENU"}
+        elif method == "start":
+            result = pack_state(stale)
+        elif method == "pack" and payload["params"].get("card", 0) >= 3:
+            return {
+                "jsonrpc": "2.0",
+                "error": {"message": "Card index out of range. Index: 4, Available cards: 3"},
+                "id": 1,
+            }
+        elif method == "gamestate":
+            result = pack_state(fresh)
+        elif method == "pack":
+            result = {"state": "GAME_OVER", "seed": "1", "ante_num": 9, "round_num": 24, "won": True}
+        else:
+            result = {"state": "GAME_OVER", "seed": "1", "ante_num": 0, "round_num": 0, "won": False}
+        return {"jsonrpc": "2.0", "result": result, "id": 1}
+
+    runner = BalatroBotRunner(BalatroBotClient(transport=transport), poll_delay=0)
+    result = runner.play_run(seed="1")
+
+    assert result.won
+    methods = [m for m, _ in calls]
+    assert "gamestate" in methods  # re-polled after the stale-index refusal
