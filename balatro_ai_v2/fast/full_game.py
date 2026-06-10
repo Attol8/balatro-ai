@@ -2452,6 +2452,9 @@ def _jokers_after_play(jokers: tuple[Joker, ...], score: FastScore, selected: tu
         elif joker.key == "j_ice_cream":
             if joker.scaling > 5:
                 out.append(_replace_joker(joker, scaling=joker.scaling - 5))
+        elif joker.key == "j_selzer":
+            if joker.scaling > 1:
+                out.append(_replace_joker(joker, scaling=joker.scaling - 1))
         else:
             out.append(joker)
     return tuple(out)
@@ -2522,6 +2525,10 @@ def _make_joker(key: str) -> Joker:
         "j_glass",
     }:
         return Joker(key=key, x_mult=1.0, sell_value=2)
+    if key == "j_selzer":
+        return Joker(key=key, scaling=10, sell_value=2)
+    if key == "j_turtle_bean":
+        return Joker(key=key, scaling=5, sell_value=2)
     return Joker(key=key, sell_value=1)
 
 

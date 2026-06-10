@@ -280,7 +280,7 @@ def test_shop_generation_uses_source_shaped_joker_pool() -> None:
     assert len(pool) > 50
     assert "j_photograph" in pool
     # Unimplemented source jokers are excluded so rollouts never buy dead cards.
-    assert "j_blueprint" not in pool
+    assert "j_8_ball" not in pool
     from balatro_ai_v2.fast.jokers import IMPLEMENTED_JOKERS
 
     assert all(key in IMPLEMENTED_JOKERS for key in pool if key.startswith("j_"))

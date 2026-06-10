@@ -121,6 +121,75 @@ CONTAINED_TYPE_XMULT_JOKERS = {
 # score parity — so the planner never buys them.
 PROBABILISTIC_SCORE_JOKERS = frozenset({"j_bloodstone"})
 
+# Copy jokers resolve to the joker they mimic at scoring time.
+COPY_JOKERS = frozenset({"j_blueprint", "j_brainstorm"})
+
+# Passive/run-rule jokers Blueprint and Brainstorm cannot copy; a copy of one
+# of these is inert.
+UNCOPYABLE_JOKERS = frozenset(
+    {
+        "j_four_fingers",
+        "j_shortcut",
+        "j_smeared",
+        "j_splash",
+        "j_pareidolia",
+        "j_credit_card",
+        "j_chaos",
+        "j_drunkard",
+        "j_juggler",
+        "j_troubadour",
+        "j_merry_andy",
+        "j_oops",
+        "j_ring_master",
+        "j_astronomer",
+        "j_gift",
+        "j_turtle_bean",
+    }
+)
+
+def resolve_joker_copies(jokers: tuple[Joker, ...]) -> tuple[Joker, ...]:
+    """Replace Blueprint/Brainstorm with the joker they copy.
+
+    The effective joker executes at the copier's position with the target's
+    ability state, but keeps the copier's own edition and sell value.
+    """
+    if not any(joker.key in COPY_JOKERS for joker in jokers):
+        return jokers
+    resolved = list(jokers)
+    for index, joker in enumerate(jokers):
+        if joker.key not in COPY_JOKERS:
+            continue
+        target = _copy_chain_target(jokers, index)
+        if target is None or target.key in UNCOPYABLE_JOKERS:
+            continue
+        resolved[index] = Joker(
+            key=target.key,
+            scaling=target.scaling,
+            x_mult=target.x_mult,
+            sell_value=joker.sell_value,
+            edition=joker.edition,
+        )
+    return tuple(resolved)
+
+
+def _copy_chain_target(jokers: tuple[Joker, ...], index: int) -> Joker | None:
+    visited: set[int] = set()
+    current = index
+    while True:
+        if current in visited:
+            return None
+        visited.add(current)
+        key = jokers[current].key
+        if key == "j_blueprint":
+            nxt = current + 1
+        elif key == "j_brainstorm":
+            nxt = 0
+        else:
+            return jokers[current]
+        if nxt >= len(jokers) or nxt == current:
+            return None
+        current = nxt
+
 # Joker-phase x-mult jokers: under sequential left-to-right scoring these
 # belong rightmost so every additive mult lands before they multiply.
 JOKER_PHASE_XMULT_JOKERS = frozenset(
@@ -159,9 +228,19 @@ JOKER_PHASE_XMULT_JOKERS = frozenset(
 
 
 def canonical_joker_order(keys) -> tuple[int, ...]:
-    """Stable order with joker-phase x-mult jokers last."""
+    """Stable order with joker-phase x-mult jokers last.
+
+    Copy jokers sit at the head of the x-mult group so Blueprint copies the
+    first x-mult joker to its right.
+    """
+    def sort_key(item):
+        index, key = item
+        in_tail = key in JOKER_PHASE_XMULT_JOKERS or key in COPY_JOKERS
+        copier_first = 0 if key in COPY_JOKERS else 1
+        return (in_tail, copier_first if in_tail else 0, index)
+
     indexed = list(enumerate(keys))
-    indexed.sort(key=lambda item: (item[1] in JOKER_PHASE_XMULT_JOKERS, item[0]))
+    indexed.sort(key=sort_key)
     return tuple(index for index, _ in indexed)
 
 
@@ -267,6 +346,16 @@ IMPLEMENTED_JOKERS = frozenset(
         "j_delayed_grat",
         "j_satellite",
         "j_egg",
+        # Retrigger jokers (card phase / held phase).
+        "j_dusk",
+        "j_hack",
+        "j_sock_and_buskin",
+        "j_hanging_chad",
+        "j_selzer",
+        "j_mime",
+        # Copy jokers, resolved at scoring time.
+        "j_blueprint",
+        "j_brainstorm",
     }
 )
 
@@ -287,70 +376,102 @@ def apply_additive_jokers(
     joker multiplies before the addition; verified against live traces).
     """
     context = context or ScoreContext()
+    jokers = resolve_joker_copies(jokers)
     joker_count = len(jokers) if context.joker_count is None else context.joker_count
     chips = score.chips
     mult = float(score.mult)
     all_faces = context.all_cards_are_face or _has_joker(jokers, "j_pareidolia")
 
     # ---- card phase -------------------------------------------------------
-    photograph_used = False
+    from balatro_ai_v2.fast.joker_repetitions import (
+        RETRIGGER_JOKERS,
+        RepetitionContext,
+        total_held_card_repetitions,
+        total_played_card_repetitions,
+    )
+
+    retrigger_jokers = tuple(joker for joker in jokers if joker.key in RETRIGGER_JOKERS)
+    scoring_indices = tuple(
+        index for index in range(len(sorted_cards)) if score.scoring_mask & (1 << index)
+    )
+    repetition_context = RepetitionContext(
+        scoring_indices=scoring_indices,
+        hands_left=context.hands_left,
+        held_card_has_effect=True,
+        all_cards_are_face=all_faces,
+    )
+    first_face_index: int | None = None
     for index, card in enumerate(sorted_cards):
         if not score.scoring_mask & (1 << index):
             continue
-        if index < len(context.scoring_enhancements):
-            enhancement = Enhancement(context.scoring_enhancements[index])
-            chips += enhancement_chip_bonus(enhancement)
-            mult += enhancement_mult_bonus(enhancement)
-            mult *= enhancement_xmult(enhancement)
-        if index < len(context.scoring_editions):
-            edition = Edition(context.scoring_editions[index])
-            chips += edition_chip_bonus(edition)
-            mult += edition_mult_bonus(edition)
-            mult *= edition_xmult(edition)
+        if first_face_index is None and (all_faces or rank(card) in {9, 10, 11}):
+            first_face_index = index
+    for index, card in enumerate(sorted_cards):
+        if not score.scoring_mask & (1 << index):
+            continue
         card_rank = rank(card)
         card_suit = suit(card)
         is_face = all_faces or card_rank in {9, 10, 11}
-        for joker in jokers:
-            key = joker.key
-            if key in SUIT_MULT_JOKERS:
-                target_suit, add_mult = SUIT_MULT_JOKERS[key]
-                if card_suit == target_suit:
-                    mult += add_mult
-            elif key == "j_arrowhead" and card_suit == 0:
-                chips += 50
-            elif key == "j_onyx_agate" and card_suit == 2:
-                mult += 7
-            elif key == "j_even_steven" and card_rank in {0, 2, 4, 6, 8}:
-                mult += 4
-            elif key == "j_odd_todd" and card_rank in {1, 3, 5, 7, 12}:
-                chips += 31
-            elif key == "j_scholar" and card_rank == 12:
-                chips += 20
-                mult += 4
-            elif key == "j_fibonacci" and card_rank in {0, 1, 3, 6, 12}:
-                mult += 8
-            elif key == "j_scary_face" and is_face:
-                chips += 30
-            elif key == "j_smiley" and is_face:
-                mult += 5
-            elif key == "j_walkie_talkie" and card_rank in {2, 8}:
-                chips += 10
-                mult += 4
-            elif key == "j_photograph" and is_face and not photograph_used:
-                mult *= 2.0
-                photograph_used = True
-            elif key == "j_bloodstone" and card_suit == 1:
-                mult *= 1.25
-            elif key == "j_ancient" and context.current_ancient_suit == card_suit:
-                mult *= 1.5
-            elif (
-                key == "j_idol"
-                and card_rank == context.current_idol_rank
-                and card_suit == context.current_idol_suit
-            ):
-                mult *= 2.0
-            elif key == "j_triboulet" and card_rank in {10, 11}:
-                mult *= 2.0
+        triggers = 1 + (
+            total_played_card_repetitions(retrigger_jokers, card, index, repetition_context)
+            if retrigger_jokers
+            else 0
+        )
+        for trigger in range(triggers):
+            if trigger > 0:
+                # A retrigger re-fires the card's base chips too.
+                chips += card_chips(card)
+            if index < len(context.scoring_enhancements):
+                enhancement = Enhancement(context.scoring_enhancements[index])
+                chips += enhancement_chip_bonus(enhancement)
+                mult += enhancement_mult_bonus(enhancement)
+                mult *= enhancement_xmult(enhancement)
+            if trigger == 0 and index < len(context.scoring_editions):
+                # Editions fire once; they are not part of the card trigger.
+                edition = Edition(context.scoring_editions[index])
+                chips += edition_chip_bonus(edition)
+                mult += edition_mult_bonus(edition)
+                mult *= edition_xmult(edition)
+            for joker in jokers:
+                key = joker.key
+                if key in SUIT_MULT_JOKERS:
+                    target_suit, add_mult = SUIT_MULT_JOKERS[key]
+                    if card_suit == target_suit:
+                        mult += add_mult
+                elif key == "j_arrowhead" and card_suit == 0:
+                    chips += 50
+                elif key == "j_onyx_agate" and card_suit == 2:
+                    mult += 7
+                elif key == "j_even_steven" and card_rank in {0, 2, 4, 6, 8}:
+                    mult += 4
+                elif key == "j_odd_todd" and card_rank in {1, 3, 5, 7, 12}:
+                    chips += 31
+                elif key == "j_scholar" and card_rank == 12:
+                    chips += 20
+                    mult += 4
+                elif key == "j_fibonacci" and card_rank in {0, 1, 3, 6, 12}:
+                    mult += 8
+                elif key == "j_scary_face" and is_face:
+                    chips += 30
+                elif key == "j_smiley" and is_face:
+                    mult += 5
+                elif key == "j_walkie_talkie" and card_rank in {2, 8}:
+                    chips += 10
+                    mult += 4
+                elif key == "j_photograph" and is_face and index == first_face_index:
+                    mult *= 2.0
+                elif key == "j_bloodstone" and card_suit == 1:
+                    mult *= 1.25
+                elif key == "j_ancient" and context.current_ancient_suit == card_suit:
+                    mult *= 1.5
+                elif (
+                    key == "j_idol"
+                    and card_rank == context.current_idol_rank
+                    and card_suit == context.current_idol_suit
+                ):
+                    mult *= 2.0
+                elif key == "j_triboulet" and card_rank in {10, 11}:
+                    mult *= 2.0
 
     # ---- held phase -------------------------------------------------------
     active_held = tuple(
@@ -359,9 +480,14 @@ def apply_additive_jokers(
         if suit(card) not in context.debuffed_held_suits
         and card not in context.debuffed_held_cards
     )
+    held_triggers = 1 + (
+        total_held_card_repetitions(retrigger_jokers, repetition_context)
+        if retrigger_jokers
+        else 0
+    )
     for joker in jokers:
         if joker.key == "j_shoot_the_moon":
-            mult += _held_rank_count(active_held, 10) * 13
+            mult += _held_rank_count(active_held, 10) * 13 * held_triggers
         elif joker.key == "j_raised_fist":
             lowest_nominal = _lowest_held_nominal(
                 context.held_cards,
@@ -369,9 +495,9 @@ def apply_additive_jokers(
                 context.debuffed_held_cards,
             )
             if lowest_nominal is not None:
-                mult += 2 * lowest_nominal
+                mult += 2 * lowest_nominal * held_triggers
         elif joker.key == "j_baron":
-            mult *= 1.5 ** _held_rank_count(active_held, 11)
+            mult *= 1.5 ** (_held_rank_count(active_held, 11) * held_triggers)
 
     # ---- joker phase (left to right, sequential) ---------------------------
     _CARD_OR_HELD_PHASE = frozenset(
