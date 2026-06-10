@@ -362,6 +362,9 @@ class FastFullGameEnv:
             joker_slots=self.run.joker_slots,
             is_final_hand=self.hands_remaining <= 1,
             blinds_skipped=self.blinds_skipped,
+            # Balatro increments the play counter before scoring, so the
+            # current play counts itself (Supernova).
+            hand_times_played={base.kind: self.hand_play_counts[base.kind] + 1},
         )
         return apply_additive_jokers(base, sorted_cards, len(selected), tuple(self.jokers), context)
 

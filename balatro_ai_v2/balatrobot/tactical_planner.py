@@ -444,6 +444,8 @@ def score_play_action(
         selected_editions=selected_editions,
         selected_red_seals=selected_red_seals,
         held_enhancements=held_enhancements,
+        hand_times_played=_hand_times_played(state, "played"),
+        hand_times_played_round=_hand_times_played(state, "played_this_round"),
         jokers=_jokers(state),
         money=int(state.get("money") or 0),
         discards_left=int((state.get("round") or {}).get("discards_left") or 0),
@@ -479,6 +481,8 @@ def _score_mask(
     selected_editions: tuple[int, ...] = (),
     selected_red_seals: tuple[bool, ...] = (),
     held_enhancements: tuple[int, ...] = (),
+    hand_times_played: dict[int, int] | None = None,
+    hand_times_played_round: dict[int, int] | None = None,
 ) -> FastScore:
     selected = tuple(card for index, card in enumerate(hand) if mask & (1 << index))
     sorted_cards = tuple(sorted(selected))
@@ -503,6 +507,8 @@ def _score_mask(
         selected_editions,
         held_enhancements,
         selected_red_seals,
+        hand_times_played,
+        hand_times_played_round,
     )
 
 
@@ -526,7 +532,11 @@ def _score_selected_held(
     selected_editions: tuple[int, ...] = (),
     held_enhancements: tuple[int, ...] = (),
     selected_red_seals: tuple[bool, ...] = (),
+    hand_times_played: dict[int, int] | None = None,
+    hand_times_played_round: dict[int, int] | None = None,
 ) -> FastScore:
+    hand_times_played = hand_times_played or {}
+    hand_times_played_round = hand_times_played_round or {}
     base = _apply_debuffs(
         _base_score_cached(sorted_cards, levels, tuple(joker.key for joker in jokers)),
         sorted_cards,
@@ -559,6 +569,8 @@ def _score_selected_held(
         scoring_editions=selected_editions,
         scoring_red_seals=selected_red_seals,
         held_enhancements=held_enhancements,
+        hand_times_played={base.kind: hand_times_played.get(base.kind, 0) + 1},
+        hand_times_played_round={base.kind: hand_times_played_round.get(base.kind, 0) + 1},
     )
     return apply_additive_jokers(base, sorted_cards, len(sorted_cards), jokers, context)
 
@@ -930,6 +942,14 @@ def _hand_levels(state: dict[str, Any]) -> tuple[int, ...]:
         int((hands.get(hand_name) or {}).get("level") or 1)
         for hand_name in HAND_KIND_NAMES
     )
+
+
+def _hand_times_played(state: dict[str, Any], field: str) -> dict[int, int]:
+    hands = state.get("hands") or {}
+    return {
+        kind: int((hands.get(name) or {}).get(field) or 0)
+        for kind, name in enumerate(HAND_KIND_NAMES)
+    }
 
 
 def _played_hand_names_this_round(state: dict[str, Any]) -> tuple[str, ...]:
