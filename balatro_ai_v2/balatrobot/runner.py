@@ -31,9 +31,11 @@ class BalatroBotRunner:
     retry_delay: float = 0.05
     pack_in_progress_retries: int = 10
     shop_settle_retries: int = 8
+    use_refusal_retries: int = 3
     _run_id: str = field(default="", init=False)
     _pack_retry_counts: dict[tuple[Any, ...], int] = field(default_factory=dict, init=False)
     _shop_settle_count: int = field(default=0, init=False)
+    _use_refusal_counts: dict[str, int] = field(default_factory=dict, init=False)
 
     def start_run(self, *, deck: str = "RED", stake: str = "WHITE", seed: str | None = None) -> dict[str, Any]:
         self.client.menu()
@@ -84,7 +86,13 @@ class BalatroBotRunner:
                     print(f"action: {game_action.kind.value} {game_action.indices}")
                 next_state, executed = self._execute_tracked(game_action)
                 action = action_payload(game_action) if executed else action_payload(method="gamestate")
+                if not executed and game_action.kind == ActionKind.USE_CONSUMABLE:
+                    self._note_use_refusal(state, game_action)
             case "ROUND_EVAL":
+                self._use_refusal_counts.clear()
+                suppressed = getattr(self.policy, "suppressed_consumables", None)
+                if suppressed is not None:
+                    suppressed.clear()
                 game_action = self.policy.round_eval_action(state)
                 if self.trace:
                     print(f"action: {game_action.kind.value}")
@@ -164,11 +172,36 @@ class BalatroBotRunner:
             message = str(exc)
             # The game can advance between the poll and the action (async
             # animations); re-read state instead of crashing the run.
-            if "failed to connect" not in message and "requires one of these states" not in message:
+            recoverable = (
+                "failed to connect" in message
+                or "requires one of these states" in message
+                or "cannot be used at this time" in message
+            )
+            if not recoverable:
                 raise
             if self.retry_delay > 0:
                 sleep(self.retry_delay)
             return self.client.gamestate(), False
+
+    def _note_use_refusal(self, state: dict[str, Any], action: GameAction) -> None:
+        """Stop proposing a consumable the game keeps refusing to use.
+
+        A refusal right after dealing is usually an animation race that a
+        re-poll resolves; a persistent one would loop forever, so after a few
+        attempts the consumable key is suppressed for the rest of the round.
+        """
+        cards = (state.get("consumables") or {}).get("cards") or []
+        index = action.index if action.index is not None else -1
+        if not 0 <= index < len(cards) or not isinstance(cards[index], dict):
+            return
+        key = str(cards[index].get("key") or "")
+        if not key:
+            return
+        self._use_refusal_counts[key] = self._use_refusal_counts.get(key, 0) + 1
+        if self._use_refusal_counts[key] >= self.use_refusal_retries:
+            suppressed = getattr(self.policy, "suppressed_consumables", None)
+            if suppressed is not None:
+                suppressed.add(key)
 
     def _record(self, event: str, **payload: Any) -> None:
         if self.trace_writer is None:

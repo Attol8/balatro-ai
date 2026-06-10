@@ -44,6 +44,10 @@ class PlannerPolicy:
     fallback: BalatroBotPolicy = field(default_factory=BalatroBotPolicy)
     log_fallbacks: bool = True
     fallback_count: int = field(default=0, init=False)
+    # Consumables the live game keeps refusing to use; the runner adds keys
+    # here after repeated "cannot be used at this time" refusals so the
+    # policy stops proposing them (cleared by the runner each round).
+    suppressed_consumables: set[str] = field(default_factory=set, init=False)
     _core: PlannerCore = field(init=False)
 
     def __post_init__(self) -> None:
@@ -83,6 +87,8 @@ class PlannerPolicy:
         for index, card in enumerate(_area_cards(state, "consumables")):
             key = str(card.get("key") or "")
             if key not in TAROT_TARGET_LIMITS and key not in _SPECTRAL_TARGET_LIMITS:
+                continue
+            if key in self.suppressed_consumables:
                 continue
             try:
                 return _with_required_targets(

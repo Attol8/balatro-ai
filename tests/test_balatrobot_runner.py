@@ -1,7 +1,7 @@
 import json
 from typing import Sequence
 
-from balatro_ai_v2.actions import ActionKind
+from balatro_ai_v2.actions import ActionKind, GameAction
 from balatro_ai_v2.balatrobot.imitation_policy import (
     balatrobot_state_to_fast_observation,
     balatrobot_state_to_full_fast_observation,
@@ -1468,3 +1468,74 @@ _ANTE_FIVE_SEARCH_DECK = (
     "H_8",
     "C_3",
 )
+
+
+def test_runner_suppresses_consumable_after_repeated_use_refusals() -> None:
+    calls = []
+
+    class TarotHappyPolicy:
+        """Proposes a tarot use until the runner suppresses it, then plays."""
+
+        def __init__(self) -> None:
+            self.suppressed_consumables: set[str] = set()
+
+        def tactical_action(self, state):
+            if "c_heirophant" not in self.suppressed_consumables:
+                return GameAction(kind=ActionKind.USE_CONSUMABLE, index=0, indices=(0, 1))
+            return GameAction(kind=ActionKind.PLAY, indices=(0, 1, 2, 3, 4))
+
+        def blind_action(self, state):
+            return GameAction(kind=ActionKind.SELECT_BLIND)
+
+        def round_eval_action(self, state):
+            return GameAction(kind=ActionKind.CASH_OUT)
+
+        def shop_action(self, state):
+            return None
+
+        def pack_action(self, state):
+            return GameAction(kind=ActionKind.PACK_SKIP)
+
+    def selecting_state() -> dict:
+        state = _selecting_hand_state(
+            [_card("S", "A"), _card("S", "K"), _card("S", "Q"), _card("S", "J"), _card("S", "T")],
+            required_score=100,
+        )
+        state["consumables"] = {"cards": [{"key": "c_heirophant", "set": "TAROT"}]}
+        return state
+
+    def transport(payload: dict) -> dict:
+        calls.append((payload["method"], payload.get("params") or {}))
+        method = payload["method"]
+        if method == "menu":
+            result = {"state": "MENU"}
+        elif method == "start":
+            result = selecting_state()
+        elif method == "use":
+            return {
+                "jsonrpc": "2.0",
+                "error": {"message": "Consumable 'The Hierophant' cannot be used at this time"},
+                "id": 1,
+            }
+        elif method == "gamestate":
+            result = selecting_state()
+        elif method == "play":
+            result = {"state": "GAME_OVER", "seed": "1", "ante_num": 9, "round_num": 24, "won": True}
+        else:
+            result = {"state": "GAME_OVER", "seed": "1", "ante_num": 0, "round_num": 0, "won": False}
+        return {"jsonrpc": "2.0", "result": result, "id": 1}
+
+    policy = TarotHappyPolicy()
+    runner = BalatroBotRunner(
+        BalatroBotClient(transport=transport),
+        policy=policy,
+        poll_delay=0,
+        retry_delay=0,
+        use_refusal_retries=3,
+    )
+    result = runner.play_run(seed="1")
+
+    assert result.won
+    assert "c_heirophant" in policy.suppressed_consumables
+    assert [m for m, _ in calls].count("use") == 3
+    assert calls[-1][0] == "play"
