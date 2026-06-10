@@ -164,7 +164,7 @@ class PlannerCore:
             return self._rollout_heuristics._pack_action(env)
         if phase == RunPhase.SELECTING_HAND:
             if self.config.rollout_tactical_beam <= 1:
-                return env.greedy_play_action()
+                return env.rollout_play_action()
             return plan_blind_tactics(
                 env,
                 beam_width=self.config.rollout_tactical_beam,

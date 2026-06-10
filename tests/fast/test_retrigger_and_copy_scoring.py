@@ -158,3 +158,10 @@ def test_selzer_retriggers_every_card() -> None:
     selzer = apply_additive_jokers(score, cards, 2, (Joker("j_selzer", scaling=10),))
 
     assert selzer.chips == plain.chips + 22
+
+
+def test_local_retrigger_keys_match_repetition_module() -> None:
+    from balatro_ai_v2.fast.joker_repetitions import RETRIGGER_JOKERS
+    from balatro_ai_v2.fast.jokers import _RETRIGGER_KEYS
+
+    assert _RETRIGGER_KEYS == RETRIGGER_JOKERS

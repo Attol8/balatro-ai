@@ -95,6 +95,14 @@ _SCALING_RATES: dict[str, float] = {
     "j_supernova": 0.5,
     "j_rocket": 0.8,
     "j_spare_trousers": 1.0,
+    # Decaying jokers: the hand-score projection sees their current value as
+    # permanent, so the negative rate prices the decay (Seltzer dies in 10
+    # hands, Ice Cream/Popcorn/Turtle Bean shrink every round).
+    "j_selzer": -2.5,
+    "j_ice_cream": -1.0,
+    "j_popcorn": -0.8,
+    "j_turtle_bean": -1.0,
+    "j_ramen": -1.5,
 }
 
 _PROJECTION_SAMPLE_HANDS = 2

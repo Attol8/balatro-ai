@@ -301,6 +301,25 @@ class FastFullGameEnv:
                 best_score = score.total
         return best_action
 
+    def rollout_play_action(self) -> int:
+        """Near-greedy play over structured candidate masks only.
+
+        Rollouts spend most of their time scoring play masks; the full
+        enumeration scores all ~218 of them per step. Five-card combinations
+        plus rank-group masks cover every hand kind a greedy total can pick
+        (kickers do not score), cutting per-step work ~4x.
+        """
+        self._require_selecting_hand()
+        hand = tuple(self.run.hand)
+        best_action = -1
+        best_score = -1
+        for mask in _candidate_play_masks(hand):
+            score = self.score_hand_mask(hand, mask)
+            if score.total > best_score:
+                best_action = mask
+                best_score = score.total
+        return best_action
+
     def score_action(self, action_id: int) -> FastScore:
         self._require_selecting_hand()
         if action_id >= DISCARD_ACTION_OFFSET:
@@ -2801,6 +2820,33 @@ def _replace_selected_from_front(
 
 def _sort_visible_hand(cards: tuple[int, ...]) -> tuple[int, ...]:
     return tuple(sorted(cards, key=lambda card: (-rank(card), suit(card))))
+
+
+@lru_cache(maxsize=4096)
+def _candidate_play_masks(hand: tuple[int, ...]) -> tuple[int, ...]:
+    """Structured candidate masks: all 5-card picks + rank groups + singles."""
+    from itertools import combinations
+
+    n = len(hand)
+    masks: set[int] = set()
+    if n <= MAX_SELECTED_CARDS:
+        masks.add((1 << n) - 1)
+    else:
+        for combo in combinations(range(n), MAX_SELECTED_CARDS):
+            mask = 0
+            for index in combo:
+                mask |= 1 << index
+            masks.add(mask)
+    by_rank: dict[int, int] = {}
+    for index, card in enumerate(hand):
+        by_rank[rank(card)] = by_rank.get(rank(card), 0) | (1 << index)
+    for group_mask in by_rank.values():
+        masks.add(group_mask)
+    # Best single card (Half Joker / conserving hands).
+    if hand:
+        best_single = max(range(n), key=lambda index: rank(hand[index]))
+        masks.add(1 << best_single)
+    return tuple(masks)
 
 
 @lru_cache(maxsize=16)

@@ -147,6 +147,13 @@ UNCOPYABLE_JOKERS = frozenset(
     }
 )
 
+# Mirror of joker_repetitions.RETRIGGER_JOKERS, kept local to avoid a
+# circular import on the scoring hot path (a test asserts they match).
+_RETRIGGER_KEYS = frozenset(
+    {"j_dusk", "j_hack", "j_hanging_chad", "j_mime", "j_selzer", "j_sock_and_buskin"}
+)
+
+
 def resolve_joker_copies(jokers: tuple[Joker, ...]) -> tuple[Joker, ...]:
     """Replace Blueprint/Brainstorm with the joker they copy.
 
@@ -407,23 +414,25 @@ def apply_additive_jokers(
     all_faces = context.all_cards_are_face or _has_joker(jokers, "j_pareidolia")
 
     # ---- card phase -------------------------------------------------------
-    from balatro_ai_v2.fast.joker_repetitions import (
-        RETRIGGER_JOKERS,
-        RepetitionContext,
-        total_held_card_repetitions,
-        total_played_card_repetitions,
-    )
+    retrigger_jokers = tuple(joker for joker in jokers if joker.key in _RETRIGGER_KEYS)
+    repetition_context = None
+    total_played_card_repetitions = total_held_card_repetitions = None
+    if retrigger_jokers:
+        from balatro_ai_v2.fast.joker_repetitions import (
+            RepetitionContext,
+            total_held_card_repetitions,
+            total_played_card_repetitions,
+        )
 
-    retrigger_jokers = tuple(joker for joker in jokers if joker.key in RETRIGGER_JOKERS)
-    scoring_indices = tuple(
-        index for index in range(len(sorted_cards)) if score.scoring_mask & (1 << index)
-    )
-    repetition_context = RepetitionContext(
-        scoring_indices=scoring_indices,
-        hands_left=context.hands_left,
-        held_card_has_effect=True,
-        all_cards_are_face=all_faces,
-    )
+        scoring_indices = tuple(
+            index for index in range(len(sorted_cards)) if score.scoring_mask & (1 << index)
+        )
+        repetition_context = RepetitionContext(
+            scoring_indices=scoring_indices,
+            hands_left=context.hands_left,
+            held_card_has_effect=True,
+            all_cards_are_face=all_faces,
+        )
     first_face_index: int | None = None
     for index, card in enumerate(sorted_cards):
         if not score.scoring_mask & (1 << index):
