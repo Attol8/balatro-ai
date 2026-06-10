@@ -982,6 +982,7 @@ _ABILITY_KEY_PRIORITY: dict[str, tuple[str, ...]] = {
     "j_runner": ("chips",),
     "j_wee": ("chips",),
     "j_castle": ("chips",),
+    "j_turtle_bean": ("h_size",),
 }
 
 

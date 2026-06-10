@@ -28,6 +28,7 @@ from balatro_ai_v2.fast.hand import (
     LEVEL_MULT,
     PAIR,
     STRAIGHT,
+    STRAIGHT_FLUSH,
     THREE_OF_A_KIND,
     TWO_PAIR,
     FastScore,
@@ -38,6 +39,7 @@ from balatro_ai_v2.fast.jokers import (
     PROBABILISTIC_SCORE_JOKERS,
     Joker,
     ScoreContext,
+    _hand_contains as _hand_contains_kind,
     apply_additive_jokers,
     sort_jokers_canonically,
 )
@@ -45,11 +47,16 @@ from balatro_ai_v2.fast.joker_money import (
     DOLLAR_BONUS_JOKERS,
     MONEY_EVENT_JOKERS,
     DollarBonusContext,
+    MoneyEventContext,
+    discard_money_delta,
+    hand_money_delta,
+    scored_card_money_delta,
     total_joker_dollar_bonus,
 )
 from balatro_ai_v2.fast.joker_run_rules import RUN_EFFECT_JOKERS, apply_joker_run_effect
 from balatro_ai_v2.fast.run import (
     BLIND_MULT,
+    BLIND_REWARD,
     BlindKind,
     FastRunState,
     RunPhase,
@@ -164,6 +171,14 @@ class FastFullGameEnv:
     # game take precedence over source costs for the current shop only.
     cost_overrides: dict[str, int] = field(init=False)
     pack_keys_override: tuple[str, ...] | None = field(default=None, init=False)
+    # Event-joker state.
+    boss_blind_disabled: bool = field(default=False, init=False)
+    mail_rank: int = field(default=0, init=False)
+    todo_kind: int = field(default=0, init=False)
+    mr_bones_saved: bool = field(default=False, init=False)
+    discards_used_this_round: int = field(default=0, init=False)
+    hands_played_this_round: int = field(default=0, init=False)
+    _boss_triggered_this_play: bool = field(default=False, init=False)
 
     def __post_init__(self) -> None:
         self.run = FastRunState(deck_key=self.deck_key)
@@ -221,6 +236,12 @@ class FastFullGameEnv:
         self.bought_pack_indices = set()
         self.cost_overrides = {}
         self.pack_keys_override = None
+        self.boss_blind_disabled = False
+        self.mail_rank = 0
+        self.todo_kind = 0
+        self.mr_bones_saved = False
+        self.discards_used_this_round = 0
+        self.hands_played_this_round = 0
         self._select_boss_for_ante()
         self._sync_required_score()
         return self.observation()
@@ -358,7 +379,15 @@ class FastFullGameEnv:
             if self.discards_remaining <= 0:
                 raise ValueError("no discards remaining")
             self.discards_remaining -= 1
+            is_first_discard = self.discards_used_this_round == 0
+            discard_kind = (
+                self.score_hand_mask(tuple(self.run.hand), mask).kind
+                if any(joker.key == "j_burnt" for joker in self.jokers)
+                else None
+            )
             selected = self._replace_selected(mask)
+            self._apply_discard_events(selected, is_first_discard, discard_kind)
+            self.discards_used_this_round += 1
             self.jokers = list(_jokers_after_discard(tuple(self.jokers), len(selected)))
             return FullGameStepResult(
                 observation=self.observation(),
@@ -368,15 +397,20 @@ class FastFullGameEnv:
             )
 
         boss_rule = self._boss_rule()
+        self._boss_triggered_this_play = False
         if boss_rule is not None and boss_rule.hand_policy == BlindHandPolicy.DOWNLEVEL_HAND:
             arm_kind = self.score_hand_mask(tuple(self.run.hand), mask).kind
             if self.hand_levels[arm_kind] > 1:
                 self.hand_levels[arm_kind] -= 1
+                self._boss_triggered_this_play = True
+        is_first_hand = self.hands_played_this_round == 0
         score = self.score_action(mask)
         selected = self._replace_selected(mask)
         self.run.score += score.total
         self.hand_play_counts[score.kind] += 1
         self.hands_remaining -= 1
+        self.hands_played_this_round += 1
+        self._apply_play_events(selected, score, is_first_hand, boss_rule)
         self.jokers = list(_jokers_after_play(tuple(self.jokers), score, selected))
         self.cards_played_this_ante.update(selected)
         if boss_rule is not None:
@@ -403,6 +437,21 @@ class FastFullGameEnv:
             )
 
         if self.hands_remaining <= 0:
+            if (
+                any(joker.key == "j_mr_bones" for joker in self.jokers)
+                and self.run.score * 4 >= self.run.required_score
+            ):
+                # Mr. Bones prevents death and self-destructs; the round ends
+                # without the blind's reward money.
+                self.jokers = [joker for joker in self.jokers if joker.key != "j_mr_bones"]
+                self.mr_bones_saved = True
+                self.run.phase = RunPhase.ROUND_EVAL
+                return FullGameStepResult(
+                    observation=self.observation(),
+                    reward=0.0,
+                    terminated=False,
+                    info=self._info(selected, is_discard=False, hand_score=score.total, hand_kind=score.kind),
+                )
             self.run.phase = RunPhase.GAME_OVER
             return FullGameStepResult(
                 observation=self.observation(),
@@ -460,9 +509,15 @@ class FastFullGameEnv:
         if self.run.phase != RunPhase.BLIND_SELECT:
             raise ValueError("can only start a blind from BLIND_SELECT")
         self.run.select_blind()
+        self.boss_blind_disabled = (
+            self.run.blind_kind == BlindKind.BOSS
+            and any(joker.key == "j_chicot" for joker in self.jokers)
+        )
         self._sync_required_score()
+        self._apply_setting_blind_events()
         rule = self._boss_rule()
         hand_size = self.run.hand_size + (rule.hand_size_delta if rule is not None else 0)
+        hand_size += sum(joker.scaling for joker in self.jokers if joker.key == "j_turtle_bean")
         while "tag_juggle" in self.tags:
             self.tags.remove("tag_juggle")
             hand_size += 3
@@ -485,6 +540,135 @@ class FastFullGameEnv:
                     range(len(self.hand_play_counts)),
                     key=lambda kind: (self.hand_play_counts[kind], -kind),
                 )
+        if any(joker.key == "j_burglar" for joker in self.jokers):
+            burglar_count = sum(1 for joker in self.jokers if joker.key == "j_burglar")
+            self.hands_remaining += 3 * burglar_count
+            self.discards_remaining = 0
+        self.discards_used_this_round = 0
+        self.hands_played_this_round = 0
+        round_rng = Random(self.seed * 52_711 + self.run.round_num * 433 + self.run.ante * 89)
+        self.mail_rank = round_rng.randrange(NUM_RANKS)
+        self.todo_kind = round_rng.randrange(len(self.hand_levels))
+
+    def _apply_setting_blind_events(self) -> None:
+        if not self.jokers:
+            return
+        rng = Random(self.seed * 74_093 + self.run.round_num * 911 + self.run.ante * 53)
+        for joker in list(self.jokers):
+            if joker.key == "j_riff_raff":
+                for _ in range(2):
+                    if len(self.jokers) >= self.run.joker_slots:
+                        break
+                    pool = [
+                        key
+                        for key in self._available_joker_pool()
+                        if _source_joker_rarities().get(key, 1) == 1
+                    ]
+                    if not pool:
+                        break
+                    self.jokers.append(_make_joker(rng.choice(pool)))
+                    if self.jokers[-1].key in RUN_EFFECT_JOKERS:
+                        self._recompute_run_modifiers()
+                self.jokers = sort_jokers_canonically(self.jokers)
+            elif joker.key == "j_cartomancer" and len(self.consumables) < self.run.consumable_slots:
+                self.consumables.append(rng.choice(_TAROT_KEYS))
+
+    def _apply_play_events(
+        self,
+        selected: tuple[int, ...],
+        score: FastScore,
+        is_first_hand: bool,
+        boss_rule: BlindRule | None,
+    ) -> None:
+        if not self.jokers:
+            return
+        sorted_selected = tuple(sorted(selected))
+        blind_triggered = self._boss_triggered_this_play
+        if boss_rule is not None and not blind_triggered:
+            if boss_rule.key == "bl_hook":
+                blind_triggered = True
+            elif (
+                boss_rule.hand_policy == BlindHandPolicy.DRAIN_MONEY_ON_MOST_PLAYED
+                and score.kind == self.ox_target_kind
+            ):
+                blind_triggered = True
+        money_context = MoneyEventContext(
+            blind_triggered=blind_triggered,
+            todo_hand_kind=self.todo_kind,
+        )
+        rng = Random(
+            self.seed * 90_001 + self.run.round_num * 313 + self.hands_played_this_round * 17
+        )
+        for joker in list(self.jokers):
+            key = joker.key
+            if key in MONEY_EVENT_JOKERS:
+                for index, card in enumerate(sorted_selected):
+                    if score.scoring_mask & (1 << index):
+                        self.run.money += scored_card_money_delta(joker, card, money_context)
+                self.run.money += hand_money_delta(joker, score, money_context)
+            elif key == "j_dna" and is_first_hand and len(selected) == 1:
+                self.deck_cards = sorted(self.deck_cards + [selected[0]])
+            elif (
+                key == "j_sixth_sense"
+                and is_first_hand
+                and len(selected) == 1
+                and rank(selected[0]) == 4
+                and len(self.consumables) < self.run.consumable_slots
+            ):
+                self._remove_deck_card(selected[0])
+                if _SPECTRAL_KEYS:
+                    self.consumables.append(rng.choice(_SPECTRAL_KEYS))
+            elif (
+                key == "j_superposition"
+                and _hand_contains_kind(score.kind, STRAIGHT)
+                and any(
+                    score.scoring_mask & (1 << index) and rank(card) == 12
+                    for index, card in enumerate(sorted_selected)
+                )
+                and len(self.consumables) < self.run.consumable_slots
+            ):
+                self.consumables.append(rng.choice(_TAROT_KEYS))
+            elif (
+                key == "j_seance"
+                and score.kind == STRAIGHT_FLUSH
+                and len(self.consumables) < self.run.consumable_slots
+            ):
+                if _SPECTRAL_KEYS:
+                    self.consumables.append(rng.choice(_SPECTRAL_KEYS))
+            elif (
+                key == "j_vagabond"
+                and self.run.money <= 4
+                and len(self.consumables) < self.run.consumable_slots
+            ):
+                self.consumables.append(rng.choice(_TAROT_KEYS))
+
+    def _apply_discard_events(
+        self,
+        selected: tuple[int, ...],
+        is_first_discard: bool,
+        discard_kind: int | None,
+    ) -> None:
+        if not self.jokers:
+            return
+        face_count = sum(1 for card in selected if rank(card) in {9, 10, 11})
+        context = MoneyEventContext(
+            discards_used=0 if is_first_discard else 1,
+            selected_count=len(selected),
+            current_mail_rank=self.mail_rank,
+            discarded_face_count=face_count,
+        )
+        for joker in list(self.jokers):
+            key = joker.key
+            if key == "j_burnt" and is_first_discard and discard_kind is not None:
+                self.hand_levels[discard_kind] += 1
+            elif key in MONEY_EVENT_JOKERS:
+                if key == "j_mail":
+                    for card in selected:
+                        self.run.money += discard_money_delta(joker, card, context)
+                else:
+                    self.run.money += discard_money_delta(joker, None, context)
+                if key == "j_trading" and is_first_discard and len(selected) == 1:
+                    self._remove_deck_card(selected[0])
 
     def _step_select_blind(self) -> FullGameStepResult:
         if self.run.phase != RunPhase.BLIND_SELECT:
@@ -691,6 +875,8 @@ class FastFullGameEnv:
         self.run.money += joker.sell_value
         if joker.edition == 4:
             self.run.joker_slots = max(self.run.joker_slots - 1, 1)
+        if joker.key == "j_diet_cola":
+            self._award_tag("tag_double")
         if joker.key in RUN_EFFECT_JOKERS:
             self._recompute_run_modifiers()
         return FullGameStepResult(self.observation(), 0.0, False, self._phase_info(f"sell:{joker.key}"))
@@ -756,6 +942,9 @@ class FastFullGameEnv:
             earns_hand_money=self.run.earns_hand_money,
             earns_discard_money=self.run.earns_discard_money,
         )
+        if self.mr_bones_saved:
+            reward -= BLIND_REWARD[self.run.blind_kind]
+            self.mr_bones_saved = False
         if self.run.blind_kind == BlindKind.BOSS:
             # Rocket's payout bump on boss defeat lands before the cash-out payout.
             self.jokers = [
@@ -1096,7 +1285,11 @@ class FastFullGameEnv:
         if self.run.phase == RunPhase.GAME_OVER:
             return
         base = _ante_base_chips(self.run.ante)
-        if self.run.blind_kind == BlindKind.BOSS and self.boss_key is not None:
+        if (
+            self.run.blind_kind == BlindKind.BOSS
+            and self.boss_key is not None
+            and not self.boss_blind_disabled
+        ):
             mult = BLIND_RULES[self.boss_key].score_mult
         else:
             mult = BLIND_MULT[self.run.blind_kind]
@@ -1104,6 +1297,8 @@ class FastFullGameEnv:
 
     def _boss_rule(self) -> BlindRule | None:
         if self.run.blind_kind != BlindKind.BOSS or self.boss_key is None:
+            return None
+        if self.boss_blind_disabled:
             return None
         return BLIND_RULES[self.boss_key]
 
@@ -1197,11 +1392,15 @@ class FastFullGameEnv:
         ) or (
             _SHOP_CARD_POOL_BY_ANTE[0] + tuple(key for ante, key in _SHOP_CARD_POOL_BY_ANTE[1] if self.run.ante >= ante)
         )
+        if any(joker.key == "j_ring_master" for joker in self.jokers):
+            return pool
         owned_jokers = {joker.key for joker in self.jokers}
         filtered = tuple(key for key in pool if not key.startswith("j_") or key not in owned_jokers)
         return filtered or pool
 
     def _available_joker_pool(self) -> tuple[str, ...]:
+        if any(joker.key == "j_ring_master" for joker in self.jokers):
+            return _PACK_JOKER_POOL
         owned_jokers = {joker.key for joker in self.jokers}
         filtered = tuple(key for key in _PACK_JOKER_POOL if key not in owned_jokers)
         return filtered or _PACK_JOKER_POOL
@@ -2476,13 +2675,31 @@ def _jokers_after_discard(jokers: tuple[Joker, ...], discarded_count: int = 0) -
 
 def _jokers_after_round(jokers: list[Joker]) -> list[Joker]:
     out: list[Joker] = []
+    gift_count = sum(1 for joker in jokers if joker.key == "j_gift")
     for joker in jokers:
         if joker.key == "j_popcorn":
             if joker.scaling > 4:
                 out.append(_replace_joker(joker, scaling=joker.scaling - 4))
+        elif joker.key == "j_turtle_bean":
+            if joker.scaling > 1:
+                out.append(_replace_joker(joker, scaling=joker.scaling - 1))
+        elif joker.key == "j_egg":
+            out.append(_replace_joker_sell(joker, joker.sell_value + 3))
         else:
             out.append(joker)
+    if gift_count:
+        out = [_replace_joker_sell(joker, joker.sell_value + gift_count) for joker in out]
     return out
+
+
+def _replace_joker_sell(joker: Joker, sell_value: int) -> Joker:
+    return Joker(
+        key=joker.key,
+        scaling=joker.scaling,
+        x_mult=joker.x_mult,
+        sell_value=sell_value,
+        edition=joker.edition,
+    )
 
 
 def _replace_joker(joker: Joker, *, scaling: int | None = None, x_mult: float | None = None) -> Joker:

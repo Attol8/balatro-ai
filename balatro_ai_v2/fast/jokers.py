@@ -356,6 +356,30 @@ IMPLEMENTED_JOKERS = frozenset(
         # Copy jokers, resolved at scoring time.
         "j_blueprint",
         "j_brainstorm",
+        # Event jokers wired through joker_events/joker_money in the env.
+        "j_burglar",
+        "j_burnt",
+        "j_trading",
+        "j_faceless",
+        "j_gift",
+        "j_diet_cola",
+        "j_dna",
+        "j_mr_bones",
+        "j_chicot",
+        "j_matador",
+        "j_turtle_bean",
+        "j_ring_master",
+        "j_rough_gem",
+        "j_mail",
+        "j_todo_list",
+        # Seeded-random consumable/joker creators: the created item is visible
+        # in live state before it is ever used, so replay stays exact.
+        "j_cartomancer",
+        "j_vagabond",
+        "j_seance",
+        "j_superposition",
+        "j_sixth_sense",
+        "j_riff_raff",
     }
 )
 
