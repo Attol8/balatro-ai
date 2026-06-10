@@ -88,6 +88,14 @@ def mirror_live_state(state: dict[str, Any], *, deck_key: str = "b_red") -> Fast
     elif phase == RunPhase.PACK:
         pack_area = state.get("pack") or {}
         env.pack_cards = [str(card.get("key") or "") for card in _area_cards(state, "pack")]
+        # Unmodeled or live-unsafe jokers inside packs must never be picked
+        # (the shop's 999-pricing cannot guard free pack picks).
+        env.pack_banned_indices = {
+            index
+            for index, key in enumerate(env.pack_cards)
+            if key.startswith("j_")
+            and (key not in IMPLEMENTED_JOKERS or key in LIVE_UNSAFE_JOKERS)
+        }
         # Mega packs allow two picks; live state reports remaining picks as
         # the pack area's highlighted_limit.
         env.pack_choices = max(

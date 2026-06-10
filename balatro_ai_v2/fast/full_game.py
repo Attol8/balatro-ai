@@ -180,6 +180,9 @@ class FastFullGameEnv:
     hands_played_this_round: int = field(default=0, init=False)
     _boss_triggered_this_play: bool = field(default=False, init=False)
     last_consumable_used: str | None = field(default=None, init=False)
+    # Live-mirror: pack card indices the live policy must never pick
+    # (unmodeled or live-unsafe jokers offered inside packs).
+    pack_banned_indices: set[int] = field(init=False)
 
     def __post_init__(self) -> None:
         self.run = FastRunState(deck_key=self.deck_key)
@@ -201,6 +204,7 @@ class FastFullGameEnv:
         self.free_shop_item_indices = set()
         self.bought_pack_indices = set()
         self.cost_overrides = {}
+        self.pack_banned_indices = set()
 
     def reset(self, seed: int | None = None) -> tuple[int, ...]:
         if seed is not None:
@@ -244,6 +248,7 @@ class FastFullGameEnv:
         self.discards_used_this_round = 0
         self.hands_played_this_round = 0
         self.last_consumable_used = None
+        self.pack_banned_indices = set()
         self._select_boss_for_ante()
         self._sync_required_score()
         return self.observation()
@@ -916,6 +921,8 @@ class FastFullGameEnv:
             raise ValueError("can only select pack card from pack")
         if not 0 <= index < len(self.pack_cards):
             raise ValueError("pack card index out of range")
+        if index in self.pack_banned_indices:
+            raise ValueError("pack card is not selectable live")
         key = self.pack_cards[index]
         if key.startswith("j_") and len(self.jokers) >= self.run.joker_slots:
             raise ValueError("cannot select joker from pack: joker slots are full")
@@ -945,6 +952,7 @@ class FastFullGameEnv:
 
     def _close_pack(self) -> None:
         self.pack_cards = []
+        self.pack_banned_indices = set()
         self.pack_choices = 1
         self.run.phase = self.pack_return_phase
         self.pack_return_phase = RunPhase.SHOP

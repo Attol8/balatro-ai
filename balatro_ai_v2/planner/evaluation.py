@@ -16,8 +16,8 @@ from balatro_ai_v2.fast.full_game import (
     UNMODELED_BOSS_EFFECTS,
     FastFullGameEnv,
     _build_balance_value,
+    _candidate_play_masks,
     _joker_portfolio_value,
-    _legal_masks,
 )
 from balatro_ai_v2.fast.run import BlindKind, RunPhase, _ante_base_chips
 
@@ -105,7 +105,7 @@ _SCALING_RATES: dict[str, float] = {
     "j_ramen": -1.5,
 }
 
-_PROJECTION_SAMPLE_HANDS = 2
+_PROJECTION_SAMPLE_HANDS = 4
 _PROJECTION_CACHE_MAX = 4096
 
 
@@ -196,7 +196,7 @@ def projected_best_hand_score(env: FastFullGameEnv) -> float:
                     hands_left=max(env.run.hands - 1, 0),
                     discards_left=env.run.discards,
                 ).total
-                for mask in _legal_masks(len(hand))
+                for mask in _candidate_play_masks(hand)
             ),
             default=0,
         )

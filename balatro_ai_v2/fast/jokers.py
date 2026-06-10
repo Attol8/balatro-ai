@@ -507,30 +507,30 @@ def apply_additive_jokers(
                     mult *= 2.0
 
     # ---- held phase -------------------------------------------------------
-    active_held = tuple(
-        card
-        for card in context.held_cards
-        if suit(card) not in context.debuffed_held_suits
-        and card not in context.debuffed_held_cards
-    )
+    # Held cards trigger one at a time in hand order; each card fires every
+    # joker's held effect before the next card (a Baron king left of a Shoot
+    # the Moon queen multiplies BEFORE the +13 — verified live, seed 17).
     held_triggers = 1 + (
         total_held_card_repetitions(retrigger_jokers, repetition_context)
         if retrigger_jokers
         else 0
     )
-    for joker in jokers:
-        if joker.key == "j_shoot_the_moon":
-            mult += _held_rank_count(active_held, 10) * 13 * held_triggers
-        elif joker.key == "j_raised_fist":
-            lowest_nominal = _lowest_held_nominal(
-                context.held_cards,
-                context.debuffed_held_suits,
-                context.debuffed_held_cards,
-            )
-            if lowest_nominal is not None:
-                mult += 2 * lowest_nominal * held_triggers
-        elif joker.key == "j_baron":
-            mult *= 1.5 ** (_held_rank_count(active_held, 11) * held_triggers)
+    raised_fist_card = _lowest_held_card(context.held_cards)
+    for card in context.held_cards:
+        if (
+            suit(card) in context.debuffed_held_suits
+            or card in context.debuffed_held_cards
+        ):
+            continue
+        card_rank = rank(card)
+        for _ in range(held_triggers):
+            for joker in jokers:
+                if joker.key == "j_baron" and card_rank == 11:
+                    mult *= 1.5
+                elif joker.key == "j_shoot_the_moon" and card_rank == 10:
+                    mult += 13
+                elif joker.key == "j_raised_fist" and card == raised_fist_card:
+                    mult += 2 * card_chips(card)
 
     # ---- joker phase (left to right, sequential) ---------------------------
     _CARD_OR_HELD_PHASE = frozenset(
@@ -744,6 +744,16 @@ def _has_joker(jokers: tuple[Joker, ...], key: str) -> bool:
 
 def _held_rank_count(cards: tuple[int, ...], target_rank: int) -> int:
     return sum(1 for card in cards if rank(card) == target_rank)
+
+
+def _lowest_held_card(cards: tuple[int, ...]) -> int | None:
+    if not cards:
+        return None
+    lowest = cards[0]
+    for card in cards:
+        if rank(card) <= rank(lowest):
+            lowest = card
+    return lowest
 
 
 def _lowest_held_nominal(
