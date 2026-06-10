@@ -241,6 +241,11 @@ def _check_play_score(
         # The bell forces a random extra card into every selection; the
         # actually-played cards are not recoverable from the snapshot.
         return ParityMismatch(line_num, "waived", "Cerulean Bell forces a random card into the selection", None, None)
+    if _current_blind_is_boss(before) and _boss_rerolled_by_tag(before):
+        # A Boss Tag reroll desyncs the displayed boss from the active rules
+        # (observed live: display said The House, the game enforced The
+        # Mouth); the true boss is unrecoverable from the snapshot.
+        return ParityMismatch(line_num, "waived", "boss identity unreliable after Boss Tag reroll", None, None)
     expected_delta = score_play_action(before, action, tarot_cards_used=tarots_used).total
     actual_delta = after_chips - before_chips
     if abs(expected_delta - actual_delta) <= tolerance:
@@ -290,6 +295,21 @@ def _without_boss_suit_debuff(state: dict[str, Any]) -> dict[str, Any] | None:
     if not changed:
         return None
     return {**state, "blinds": new_blinds}
+
+
+def _current_blind_is_boss(state: dict[str, Any]) -> bool:
+    return _current_boss_name(state) is not None
+
+
+def _boss_rerolled_by_tag(state: dict[str, Any]) -> bool:
+    for blind in (state.get("blinds") or {}).values():
+        if (
+            isinstance(blind, dict)
+            and blind.get("status") == "SKIPPED"
+            and str(blind.get("tag_name") or "") == "Boss Tag"
+        ):
+            return True
+    return False
 
 
 def _current_boss_name(state: dict[str, Any]) -> str | None:

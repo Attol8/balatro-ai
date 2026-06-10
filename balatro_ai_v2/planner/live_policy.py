@@ -63,7 +63,12 @@ class PlannerPolicy:
         rearrange = self._joker_rearrange(state)
         if rearrange is not None:
             return rearrange
-        return self._decide(state, default=lambda: self.fallback.blind_action(state))
+        action = self._decide(state, default=lambda: self.fallback.blind_action(state))
+        if action.kind == ActionKind.SKIP_BLIND and _skip_tag_is_unsafe(state):
+            # A Boss Tag reroll desyncs the displayed boss from the active
+            # rules (observed live); never skip into one.
+            return GameAction(kind=ActionKind.SELECT_BLIND)
+        return action
 
     def _joker_rearrange(self, state: dict[str, Any]) -> GameAction | None:
         """Keep x-mult jokers rightmost; sequential scoring multiplies last."""
@@ -141,6 +146,15 @@ class PlannerPolicy:
                     file=sys.stderr,
                 )
             return default()
+
+
+def _skip_tag_is_unsafe(state: dict[str, Any]) -> bool:
+    """True when the selectable blind's skip tag is unmodeled/desyncing."""
+    for blind in (state.get("blinds") or {}).values():
+        if not isinstance(blind, dict) or blind.get("status") != "SELECT":
+            continue
+        return str(blind.get("tag_name") or "") in {"Boss Tag"}
+    return False
 
 
 def _with_required_targets(state: dict[str, Any], action: GameAction) -> GameAction:

@@ -411,7 +411,7 @@ def score_play_action(
     hand_cards = (state.get("hand") or {}).get("cards") or []
     selected_pairs = sorted(
         (
-            (hand[index], *_card_modifiers(hand_cards[index]))
+            (hand[index], *_card_modifiers(hand_cards[index]), _card_has_red_seal(hand_cards[index]))
             for index in action.indices
             if index < len(hand_cards)
         ),
@@ -419,6 +419,7 @@ def score_play_action(
     )
     selected_enhancements = tuple(int(pair[1]) for pair in selected_pairs)
     selected_editions = tuple(int(pair[2]) for pair in selected_pairs)
+    selected_red_seals = tuple(bool(pair[3]) for pair in selected_pairs)
     held_enhancements = tuple(
         int(_card_modifiers(hand_cards[index])[0])
         for index in range(len(hand))
@@ -441,6 +442,7 @@ def score_play_action(
         tarot_cards_used=tarot_cards_used,
         selected_enhancements=selected_enhancements,
         selected_editions=selected_editions,
+        selected_red_seals=selected_red_seals,
         held_enhancements=held_enhancements,
         jokers=_jokers(state),
         money=int(state.get("money") or 0),
@@ -475,6 +477,7 @@ def _score_mask(
     tarot_cards_used: int = 0,
     selected_enhancements: tuple[int, ...] = (),
     selected_editions: tuple[int, ...] = (),
+    selected_red_seals: tuple[bool, ...] = (),
     held_enhancements: tuple[int, ...] = (),
 ) -> FastScore:
     selected = tuple(card for index, card in enumerate(hand) if mask & (1 << index))
@@ -499,6 +502,7 @@ def _score_mask(
         selected_enhancements,
         selected_editions,
         held_enhancements,
+        selected_red_seals,
     )
 
 
@@ -521,6 +525,7 @@ def _score_selected_held(
     selected_enhancements: tuple[int, ...] = (),
     selected_editions: tuple[int, ...] = (),
     held_enhancements: tuple[int, ...] = (),
+    selected_red_seals: tuple[bool, ...] = (),
 ) -> FastScore:
     base = _apply_debuffs(
         _base_score_cached(sorted_cards, levels, tuple(joker.key for joker in jokers)),
@@ -552,6 +557,7 @@ def _score_selected_held(
         tarot_cards_used=tarot_cards_used,
         scoring_enhancements=selected_enhancements,
         scoring_editions=selected_editions,
+        scoring_red_seals=selected_red_seals,
         held_enhancements=held_enhancements,
     )
     return apply_additive_jokers(base, sorted_cards, len(sorted_cards), jokers, context)
@@ -987,6 +993,7 @@ _ABILITY_KEY_PRIORITY: dict[str, tuple[str, ...]] = {
     "j_flash": ("mult",),
     "j_ceremonial": ("mult",),
     "j_misprint": ("mult",),
+    "j_trousers": ("mult",),
     "j_ice_cream": ("chips",),
     "j_square": ("chips",),
     "j_runner": ("chips",),
@@ -994,6 +1001,13 @@ _ABILITY_KEY_PRIORITY: dict[str, tuple[str, ...]] = {
     "j_castle": ("chips",),
     "j_turtle_bean": ("h_size",),
 }
+
+
+def _card_has_red_seal(card: dict[str, Any]) -> bool:
+    for source in (card.get("modifier"), card.get("state")):
+        if isinstance(source, dict) and str(source.get("seal") or "").upper() == "RED":
+            return True
+    return False
 
 
 def _joker_card_count(state: dict[str, Any]) -> int:

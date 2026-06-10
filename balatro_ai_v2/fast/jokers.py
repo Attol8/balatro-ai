@@ -71,6 +71,9 @@ class ScoreContext:
     # Enhancement ids aligned with held_cards (hand order); held STEEL cards
     # multiply during the held phase.
     held_enhancements: tuple[int, ...] = ()
+    # Red seals aligned with the sorted scoring cards: each retriggers its
+    # card once.
+    scoring_red_seals: tuple[bool, ...] = ()
 
 
 SUIT_MULT_JOKERS = {
@@ -453,6 +456,8 @@ def apply_additive_jokers(
             if retrigger_jokers
             else 0
         )
+        if index < len(context.scoring_red_seals) and context.scoring_red_seals[index]:
+            triggers += 1
         for trigger in range(triggers):
             if trigger > 0:
                 # A retrigger re-fires the card's base chips too.
