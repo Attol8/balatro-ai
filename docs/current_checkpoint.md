@@ -66,16 +66,22 @@ only).
 
 ## Verified results
 
-Fast sim (Red/White, seeds 1-20 tune): 45% pre-engine-correction; 35% on
-the corrected engine (per-seed flips both directions; the old held-phase
-order inflated Baron-style builds). Retune against the corrected engine is
-open.
+Fast sim (Red/White, seeds 1-20 tune): 30-45% across eval runs on the
+corrected engine (±2 wins run-to-run noise at n=20). Retune toward the
+50% target is the open strength lever; x-mult acquisition priority is the
+visible gap (deaths cluster at ante 5-7 with additive-heavy boards).
 
-Live (Red/White, `--planner`): **first win — seed 17, ante 8.** Its trace
-exposed the stale-hand race (policy acted on mid-deal snapshots), fixed by
-the runner's hand-settle guard (act only when the hand is identical across
-two consecutive reads). M3 (2 clean-gate wins) in progress; sweep running
-seeds 17-20.
+Live (Red/White, `--planner`): **M3 MET — two ante-8 wins with clean
+gates**: seed 17 (planner_live_seed17_20.jsonl) and seed 38
+(planner_live_seed36_39.jsonl), both passing
+`game_parity_gate.py --require-complete` with 0 mismatches. Every active
+trace seeds 1-39 gates clean. Late triage discoveries, each verified to
+the chip against live scores: held STEEL x1.5, Supernova counters never
+threaded (scored zero in sim AND replay), Spare Trousers ability key,
+red-seal retriggers, display-order "first card" for Hanging
+Chad/Photograph, Misprint banned (random 0-23 mult), Boss Tag reroll
+desyncs the displayed boss from active rules (policy never skips into
+one), The Serpent's draw-3.
 
 Async-lag defenses in the runner: shop-settle polling, pack-cards polling,
 hand-settle polling, swallowed-action re-polls, "cannot be used at this
@@ -85,9 +91,11 @@ Tests: 328 passing.
 
 ## Known gaps / next work
 
-1. M3: ≥2 live wins with `game_parity_gate.py --require-complete` clean.
-2. Weight retune on the corrected engine (35% tune vs 50% target).
-3. Targeted tarots in packs opened outside a blind remain unusable
+1. Weight retune on the corrected engine (~35% tune vs 50% target);
+   x-mult acquisition priority is the candidate lever.
+2. Targeted tarots in packs opened outside a blind remain unusable
    (BalatroBot exposes no targeting hand) — skipped by design.
-4. Hidden-info penalty (250) is a first-order bias correction; a proper
+3. Hidden-info penalty (250) is a first-order bias correction; a proper
    fix would share determinization samples across candidates.
+4. Phase 6 cleanup (M4): delete legacy value tables/skip rules, dedupe
+   tactical_planner helpers into fast/, deprecate the imitation path.
