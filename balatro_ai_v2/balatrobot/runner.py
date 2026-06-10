@@ -36,6 +36,8 @@ class BalatroBotRunner:
     _pack_retry_counts: dict[tuple[Any, ...], int] = field(default_factory=dict, init=False)
     _shop_settle_count: int = field(default=0, init=False)
     _use_refusal_counts: dict[str, int] = field(default_factory=dict, init=False)
+    _last_hand_fingerprint: tuple[Any, ...] | None = field(default=None, init=False)
+    _hand_settle_count: int = field(default=0, init=False)
 
     def start_run(self, *, deck: str = "RED", stake: str = "WHITE", seed: str | None = None) -> dict[str, Any]:
         self.client.menu()
@@ -80,6 +82,15 @@ class BalatroBotRunner:
                     print(f"action: {game_action.kind.value}")
                 next_state, executed = self._execute_tracked(game_action)
                 action = action_payload(game_action) if executed else action_payload(method="gamestate")
+            case "SELECTING_HAND" if not self._hand_settled(state):
+                # Post-play/discard dealing is async: acting on a mid-deal
+                # snapshot plays different physical cards than intended
+                # (verified live: stale hand showed S_5 where the game held
+                # H_K). Require the hand to be identical across two reads.
+                if self.poll_delay > 0:
+                    sleep(self.poll_delay)
+                action = action_payload(method="gamestate")
+                next_state = self.client.gamestate()
             case "SELECTING_HAND":
                 game_action = self.policy.tactical_action(state)
                 if self.trace:
@@ -182,6 +193,22 @@ class BalatroBotRunner:
             if self.retry_delay > 0:
                 sleep(self.retry_delay)
             return self.client.gamestate(), False
+
+    def _hand_settled(self, state: dict[str, Any]) -> bool:
+        """True when the visible hand is identical across two consecutive reads."""
+        cards = (state.get("hand") or {}).get("cards") or []
+        fingerprint = (
+            tuple(card.get("id") or card.get("key") for card in cards if isinstance(card, dict)),
+            (state.get("round") or {}).get("chips"),
+            (state.get("round") or {}).get("hands_left"),
+        )
+        if fingerprint == self._last_hand_fingerprint or self._hand_settle_count >= 10:
+            self._last_hand_fingerprint = None
+            self._hand_settle_count = 0
+            return True
+        self._last_hand_fingerprint = fingerprint
+        self._hand_settle_count += 1
+        return False
 
     def _note_use_refusal(self, state: dict[str, Any], action: GameAction) -> None:
         """Stop proposing a consumable the game keeps refusing to use.

@@ -80,7 +80,7 @@ def test_runner_executes_balatrobot_state_machine() -> None:
             result = {"state": "MENU"}
         elif method == "start":
             result = {"state": "BLIND_SELECT", "seed": "1", "ante_num": 1, "round_num": 0}
-        elif method == "select":
+        elif method in {"select", "gamestate"}:
             result = _selecting_hand_state(
                 [_card("S", "A"), _card("S", "K"), _card("S", "Q"), _card("S", "J"), _card("S", "T")],
                 required_score=100,
@@ -108,8 +108,10 @@ def test_runner_executes_balatrobot_state_machine() -> None:
 
     assert result.won
     assert result.ante == 9
-    assert [method for method, _ in calls] == ["menu", "start", "select", "play", "cash_out", "next_round"]
-    assert calls[3] == ("play", {"cards": [0, 1, 2, 3, 4]})
+    # The runner polls once after entering SELECTING_HAND so it acts on a
+    # hand that is identical across two consecutive reads (dealing is async).
+    assert [method for method, _ in calls] == ["menu", "start", "select", "gamestate", "play", "cash_out", "next_round"]
+    assert calls[4] == ("play", {"cards": [0, 1, 2, 3, 4]})
 
 
 def test_runner_selects_useful_booster_card() -> None:

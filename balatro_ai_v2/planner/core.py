@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 from balatro_ai_v2.fast.full_game import (
     CASH_OUT_ACTION,
     NEXT_ROUND_ACTION,
+    REROLL_ACTION,
     SELECT_BLIND_ACTION,
     SKIP_BLIND_ACTION,
     FastFullGameEnv,
@@ -35,6 +36,11 @@ class PlannerConfig:
     rollout_tactical_action_beam: int = 1
     max_shop_actions_per_visit: int = 12
     evaluate_blind_skip: bool = True
+    # Determinization makes hidden information look optimistic: a reroll (or
+    # skip-for-tag) rollout SEES the sampled shop/tag and buys its best item,
+    # so E[max] > max[E] versus visible purchases. Flat handicap on
+    # hidden-information candidates counters the bias.
+    hidden_info_penalty: float = 250.0
 
 
 @dataclass(slots=True)
@@ -72,7 +78,7 @@ class PlannerCore:
         if SKIP_BLIND_ACTION not in legal:
             return SELECT_BLIND_ACTION
         select_score = self._rollout_value(env, SELECT_BLIND_ACTION)
-        skip_score = self._rollout_value(env, SKIP_BLIND_ACTION)
+        skip_score = self._rollout_value(env, SKIP_BLIND_ACTION) - self.config.hidden_info_penalty
         return SKIP_BLIND_ACTION if skip_score > select_score else SELECT_BLIND_ACTION
 
     # -- shop / pack -------------------------------------------------------
@@ -92,6 +98,8 @@ class PlannerCore:
         best_score = float("-inf")
         for action in candidates:
             score = self._rollout_value(env, action)
+            if action == REROLL_ACTION:
+                score -= self.config.hidden_info_penalty
             if score > best_score:
                 best_score = score
                 best_action = action
