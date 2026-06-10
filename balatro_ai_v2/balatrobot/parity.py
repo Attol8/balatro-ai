@@ -314,6 +314,9 @@ def _check_discard_draw(
         return ParityMismatch(line_num, "skip", "trace does not include full hand/deck cards", None, None)
     kept = [card for index, card in enumerate(before_hand) if index not in set(action.indices)]
     draw_count = len(before_hand) - len(kept)
+    if _current_boss_name(before) == "The Serpent":
+        # The Serpent always draws exactly 3 after a play or discard.
+        draw_count = min(3, len(before_deck))
     drawn = before_deck[-draw_count:] if draw_count else []
     expected = _sorted_card_keys(kept + drawn)
     if expected == after_hand:
@@ -341,6 +344,8 @@ def _pending_replacement_draw(
         return None
     kept = [card for index, card in enumerate(before_hand) if index not in set(action.indices)]
     draw_count = len(before_hand) - len(kept)
+    if _current_boss_name(before) == "The Serpent":
+        draw_count = min(3, len(before_deck))
     if draw_count <= 0:
         return None
     drawn = before_deck[-draw_count:]
@@ -669,6 +674,8 @@ def _unchecked(line: int, before: dict[str, Any], method: str, reason: str) -> U
 
 
 def _is_poll_only_transition(before: dict[str, Any], after: dict[str, Any]) -> bool:
+    if _is_shop_settle_poll(before, after):
+        return True
     stable_paths = (
         ("ante_num",),
         ("money",),
@@ -685,6 +692,17 @@ def _is_poll_only_transition(before: dict[str, Any], after: dict[str, Any]) -> b
     for area in ("hand", "cards", "jokers", "consumables", "shop", "packs", "vouchers"):
         if _area_keys(before, area) != _area_keys(after, area):
             return False
+    return True
+
+
+def _is_shop_settle_poll(before: dict[str, Any], after: dict[str, Any]) -> bool:
+    """Post-cash-out polls where the payout and shop contents land async."""
+    if before.get("state") != "SHOP" or after.get("state") != "SHOP":
+        return False
+    if any(_area_keys(before, area) for area in ("shop", "packs", "vouchers")):
+        return False
+    if int(after.get("money") or 0) < int(before.get("money") or 0):
+        return False
     return True
 
 
