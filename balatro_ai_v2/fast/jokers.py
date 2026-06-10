@@ -68,6 +68,9 @@ class ScoreContext:
     # Enhancement/Edition ids aligned with the sorted scoring cards.
     scoring_enhancements: tuple[int, ...] = ()
     scoring_editions: tuple[int, ...] = ()
+    # Enhancement ids aligned with held_cards (hand order); held STEEL cards
+    # multiply during the held phase.
+    held_enhancements: tuple[int, ...] = ()
 
 
 SUIT_MULT_JOKERS = {
@@ -516,14 +519,20 @@ def apply_additive_jokers(
         else 0
     )
     raised_fist_card = _lowest_held_card(context.held_cards)
-    for card in context.held_cards:
+    for held_index, card in enumerate(context.held_cards):
         if (
             suit(card) in context.debuffed_held_suits
             or card in context.debuffed_held_cards
         ):
             continue
         card_rank = rank(card)
+        is_steel = (
+            held_index < len(context.held_enhancements)
+            and context.held_enhancements[held_index] == int(Enhancement.STEEL)
+        )
         for _ in range(held_triggers):
+            if is_steel:
+                mult *= 1.5
             for joker in jokers:
                 if joker.key == "j_baron" and card_rank == 11:
                     mult *= 1.5

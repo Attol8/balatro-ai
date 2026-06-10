@@ -419,6 +419,11 @@ def score_play_action(
     )
     selected_enhancements = tuple(int(pair[1]) for pair in selected_pairs)
     selected_editions = tuple(int(pair[2]) for pair in selected_pairs)
+    held_enhancements = tuple(
+        int(_card_modifiers(hand_cards[index])[0])
+        for index in range(len(hand))
+        if not mask & (1 << index) and index < len(hand_cards)
+    )
     if _active_blind_key(state) == "bl_arm":
         # The Arm lowers the played hand's level before it scores.
         selected = tuple(sorted(card for index, card in enumerate(hand) if mask & (1 << index)))
@@ -436,6 +441,7 @@ def score_play_action(
         tarot_cards_used=tarot_cards_used,
         selected_enhancements=selected_enhancements,
         selected_editions=selected_editions,
+        held_enhancements=held_enhancements,
         jokers=_jokers(state),
         money=int(state.get("money") or 0),
         discards_left=int((state.get("round") or {}).get("discards_left") or 0),
@@ -469,6 +475,7 @@ def _score_mask(
     tarot_cards_used: int = 0,
     selected_enhancements: tuple[int, ...] = (),
     selected_editions: tuple[int, ...] = (),
+    held_enhancements: tuple[int, ...] = (),
 ) -> FastScore:
     selected = tuple(card for index, card in enumerate(hand) if mask & (1 << index))
     sorted_cards = tuple(sorted(selected))
@@ -491,6 +498,7 @@ def _score_mask(
         tarot_cards_used,
         selected_enhancements,
         selected_editions,
+        held_enhancements,
     )
 
 
@@ -512,6 +520,7 @@ def _score_selected_held(
     tarot_cards_used: int = 0,
     selected_enhancements: tuple[int, ...] = (),
     selected_editions: tuple[int, ...] = (),
+    held_enhancements: tuple[int, ...] = (),
 ) -> FastScore:
     base = _apply_debuffs(
         _base_score_cached(sorted_cards, levels, tuple(joker.key for joker in jokers)),
@@ -543,6 +552,7 @@ def _score_selected_held(
         tarot_cards_used=tarot_cards_used,
         scoring_enhancements=selected_enhancements,
         scoring_editions=selected_editions,
+        held_enhancements=held_enhancements,
     )
     return apply_additive_jokers(base, sorted_cards, len(sorted_cards), jokers, context)
 

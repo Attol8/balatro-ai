@@ -32,6 +32,7 @@ def main() -> None:
     print(f"  checked_scores: {trace_report.checked_scores}")
     print(f"  checked_draws: {trace_report.checked_draws}")
     print(f"  mismatches: {len(trace_report.mismatches)}")
+    print(f"  waived: {trace_report.waived}")
     print(f"  unchecked: {len(trace_report.unchecked)}")
     for mismatch in trace_report.mismatches[:20]:
         print(
