@@ -179,6 +179,7 @@ class FastFullGameEnv:
     discards_used_this_round: int = field(default=0, init=False)
     hands_played_this_round: int = field(default=0, init=False)
     _boss_triggered_this_play: bool = field(default=False, init=False)
+    last_consumable_used: str | None = field(default=None, init=False)
 
     def __post_init__(self) -> None:
         self.run = FastRunState(deck_key=self.deck_key)
@@ -242,6 +243,7 @@ class FastFullGameEnv:
         self.mr_bones_saved = False
         self.discards_used_this_round = 0
         self.hands_played_this_round = 0
+        self.last_consumable_used = None
         self._select_boss_for_ante()
         self._sync_required_score()
         return self.observation()
@@ -1053,6 +1055,9 @@ class FastFullGameEnv:
         return cards
 
     def _apply_consumable(self, key: str) -> None:
+        previous_consumable = self.last_consumable_used
+        if key != "c_fool" and (key in _TAROT_KEYS or key in _PLANET_TO_HAND_KIND):
+            self.last_consumable_used = key
         hand_kind = _PLANET_TO_HAND_KIND.get(key)
         if hand_kind is not None:
             self.hand_levels[hand_kind] += 1
@@ -1128,6 +1133,40 @@ class FastFullGameEnv:
         elif key == "c_cryptid" and self.run.hand:
             target = max(self.run.hand, key=lambda card: (rank(card), -suit(card)))
             self.deck_cards.extend([target, target])
+        elif key == "c_fool":
+            if (
+                previous_consumable
+                and previous_consumable != "c_fool"
+                and len(self.consumables) < self.run.consumable_slots
+            ):
+                self.consumables.append(previous_consumable)
+        elif key == "c_soul":
+            if len(self.jokers) < self.run.joker_slots:
+                owned = {joker.key for joker in self.jokers}
+                legendaries = [
+                    legendary
+                    for legendary in ("j_triboulet", "j_yorick", "j_chicot", "j_caino")
+                    if legendary not in owned
+                ]
+                if legendaries:
+                    rng = Random(self.seed * 61_981 + self.run.round_num * 197 + len(self.jokers))
+                    self.jokers.append(_make_joker(rng.choice(legendaries)))
+                    self.jokers = sort_jokers_canonically(self.jokers)
+        elif key in {"c_familiar", "c_grim", "c_incantation"}:
+            # Destroy one random card, create N cards of the class. The
+            # created cards' enhancements are not representable on int cards,
+            # so they land plain (an undervaluation, never an overvaluation).
+            rng = Random(self.seed * 47_657 + self.run.round_num * 379 + len(self.deck_cards))
+            if self.deck_cards:
+                self.deck_cards.remove(rng.choice(self.deck_cards))
+            count, rank_pool = {
+                "c_familiar": (3, (9, 10, 11)),
+                "c_grim": (2, (12,)),
+                "c_incantation": (4, tuple(range(9))),
+            }[key]
+            for _ in range(count):
+                self.deck_cards.append(rng.randrange(4) * NUM_RANKS + rng.choice(rank_pool))
+            self.deck_cards.sort()
         elif key in TAROT_ENHANCEMENTS or key in SPECTRAL_SEALS or key in {"c_aura", "c_wheel_of_fortune", "c_ankh", "c_hex", "c_ectoplasm"}:
             # The current full-game env stores int cards, so enhancement/seal
             # and joker-edition effects are intentionally left for the

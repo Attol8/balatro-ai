@@ -33,6 +33,12 @@ _SPECTRAL_TARGET_LIMITS = {
     "c_trance": 1,
     "c_medium": 1,
 }
+
+# Consumables that need a visible hand but take no explicit targets; they can
+# only be spent during a blind, so the tactical path proposes them there.
+_HAND_REQUIRED_NO_TARGET = frozenset(
+    {"c_familiar", "c_grim", "c_incantation", "c_ouija", "c_sigil"}
+)
 from balatro_ai_v2.planner.core import PlannerConfig, PlannerCore
 from balatro_ai_v2.planner.mirror import mirror_live_state
 
@@ -86,10 +92,16 @@ class PlannerPolicy:
     def _held_targeted_tarot_use(self, state: dict[str, Any]) -> GameAction | None:
         for index, card in enumerate(_area_cards(state, "consumables")):
             key = str(card.get("key") or "")
-            if key not in TAROT_TARGET_LIMITS and key not in _SPECTRAL_TARGET_LIMITS:
+            if (
+                key not in TAROT_TARGET_LIMITS
+                and key not in _SPECTRAL_TARGET_LIMITS
+                and key not in _HAND_REQUIRED_NO_TARGET
+            ):
                 continue
             if key in self.suppressed_consumables:
                 continue
+            if key in _HAND_REQUIRED_NO_TARGET:
+                return GameAction(kind=ActionKind.USE_CONSUMABLE, index=index)
             try:
                 return _with_required_targets(
                     state, GameAction(kind=ActionKind.USE_CONSUMABLE, index=index)

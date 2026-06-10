@@ -41,9 +41,32 @@ class RunValueWeights:
     margin_decay: float = 0.6
     margin_floor: float = -6.0
     margin_ceiling: float = 2.0
+    consumable_value: float = 1.0
 
 
 DEFAULT_WEIGHTS = RunValueWeights()
+
+# Held-consumable values for effects the int-card sim cannot apply itself
+# (enhancements, seals): the LIVE policy spends these in-blind, so holding
+# them is real value the simulator would otherwise price at zero.
+_CONSUMABLE_HOLD_VALUES: dict[str, float] = {
+    "c_heirophant": 60.0,
+    "c_empress": 60.0,
+    "c_magician": 30.0,
+    "c_justice": 45.0,
+    "c_chariot": 50.0,
+    "c_devil": 45.0,
+    "c_lovers": 40.0,
+    "c_tower": 25.0,
+    "c_talisman": 30.0,
+    "c_deja_vu": 35.0,
+    "c_trance": 30.0,
+    "c_medium": 25.0,
+}
+
+
+def _consumable_portfolio_value(env: FastFullGameEnv) -> float:
+    return sum(_CONSUMABLE_HOLD_VALUES.get(key, 0.0) for key in env.consumables)
 
 # Estimated per-round growth strength of self-scaling jokers, in abstract
 # margin units. The rollout horizon realizes near-term growth; this term
@@ -211,6 +234,7 @@ def run_value(
     value += weights.hand_levels * sum(max(level - 1, 0) for level in env.hand_levels)
     value += weights.build_commitment * _build_balance_value(env)
     value += weights.portfolio * _joker_portfolio_value(env)
+    value += weights.consumable_value * _consumable_portfolio_value(env)
 
     score_progress = env.run.score / max(env.run.required_score, 1)
     value += min(score_progress, 1.5) * weights.blind_progress

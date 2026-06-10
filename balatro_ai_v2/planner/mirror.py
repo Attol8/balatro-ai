@@ -86,8 +86,13 @@ def mirror_live_state(state: dict[str, Any], *, deck_key: str = "b_red") -> Fast
     elif phase == RunPhase.SHOP:
         _mirror_shop(env, state)
     elif phase == RunPhase.PACK:
+        pack_area = state.get("pack") or {}
         env.pack_cards = [str(card.get("key") or "") for card in _area_cards(state, "pack")]
-        env.pack_choices = max(int(((state.get("pack") or {}).get("choices")) or 1), 1)
+        # Mega packs allow two picks; live state reports remaining picks as
+        # the pack area's highlighted_limit.
+        env.pack_choices = max(
+            int(pack_area.get("choices") or pack_area.get("highlighted_limit") or 1), 1
+        )
 
     return env
 
