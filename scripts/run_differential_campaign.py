@@ -19,7 +19,7 @@ from balatro_ai_v2.balatrobot.backend import BalatroBotBackend
 from balatro_ai_v2.balatrobot.client import BalatroBotClient, BalatroBotError
 from balatro_ai_v2.balatrobot.process import build_launch_command, stop_balatrobot_server, wait_for_balatrobot
 from balatro_ai_v2.balatrobot.runner import AuthorityRunner
-from balatro_ai_v2.balatrobot.tracing import AuthorityTraceWriter, build_manifest
+from balatro_ai_v2.balatrobot.tracing import AuthorityTraceWriter, build_manifest, read_verified_trace
 from balatro_ai_v2.differential import replay_authority_trace
 from balatro_ai_v2.jackdaw import JACKDAW_REVISION, JackdawBackend, JackdawUnavailable
 
@@ -108,10 +108,12 @@ def main() -> None:
                 raise SystemExit(2)
 
             report = replay_authority_trace(trace_path, candidate)
+            coverage = summarize_trace_coverage(trace_path, required_families=tuple(args.require_family))
             payload = {
                 "ante": result.ante,
                 "authority_complete": True,
                 "candidate_revision": JACKDAW_REVISION,
+                "coverage": coverage,
                 "decisions": result.decisions,
                 "differential": asdict(report),
                 "seed": seed,
@@ -121,6 +123,8 @@ def main() -> None:
             print(json.dumps(payload, sort_keys=True))
             if not report.observed_lockstep:
                 raise SystemExit(1)
+            if not coverage["coverage_complete"]:
+                raise SystemExit(3)
     except JackdawUnavailable as exc:
         raise SystemExit(f"Jackdaw candidate unavailable: {exc}") from exc
     except BalatroBotError as exc:
@@ -142,6 +146,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--policy-seed", default="coverage-v1")
     parser.add_argument("--max-shop-actions", type=int, default=3)
     parser.add_argument("--pack-strategy", choices=("mixed", "skip", "pick"), default="mixed")
+    parser.add_argument("--require-family", action="append", default=[])
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=12346)
     parser.add_argument("--deck", default="RED")
@@ -165,6 +170,29 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--launch-poll-delay", type=float, default=0.2)
     parser.add_argument("--post-launch-delay", type=float, default=1.0)
     return parser
+
+
+def summarize_trace_coverage(path: Path, *, required_families: tuple[str, ...] = ()) -> dict[str, object]:
+    rows = read_verified_trace(path)
+    accepted_counts: dict[str, int] = {}
+    for row in rows:
+        if row.get("event") != "transition" or row.get("status") != "accepted":
+            continue
+        action = row.get("action")
+        if not isinstance(action, dict):
+            continue
+        family = str(action.get("type") or "unknown")
+        accepted_counts[family] = accepted_counts.get(family, 0) + 1
+    accepted_families = sorted(accepted_counts)
+    required = tuple(dict.fromkeys(required_families))
+    missing = [family for family in required if family not in accepted_counts]
+    return {
+        "accepted_action_counts": accepted_counts,
+        "accepted_families": accepted_families,
+        "required_families": list(required),
+        "missing_required_families": missing,
+        "coverage_complete": bool(required) and not missing,
+    }
 
 
 if __name__ == "__main__":

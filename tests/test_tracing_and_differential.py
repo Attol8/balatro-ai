@@ -16,6 +16,7 @@ from balatro_ai_v2.backend import (
 from balatro_ai_v2.balatrobot.tracing import AuthorityTraceWriter, TraceManifest, read_verified_trace
 from balatro_ai_v2.canonical import BalatroBotCanonicalizer
 from balatro_ai_v2.differential import replay_authority_trace
+from scripts.run_differential_campaign import summarize_trace_coverage
 from tests.state_factory import state
 
 
@@ -173,3 +174,40 @@ def test_incomplete_authority_trace_never_passes(tmp_path: Path) -> None:
     assert not report.observed_lockstep
     assert report.mismatch is not None
     assert report.mismatch.message == "authority trace is incomplete"
+
+
+def test_trace_coverage_summary_requires_explicit_families(tmp_path: Path) -> None:
+    path = tmp_path / "trace.jsonl"
+    writer = AuthorityTraceWriter(path, _manifest())
+    writer.record("run_start", authority={"canonical": {}})
+    writer.record("transition", status="accepted", action={"type": "buy_pack"}, after={"canonical": {}})
+    writer.record("transition", status="accepted", action={"type": "skip_pack"}, after={"canonical": {}})
+    writer.record("run_end", complete=True)
+
+    summary = summarize_trace_coverage(path)
+
+    assert summary == {
+        "accepted_action_counts": {"buy_pack": 1, "skip_pack": 1},
+        "accepted_families": ["buy_pack", "skip_pack"],
+        "required_families": [],
+        "missing_required_families": [],
+        "coverage_complete": False,
+    }
+
+
+def test_trace_coverage_summary_reports_missing_required_families(tmp_path: Path) -> None:
+    path = tmp_path / "trace.jsonl"
+    writer = AuthorityTraceWriter(path, _manifest())
+    writer.record("run_start", authority={"canonical": {}})
+    writer.record("transition", status="accepted", action={"type": "buy_pack"}, after={"canonical": {}})
+    writer.record("run_end", complete=True)
+
+    summary = summarize_trace_coverage(path, required_families=("buy_pack", "skip_pack"))
+
+    assert summary == {
+        "accepted_action_counts": {"buy_pack": 1},
+        "accepted_families": ["buy_pack"],
+        "required_families": ["buy_pack", "skip_pack"],
+        "missing_required_families": ["skip_pack"],
+        "coverage_complete": False,
+    }

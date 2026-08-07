@@ -5,7 +5,19 @@ from types import SimpleNamespace
 import pytest
 
 import balatro_ai_v2.jackdaw as jackdaw
-from balatro_ai_v2.actions import CashOut, DiscardCards, HandSlot, PlayCards, SelectBlind
+from balatro_ai_v2.actions import (
+    BuyPack,
+    BuyShopCard,
+    CashOut,
+    DiscardCards,
+    HandSlot,
+    LeaveShop,
+    PackOfferSlot,
+    PlayCards,
+    SelectBlind,
+    ShopSlot,
+    SkipPack,
+)
 from balatro_ai_v2.backend import RunSpec
 from tests.state_factory import state
 
@@ -95,7 +107,29 @@ def test_card_value_normalization_drops_null_optional_fields() -> None:
     assert value == {"effect": "", "ability": {"x_mult": 1}}
 
 
-def test_candidate_rolls_round_targets_at_round_end_without_double_rolling() -> None:
+def test_card_modifier_normalization_preserves_explicit_empty_effect(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        jackdaw,
+        "_jackdaw_center",
+        lambda card: {"effect": ""} if card.center_key == "j_throwback" else {},
+    )
+    explicit: dict[str, object] = {}
+    absent: dict[str, object] = {}
+
+    jackdaw._apply_balatrobot_card_modifiers(
+        explicit,
+        SimpleNamespace(center_key="j_throwback", ability={"effect": "", "x_mult": 1}, edition=None),
+    )
+    jackdaw._apply_balatrobot_card_modifiers(
+        absent,
+        SimpleNamespace(center_key="j_bull", ability={"effect": "", "x_mult": 1}, edition=None),
+    )
+
+    assert explicit == {"enhancement": ""}
+    assert absent == {}
+
+
+def test_candidate_seed_one_shop_and_pack_compatibility() -> None:
     pytest.importorskip("jackdaw")
     backend = jackdaw.JackdawBackend()
     backend.reset(RunSpec("RED", "WHITE", "1"))
@@ -112,3 +146,18 @@ def test_candidate_rolls_round_targets_at_round_end_without_double_rolling() -> 
     assert rolled_suit == "S"
     assert shop.after.observed.canonical["round"]["ancient_suit"] == rolled_suit
     assert shop.after.observed.canonical["packs"]["cards"][0]["key"] == "p_buffoon_normal_2"
+
+    opened = backend.step(BuyPack(PackOfferSlot(1)))
+    assert opened.after is not None
+    assert opened.after.observed.canonical["state"] == "PLANET_PACK"
+    assert opened.after.observed.canonical["pack"]["limit"] == 5
+
+    skipped = backend.step(SkipPack())
+    assert skipped.after is not None
+    assert skipped.after.observed.canonical["packs"]["limit"] == 2
+    backend.step(BuyShopCard(ShopSlot(0)))
+    next_blind = backend.step(LeaveShop())
+    assert next_blind.after is not None
+    assert next_blind.after.observed.canonical["state"] == "BLIND_SELECT"
+    assert next_blind.after.observed.canonical["shop"]["count"] == 1
+    assert next_blind.after.observed.canonical["shop"]["cards"] == []

@@ -477,15 +477,7 @@ def _apply_balatrobot_card_values(value: dict[str, Any], card: object) -> None:
     else:
         value.pop("perma_bonus", None)
 
-    center_key = getattr(card, "center_key", None)
-    center: Mapping[str, Any] = {}
-    if isinstance(center_key, str):
-        try:
-            from jackdaw.engine.card import _resolve_center
-        except ImportError:
-            center = {}
-        else:
-            center = _resolve_center(center_key)
+    center = _jackdaw_center(card)
     rarity = center.get("rarity")
     if isinstance(rarity, int | float) and not isinstance(rarity, bool):
         value["rarity"] = rarity
@@ -522,8 +514,6 @@ def _apply_balatrobot_card_values(value: dict[str, Any], card: object) -> None:
 def _apply_balatrobot_card_modifiers(modifier: dict[str, Any], card: object) -> None:
     """Mirror BalatroBot's source-backed ``extract_card_modifier`` fields."""
 
-    from jackdaw.engine.card import _resolve_center
-
     ability = getattr(card, "ability", None)
     edition = getattr(card, "edition", None)
     if isinstance(edition, Mapping):
@@ -537,11 +527,21 @@ def _apply_balatrobot_card_modifiers(modifier: dict[str, Any], card: object) -> 
                 modifier[destination] = item
     if not isinstance(ability, Mapping):
         return
-    center_key = getattr(card, "center_key", None)
-    center = _resolve_center(center_key) if isinstance(center_key, str) else {}
+    center = _jackdaw_center(card)
     effect = ability.get("effect") if "effect" in center else None
     if isinstance(effect, str) and effect != "Base":
         modifier["enhancement"] = effect.replace(" Card", "").upper()
         x_mult = ability.get("x_mult")
         if isinstance(x_mult, int | float) and not isinstance(x_mult, bool) and x_mult != 1:
             modifier["enhancement_x_mult"] = x_mult
+
+
+def _jackdaw_center(card: object) -> Mapping[str, Any]:
+    center_key = getattr(card, "center_key", None)
+    if not isinstance(center_key, str):
+        return {}
+    try:
+        from jackdaw.engine.card import _resolve_center
+    except ImportError:
+        return {}
+    return _resolve_center(center_key)
