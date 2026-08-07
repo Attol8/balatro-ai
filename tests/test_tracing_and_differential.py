@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from dataclasses import replace
 from pathlib import Path
 
@@ -14,7 +15,12 @@ from balatro_ai_v2.backend import (
     RunSpec,
     StepResult,
 )
-from balatro_ai_v2.balatrobot.tracing import AuthorityTraceWriter, TraceManifest, read_verified_trace
+from balatro_ai_v2.balatrobot.tracing import (
+    AuthorityTraceWriter,
+    TraceManifest,
+    _git_state,
+    read_verified_trace,
+)
 from balatro_ai_v2.canonical import BalatroBotCanonicalizer
 from balatro_ai_v2.differential import replay_authority_trace
 from state_factory import state
@@ -99,6 +105,24 @@ def test_trace_rejects_missing_profile_mode(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="profile mode"):
         read_verified_trace(path)
+
+
+def test_git_state_ignores_untracked_files_but_detects_tracked_edits(tmp_path: Path) -> None:
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "config", "user.name", "Test"], cwd=tmp_path, check=True)
+    tracked = tmp_path / "tracked.py"
+    tracked.write_text("value = 1\n")
+    subprocess.run(["git", "add", "tracked.py"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "commit", "-qm", "baseline"], cwd=tmp_path, check=True)
+
+    (tmp_path / "notes.md").write_text("untracked\n")
+    _, dirty = _git_state(tmp_path)
+    assert not dirty
+
+    tracked.write_text("value = 2\n")
+    _, dirty = _git_state(tmp_path)
+    assert dirty
 
 
 def test_trace_rejects_changed_run_id_even_with_valid_hash_chain(tmp_path: Path) -> None:

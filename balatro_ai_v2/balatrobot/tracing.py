@@ -209,7 +209,7 @@ def _git_state(root: Path) -> tuple[str, bool]:
         ).stdout.strip()
         dirty = bool(
             subprocess.run(
-                ["git", "status", "--porcelain"],
+                ["git", "status", "--porcelain", "--untracked-files=no"],
                 cwd=root,
                 check=True,
                 capture_output=True,
