@@ -17,7 +17,7 @@ A fresh public-action Red/White seed-1 smoke run completed in real Balatro and i
 - Record one exclusive authority trace per game, replay it immediately through pinned Jackdaw, and stop at the first exact mismatch.
 - Begin with a small Red/White development panel. A terminal loss is acceptable coverage evidence but never policy-strength evidence.
 - Promote neither the candidate nor policy work until the panel is complete and mismatch-free; every divergence becomes a candidate/adapter regression test.
-- Current status: the first exclusive development trace at `runs/differential-dev/coverage-v1-seed1-rerun/red-white-seed1.jsonl` now replays cleanly through pinned Jackdaw with 23/23 checked transitions after fixing round-target timing, first-shop Buffoon RNG, BalatroBot-shaped ability projection, null optional value fields, and source-backed rarity projection. The next step is coverage accounting across explicit pack/shop lanes so a mismatch-free panel also proves exercised action families.
+- Current status: the first exclusive development trace at `runs/differential-dev/coverage-v1-seed1-rerun/red-white-seed1.jsonl` now replays cleanly through pinned Jackdaw with 23/23 checked transitions after fixing round-target timing, first-shop Buffoon RNG, BalatroBot-shaped ability projection, null optional value fields, and source-backed rarity projection. Trace-derived coverage accounting now reads the actual public state sequence, records legal opportunities and accepted families, and passes the explicit skip-pack lane. Next, run separate pick and mixed lanes across new seeds; stop and regress the first divergence.
 
 ## Design
 

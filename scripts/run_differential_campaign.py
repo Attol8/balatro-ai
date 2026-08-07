@@ -185,24 +185,27 @@ def summarize_trace_coverage(path: Path, *, pack_strategy: str) -> dict[str, obj
     accepted_counts: Counter[str] = Counter()
     phase_counts: Counter[str] = Counter()
     opportunity_counts: Counter[str] = Counter()
+    current_public: dict[str, Any] | None = None
     for row in rows:
-        if row.get("event") != "transition" or row.get("status") != "accepted":
+        if row.get("event") == "run_start":
+            public = row.get("public")
+            current_public = public if isinstance(public, dict) else None
+            continue
+        if row.get("event") != "transition":
+            continue
+        if current_public is not None:
+            phase = current_public.get("phase")
+            if isinstance(phase, str):
+                phase_counts[phase] += 1
+            _accumulate_opportunities(opportunity_counts, current_public)
+        if row.get("status") != "accepted":
             continue
         action = row.get("action")
-        before = row.get("before")
-        if not isinstance(action, dict):
-            continue
-        family = str(action.get("type") or "unknown")
-        accepted_counts[family] += 1
-        if not isinstance(before, dict):
-            continue
-        canonical = before.get("canonical")
-        if not isinstance(canonical, dict):
-            continue
-        phase = canonical.get("state")
-        if isinstance(phase, str):
-            phase_counts[phase] += 1
-        _accumulate_opportunities(opportunity_counts, canonical)
+        if isinstance(action, dict):
+            family = str(action.get("type") or "unknown")
+            accepted_counts[family] += 1
+        public_after = row.get("public_after")
+        current_public = public_after if isinstance(public_after, dict) else None
 
     required = set(_BASELINE_REQUIRED_ACTIONS)
     if pack_strategy == "skip":
@@ -224,57 +227,83 @@ def summarize_trace_coverage(path: Path, *, pack_strategy: str) -> dict[str, obj
     }
 
 
-def _accumulate_opportunities(counts: Counter[str], canonical: dict[str, Any]) -> None:
-    phase = canonical.get("state")
+def _accumulate_opportunities(counts: Counter[str], public: dict[str, Any]) -> None:
+    phase = public.get("phase")
     if not isinstance(phase, str):
         return
-    counts[f"phase:{phase}"] += 1
 
     if phase == "BLIND_SELECT":
-        if _has_selected_blind(canonical):
+        if _has_selected_blind(public):
             counts["action:select_blind"] += 1
     elif phase == "SELECTING_HAND":
-        counts["action:play_cards"] += 1
-        if _round_value(canonical, "discards_left") > 0:
+        if _count_list(public, "hand") > 0:
+            counts["action:play_cards"] += 1
+        if _count_list(public, "hand") > 0 and _round_value(public, "discards_left") > 0:
             counts["action:discard_cards"] += 1
     elif phase == "ROUND_EVAL":
         counts["action:cash_out"] += 1
     elif phase == "SHOP":
         counts["action:leave_shop"] += 1
-        if _count_area_cards(canonical, "packs") > 0:
+        if _has_affordable_pack(public):
             counts["action:buy_pack"] += 1
             counts["shop_with_pack_offers"] += 1
-    elif phase in {"PLANET_PACK", "TAROT_PACK", "SPECTRAL_PACK", "STANDARD_PACK", "BUFFOON_PACK", "PACK"}:
+    elif phase == "PACK":
         counts["action:skip_pack"] += 1
-        if _count_area_cards(canonical, "pack") > 0:
+        if _has_safe_pack_choice(public):
             counts["action:choose_pack_card"] += 1
             counts["pack_with_choices"] += 1
 
 
-def _has_selected_blind(canonical: dict[str, Any]) -> bool:
-    blinds = canonical.get("blinds")
-    if not isinstance(blinds, dict):
+def _has_selected_blind(public: dict[str, Any]) -> bool:
+    blinds = public.get("blinds")
+    if not isinstance(blinds, list):
         return False
     return any(
         isinstance(blind, dict) and blind.get("status") == "SELECT"
-        for blind in blinds.values()
+        for blind in blinds
     )
 
 
-def _round_value(canonical: dict[str, Any], key: str) -> int:
-    round_state = canonical.get("round")
+def _round_value(public: dict[str, Any], key: str) -> int:
+    round_state = public.get("round")
     if not isinstance(round_state, dict):
         return 0
     value = round_state.get(key)
     return value if isinstance(value, int) else 0
 
 
-def _count_area_cards(canonical: dict[str, Any], name: str) -> int:
-    area = canonical.get(name)
-    if not isinstance(area, dict):
-        return 0
-    cards = area.get("cards")
-    return len(cards) if isinstance(cards, list) else 0
+def _count_list(public: dict[str, Any], name: str) -> int:
+    values = public.get(name)
+    return len(values) if isinstance(values, list) else 0
+
+
+def _has_affordable_pack(public: dict[str, Any]) -> bool:
+    money = public.get("money")
+    packs = public.get("packs")
+    if not isinstance(money, int) or not isinstance(packs, list):
+        return False
+    return any(
+        isinstance(pack, dict)
+        and isinstance(pack.get("buy_cost"), int)
+        and pack["buy_cost"] <= money
+        for pack in packs
+    )
+
+
+def _has_safe_pack_choice(public: dict[str, Any]) -> bool:
+    cards = public.get("opened_pack")
+    if not isinstance(cards, list):
+        return False
+    joker_room = _count_list(public, "jokers") < public.get("joker_limit", 0)
+    return any(
+        isinstance(card, dict)
+        and (
+            (isinstance(card.get("rank"), str) and isinstance(card.get("suit"), str))
+            or card.get("kind") == "PLANET"
+            or (card.get("kind") == "JOKER" and joker_room)
+        )
+        for card in cards
+    )
 
 
 if __name__ == "__main__":

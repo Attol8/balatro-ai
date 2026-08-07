@@ -411,9 +411,6 @@ def _normalize_jackdaw_bridge(
             value = card.get("value")
             if isinstance(value, dict):
                 _apply_balatrobot_card_values(value, private_card)
-                for key in tuple(value):
-                    if value[key] is None:
-                        value.pop(key)
             if str(card.get("set") or "").upper() == "DEFAULT":
                 card["cost"] = {"buy": 1, "sell": 1}
 

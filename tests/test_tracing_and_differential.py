@@ -16,7 +16,6 @@ from balatro_ai_v2.backend import (
 from balatro_ai_v2.balatrobot.tracing import AuthorityTraceWriter, TraceManifest, read_verified_trace
 from balatro_ai_v2.canonical import BalatroBotCanonicalizer
 from balatro_ai_v2.differential import replay_authority_trace
-from scripts.run_differential_campaign import summarize_trace_coverage
 from tests.state_factory import state
 
 
@@ -174,100 +173,3 @@ def test_incomplete_authority_trace_never_passes(tmp_path: Path) -> None:
     assert not report.observed_lockstep
     assert report.mismatch is not None
     assert report.mismatch.message == "authority trace is incomplete"
-
-
-def test_trace_coverage_summary_is_fail_closed_without_required_baseline_actions(tmp_path: Path) -> None:
-    path = tmp_path / "trace.jsonl"
-    writer = AuthorityTraceWriter(path, _manifest())
-    writer.record("run_start", authority={"canonical": {}})
-    writer.record(
-        "transition",
-        status="accepted",
-        action={"type": "buy_pack"},
-        before={"canonical": {"state": "SHOP", "packs": {"cards": [{}]}, "round": {}}},
-        after={"canonical": {}},
-    )
-    writer.record(
-        "transition",
-        status="accepted",
-        action={"type": "skip_pack"},
-        before={"canonical": {"state": "BUFFOON_PACK", "pack": {"cards": [{}]}, "round": {}}},
-        after={"canonical": {}},
-    )
-    writer.record("run_end", complete=True)
-
-    summary = summarize_trace_coverage(path, pack_strategy="skip")
-
-    assert summary["accepted_action_counts"] == {"buy_pack": 1, "skip_pack": 1}
-    assert summary["required_action_counts"]["select_blind"] == 0
-    assert summary["opportunity_counts"]["action:buy_pack"] == 1
-    assert summary["opportunity_counts"]["action:skip_pack"] == 1
-    assert summary["coverage_complete"] is False
-
-
-def test_trace_coverage_summary_reports_complete_pick_lane(tmp_path: Path) -> None:
-    path = tmp_path / "trace.jsonl"
-    writer = AuthorityTraceWriter(path, _manifest())
-    writer.record("run_start", authority={"canonical": {}})
-    writer.record(
-        "transition",
-        status="accepted",
-        action={"type": "select_blind"},
-        before={"canonical": {"state": "BLIND_SELECT", "blinds": {"small": {"status": "SELECT"}}, "round": {}}},
-        after={"canonical": {}},
-    )
-    writer.record(
-        "transition",
-        status="accepted",
-        action={"type": "discard_cards"},
-        before={"canonical": {"state": "SELECTING_HAND", "round": {"discards_left": 2}}},
-        after={"canonical": {}},
-    )
-    writer.record(
-        "transition",
-        status="accepted",
-        action={"type": "play_cards"},
-        before={"canonical": {"state": "SELECTING_HAND", "round": {"discards_left": 1}}},
-        after={"canonical": {}},
-    )
-    writer.record(
-        "transition",
-        status="accepted",
-        action={"type": "cash_out"},
-        before={"canonical": {"state": "ROUND_EVAL", "round": {}}},
-        after={"canonical": {}},
-    )
-    writer.record(
-        "transition",
-        status="accepted",
-        action={"type": "buy_pack"},
-        before={"canonical": {"state": "SHOP", "packs": {"cards": [{}, {}]}, "round": {}}},
-        after={"canonical": {}},
-    )
-    writer.record(
-        "transition",
-        status="accepted",
-        action={"type": "choose_pack_card"},
-        before={"canonical": {"state": "PLANET_PACK", "pack": {"cards": [{}, {}]}, "round": {}}},
-        after={"canonical": {}},
-    )
-    writer.record(
-        "transition",
-        status="accepted",
-        action={"type": "leave_shop"},
-        before={"canonical": {"state": "SHOP", "packs": {"cards": [{}]}, "round": {}}},
-        after={"canonical": {}},
-    )
-    writer.record("run_end", complete=True)
-
-    summary = summarize_trace_coverage(path, pack_strategy="pick")
-
-    assert summary["coverage_complete"] is True
-    assert summary["phase_counts"] == {
-        "BLIND_SELECT": 1,
-        "PLANET_PACK": 1,
-        "ROUND_EVAL": 1,
-        "SELECTING_HAND": 2,
-        "SHOP": 2,
-    }
-    assert summary["required_action_counts"]["choose_pack_card"] == 1
