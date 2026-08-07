@@ -65,6 +65,16 @@ def test_backend_never_force_accepts_a_changing_state() -> None:
         backend.reset(RunSpec("RED", "WHITE", "1"))
 
 
+def test_backend_never_settles_a_shop_missing_public_areas() -> None:
+    incomplete = state("SHOP")
+    incomplete.pop("packs")
+    client = FakeClient(incomplete, polls=[incomplete])
+    backend = BalatroBotBackend(client, max_settle_polls=1, settle_poll_delay=0)  # type: ignore[arg-type]
+
+    with pytest.raises(UnsettledStateError):
+        backend.reset(RunSpec("RED", "WHITE", "1"))
+
+
 def test_rejected_action_stays_rejected_and_is_not_replaced_by_polling() -> None:
     initial = state()
     client = FakeClient(

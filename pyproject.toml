@@ -7,7 +7,7 @@ dependencies = []
 
 [project.optional-dependencies]
 candidate = [
-  "jackdaw @ git+https://github.com/TylerFlar/jackdaw-balatro.git@dbedc66255fe594cce7b7cccc188c8a11649d9ec",
+  "jackdaw @ git+https://github.com/TylerFlar/jackdaw-balatro.git@dbedc66255fe594cce7b7cccc188c8a11649d9ec ; python_version >= '3.12'",
 ]
 dev = [
   "pytest>=8.0",

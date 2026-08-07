@@ -10,6 +10,15 @@ The failed independent simulator, planner, imitation pipeline, rule-presence gat
 
 A fresh public-action Red/White seed-1 smoke run completed in real Balatro and its five decisions reproduced exactly in a second real run. Jackdaw is pinned at `dbedc66255fe594cce7b7cccc188c8a11649d9ec`; its upstream suite passes 1,561 tests. Its raw bridge initially had 638 representational differences from BalatroBot. A narrow adapter now derives BalatroBot's representation from Jackdaw's own state, and all five smoke transitions match exactly. Jackdaw remains untrusted beyond that tiny losing trace. This is not yet a trained agent: OS-process isolation for the policy, broad randomized candidate lockstep, complete consumable legality, and the real-game snapshot extension remain open. No learned model should be built until those gates pass.
 
+### Active Increment: Deterministic Differential Campaign
+
+- Add a deterministic coverage policy driven only by `PublicObservation`, public history, and an explicit policy seed.
+- Keep action selection bounded and family-aware; never enumerate the factorial reorder tail or enable actions whose public legality is incomplete.
+- Record one exclusive authority trace per game, replay it immediately through pinned Jackdaw, and stop at the first exact mismatch.
+- Begin with a small Red/White development panel. A terminal loss is acceptable coverage evidence but never policy-strength evidence.
+- Promote neither the candidate nor policy work until the panel is complete and mismatch-free; every divergence becomes a candidate/adapter regression test.
+- Current status: the first exclusive development trace at `runs/differential-dev/coverage-v1-seed1-rerun/red-white-seed1.jsonl` now replays cleanly through pinned Jackdaw with 23/23 checked transitions after fixing round-target timing, first-shop Buffoon RNG, BalatroBot-shaped ability projection, null optional value fields, and source-backed rarity projection. The next step is coverage accounting across explicit pack/shop lanes so a mismatch-free panel also proves exercised action families.
+
 ## Design
 
 Use a two-kernel architecture. Actual Balatro under a pinned BalatroBot/LÖVE build is the authority. A pinned, independently audited Jackdaw fork is the candidate high-throughput training/search kernel. Expose the same typed state/action contract from both and continuously compare organic trajectories. In parallel, prototype in-memory snapshot/restore and batch rollouts inside real Balatro; use the real kernel directly wherever its measured throughput permits.

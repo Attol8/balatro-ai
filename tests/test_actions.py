@@ -62,6 +62,19 @@ def test_out_of_phase_action_is_rejected_before_rpc() -> None:
         action_to_rpc(PlayCards((HandSlot(0),)), observation)
 
 
+def test_blind_action_generator_never_yields_an_illegal_select() -> None:
+    observation = to_public_observation(state("BLIND_SELECT"))
+    observation = replace(
+        observation,
+        blinds=tuple(replace(blind, status="UPCOMING") for blind in observation.blinds),
+    )
+
+    actions = list(iter_legal_actions(observation))
+
+    assert not any(isinstance(action, SelectBlind) for action in actions)
+    assert all(is_legal(observation, action) for action in actions)
+
+
 def test_hand_actions_are_not_limited_to_old_eight_card_mask() -> None:
     raw = state("SELECTING_HAND")
     raw["hand"]["cards"] = [playing_card(f"S_{index}", card_id=100 + index) for index in range(9)]

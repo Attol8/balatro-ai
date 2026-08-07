@@ -172,8 +172,8 @@ def _is_ready(state: dict[str, Any]) -> bool:
         return _area_ready(state, "hand", require_cards=True)
     if phase == "SHOP":
         areas = ("shop", "packs", "vouchers")
-        return all(_area_ready(state, area, require_cards=False) for area in areas if area in state) and any(
-            _area_ready(state, area, require_cards=True) for area in areas if area in state
+        return all(area in state and _area_ready(state, area, require_cards=False) for area in areas) and any(
+            _area_ready(state, area, require_cards=True) for area in areas
         )
     if phase in _PACK_PHASES:
         return _area_ready(state, "pack", require_cards=True)

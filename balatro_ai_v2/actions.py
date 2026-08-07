@@ -225,8 +225,9 @@ def iter_legal_actions(observation: PublicObservation) -> Iterator[PublicAction]
 
     phase = observation.phase
     if phase == Phase.BLIND_SELECT:
-        yield SelectBlind()
         selected = next((blind for blind in observation.blinds if blind.status == "SELECT"), None)
+        if selected is not None:
+            yield SelectBlind()
         if selected is not None and selected.kind != "BOSS":
             yield SkipBlind()
     elif phase == Phase.SELECTING_HAND:
