@@ -71,6 +71,36 @@ _ROUND_FIELDS = {
     "most_played_poker_hand",
     "reroll_cost",
 }
+_VANILLA_BOOSTER_VARIANT_COUNTS = {
+    ("arcana", "normal"): 4,
+    ("arcana", "jumbo"): 2,
+    ("arcana", "mega"): 2,
+    ("buffoon", "normal"): 2,
+    ("buffoon", "jumbo"): 1,
+    ("buffoon", "mega"): 1,
+    ("celestial", "normal"): 4,
+    ("celestial", "jumbo"): 2,
+    ("celestial", "mega"): 2,
+    ("spectral", "normal"): 2,
+    ("spectral", "jumbo"): 1,
+    ("spectral", "mega"): 1,
+    ("standard", "normal"): 4,
+    ("standard", "jumbo"): 2,
+    ("standard", "mega"): 2,
+}
+_VANILLA_BOOSTER_ARTWORK_KEYS = {
+    f"p_{kind}_{size}_{variant}"
+    for (kind, size), count in _VANILLA_BOOSTER_VARIANT_COUNTS.items()
+    for variant in range(1, count + 1)
+}
+
+
+def semantic_card_key(kind: str, key: str) -> str:
+    """Collapse numbered booster artwork variants with identical game rules."""
+
+    if kind.upper() == "BOOSTER" and key in _VANILLA_BOOSTER_ARTWORK_KEYS:
+        return key.rpartition("_")[0]
+    return key
 
 
 class CanonicalizationError(ValueError):
@@ -129,7 +159,7 @@ class BalatroBotCanonicalizer:
             if identity in self._entity_ids:
                 continue
             kind = str(card.get("set") or "UNKNOWN")
-            key = str(card.get("key") or "UNKNOWN")
+            key = semantic_card_key(kind, str(card.get("key") or "UNKNOWN"))
             unseen.append((identity, kind, key))
 
         grouped: dict[tuple[str, str], list[tuple[str, str]]] = defaultdict(list)
@@ -154,6 +184,11 @@ class BalatroBotCanonicalizer:
                     continue
                 if key_string == "id" and _is_card_path(path):
                     normalized[key_string] = self._entity_ids[_raw_identity(child)]
+                elif key_string == "key" and _is_card_path(path):
+                    normalized[key_string] = semantic_card_key(
+                        str(value.get("set") or "UNKNOWN"),
+                        str(child),
+                    )
                 else:
                     normalized[key_string] = self._normalize(child, path=(*path, key_string))
             return normalized

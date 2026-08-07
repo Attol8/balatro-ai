@@ -17,6 +17,8 @@ from balatro_ai_v2.balatrobot.backend import BalatroBotBackend
 from balatro_ai_v2.balatrobot.client import BalatroBotClient, BalatroBotError
 from balatro_ai_v2.balatrobot.process import (
     build_launch_command,
+    build_launch_environment,
+    require_profile_mode,
     stop_balatrobot_server,
     wait_for_balatrobot,
 )
@@ -38,7 +40,7 @@ def main() -> None:
                 fast_server=args.fast_server,
                 headless_server=args.headless_server,
             )
-            process = subprocess.Popen(command)
+            process = subprocess.Popen(command, env=build_launch_environment(profile_mode=args.profile_mode))
             wait_for_balatrobot(
                 client,
                 timeout=args.launch_timeout,
@@ -51,6 +53,7 @@ def main() -> None:
             client.health()
 
         health = client.health()
+        require_profile_mode(health, expected=args.profile_mode)
         backend_version = _version(
             args.balatrobot_version,
             health.get("version"),
@@ -90,6 +93,7 @@ def main() -> None:
                 max_settle_polls=args.max_settle_polls,
                 launch_fast=args.fast_server,
                 launch_headless=args.headless_server,
+                profile_mode=args.profile_mode,
                 mods=tuple(args.mod),
             )
             trace = AuthorityTraceWriter(args.trace_jsonl, manifest)
@@ -151,6 +155,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--fast-server", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--headless-server", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument("--profile-mode", choices=("all_unlocked", "career"), default="all_unlocked")
     parser.add_argument("--launch-timeout", type=float, default=45.0)
     parser.add_argument("--launch-poll-delay", type=float, default=0.2)
     parser.add_argument("--post-launch-delay", type=float, default=1.0)

@@ -10,7 +10,7 @@ from balatro_ai_v2.backend import RunSpec
 from balatro_ai_v2.balatrobot.backend import BalatroBotBackend, UnsettledStateError
 from balatro_ai_v2.balatrobot.client import BalatroBotRpcError, BalatroBotTransportError
 from balatro_ai_v2.balatrobot.runner import AuthorityRunner, NoBuySmokePolicy
-from tests.state_factory import state
+from state_factory import state
 
 
 class FakeClient:

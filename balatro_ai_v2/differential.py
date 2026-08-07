@@ -32,6 +32,16 @@ def replay_authority_trace(path: Path, candidate: GameBackend) -> DifferentialRe
     manifest_row = rows[0].get("manifest")
     if not isinstance(manifest_row, dict):
         return _failure(0, "", "manifest object", manifest_row, "invalid manifest")
+    trace_profile_mode = manifest_row.get("profile_mode")
+    candidate_profile_mode = getattr(candidate, "profile_mode", None)
+    if candidate_profile_mode is not None and trace_profile_mode != candidate_profile_mode:
+        return _failure(
+            0,
+            "/manifest/profile_mode",
+            candidate_profile_mode,
+            trace_profile_mode,
+            "candidate and authority profile modes differ",
+        )
     run_data = manifest_row.get("run")
     if not isinstance(run_data, dict):
         return _failure(0, "/manifest/run", "run object", run_data, "invalid run specification")

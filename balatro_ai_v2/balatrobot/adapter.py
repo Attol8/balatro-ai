@@ -28,6 +28,7 @@ from balatro_ai_v2.actions import (
     UseConsumable,
     is_legal,
 )
+from balatro_ai_v2.canonical import semantic_card_key
 from balatro_ai_v2.public_state import (
     DeckCardCount,
     HandCard,
@@ -246,10 +247,11 @@ def _item(raw: Mapping[str, Any]) -> PublicItem:
         raise ObservationError("joker eternal/rental modifiers must be boolean")
     if perishable is not None and (isinstance(perishable, bool) or not isinstance(perishable, int) or perishable < 0):
         raise ObservationError("joker perishable modifier must be a non-negative integer")
+    kind = _required_string(raw, "set").upper()
     return PublicItem(
-        key=_required_string(raw, "key"),
+        key=semantic_card_key(kind, _required_string(raw, "key")),
         label=_required_string(raw, "label"),
-        kind=_required_string(raw, "set").upper(),
+        kind=kind,
         effect_text=str(value.get("effect") or ""),
         edition=edition,
         eternal=eternal,

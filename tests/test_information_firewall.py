@@ -8,7 +8,7 @@ import pytest
 from balatro_ai_v2.actions import action_to_data, iter_legal_actions
 from balatro_ai_v2.balatrobot.adapter import ObservationError, to_public_observation
 from balatro_ai_v2.public_state import HiddenHandCard, PublicObservation
-from tests.state_factory import playing_card, state
+from state_factory import playing_card, state
 
 
 def test_hidden_state_twins_produce_identical_policy_input_and_actions() -> None:

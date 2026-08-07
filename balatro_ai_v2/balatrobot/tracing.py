@@ -16,7 +16,7 @@ from balatro_ai_v2.backend import BackendMetadata, RunSpec
 
 
 TRACE_SCHEMA_VERSION = 1
-CANONICAL_SCHEMA_VERSION = 1
+CANONICAL_SCHEMA_VERSION = 2
 
 
 @dataclass(frozen=True, slots=True)
@@ -39,6 +39,7 @@ class TraceManifest:
     wall_clock_limit_seconds: float | None
     launch_fast: bool
     launch_headless: bool
+    profile_mode: str
     mods: tuple[str, ...] = ()
     trace_schema_version: int = TRACE_SCHEMA_VERSION
     canonical_schema_version: int = CANONICAL_SCHEMA_VERSION
@@ -55,6 +56,7 @@ def build_manifest(
     max_settle_polls: int,
     launch_fast: bool,
     launch_headless: bool,
+    profile_mode: str,
     model_path: Path | None = None,
     inference_budget: str = "none",
     sealed_seed_manifest_digest: str | None = None,
@@ -73,6 +75,7 @@ def build_manifest(
             "inference_budget": inference_budget,
             "launch_fast": launch_fast,
             "launch_headless": launch_headless,
+            "profile_mode": profile_mode,
         }
     )
     return TraceManifest(
@@ -94,6 +97,7 @@ def build_manifest(
         wall_clock_limit_seconds=wall_clock_limit_seconds,
         launch_fast=launch_fast,
         launch_headless=launch_headless,
+        profile_mode=profile_mode,
         mods=mods,
     )
 
@@ -166,6 +170,13 @@ def read_verified_trace(path: Path) -> tuple[dict[str, Any], ...]:
         raise ValueError("trace must begin with exactly one manifest")
     if sum(row.get("event") == "manifest" for row in rows) != 1:
         raise ValueError("trace must contain exactly one manifest")
+    manifest = rows[0].get("manifest")
+    if not isinstance(manifest, dict):
+        raise ValueError("trace manifest payload is missing")
+    if manifest.get("canonical_schema_version") != CANONICAL_SCHEMA_VERSION:
+        raise ValueError("unsupported canonical schema version")
+    if manifest.get("profile_mode") not in {"all_unlocked", "career"}:
+        raise ValueError("trace manifest has no supported profile mode")
     return tuple(rows)
 
 

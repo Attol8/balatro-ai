@@ -20,14 +20,14 @@ from balatro_ai_v2.actions import (
     action_from_data,
 )
 from balatro_ai_v2.backend import RunSpec
-from tests.state_factory import state
+from state_factory import state
 
 
 def test_candidate_module_is_lazy_and_revision_is_pinned() -> None:
     assert jackdaw.JACKDAW_REVISION == "dbedc66255fe594cce7b7cccc188c8a11649d9ec"
 
 
-def test_bridge_normalization_uses_candidate_state_for_balatrobot_defaults() -> None:
+def test_bridge_normalization_preserves_candidate_round_timing() -> None:
     raw = state()
     raw["cards"]["highlighted_limit"] = 0
     raw["cards"]["cards"][0]["set"] = "ENHANCED"
@@ -54,6 +54,7 @@ def test_bridge_normalization_uses_candidate_state_for_balatrobot_defaults() -> 
             "ancient_card": {"suit": "Hearts"},
             "most_played_poker_hand": "High Card",
         },
+        "round": 1,
         "round_resets": {"hands": 4, "discards": 4},
     }
 
@@ -66,7 +67,7 @@ def test_bridge_normalization_uses_candidate_state_for_balatrobot_defaults() -> 
     assert normalized["cards"]["cards"][0]["modifier"] == []
     assert normalized["cards"]["cards"][0]["value"]["ability"] == {"x_mult": 1}
     assert normalized["round"]["ancient_suit"] == "H"
-    assert normalized["round"]["hands_left"] == 4
+    assert normalized["round"]["hands_left"] == 0
     assert normalized["used_vouchers"] == {"v_grabber": ""}
     assert "Flush Five" in normalized["hands"]
 
@@ -149,7 +150,7 @@ def test_candidate_seed_one_shop_and_pack_compatibility() -> None:
 
     assert rolled_suit == "S"
     assert shop.after.observed.canonical["round"]["ancient_suit"] == rolled_suit
-    assert shop.after.observed.canonical["packs"]["cards"][0]["key"] == "p_buffoon_normal_2"
+    assert shop.after.observed.canonical["packs"]["cards"][0]["key"] == "p_buffoon_normal"
 
     opened = backend.step(BuyPack(PackOfferSlot(1)))
     assert opened.after is not None
@@ -237,3 +238,29 @@ def test_candidate_seed_two_ante_pack_and_voucher_regression() -> None:
     grabber = states[30]
     assert grabber["round"]["hands_left"] == 5
     assert grabber["used_vouchers"] == {"v_grabber": ""}
+
+
+def test_troubadour_hand_reset_waits_for_blind_selection() -> None:
+    pytest.importorskip("jackdaw")
+    backend = jackdaw.JackdawBackend()
+    observation = backend.reset(RunSpec("RED", "WHITE", "3"))
+    actions = [
+        {"type": "select_blind"},
+        {"cards": [0, 1, 2, 3, 4], "type": "play_cards"},
+        {"type": "cash_out"},
+        {"card": 1, "mode": "store", "type": "buy_shop_card"},
+        {"pack": 0, "type": "buy_pack"},
+        {"card": 0, "targets": [], "type": "choose_pack_card"},
+        {"type": "leave_shop"},
+    ]
+    for action in actions:
+        result = backend.step(action_from_data(action))
+        assert result.after is not None
+        observation = result.after
+
+    assert observation.observed.canonical["state"] == "BLIND_SELECT"
+    assert observation.observed.canonical["round"]["hands_left"] == 4
+
+    selected = backend.step(action_from_data({"type": "select_blind"}))
+    assert selected.after is not None
+    assert selected.after.observed.canonical["round"]["hands_left"] == 3

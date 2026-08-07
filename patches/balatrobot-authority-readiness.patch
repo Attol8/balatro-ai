@@ -1,0 +1,95 @@
+diff --git a/src/lua/endpoints/cash_out.lua b/src/lua/endpoints/cash_out.lua
+index 03e7ee6..e9c5156 100644
+--- a/src/lua/endpoints/cash_out.lua
++++ b/src/lua/endpoints/cash_out.lua
+@@ -28 +28,19 @@ return {
+-    G.FUNCS.cash_out({ config = {} })
++
++    -- A prior round's standalone cash-out UIBox can remain in G.I.UIBOX.
++    -- Only the button owned by the active round evaluation is actionable.
++    local cash_out_button = nil
++    for _, box in ipairs(G.I.UIBOX) do
++      if box.config and box.config.major == G.round_eval then
++        cash_out_button = box:get_UIE_by_ID("cash_out_button")
++        if cash_out_button then break end
++      end
++    end
++    if not cash_out_button then
++      send_response({
++        message = "Current round evaluation is not ready to cash out",
++        name = BB_ERROR_NAMES.NOT_ALLOWED,
++      })
++      return
++    end
++
++    G.FUNCS.cash_out(cash_out_button)
+diff --git a/src/lua/endpoints/health.lua b/src/lua/endpoints/health.lua
+index f43b412..84a1093 100644
+--- a/src/lua/endpoints/health.lua
++++ b/src/lua/endpoints/health.lua
+@@ -30,0 +31 @@ return {
++      profile_mode = BB_SETTINGS.all_unlocked and "all_unlocked" or "career",
+diff --git a/src/lua/endpoints/play.lua b/src/lua/endpoints/play.lua
+index 2c63b56..fbb0985 100644
+--- a/src/lua/endpoints/play.lua
++++ b/src/lua/endpoints/play.lua
+@@ -137 +137,3 @@ return {
+-            if b:get_UIE_by_ID("cash_out_button") then
++            if b.config
++              and b.config.major == G.round_eval
++              and b:get_UIE_by_ID("cash_out_button") then
+diff --git a/src/lua/settings.lua b/src/lua/settings.lua
+index e92043c..58731bb 100644
+--- a/src/lua/settings.lua
++++ b/src/lua/settings.lua
+@@ -41,0 +42,3 @@ BalatroBot configure settings in Balatro using the following environment variabl
++
++  - BALATROBOT_ALL_UNLOCKED: whether to use Balatro's fully-unlocked profile semantics.
++      1 for the normal Unlock All card pool, 0 for the active career profile (default: 0)
+@@ -60,0 +64 @@ BB_SETTINGS = {
++  all_unlocked = os.getenv("BALATROBOT_ALL_UNLOCKED") == "1" or false,
+@@ -118,0 +123,39 @@ end
++--- Applies the same center flags as Balatro's normal Unlock All profile action.
++--- This is transient benchmark configuration; it does not save or mutate run state.
++---@return nil
++local function configure_all_unlocked()
++  local career_flags = {}
++  for _, pool in ipairs({ G.P_CENTERS, G.P_BLINDS, G.P_TAGS }) do
++    for _, center in pairs(pool) do
++      if not center.demo and not center.wip then
++        career_flags[#career_flags + 1] = {
++          center = center,
++          alerted = center.alerted,
++          discovered = center.discovered,
++          unlocked = center.unlocked,
++        }
++        center.alerted = true
++        center.discovered = true
++        center.unlocked = true
++      end
++    end
++  end
++
++  -- Seeded benchmark runs must not overwrite the player's career unlocks.
++  local save_progress = G.save_progress
++  G.save_progress = function(self)
++    for _, flags in ipairs(career_flags) do
++      flags.center.alerted = flags.alerted
++      flags.center.discovered = flags.discovered
++      flags.center.unlocked = flags.unlocked
++    end
++    save_progress(self)
++    for _, flags in ipairs(career_flags) do
++      flags.center.alerted = true
++      flags.center.discovered = true
++      flags.center.unlocked = true
++    end
++  end
++  sendInfoMessage("Using transient all-unlocked benchmark profile", "BB.SETTINGS")
++end
++
+@@ -263,0 +307,4 @@ BB_SETTINGS.setup = function()
++  if BB_SETTINGS.all_unlocked then
++    configure_all_unlocked()
++  end
++

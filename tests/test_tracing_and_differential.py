@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -16,7 +17,7 @@ from balatro_ai_v2.backend import (
 from balatro_ai_v2.balatrobot.tracing import AuthorityTraceWriter, TraceManifest, read_verified_trace
 from balatro_ai_v2.canonical import BalatroBotCanonicalizer
 from balatro_ai_v2.differential import replay_authority_trace
-from tests.state_factory import state
+from state_factory import state
 
 
 def _metadata() -> BackendMetadata:
@@ -50,6 +51,7 @@ def _manifest() -> TraceManifest:
         wall_clock_limit_seconds=None,
         launch_fast=True,
         launch_headless=True,
+        profile_mode="all_unlocked",
     )
 
 
@@ -78,6 +80,24 @@ def test_trace_tampering_is_detected(tmp_path: Path) -> None:
     path.write_text("\n".join(lines) + "\n")
 
     with pytest.raises(ValueError, match="hash mismatch"):
+        read_verified_trace(path)
+
+
+def test_trace_rejects_old_canonical_schema(tmp_path: Path) -> None:
+    path = tmp_path / "trace.jsonl"
+    writer = AuthorityTraceWriter(path, replace(_manifest(), canonical_schema_version=1))
+    writer.record("run_end", complete=False)
+
+    with pytest.raises(ValueError, match="canonical schema"):
+        read_verified_trace(path)
+
+
+def test_trace_rejects_missing_profile_mode(tmp_path: Path) -> None:
+    path = tmp_path / "trace.jsonl"
+    writer = AuthorityTraceWriter(path, replace(_manifest(), profile_mode=""))
+    writer.record("run_end", complete=False)
+
+    with pytest.raises(ValueError, match="profile mode"):
         read_verified_trace(path)
 
 
@@ -160,6 +180,19 @@ def test_nested_mismatch_reports_exact_json_pointer(tmp_path: Path) -> None:
     assert not report.observed_lockstep
     assert report.mismatch is not None
     assert report.mismatch.path == "/money"
+
+
+def test_candidate_profile_mode_must_match_trace(tmp_path: Path) -> None:
+    path = tmp_path / "trace.jsonl"
+    _write_complete_trace(path)
+    candidate = ReplayBackend()
+    candidate.profile_mode = "career"
+
+    report = replay_authority_trace(path, candidate)
+
+    assert not report.observed_lockstep
+    assert report.mismatch is not None
+    assert report.mismatch.path == "/manifest/profile_mode"
 
 
 def test_incomplete_authority_trace_never_passes(tmp_path: Path) -> None:

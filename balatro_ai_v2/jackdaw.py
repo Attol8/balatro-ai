@@ -13,7 +13,6 @@ from contextlib import contextmanager
 from copy import deepcopy
 from dataclasses import dataclass, field
 from threading import Lock
-from types import MethodType
 from typing import Any
 
 from balatro_ai_v2.actions import PublicAction
@@ -63,13 +62,13 @@ class JackdawUnavailable(RuntimeError):
 
 @dataclass(slots=True)
 class JackdawBackend:
+    profile_mode: str = field(default="all_unlocked", init=False)
     canonicalizer: BalatroBotCanonicalizer = field(default_factory=BalatroBotCanonicalizer)
     metadata: BackendMetadata = field(init=False)
     _backend: Any = field(init=False, repr=False)
     _rpc_error: type[Exception] = field(init=False, repr=False)
     _current: AuthorityObservation | None = field(default=None, init=False, repr=False)
     _round_targets_rolled: bool = field(default=False, init=False, repr=False)
-    _global_tw_state: list[int] | None = field(default=None, init=False, repr=False)
     _stale_shop_areas: dict[str, dict[str, Any]] | None = field(default=None, init=False, repr=False)
     _pending_ante_setup: int | None = field(default=None, init=False, repr=False)
 
@@ -100,7 +99,6 @@ class JackdawBackend:
     def reset(self, spec: RunSpec) -> AuthorityObservation:
         self.canonicalizer.reset()
         self._round_targets_rolled = False
-        self._global_tw_state = None
         self._stale_shop_areas = None
         self._pending_ante_setup = None
         self._backend.handle("menu", {})
@@ -173,7 +171,6 @@ class JackdawBackend:
         self._backend.handle("menu", {})
         self._current = None
         self._round_targets_rolled = False
-        self._global_tw_state = None
         self._stale_shop_areas = None
         self._pending_ante_setup = None
 
@@ -201,10 +198,6 @@ class JackdawBackend:
             raise RuntimeError("Jackdaw round-target state is incomplete")
         ante = int(round_resets.get("ante", 1))
         reset_round_targets(rng, ante, game_state)
-        rng_state = getattr(rng, "state", None)
-        if not isinstance(rng_state, Mapping):
-            raise RuntimeError("Jackdaw RNG state is unavailable")
-        self._global_tw_state = _tw_state_after_one_draw(rng, float(rng_state[f"cas{ante}"]))
 
     def _finish_cash_out_compatibility(self) -> None:
         """Apply vanilla's immediate public cash-out resets missing in Jackdaw."""
@@ -407,71 +400,12 @@ class JackdawBackend:
 
     @contextmanager
     def _cash_out_compatibility(self) -> Iterator[None]:
-        """Match vanilla's target timing and unseeded first-Buffoon roll."""
+        """Match vanilla's target and next-ante setup timing."""
 
-        game_state = getattr(self._backend, "_gs", None)
-        if not isinstance(game_state, Mapping):
-            raise RuntimeError("Jackdaw backend does not expose its active game state")
-        rng = game_state.get("rng")
-        if rng is None:
-            raise RuntimeError("Jackdaw RNG state is unavailable")
-
-        from jackdaw.engine import game, round_lifecycle, shop
-        from jackdaw.engine.rng import _luajit_random, _luajit_random_int, _luajit_seed
+        from jackdaw.engine import game, round_lifecycle
 
         original_reset = round_lifecycle.reset_round_targets
-        original_get_pack = shop.get_pack
         original_populate_shop = game._populate_shop
-        original_random = rng.random
-        original_element = rng.element
-        original_shuffle = rng.shuffle
-
-        def tracked_random(_rng: object, key: object, min_val: int | None = None, max_val: int | None = None) -> object:
-            result = original_random(key, min_val, max_val)
-            numeric_seed = _numeric_seed_after_call(rng, key)
-            state = _luajit_seed(numeric_seed)
-            if min_val is not None and max_val is not None:
-                _luajit_random_int(state, min_val, max_val)
-            else:
-                _luajit_random(state)
-            self._global_tw_state = state
-            return result
-
-        def tracked_element(_rng: object, table: object, seed_value: float) -> object:
-            result = original_element(table, seed_value)
-            state = _luajit_seed(seed_value)
-            _luajit_random(state)
-            self._global_tw_state = state
-            return result
-
-        def tracked_shuffle(_rng: object, values: list[object], seed_value: float) -> None:
-            original_shuffle(values, seed_value)
-            state = _luajit_seed(seed_value)
-            for upper in range(len(values), 1, -1):
-                _luajit_random_int(state, 1, upper)
-            self._global_tw_state = state
-
-        def vanilla_get_pack(
-            pack_rng: object,
-            ante: int,
-            key: str = "shop_pack",
-            *,
-            first_shop: bool = False,
-            banned_keys: set[str] | None = None,
-        ) -> str:
-            banned = banned_keys or set()
-            if first_shop and "p_buffoon_normal_1" not in banned:
-                if self._global_tw_state is None:
-                    raise RuntimeError("global LuaJIT RNG state is unavailable for first Buffoon pack")
-                variant = _luajit_random_int(self._global_tw_state, 1, 2)
-                return f"p_buffoon_normal_{variant}"
-            return original_get_pack(
-                pack_rng,
-                ante,
-                key,
-                first_shop=first_shop,
-                banned_keys=banned_keys,
-            )
 
         def vanilla_populate_shop(populate_state: dict[str, Any]) -> None:
             self._apply_pending_ante_setup(populate_state)
@@ -480,43 +414,12 @@ class JackdawBackend:
 
         with _JACKDAW_PATCH_LOCK:
             round_lifecycle.reset_round_targets = lambda *_args, **_kwargs: None
-            shop.get_pack = vanilla_get_pack
             game._populate_shop = vanilla_populate_shop
-            rng.random = MethodType(tracked_random, rng)
-            rng.element = MethodType(tracked_element, rng)
-            rng.shuffle = MethodType(tracked_shuffle, rng)
             try:
                 yield
             finally:
                 round_lifecycle.reset_round_targets = original_reset
-                shop.get_pack = original_get_pack
                 game._populate_shop = original_populate_shop
-                del rng.random
-                del rng.element
-                del rng.shuffle
-
-
-def _numeric_seed_after_call(rng: object, key: object) -> float:
-    if isinstance(key, str):
-        state = getattr(rng, "state", None)
-        hashed_seed = getattr(rng, "hashed_seed", None)
-        if not isinstance(state, Mapping) or key not in state or not isinstance(hashed_seed, float):
-            raise RuntimeError(f"Jackdaw RNG stream {key!r} is unavailable")
-        return (float(state[key]) + hashed_seed) / 2
-    if isinstance(key, int | float):
-        return float(key)
-    raise RuntimeError(f"unsupported Jackdaw RNG seed {key!r}")
-
-
-def _tw_state_after_one_draw(rng: object, stream_state: float) -> list[int]:
-    from jackdaw.engine.rng import _luajit_random, _luajit_seed
-
-    hashed_seed = getattr(rng, "hashed_seed", None)
-    if not isinstance(hashed_seed, float):
-        raise RuntimeError("Jackdaw hashed seed is unavailable")
-    state = _luajit_seed((stream_state + hashed_seed) / 2)
-    _luajit_random(state)
-    return state
 
 
 def _normalize_jackdaw_bridge(
@@ -631,11 +534,15 @@ def _normalize_jackdaw_bridge(
 
     round_state = result.get("round")
     current_round = private.get("current_round") if isinstance(private, Mapping) else None
-    round_resets = private.get("round_resets") if isinstance(private, Mapping) else None
     if isinstance(round_state, dict) and isinstance(current_round, Mapping):
-        if phase == "BLIND_SELECT" and isinstance(round_resets, Mapping):
+        if phase == "BLIND_SELECT" and private.get("round", 0) == 0:
+            round_resets = private.get("round_resets")
+            if not isinstance(round_resets, Mapping):
+                raise RuntimeError("Jackdaw initial round-reset state is unavailable")
             round_state["hands_left"] = round_resets.get("hands", round_state.get("hands_left", 0))
-            round_state["discards_left"] = round_resets.get("discards", round_state.get("discards_left", 0))
+            round_state["discards_left"] = round_resets.get(
+                "discards", round_state.get("discards_left", 0)
+            )
         ancient = current_round.get("ancient_card")
         if isinstance(ancient, Mapping) and ancient.get("suit") in _SUIT_LETTER:
             round_state["ancient_suit"] = _SUIT_LETTER[str(ancient["suit"])]

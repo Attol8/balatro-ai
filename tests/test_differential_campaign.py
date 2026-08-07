@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from balatro_ai_v2.balatrobot.tracing import _row_hash
+from balatro_ai_v2.balatrobot.tracing import CANONICAL_SCHEMA_VERSION, _row_hash
 from scripts.run_differential_campaign import summarize_trace_coverage
 
 
@@ -100,7 +100,13 @@ def _write_trace(
     transitions: list[tuple[str, dict[str, object]]],
 ) -> None:
     rows: list[dict[str, object]] = [
-        {"event": "manifest"},
+        {
+            "event": "manifest",
+            "manifest": {
+                "canonical_schema_version": CANONICAL_SCHEMA_VERSION,
+                "profile_mode": "all_unlocked",
+            },
+        },
         {"event": "run_start", "public": initial_public},
     ]
     rows.extend(

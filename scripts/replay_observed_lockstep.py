@@ -15,12 +15,24 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from balatro_ai_v2.balatrobot.backend import BalatroBotBackend
 from balatro_ai_v2.balatrobot.client import BalatroBotClient
-from balatro_ai_v2.balatrobot.process import build_launch_command, stop_balatrobot_server, wait_for_balatrobot
+from balatro_ai_v2.balatrobot.process import (
+    build_launch_command,
+    build_launch_environment,
+    require_profile_mode,
+    stop_balatrobot_server,
+    wait_for_balatrobot,
+)
+from balatro_ai_v2.balatrobot.tracing import read_verified_trace
 from balatro_ai_v2.differential import replay_authority_trace
 
 
 def main() -> None:
     args = build_parser().parse_args()
+    rows = read_verified_trace(args.trace)
+    manifest = rows[0].get("manifest")
+    if not isinstance(manifest, dict) or not isinstance(manifest.get("profile_mode"), str):
+        raise SystemExit("trace does not declare a profile mode")
+    profile_mode = manifest["profile_mode"]
     client = BalatroBotClient(host=args.host, port=args.port, timeout=args.timeout)
     process: subprocess.Popen[bytes] | None = None
     try:
@@ -32,7 +44,7 @@ def main() -> None:
                 fast_server=args.fast_server,
                 headless_server=args.headless_server,
             )
-            process = subprocess.Popen(command)
+            process = subprocess.Popen(command, env=build_launch_environment(profile_mode=profile_mode))
             wait_for_balatrobot(
                 client,
                 timeout=args.launch_timeout,
@@ -41,8 +53,8 @@ def main() -> None:
             )
             if args.post_launch_delay:
                 time.sleep(args.post_launch_delay)
-        else:
-            client.health()
+        health = client.health()
+        require_profile_mode(health, expected=profile_mode)
 
         backend = BalatroBotBackend(
             client,

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import shlex
 import subprocess
 import time
@@ -17,6 +18,7 @@ FAST_SERVER_ARGS = (
     "--animation-fps",
     "60",
 )
+PROFILE_MODES = frozenset({"all_unlocked", "career"})
 
 
 def build_launch_command(
@@ -36,6 +38,22 @@ def build_launch_command(
             command.append("--headless")
         command.extend(FAST_SERVER_ARGS)
     return command
+
+
+def build_launch_environment(*, profile_mode: str) -> dict[str, str]:
+    if profile_mode not in PROFILE_MODES:
+        raise ValueError(f"unsupported profile mode {profile_mode!r}")
+    environment = os.environ.copy()
+    environment["BALATROBOT_ALL_UNLOCKED"] = "1" if profile_mode == "all_unlocked" else "0"
+    return environment
+
+
+def require_profile_mode(health: object, *, expected: str) -> None:
+    if expected not in PROFILE_MODES:
+        raise ValueError(f"unsupported profile mode {expected!r}")
+    actual = health.get("profile_mode") if isinstance(health, dict) else None
+    if actual != expected:
+        raise RuntimeError(f"BalatroBot profile mode is {actual!r}; expected {expected!r}")
 
 
 def wait_for_balatrobot(

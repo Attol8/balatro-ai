@@ -19,7 +19,13 @@ from balatro_ai_v2.backend import RunSpec
 from balatro_ai_v2.baselines import DeterministicCoveragePolicy
 from balatro_ai_v2.balatrobot.backend import BalatroBotBackend
 from balatro_ai_v2.balatrobot.client import BalatroBotClient, BalatroBotError
-from balatro_ai_v2.balatrobot.process import build_launch_command, stop_balatrobot_server, wait_for_balatrobot
+from balatro_ai_v2.balatrobot.process import (
+    build_launch_command,
+    build_launch_environment,
+    require_profile_mode,
+    stop_balatrobot_server,
+    wait_for_balatrobot,
+)
 from balatro_ai_v2.balatrobot.runner import AuthorityRunner
 from balatro_ai_v2.balatrobot.tracing import AuthorityTraceWriter, build_manifest, read_verified_trace
 from balatro_ai_v2.differential import replay_authority_trace
@@ -28,6 +34,7 @@ from balatro_ai_v2.jackdaw import JACKDAW_REVISION, JackdawBackend, JackdawUnava
 
 def main() -> None:
     args = build_parser().parse_args()
+    profile_mode = "all_unlocked"
     if args.seeds < 1 or args.max_shop_actions < 0:
         raise SystemExit("--seeds must be positive and --max-shop-actions must be non-negative")
     root = Path(__file__).resolve().parents[1]
@@ -45,7 +52,7 @@ def main() -> None:
                 fast_server=args.fast_server,
                 headless_server=args.headless_server,
             )
-            process = subprocess.Popen(command)
+            process = subprocess.Popen(command, env=build_launch_environment(profile_mode=profile_mode))
             wait_for_balatrobot(
                 client,
                 timeout=args.launch_timeout,
@@ -54,8 +61,8 @@ def main() -> None:
             )
             if args.post_launch_delay:
                 time.sleep(args.post_launch_delay)
-        else:
-            client.health()
+        health = client.health()
+        require_profile_mode(health, expected=profile_mode)
 
         authority = BalatroBotBackend(
             client,
@@ -84,6 +91,7 @@ def main() -> None:
                 max_settle_polls=args.max_settle_polls,
                 launch_fast=args.fast_server,
                 launch_headless=args.headless_server,
+                profile_mode=profile_mode,
                 inference_budget=(
                     f"tactical_candidates<=2048;public_actions<=256;shop_actions<={args.max_shop_actions}"
                 ),

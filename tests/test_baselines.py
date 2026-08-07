@@ -17,7 +17,7 @@ from balatro_ai_v2.baselines import DeterministicCoveragePolicy, _classify
 from balatro_ai_v2.balatrobot.adapter import to_public_observation
 from balatro_ai_v2.balatrobot.runner import PublicHistoryStep
 from balatro_ai_v2.public_state import VisiblePlayingCard
-from tests.state_factory import state
+from state_factory import state
 
 
 def test_coverage_policy_is_identical_for_hidden_state_twins() -> None:

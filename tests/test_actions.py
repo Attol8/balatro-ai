@@ -24,7 +24,7 @@ from balatro_ai_v2.actions import (
     iter_legal_actions,
 )
 from balatro_ai_v2.balatrobot.adapter import IllegalPublicAction, action_to_rpc, to_public_observation
-from tests.state_factory import item_card, playing_card, state
+from state_factory import item_card, playing_card, state
 
 
 @pytest.mark.parametrize(

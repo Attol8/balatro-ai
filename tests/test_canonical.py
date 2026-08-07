@@ -5,7 +5,8 @@ from copy import deepcopy
 import pytest
 
 from balatro_ai_v2.canonical import BalatroBotCanonicalizer, CanonicalizationError
-from tests.state_factory import state
+from balatro_ai_v2.balatrobot.adapter import to_public_observation
+from state_factory import state
 
 
 def test_raw_ids_and_presentation_text_do_not_affect_semantic_state() -> None:
@@ -37,6 +38,27 @@ def test_order_and_mutable_ability_are_semantic() -> None:
 
     assert BalatroBotCanonicalizer().canonicalize(reordered).canonical_digest != baseline
     assert BalatroBotCanonicalizer().canonicalize(mutated).canonical_digest != baseline
+
+
+def test_numbered_booster_artwork_is_not_policy_or_semantic_state() -> None:
+    first = state("SHOP")
+    second = deepcopy(first)
+    second["packs"]["cards"][0]["key"] = "p_buffoon_normal_2"
+    second["packs"]["cards"][0]["id"] += 100
+
+    first_canonical = BalatroBotCanonicalizer().canonicalize(first).canonical
+    second_canonical = BalatroBotCanonicalizer().canonicalize(second).canonical
+
+    assert first_canonical == second_canonical
+    assert to_public_observation(first) == to_public_observation(second)
+    assert to_public_observation(first).packs[0].key == "p_buffoon_normal"
+
+    custom = deepcopy(first)
+    custom["packs"]["cards"][0]["key"] = "p_custom_rule_2"
+    assert to_public_observation(custom).packs[0].key == "p_custom_rule_2"
+    unknown_vanilla_like = deepcopy(first)
+    unknown_vanilla_like["packs"]["cards"][0]["key"] = "p_buffoon_jumbo_2"
+    assert to_public_observation(unknown_vanilla_like).packs[0].key == "p_buffoon_jumbo_2"
 
 
 def test_entity_identity_survives_area_movement() -> None:
