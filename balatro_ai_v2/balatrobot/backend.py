@@ -33,6 +33,7 @@ _PACK_PHASES = {
     "STANDARD_PACK",
     "BUFFOON_PACK",
 }
+_PACK_PHASES_WITH_VISIBLE_HAND = {"TAROT_PACK", "SPECTRAL_PACK"}
 _STABLE_PHASES = {"BLIND_SELECT", "ROUND_EVAL", "GAME_OVER"}
 
 
@@ -176,7 +177,9 @@ def _is_ready(state: dict[str, Any]) -> bool:
             _area_ready(state, area, require_cards=True) for area in areas
         )
     if phase in _PACK_PHASES:
-        return _area_ready(state, "pack", require_cards=True)
+        if not _area_ready(state, "pack", require_cards=True):
+            return False
+        return phase not in _PACK_PHASES_WITH_VISIBLE_HAND or _area_ready(state, "hand", require_cards=True)
     return False
 
 

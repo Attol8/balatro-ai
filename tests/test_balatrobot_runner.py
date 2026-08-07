@@ -75,6 +75,21 @@ def test_backend_never_settles_a_shop_missing_public_areas() -> None:
         backend.reset(RunSpec("RED", "WHITE", "1"))
 
 
+def test_backend_waits_for_visible_hand_in_targeted_pack() -> None:
+    opening = state("SPECTRAL_PACK")
+    ready = deepcopy(opening)
+    dealt = state("SELECTING_HAND")
+    ready["hand"] = dealt["hand"]
+    ready["cards"] = dealt["cards"]
+    client = FakeClient(opening, polls=[ready, ready])
+    backend = BalatroBotBackend(client, settle_poll_delay=0)  # type: ignore[arg-type]
+
+    observation = backend.reset(RunSpec("RED", "WHITE", "1"))
+
+    assert len(observation.polls) == 3
+    assert len(observation.observed.canonical["hand"]["cards"]) == 3
+
+
 def test_rejected_action_stays_rejected_and_is_not_replaced_by_polling() -> None:
     initial = state()
     client = FakeClient(

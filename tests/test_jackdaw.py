@@ -17,6 +17,7 @@ from balatro_ai_v2.actions import (
     SelectBlind,
     ShopSlot,
     SkipPack,
+    action_from_data,
 )
 from balatro_ai_v2.backend import RunSpec
 from tests.state_factory import state
@@ -29,6 +30,7 @@ def test_candidate_module_is_lazy_and_revision_is_pinned() -> None:
 def test_bridge_normalization_uses_candidate_state_for_balatrobot_defaults() -> None:
     raw = state()
     raw["cards"]["highlighted_limit"] = 0
+    raw["cards"]["cards"][0]["set"] = "ENHANCED"
     raw["cards"]["cards"][0]["cost"] = {"buy": 0, "sell": 0}
     raw["cards"]["cards"][0]["state"] = {"hidden": False, "debuff": False, "highlight": False}
     raw["cards"]["cards"][0]["modifier"] = {"edition": None, "eternal": False}
@@ -38,6 +40,7 @@ def test_bridge_normalization_uses_candidate_state_for_balatrobot_defaults() -> 
     raw["round"].pop("most_played_poker_hand")
     raw["round"]["hands_left"] = 0
     raw["round"]["discards_left"] = 0
+    raw["used_vouchers"] = {"v_grabber": True}
     private = {
         "deck": [SimpleNamespace(ability={"x_mult": 1}) for _ in raw["cards"]["cards"]],
         "hand": [],
@@ -64,6 +67,7 @@ def test_bridge_normalization_uses_candidate_state_for_balatrobot_defaults() -> 
     assert normalized["cards"]["cards"][0]["value"]["ability"] == {"x_mult": 1}
     assert normalized["round"]["ancient_suit"] == "H"
     assert normalized["round"]["hands_left"] == 4
+    assert normalized["used_vouchers"] == {"v_grabber": ""}
     assert "Flush Five" in normalized["hands"]
 
 
@@ -161,3 +165,75 @@ def test_candidate_seed_one_shop_and_pack_compatibility() -> None:
     assert next_blind.after.observed.canonical["state"] == "BLIND_SELECT"
     assert next_blind.after.observed.canonical["shop"]["count"] == 1
     assert next_blind.after.observed.canonical["shop"]["cards"] == []
+
+
+def test_candidate_seed_two_ante_pack_and_voucher_regression() -> None:
+    pytest.importorskip("jackdaw")
+    actions = [
+        {"type": "select_blind"},
+        {"cards": [3, 4, 0, 2], "type": "discard_cards"},
+        {"cards": [1, 3, 5, 6, 7], "type": "play_cards"},
+        {"cards": [6, 3, 4, 1], "type": "discard_cards"},
+        {"cards": [0, 1, 2, 3, 4], "type": "play_cards"},
+        {"type": "cash_out"},
+        {"pack": 0, "type": "buy_pack"},
+        {"card": 0, "targets": [], "type": "choose_pack_card"},
+        {"type": "leave_shop"},
+        {"type": "skip_blind"},
+        {"type": "select_blind"},
+        {"cards": [7, 5, 4, 1, 2], "type": "discard_cards"},
+        {"cards": [6, 5, 0, 2], "type": "discard_cards"},
+        {"cards": [0, 3, 4, 5, 6], "type": "play_cards"},
+        {"cards": [0, 1, 2, 4, 5], "type": "play_cards"},
+        {"cards": [0, 1, 2, 4, 5], "type": "play_cards"},
+        {"cards": [1, 3, 4, 5, 6], "type": "play_cards"},
+        {"type": "cash_out"},
+        {"pack": 0, "type": "buy_pack"},
+        {"card": 1, "targets": [], "type": "choose_pack_card"},
+        {"card": 1, "mode": "store", "type": "buy_shop_card"},
+        {"type": "leave_shop"},
+        {"type": "skip_blind"},
+        {"type": "skip_blind"},
+        {"type": "select_blind"},
+        {"cards": [6, 4, 2, 3, 0], "type": "discard_cards"},
+        {"cards": [0, 2, 3, 6, 7], "type": "play_cards"},
+        {"type": "cash_out"},
+        {"pack": 0, "type": "buy_pack"},
+        {"type": "skip_pack"},
+        {"type": "buy_voucher", "voucher": 0},
+    ]
+    backend = jackdaw.JackdawBackend()
+    backend.reset(RunSpec("RED", "WHITE", "2"))
+    states = []
+    for action in actions:
+        result = backend.step(action_from_data(action))
+        assert result.after is not None
+        states.append(result.after.observed.canonical)
+
+    boss_eval = states[16]
+    assert boss_eval["ante_num"] == 2
+    assert boss_eval["round"]["most_played_poker_hand"] == "Flush"
+    assert {key: boss_eval["blinds"][key]["status"] for key in ("small", "big", "boss")} == {
+        "small": "DEFEATED",
+        "big": "SKIPPED",
+        "boss": "DEFEATED",
+    }
+
+    next_ante_shop = states[17]
+    assert next_ante_shop["money"] == 36
+    assert next_ante_shop["blinds"]["big"]["tag_name"] == "Economy Tag"
+    assert next_ante_shop["blinds"]["boss"]["name"] == "The Fish"
+    assert next_ante_shop["vouchers"]["cards"][0]["key"] == "v_blank"
+
+    standard_pick = states[19]
+    assert standard_pick["cards"]["limit"] == 53
+    assert standard_pick["cards"]["cards"][0]["id"] == "spawn:13:DEFAULT:C_7"
+
+    spectral_pack = states[28]
+    assert spectral_pack["state"] == "SPECTRAL_PACK"
+    assert len(spectral_pack["hand"]["cards"]) == 8
+    assert len(spectral_pack["cards"]["cards"]) == 45
+
+    grabber = states[30]
+    assert grabber["round"]["hands_left"] == 5
+    assert grabber["used_vouchers"] == {"v_grabber": ""}

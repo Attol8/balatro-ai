@@ -12,6 +12,7 @@ from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from copy import deepcopy
 from dataclasses import dataclass, field
+from threading import Lock
 from types import MethodType
 from typing import Any
 
@@ -28,6 +29,7 @@ from balatro_ai_v2.canonical import BalatroBotCanonicalizer
 
 
 JACKDAW_REVISION = "dbedc66255fe594cce7b7cccc188c8a11649d9ec"
+_JACKDAW_PATCH_LOCK = Lock()
 
 _SECRET_HANDS = {
     "Flush Five": {"order": 1, "level": 1, "chips": 160, "mult": 16, "played": 0, "played_this_round": 0},
@@ -69,6 +71,7 @@ class JackdawBackend:
     _round_targets_rolled: bool = field(default=False, init=False, repr=False)
     _global_tw_state: list[int] | None = field(default=None, init=False, repr=False)
     _stale_shop_areas: dict[str, dict[str, Any]] | None = field(default=None, init=False, repr=False)
+    _pending_ante_setup: int | None = field(default=None, init=False, repr=False)
 
     def __post_init__(self) -> None:
         try:
@@ -99,6 +102,7 @@ class JackdawBackend:
         self._round_targets_rolled = False
         self._global_tw_state = None
         self._stale_shop_areas = None
+        self._pending_ante_setup = None
         self._backend.handle("menu", {})
         raw = self._backend.handle(
             "start",
@@ -119,8 +123,13 @@ class JackdawBackend:
         method, params = action_to_rpc(action, to_public_observation(raw_before))
         if method == "next_round":
             self._stale_shop_areas = _empty_shop_areas(raw_before)
+        standard_pack_card = self._selected_standard_pack_card(method, params)
+        voucher_effect = self._selected_voucher_effect(method, params)
         try:
-            if method == "cash_out" and self._round_targets_rolled:
+            if method == "play":
+                with self._round_end_compatibility():
+                    raw_after = self._backend.handle(method, params)
+            elif method == "cash_out" and self._round_targets_rolled:
                 with self._cash_out_compatibility():
                     raw_after = self._backend.handle(method, params)
                 self._finish_cash_out_compatibility()
@@ -140,6 +149,10 @@ class JackdawBackend:
                 after=None,
                 error=str(exc),
             )
+        if standard_pack_card is not None and self._place_standard_pack_card(standard_pack_card):
+            raw_after = self._backend.handle("gamestate", {})
+        if voucher_effect is not None and self._apply_immediate_voucher_effect(voucher_effect):
+            raw_after = self._backend.handle("gamestate", {})
         if method == "play" and raw_after.get("state") == "ROUND_EVAL":
             self._roll_round_targets()
             self._round_targets_rolled = True
@@ -162,6 +175,7 @@ class JackdawBackend:
         self._round_targets_rolled = False
         self._global_tw_state = None
         self._stale_shop_areas = None
+        self._pending_ante_setup = None
 
     def _observation(self, raw: dict[str, Any]) -> AuthorityObservation:
         # Both adapters must pass independently.  The public conversion catches
@@ -214,6 +228,183 @@ class JackdawBackend:
         )
         game_state["chips"] = 0
 
+    def _selected_standard_pack_card(self, method: str, params: Mapping[str, Any]) -> object | None:
+        """Capture a Standard-pack pick before Jackdaw removes it from the pack."""
+
+        if method != "pack":
+            return None
+        index = params.get("card")
+        if not isinstance(index, int) or isinstance(index, bool):
+            return None
+        game_state = getattr(self._backend, "_gs", None)
+        if not isinstance(game_state, Mapping):
+            raise RuntimeError("Jackdaw backend does not expose its active game state")
+        pack_cards = game_state.get("pack_cards")
+        if not isinstance(pack_cards, list) or not 0 <= index < len(pack_cards):
+            return None
+        card = pack_cards[index]
+        ability = getattr(card, "ability", None)
+        card_set = ability.get("set") if isinstance(ability, Mapping) else None
+        return card if card_set in {"Default", "Enhanced"} else None
+
+    def _selected_voucher_effect(
+        self,
+        method: str,
+        params: Mapping[str, Any],
+    ) -> tuple[str, int, int] | None:
+        """Capture immediate public counter changes missing from Jackdaw vouchers."""
+
+        if method != "buy":
+            return None
+        index = params.get("voucher")
+        if not isinstance(index, int) or isinstance(index, bool):
+            return None
+        game_state = getattr(self._backend, "_gs", None)
+        if not isinstance(game_state, Mapping):
+            raise RuntimeError("Jackdaw backend does not expose its active game state")
+        vouchers = game_state.get("shop_vouchers")
+        current_round = game_state.get("current_round")
+        if not isinstance(vouchers, list) or not 0 <= index < len(vouchers):
+            return None
+        if not isinstance(current_round, Mapping):
+            raise RuntimeError("Jackdaw current-round state is unavailable before voucher purchase")
+        key = getattr(vouchers[index], "center_key", "")
+        effects = {
+            "v_grabber": ("hands_left", 1),
+            "v_nacho_tong": ("hands_left", 1),
+            "v_wasteful": ("discards_left", 1),
+            "v_recyclomancy": ("discards_left", 1),
+            "v_hieroglyph": ("hands_left", -1),
+        }
+        effect = effects.get(key)
+        if effect is None:
+            return None
+        field, delta = effect
+        before = current_round.get(field)
+        if not isinstance(before, int):
+            raise RuntimeError(f"Jackdaw current-round {field} is unavailable before voucher purchase")
+        return field, before, delta
+
+    def _apply_immediate_voucher_effect(self, effect: tuple[str, int, int]) -> bool:
+        field, before, delta = effect
+        game_state = getattr(self._backend, "_gs", None)
+        if not isinstance(game_state, Mapping):
+            raise RuntimeError("Jackdaw backend does not expose its active game state")
+        current_round = game_state.get("current_round")
+        if not isinstance(current_round, dict):
+            raise RuntimeError("Jackdaw current-round state is unavailable after voucher purchase")
+        actual = current_round.get(field)
+        expected = before + delta
+        if actual == expected:
+            return False
+        if actual != before:
+            raise RuntimeError(f"Jackdaw {field} changed unexpectedly during voucher purchase")
+        current_round[field] = expected
+        return True
+
+    def _place_standard_pack_card(self, card: object) -> bool:
+        """Match ``G.deck:emplace``: a picked playing card goes to the deck front."""
+
+        game_state = getattr(self._backend, "_gs", None)
+        if not isinstance(game_state, Mapping):
+            raise RuntimeError("Jackdaw backend does not expose its active game state")
+        deck = game_state.get("deck")
+        if not isinstance(deck, list):
+            raise RuntimeError("Jackdaw deck state is unavailable after Standard-pack pick")
+        indices = [index for index, candidate in enumerate(deck) if candidate is card]
+        if len(indices) != 1:
+            raise RuntimeError("Jackdaw did not add the selected Standard-pack card exactly once")
+        playing_cards_count = game_state.get("playing_cards_count")
+        if not isinstance(playing_cards_count, int):
+            raise RuntimeError("Jackdaw playing-card count is unavailable after Standard-pack pick")
+        piles = (deck, game_state.get("hand"), game_state.get("discard_pile"))
+        if not all(isinstance(pile, list) for pile in piles):
+            raise RuntimeError("Jackdaw playing-card piles are unavailable after Standard-pack pick")
+        expected_count = sum(len(pile) for pile in piles)
+        changed = playing_cards_count != expected_count
+        game_state["playing_cards_count"] = expected_count
+        index = indices[0]
+        if index == 0:
+            return changed
+        deck.insert(0, deck.pop(index))
+        return True
+
+    @contextmanager
+    def _round_end_compatibility(self) -> Iterator[None]:
+        """Keep next-ante blind setup in vanilla's split round-end/cash-out order."""
+
+        from jackdaw.engine import game
+
+        with _JACKDAW_PATCH_LOCK:
+            original_advance_ante = game._advance_ante
+            game._advance_ante = self._advance_ante_at_round_end
+            try:
+                yield
+            finally:
+                game._advance_ante = original_advance_ante
+
+    def _advance_ante_at_round_end(self, game_state: dict[str, Any]) -> None:
+        from jackdaw.engine.vouchers import get_next_voucher_key
+
+        hand_levels = game_state.get("hand_levels")
+        current_round = game_state.get("current_round")
+        round_resets = game_state.get("round_resets")
+        rng = game_state.get("rng")
+        if hand_levels is None or not isinstance(current_round, dict):
+            raise RuntimeError("Jackdaw hand-level state is unavailable at ante advance")
+        if not isinstance(round_resets, dict) or rng is None:
+            raise RuntimeError("Jackdaw ante/RNG state is unavailable at ante advance")
+        if self._pending_ante_setup is not None:
+            raise RuntimeError(f"Jackdaw ante {self._pending_ante_setup} setup is already pending")
+
+        most_played = hand_levels.most_played()
+        current_round["most_played_poker_hand"] = most_played.value
+        round_resets["ante"] += 1
+        ante = int(round_resets["ante"])
+        used_vouchers = {key: True for key in game_state.get("used_vouchers", [])}
+        current_round["voucher"] = get_next_voucher_key(
+            rng,
+            used_vouchers,
+            in_shop=None,
+            ante=ante,
+        )
+        self._pending_ante_setup = ante
+
+    def _apply_pending_ante_setup(self, game_state: dict[str, Any]) -> None:
+        pending_ante = self._pending_ante_setup
+        if pending_ante is None:
+            return
+
+        from jackdaw.engine.blind import get_new_boss
+        from jackdaw.engine.pools import pick_card_from_pool
+
+        round_resets = game_state["round_resets"]
+        ante = int(round_resets["ante"])
+        if ante != pending_ante:
+            raise RuntimeError(f"pending ante {pending_ante} does not match active ante {ante}")
+        rng = game_state.get("rng")
+        if rng is None:
+            raise RuntimeError("Jackdaw RNG state is unavailable for ante setup")
+        used_vouchers = set(game_state.get("used_vouchers", []))
+        round_resets["blind_ante"] = ante
+        round_resets["blind_tags"] = {
+            "Small": pick_card_from_pool("Tag", rng, ante, used_vouchers=used_vouchers),
+            "Big": pick_card_from_pool("Tag", rng, ante, used_vouchers=used_vouchers),
+        }
+        round_resets["blind_choices"]["Boss"] = get_new_boss(
+            ante,
+            game_state.setdefault("bosses_used", {}),
+            rng,
+            win_ante=game_state.get("win_ante", 8),
+        )
+        round_resets["blind_states"] = {
+            "Small": "Upcoming",
+            "Big": "Upcoming",
+            "Boss": "Upcoming",
+        }
+        round_resets["boss_rerolled"] = False
+        game_state["blind_on_deck"] = "Small"
+
     @contextmanager
     def _cash_out_compatibility(self) -> Iterator[None]:
         """Match vanilla's target timing and unseeded first-Buffoon roll."""
@@ -225,11 +416,12 @@ class JackdawBackend:
         if rng is None:
             raise RuntimeError("Jackdaw RNG state is unavailable")
 
-        from jackdaw.engine import round_lifecycle, shop
+        from jackdaw.engine import game, round_lifecycle, shop
         from jackdaw.engine.rng import _luajit_random, _luajit_random_int, _luajit_seed
 
         original_reset = round_lifecycle.reset_round_targets
         original_get_pack = shop.get_pack
+        original_populate_shop = game._populate_shop
         original_random = rng.random
         original_element = rng.element
         original_shuffle = rng.shuffle
@@ -281,19 +473,27 @@ class JackdawBackend:
                 banned_keys=banned_keys,
             )
 
-        round_lifecycle.reset_round_targets = lambda *_args, **_kwargs: None
-        shop.get_pack = vanilla_get_pack
-        rng.random = MethodType(tracked_random, rng)
-        rng.element = MethodType(tracked_element, rng)
-        rng.shuffle = MethodType(tracked_shuffle, rng)
-        try:
-            yield
-        finally:
-            round_lifecycle.reset_round_targets = original_reset
-            shop.get_pack = original_get_pack
-            del rng.random
-            del rng.element
-            del rng.shuffle
+        def vanilla_populate_shop(populate_state: dict[str, Any]) -> None:
+            self._apply_pending_ante_setup(populate_state)
+            original_populate_shop(populate_state)
+            self._pending_ante_setup = None
+
+        with _JACKDAW_PATCH_LOCK:
+            round_lifecycle.reset_round_targets = lambda *_args, **_kwargs: None
+            shop.get_pack = vanilla_get_pack
+            game._populate_shop = vanilla_populate_shop
+            rng.random = MethodType(tracked_random, rng)
+            rng.element = MethodType(tracked_element, rng)
+            rng.shuffle = MethodType(tracked_shuffle, rng)
+            try:
+                yield
+            finally:
+                round_lifecycle.reset_round_targets = original_reset
+                shop.get_pack = original_get_pack
+                game._populate_shop = original_populate_shop
+                del rng.random
+                del rng.element
+                del rng.shuffle
 
 
 def _numeric_seed_after_call(rng: object, key: object) -> float:
@@ -332,6 +532,9 @@ def _normalize_jackdaw_bridge(
 
     result = deepcopy(raw)
     private = game_state if isinstance(game_state, Mapping) else {}
+    used_vouchers = result.get("used_vouchers")
+    if isinstance(used_vouchers, Mapping):
+        result["used_vouchers"] = {str(key): "" for key in used_vouchers}
     phase = result.get("state")
     if phase == "SMODS_BOOSTER_OPENED":
         pack_type = private.get("pack_type")
@@ -341,9 +544,16 @@ def _normalize_jackdaw_bridge(
 
     for name in _OPTIONAL_AREAS:
         area = result.get(name)
-        relevant = (phase == "SHOP" and name in {"shop", "vouchers", "packs"}) or (
-            phase in {"SMODS_BOOSTER_OPENED", "PLANET_PACK", "TAROT_PACK", "SPECTRAL_PACK", "STANDARD_PACK", "BUFFOON_PACK"}
-            and name == "pack"
+        in_pack = phase in {
+            "SMODS_BOOSTER_OPENED",
+            "PLANET_PACK",
+            "TAROT_PACK",
+            "SPECTRAL_PACK",
+            "STANDARD_PACK",
+            "BUFFOON_PACK",
+        }
+        relevant = ((phase == "SHOP" or in_pack) and name in {"shop", "vouchers", "packs"}) or (
+            in_pack and name == "pack"
         )
         if isinstance(area, Mapping) and not area.get("cards") and not relevant:
             result.pop(name, None)
@@ -411,7 +621,7 @@ def _normalize_jackdaw_bridge(
             value = card.get("value")
             if isinstance(value, dict):
                 _apply_balatrobot_card_values(value, private_card)
-            if str(card.get("set") or "").upper() == "DEFAULT":
+            if str(card.get("set") or "").upper() in {"DEFAULT", "ENHANCED"}:
                 card["cost"] = {"buy": 1, "sell": 1}
 
     hands = result.get("hands")
