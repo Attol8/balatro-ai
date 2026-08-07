@@ -1,0 +1,188 @@
+"""BalatroBot as the observed-state authority."""
+
+from __future__ import annotations
+
+import json
+import hashlib
+import time
+from dataclasses import dataclass, field
+from typing import Any, Callable
+
+from balatro_ai_v2.actions import PublicAction
+from balatro_ai_v2.backend import (
+    AuthorityObservation,
+    BackendCapabilities,
+    BackendMetadata,
+    RunSpec,
+    StepResult,
+)
+from balatro_ai_v2.balatrobot.adapter import action_to_rpc, to_public_observation
+from balatro_ai_v2.balatrobot.client import (
+    BalatroBotClient,
+    BalatroBotRpcError,
+    BalatroBotTransportError,
+)
+from balatro_ai_v2.canonical import BalatroBotCanonicalizer
+
+
+_PACK_PHASES = {
+    "SMODS_BOOSTER_OPENED",
+    "PLANET_PACK",
+    "TAROT_PACK",
+    "SPECTRAL_PACK",
+    "STANDARD_PACK",
+    "BUFFOON_PACK",
+}
+_STABLE_PHASES = {"BLIND_SELECT", "ROUND_EVAL", "GAME_OVER"}
+
+
+class UnsettledStateError(RuntimeError):
+    """The real game never reached a stable decision boundary."""
+
+
+@dataclass(slots=True)
+class BalatroBotBackend:
+    client: BalatroBotClient
+    max_settle_polls: int = 40
+    settle_poll_delay: float = 0.02
+    sleep: Callable[[float], None] = time.sleep
+    backend_version: str = "unknown"
+    game_version: str | None = None
+    runtime_version: str | None = None
+    canonicalizer: BalatroBotCanonicalizer = field(default_factory=BalatroBotCanonicalizer)
+    metadata: BackendMetadata = field(init=False)
+    _current: AuthorityObservation | None = field(default=None, init=False, repr=False)
+
+    def __post_init__(self) -> None:
+        if self.max_settle_polls < 1:
+            raise ValueError("max_settle_polls must be positive")
+        self.metadata = BackendMetadata(
+            backend_name="BalatroBot/LÖVE",
+            backend_version=self.backend_version,
+            adapter_version="1",
+            game_version=self.game_version,
+            runtime_version=self.runtime_version,
+            capabilities=BackendCapabilities(
+                authoritative=True,
+                complete_private_state=False,
+                snapshot=False,
+                restore=False,
+                batch_rollout=False,
+            ),
+        )
+
+    def reset(self, spec: RunSpec) -> AuthorityObservation:
+        self.canonicalizer.reset()
+        self.client.menu()
+        initial = self.client.start(deck=spec.deck, stake=spec.stake, seed=spec.seed)
+        self._current = self._settle(initial)
+        return self._current
+
+    def observe(self) -> AuthorityObservation:
+        self._current = self._settle(self.client.gamestate())
+        return self._current
+
+    def step(self, action: PublicAction) -> StepResult:
+        if self._current is None:
+            raise RuntimeError("reset must be called before step")
+        before = self._current
+        raw_before = json.loads(before.observed.raw_json)
+        public_before = to_public_observation(raw_before)
+        method, params = action_to_rpc(action, public_before)
+        try:
+            rpc_state = self.client.call_action(method, params)
+        except BalatroBotRpcError as exc:
+            return StepResult(
+                status="rejected",
+                action=action,
+                before=before,
+                rpc_method=method,
+                rpc_params=params,
+                rpc_observations=(),
+                after=None,
+                error=str(exc),
+            )
+        except BalatroBotTransportError as exc:
+            return StepResult(
+                status="transport_error",
+                action=action,
+                before=before,
+                rpc_method=method,
+                rpc_params=params,
+                rpc_observations=(),
+                after=None,
+                error=str(exc),
+            )
+
+        after = self._settle(rpc_state)
+        self._current = after
+        return StepResult(
+            status="accepted",
+            action=action,
+            before=before,
+            rpc_method=method,
+            rpc_params=params,
+            rpc_observations=after.polls,
+            after=after,
+        )
+
+    def close(self) -> None:
+        return None
+
+    def _settle(self, initial: dict[str, Any]) -> AuthorityObservation:
+        captured: list[str] = []
+        previous_ready_digest: str | None = None
+        state = initial
+        for poll_index in range(self.max_settle_polls + 1):
+            raw_json = json.dumps(
+                state,
+                sort_keys=True,
+                separators=(",", ":"),
+                ensure_ascii=False,
+                allow_nan=False,
+            )
+            captured.append(raw_json)
+            if _is_ready(state):
+                ready_digest = hashlib.sha256(raw_json.encode("utf-8")).hexdigest()
+                if ready_digest == previous_ready_digest:
+                    # Validate the information firewall at the boundary, before
+                    # any policy can see the state.
+                    to_public_observation(state)
+                    observed = self.canonicalizer.canonicalize(state)
+                    return AuthorityObservation(observed=observed, settled=True, polls=tuple(captured))
+                previous_ready_digest = ready_digest
+            else:
+                previous_ready_digest = None
+
+            if poll_index == self.max_settle_polls:
+                break
+            if self.settle_poll_delay > 0:
+                self.sleep(self.settle_poll_delay)
+            state = self.client.gamestate()
+        raise UnsettledStateError(
+            f"state did not settle after {self.max_settle_polls} polls; last phase={state.get('state')!r}"
+        )
+
+
+def _is_ready(state: dict[str, Any]) -> bool:
+    phase = state.get("state")
+    if phase in _STABLE_PHASES:
+        return True
+    if phase == "SELECTING_HAND":
+        return _area_ready(state, "hand", require_cards=True)
+    if phase == "SHOP":
+        areas = ("shop", "packs", "vouchers")
+        return all(_area_ready(state, area, require_cards=False) for area in areas if area in state) and any(
+            _area_ready(state, area, require_cards=True) for area in areas if area in state
+        )
+    if phase in _PACK_PHASES:
+        return _area_ready(state, "pack", require_cards=True)
+    return False
+
+
+def _area_ready(state: dict[str, Any], name: str, *, require_cards: bool) -> bool:
+    area = state.get(name)
+    if not isinstance(area, dict) or not isinstance(area.get("cards"), list):
+        return False
+    cards = area["cards"]
+    return area.get("count") == len(cards) and (bool(cards) or not require_cards)

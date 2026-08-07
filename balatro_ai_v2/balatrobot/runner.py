@@ -1,334 +1,200 @@
+"""Policy runner that never exposes privileged authority state."""
+
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from time import sleep
-from typing import Any
-from uuid import uuid4
+import json
+from collections.abc import Callable, Iterator
+from dataclasses import dataclass
+from typing import Protocol
 
-from balatro_ai_v2.actions import ActionKind, GameAction
-from balatro_ai_v2.balatrobot.client import BalatroBotClient, BalatroBotError
-from balatro_ai_v2.balatrobot.policy import BalatroBotPolicy
-from balatro_ai_v2.balatrobot.tracing import JsonlTraceWriter, action_payload
+from balatro_ai_v2.actions import (
+    CashOut,
+    HandSlot,
+    LeaveShop,
+    PlayCards,
+    PublicAction,
+    SelectBlind,
+    SkipPack,
+    action_to_data,
+    is_legal,
+    iter_legal_actions,
+)
+from balatro_ai_v2.backend import AuthorityObservation, GameBackend, RunSpec
+from balatro_ai_v2.balatrobot.adapter import to_public_observation
+from balatro_ai_v2.balatrobot.backend import UnsettledStateError
+from balatro_ai_v2.balatrobot.tracing import AuthorityTraceWriter
+from balatro_ai_v2.public_state import Phase, PublicObservation
+
+
+ActionSource = Callable[[], Iterator[PublicAction]]
 
 
 @dataclass(frozen=True, slots=True)
-class BalatroBotRunResult:
+class PublicHistoryStep:
+    before: PublicObservation
+    action: PublicAction
+    after: PublicObservation
+
+
+class PublicPolicy(Protocol):
+    def choose_action(
+        self,
+        observation: PublicObservation,
+        legal_actions: ActionSource,
+        history: tuple[PublicHistoryStep, ...],
+    ) -> PublicAction: ...
+
+
+@dataclass(frozen=True, slots=True)
+class RunResult:
+    complete: bool
     won: bool
     ante: int
-    round_num: int
-    steps: int
-    seed: str
-    final_state: dict[str, Any]
+    round_no: int
+    decisions: int
+    rejected_decisions: int
+    terminal_reason: str
+    final_observation: PublicObservation | None
 
 
 @dataclass(slots=True)
-class BalatroBotRunner:
-    client: BalatroBotClient
-    policy: BalatroBotPolicy = field(default_factory=BalatroBotPolicy)
-    trace: bool = False
-    trace_writer: JsonlTraceWriter | None = None
-    poll_delay: float = 0.02
-    retry_delay: float = 0.05
-    pack_in_progress_retries: int = 10
-    shop_settle_retries: int = 8
-    use_refusal_retries: int = 3
-    _run_id: str = field(default="", init=False)
-    _pack_retry_counts: dict[tuple[Any, ...], int] = field(default_factory=dict, init=False)
-    _shop_settle_count: int = field(default=0, init=False)
-    _use_refusal_counts: dict[str, int] = field(default_factory=dict, init=False)
-    _last_hand_fingerprint: tuple[Any, ...] | None = field(default=None, init=False)
-    _hand_settle_count: int = field(default=0, init=False)
+class AuthorityRunner:
+    backend: GameBackend
+    policy: PublicPolicy
+    max_decisions: int = 800
+    trace: AuthorityTraceWriter | None = None
 
-    def start_run(self, *, deck: str = "RED", stake: str = "WHITE", seed: str | None = None) -> dict[str, Any]:
-        self.client.menu()
-        return self.client.start(deck=deck, stake=stake, seed=seed)
-
-    def play_run(
-        self,
-        *,
-        deck: str = "RED",
-        stake: str = "WHITE",
-        seed: str | None = None,
-        max_steps: int = 800,
-    ) -> BalatroBotRunResult:
-        self._run_id = f"{deck}:{stake}:{seed or ''}:{uuid4().hex}"
-        self._pack_retry_counts.clear()
-        state = self.start_run(deck=deck, stake=stake, seed=seed)
-        self._record("run_start", state=state, deck=deck, stake=stake, requested_seed=seed)
-        steps = 0
-        while state.get("state") != "GAME_OVER" and steps < max_steps:
-            if self.trace:
-                print(_trace_state(state))
-            state = self.step_state(state)
-            steps += 1
-        if self.trace:
-            print(_trace_state(state))
-        self._record("run_end", state=state, steps=steps)
-        return BalatroBotRunResult(
-            won=bool(state.get("won")),
-            ante=int(state.get("ante_num") or 0),
-            round_num=int(state.get("round_num") or 0),
-            steps=steps,
-            seed=str(state.get("seed") or seed or ""),
-            final_state=state,
-        )
-
-    def step_state(self, state: dict[str, Any]) -> dict[str, Any]:
-        action: dict[str, Any]
-        match state.get("state"):
-            case "BLIND_SELECT":
-                game_action = self.policy.blind_action(state)
-                if self.trace:
-                    print(f"action: {game_action.kind.value}")
-                next_state, executed = self._execute_tracked(game_action)
-                action = action_payload(game_action) if executed else action_payload(method="gamestate")
-            case "SELECTING_HAND" if not self._hand_settled(state):
-                # Post-play/discard dealing is async: acting on a mid-deal
-                # snapshot plays different physical cards than intended
-                # (verified live: stale hand showed S_5 where the game held
-                # H_K). Require the hand to be identical across two reads.
-                if self.poll_delay > 0:
-                    sleep(self.poll_delay)
-                action = action_payload(method="gamestate")
-                next_state = self.client.gamestate()
-            case "SELECTING_HAND":
-                game_action = self.policy.tactical_action(state)
-                if self.trace:
-                    print(f"action: {game_action.kind.value} {game_action.indices}")
-                next_state, executed = self._execute_tracked(game_action)
-                action = action_payload(game_action) if executed else action_payload(method="gamestate")
-                if not executed and game_action.kind == ActionKind.USE_CONSUMABLE:
-                    self._note_use_refusal(state, game_action)
-            case "ROUND_EVAL":
-                self._use_refusal_counts.clear()
-                suppressed = getattr(self.policy, "suppressed_consumables", None)
-                if suppressed is not None:
-                    suppressed.clear()
-                game_action = self.policy.round_eval_action(state)
-                if self.trace:
-                    print(f"action: {game_action.kind.value}")
-                next_state, executed = self._execute_tracked(game_action)
-                action = action_payload(game_action) if executed else action_payload(method="gamestate")
-            case "SHOP" if not _shop_settled(state) and self._shop_settle_count < self.shop_settle_retries:
-                # Right after cash-out the shop and payout land asynchronously;
-                # acting on the stale snapshot shops with understated money.
-                self._shop_settle_count += 1
-                if self.poll_delay > 0:
-                    sleep(self.poll_delay)
-                action = action_payload(method="gamestate")
-                next_state = self.client.gamestate()
-            case "SHOP":
-                self._shop_settle_count = 0
-                game_action = self.policy.shop_action(state)
-                if game_action is not None:
-                    if self.trace:
-                        print(f"action: {game_action.kind.value} {game_action.index}")
-                    next_state, executed = self._execute_tracked(game_action)
-                    action = action_payload(game_action) if executed else action_payload(method="gamestate")
-                else:
-                    if self.trace:
-                        print("action: next_round")
-                    action = action_payload(method="next_round")
-                    next_state = self.client.call_action("next_round")
-            case "SMODS_BOOSTER_OPENED" | "PLANET_PACK" | "TAROT_PACK" | "SPECTRAL_PACK" | "STANDARD_PACK" | "BUFFOON_PACK":
-                if not _pack_cards_available(state):
-                    if self.poll_delay > 0:
-                        sleep(self.poll_delay)
-                    action = action_payload(method="gamestate")
-                    next_state = self.client.gamestate()
-                else:
-                    game_action = self.policy.pack_action(state)
-                    if self.trace:
-                        if game_action.kind == ActionKind.PACK_SKIP:
-                            print("action: pack_skip")
-                        else:
-                            print(f"action: pack {game_action.index}")
-                    action = action_payload(game_action)
-                    try:
-                        next_state = self._execute(game_action)
-                        self._pack_retry_counts.pop(_pack_retry_key(state), None)
-                    except BalatroBotError as exc:
-                        message = str(exc)
-                        # "Card index out of range": the pack area in the
-                        # snapshot can be stale leftovers from a previous
-                        # pack right after buying a new one; re-poll.
-                        recoverable = (
-                            "Pack selection already in progress" in message
-                            or "Card index out of range" in message
-                        )
-                        if not recoverable:
-                            raise
-                        key = _pack_retry_key(state)
-                        retries = self._pack_retry_counts.get(key, 0) + 1
-                        self._pack_retry_counts[key] = retries
-                        if retries < self.pack_in_progress_retries:
-                            if self.poll_delay > 0:
-                                sleep(self.poll_delay)
-                            action = action_payload(method="gamestate")
-                            next_state = self.client.gamestate()
-                        else:
-                            self._pack_retry_counts.pop(key, None)
-                            game_action = GameAction(kind=ActionKind.PACK_SKIP)
-                            action = action_payload(game_action)
-                            next_state = self._execute(game_action)
-            case _:
-                if self.poll_delay > 0:
-                    sleep(self.poll_delay)
-                action = action_payload(method="gamestate")
-                next_state = self.client.gamestate()
-        self._record("transition", before=state, action=action, after=next_state)
-        return next_state
-
-    def _execute(self, action: GameAction) -> dict[str, Any]:
-        state, _executed = self._execute_tracked(action)
-        return state
-
-    def _execute_tracked(self, action: GameAction) -> tuple[dict[str, Any], bool]:
-        method, params = action.to_balatrobot_rpc()
+    def run(self, spec: RunSpec) -> RunResult:
+        history: list[PublicHistoryStep] = []
+        rejected = 0
+        final: PublicObservation | None = None
+        terminal_reason = "policy_error"
         try:
-            return self.client.call_action(method, params), True
-        except BalatroBotError as exc:
-            message = str(exc)
-            # The game can advance between the poll and the action (async
-            # animations); re-read state instead of crashing the run.
-            recoverable = (
-                "failed to connect" in message
-                or "requires one of these states" in message
-                or "cannot be used at this time" in message
-            )
-            if not recoverable:
-                raise
-            if self.retry_delay > 0:
-                sleep(self.retry_delay)
-            return self.client.gamestate(), False
+            authority = self.backend.reset(spec)
+            public = _public(authority)
+            final = public
+            self._record("run_start", authority=_authority_data(authority), public=json.loads(public.canonical_json()))
+            for _ in range(self.max_decisions):
+                if public.phase == Phase.GAME_OVER:
+                    terminal_reason = "game_over"
+                    break
+                try:
+                    action = self.policy.choose_action(
+                        public,
+                        lambda: iter_legal_actions(public),
+                        tuple(history),
+                    )
+                except Exception as exc:  # the trace must close even for model failures
+                    terminal_reason = "policy_error"
+                    self._record("policy_error", error=f"{type(exc).__name__}: {exc}")
+                    break
+                if not is_legal(public, action):
+                    terminal_reason = "policy_error"
+                    self._record("policy_error", error=f"policy emitted illegal action {action!r}")
+                    break
 
-    def _hand_settled(self, state: dict[str, Any]) -> bool:
-        """True when the visible hand is identical across two consecutive reads."""
-        cards = (state.get("hand") or {}).get("cards") or []
-        fingerprint = (
-            tuple(card.get("id") or card.get("key") for card in cards if isinstance(card, dict)),
-            (state.get("round") or {}).get("chips"),
-            (state.get("round") or {}).get("hands_left"),
+                result = self.backend.step(action)
+                transition: dict[str, object] = {
+                    "before_canonical_digest": authority.observed.canonical_digest,
+                    "action": action_to_data(action),
+                    "rpc_method": result.rpc_method,
+                    "rpc_params": result.rpc_params,
+                    "status": result.status,
+                    "rpc_observations": [json.loads(value) for value in result.rpc_observations],
+                    "error": result.error,
+                }
+                if result.status == "rejected":
+                    rejected += 1
+                    terminal_reason = "rejected_action"
+                    self._record("transition", **transition)
+                    break
+                if result.status == "transport_error" or result.after is None:
+                    terminal_reason = "transport_error"
+                    self._record("transition", **transition)
+                    break
+
+                after_public = _public(result.after)
+                transition.update(
+                    after=_authority_data(result.after),
+                    public_after=json.loads(after_public.canonical_json()),
+                )
+                self._record("transition", **transition)
+                history.append(PublicHistoryStep(before=public, action=action, after=after_public))
+                authority = result.after
+                public = after_public
+                final = public
+            else:
+                terminal_reason = "decision_limit"
+        except UnsettledStateError as exc:
+            terminal_reason = "unsettled"
+            self._record("authority_error", error=str(exc))
+
+        complete = terminal_reason == "game_over" and final is not None
+        result = RunResult(
+            complete=complete,
+            won=bool(final.won) if complete else False,
+            ante=final.ante if final is not None else 0,
+            round_no=final.round_no if final is not None else 0,
+            decisions=len(history),
+            rejected_decisions=rejected,
+            terminal_reason=terminal_reason,
+            final_observation=final,
         )
-        if fingerprint == self._last_hand_fingerprint or self._hand_settle_count >= 10:
-            self._last_hand_fingerprint = None
-            self._hand_settle_count = 0
-            return True
-        self._last_hand_fingerprint = fingerprint
-        self._hand_settle_count += 1
-        return False
+        self._record(
+            "run_end",
+            complete=result.complete,
+            won=result.won,
+            ante=result.ante,
+            round_no=result.round_no,
+            accepted_decisions=result.decisions,
+            rejected_decisions=result.rejected_decisions,
+            terminal_reason=result.terminal_reason,
+            final_public_digest=final.digest() if final is not None else None,
+        )
+        return result
 
-    def _note_use_refusal(self, state: dict[str, Any], action: GameAction) -> None:
-        """Stop proposing a consumable the game keeps refusing to use.
-
-        A refusal right after dealing is usually an animation race that a
-        re-poll resolves; a persistent one would loop forever, so after a few
-        attempts the consumable key is suppressed for the rest of the round.
-        """
-        cards = (state.get("consumables") or {}).get("cards") or []
-        index = action.index if action.index is not None else -1
-        if not 0 <= index < len(cards) or not isinstance(cards[index], dict):
-            return
-        key = str(cards[index].get("key") or "")
-        if not key:
-            return
-        self._use_refusal_counts[key] = self._use_refusal_counts.get(key, 0) + 1
-        if self._use_refusal_counts[key] >= self.use_refusal_retries:
-            suppressed = getattr(self.policy, "suppressed_consumables", None)
-            if suppressed is not None:
-                suppressed.add(key)
-
-    def _record(self, event: str, **payload: Any) -> None:
-        if self.trace_writer is None:
-            return
-        serializable = {"run_id": self._run_id}
-        for key, value in payload.items():
-            serializable[key] = self.trace_writer.state_payload(value) if key in {"state", "before", "after"} else value
-        self.trace_writer.record(event, **serializable)
+    def _record(self, event: str, **payload: object) -> None:
+        if self.trace is not None:
+            self.trace.record(event, **payload)
 
 
-def _shop_settled(state: dict[str, Any]) -> bool:
-    for area in ("shop", "packs", "vouchers"):
-        if ((state.get(area) or {}).get("cards")) :
-            return True
-    return False
+class NoBuySmokePolicy:
+    """A public-only integration smoke test, deliberately not a solver."""
+
+    def choose_action(
+        self,
+        observation: PublicObservation,
+        legal_actions: ActionSource,
+        history: tuple[PublicHistoryStep, ...],
+    ) -> PublicAction:
+        del legal_actions, history
+        if observation.phase == Phase.BLIND_SELECT:
+            return SelectBlind()
+        if observation.phase == Phase.SELECTING_HAND:
+            size = min(5, observation.selection_limit, len(observation.hand))
+            return PlayCards(tuple(HandSlot(index) for index in range(size)))
+        if observation.phase == Phase.ROUND_EVAL:
+            return CashOut()
+        if observation.phase == Phase.SHOP:
+            return LeaveShop()
+        if observation.phase == Phase.PACK:
+            return SkipPack()
+        raise RuntimeError(f"no smoke action for {observation.phase.value}")
 
 
-def _pack_cards_available(state: dict[str, Any]) -> bool:
-    cards = ((state.get("pack") or {}).get("cards") or [])
-    return any(isinstance(card, dict) for card in cards)
+def _public(authority: AuthorityObservation) -> PublicObservation:
+    raw = json.loads(authority.observed.raw_json)
+    if not isinstance(raw, dict):
+        raise AssertionError("authority state root is not an object")
+    return to_public_observation(raw)
 
 
-def _pack_retry_key(state: dict[str, Any]) -> tuple[Any, ...]:
-    cards = tuple(
-        (card.get("id"), card.get("key"))
-        for card in ((state.get("pack") or {}).get("cards") or [])
-        if isinstance(card, dict)
-    )
-    return (state.get("seed"), state.get("ante_num"), state.get("round_num"), state.get("state"), cards)
-
-
-def evaluate_balatrobot(
-    seeds: list[str],
-    *,
-    client: BalatroBotClient | None = None,
-    policy: BalatroBotPolicy | None = None,
-    deck: str = "RED",
-    stake: str = "WHITE",
-    max_steps: int = 800,
-    trace: bool = False,
-    trace_writer: JsonlTraceWriter | None = None,
-    poll_delay: float = 0.02,
-    retry_delay: float = 0.05,
-) -> dict[str, float | int]:
-    runner = BalatroBotRunner(
-        client or BalatroBotClient(),
-        policy=policy or BalatroBotPolicy(),
-        trace=trace,
-        trace_writer=trace_writer,
-        poll_delay=poll_delay,
-        retry_delay=retry_delay,
-    )
-    wins = 0
-    antes = 0
-    steps = 0
-    for seed in seeds:
-        result = runner.play_run(deck=deck, stake=stake, seed=seed, max_steps=max_steps)
-        wins += int(result.won)
-        antes += result.ante
-        steps += result.steps
-    total = len(seeds)
+def _authority_data(authority: AuthorityObservation) -> dict[str, object]:
     return {
-        "seeds": total,
-        "wins": wins,
-        "win_rate": wins / max(total, 1),
-        "avg_ante": antes / max(total, 1),
-        "avg_steps": steps / max(total, 1),
+        "raw": json.loads(authority.observed.raw_json),
+        "canonical": json.loads(authority.observed.canonical_json),
+        "raw_digest": authority.observed.raw_digest,
+        "canonical_digest": authority.observed.canonical_digest,
+        "settled": authority.settled,
+        "poll_count": len(authority.polls) - 1,
     }
-
-
-def _trace_state(state: dict[str, Any]) -> str:
-    state_name = state.get("state")
-    round_info = state.get("round") or {}
-    shop = _card_summary(state, "shop")
-    pack = _card_summary(state, "pack")
-    consumables = _card_summary(state, "consumables")
-    jokers = _card_summary(state, "jokers")
-    return (
-        f"state={state_name} ante={state.get('ante_num')} round={state.get('round_num')} "
-        f"money={state.get('money')} chips={round_info.get('chips')} "
-        f"hands={round_info.get('hands_left')} discards={round_info.get('discards_left')} "
-        f"shop=[{shop}] pack=[{pack}] consumables=[{consumables}] jokers=[{jokers}]"
-    )
-
-
-def _card_summary(state: dict[str, Any], area: str) -> str:
-    cards = ((state.get(area) or {}).get("cards") or [])
-    parts = []
-    for card in cards:
-        if not isinstance(card, dict):
-            continue
-        key = card.get("key")
-        cost = (card.get("cost") or {}).get("buy")
-        parts.append(f"{key}:${cost}")
-    return ", ".join(parts)

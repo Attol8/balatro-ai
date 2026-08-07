@@ -1,11 +1,14 @@
 [project]
 name = "balatro-ai-v2"
 version = "0.1.0"
-description = "Clean-slate Balatro simulator and search agent experiments."
+description = "Public-information, authority-verified Balatro AI infrastructure."
 requires-python = ">=3.11"
 dependencies = []
 
 [project.optional-dependencies]
+candidate = [
+  "jackdaw @ git+https://github.com/TylerFlar/jackdaw-balatro.git@dbedc66255fe594cce7b7cccc188c8a11649d9ec",
+]
 dev = [
   "pytest>=8.0",
 ]
@@ -13,4 +16,3 @@ dev = [
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
-

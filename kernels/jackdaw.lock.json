@@ -1,0 +1,18 @@
+{
+  "name": "jackdaw",
+  "repository": "https://github.com/TylerFlar/jackdaw-balatro",
+  "revision": "dbedc66255fe594cce7b7cccc188c8a11649d9ec",
+  "python": ">=3.12",
+  "upstream_tests": {
+    "passed": 1561,
+    "skipped": 14,
+    "deselected": 5
+  },
+  "promotion_allowed": false,
+  "observed_lockstep_audit": {
+    "authority_trace": "runs/evidence/public-smoke-red-white-seed1.jsonl",
+    "checked_transitions": 5,
+    "first_mismatch": null
+  },
+  "status": "pinned_untrusted_smoke_lockstep_only"
+}

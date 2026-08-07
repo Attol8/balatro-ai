@@ -1,6 +1,11 @@
 import pytest
 
-from balatro_ai_v2.balatrobot.client import BalatroBotClient, BalatroBotError
+from balatro_ai_v2.balatrobot.client import (
+    BalatroBotClient,
+    BalatroBotError,
+    BalatroBotProtocolError,
+    BalatroBotTransportError,
+)
 
 
 def test_rpc_sends_json_rpc_payload() -> None:
@@ -65,3 +70,31 @@ def test_rpc_error_raises_balatrobot_error() -> None:
 
     with pytest.raises(BalatroBotError, match="bad state"):
         client.gamestate()
+
+
+def test_request_ids_increment_and_response_id_must_match() -> None:
+    ids = []
+
+    def transport(payload: dict) -> dict:
+        ids.append(payload["id"])
+        return {"jsonrpc": "2.0", "result": {}, "id": payload["id"]}
+
+    client = BalatroBotClient(transport=transport)
+    client.health()
+    client.health()
+
+    assert ids == [1, 2]
+
+    bad = BalatroBotClient(
+        transport=lambda payload: {"jsonrpc": "2.0", "result": {}, "id": payload["id"] + 1}
+    )
+    with pytest.raises(BalatroBotProtocolError):
+        bad.health()
+
+
+def test_transport_failure_has_a_distinct_error_type() -> None:
+    def transport(payload: dict) -> dict:
+        raise OSError("offline")
+
+    with pytest.raises(BalatroBotTransportError):
+        BalatroBotClient(transport=transport).health()

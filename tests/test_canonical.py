@@ -1,0 +1,80 @@
+from __future__ import annotations
+
+from copy import deepcopy
+
+import pytest
+
+from balatro_ai_v2.canonical import BalatroBotCanonicalizer, CanonicalizationError
+from tests.state_factory import state
+
+
+def test_raw_ids_and_presentation_text_do_not_affect_semantic_state() -> None:
+    left = state("SHOP")
+    right = deepcopy(left)
+    for area_name in ("cards", "hand", "jokers", "consumables", "shop", "packs", "vouchers"):
+        for card in (right.get(area_name) or {}).get("cards", []):
+            card["id"] += 10000
+            card["label"] = "Translated label"
+            card["value"]["effect"] = "Translated effect"
+    right["blinds"]["small"]["effect"] = "Translated blind text"
+    right["hands"]["High Card"]["example"] = [["D_2", False]]
+
+    left_state = BalatroBotCanonicalizer().canonicalize(left)
+    right_state = BalatroBotCanonicalizer().canonicalize(right)
+
+    assert left_state.raw_digest != right_state.raw_digest
+    assert left_state.canonical_digest == right_state.canonical_digest
+
+
+def test_order_and_mutable_ability_are_semantic() -> None:
+    raw = state("SHOP")
+    reordered = deepcopy(raw)
+    reordered["cards"]["cards"].reverse()
+    mutated = deepcopy(raw)
+    mutated["shop"]["cards"][0]["value"]["ability"]["mult"] = 7
+
+    baseline = BalatroBotCanonicalizer().canonicalize(raw).canonical_digest
+
+    assert BalatroBotCanonicalizer().canonicalize(reordered).canonical_digest != baseline
+    assert BalatroBotCanonicalizer().canonicalize(mutated).canonical_digest != baseline
+
+
+def test_entity_identity_survives_area_movement() -> None:
+    before_left = state("BLIND_SELECT")
+    before_right = deepcopy(before_left)
+    for card in before_right["cards"]["cards"]:
+        card["id"] += 100
+
+    left = BalatroBotCanonicalizer()
+    right = BalatroBotCanonicalizer()
+    left.canonicalize(before_left)
+    right.canonicalize(before_right)
+
+    after_left = state("SELECTING_HAND")
+    after_right = deepcopy(after_left)
+    # Align the same logical entities across two runtimes with different raw IDs.
+    for card in after_right["cards"]["cards"]:
+        card["id"] += 100
+    for card in after_right["hand"]["cards"]:
+        card["id"] += 100
+
+    assert left.canonicalize(after_left).canonical_digest == right.canonicalize(after_right).canonical_digest
+
+
+def test_unknown_authority_schema_fails_closed() -> None:
+    raw = state()
+    raw["new_private_field"] = 1
+
+    with pytest.raises(CanonicalizationError, match="unknown top-level"):
+        BalatroBotCanonicalizer().canonicalize(raw)
+
+
+def test_empty_lua_table_normalization_is_path_specific() -> None:
+    left = state("SHOP")
+    right = deepcopy(left)
+    right["shop"]["cards"][0]["state"] = []
+
+    assert (
+        BalatroBotCanonicalizer().canonicalize(left).canonical_digest
+        == BalatroBotCanonicalizer().canonicalize(right).canonical_digest
+    )

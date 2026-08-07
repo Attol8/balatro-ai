@@ -1,159 +1,86 @@
 # balatro-ai-v2
 
-Clean-slate Balatro AI experiment.
+This repository is rebuilding toward a fair, superhuman Balatro agent. It does
+not currently contain a trained model or a solved policy.
 
-The first target is a correct, deterministic simulator with inspectable scoring.
-Learning comes later, after broad search-based baselines are strong enough to
-generate useful data. Fixed hand-family strategies are debugging baselines, not
-the solving plan.
+The previous independent simulator, heuristic planner, imitation pipeline, and
+parity gate were removed because they could report success without reproducing
+the same policy and transitions in Balatro. The rebuild starts with the two
+contracts that cannot be compromised:
 
-## Current vertical slice
+- Balatro under BalatroBot/LÖVE is the authority.
+- A policy receives only information visible to a normal player.
 
-- immutable-ish card and deck primitives
-- deterministic seeded deck shuffling
-- base Balatro poker-hand classification
-- inspectable scoring event log
-- minimal blind state transitions for plays and discards
-- exhaustive hand-play search for a single play
-- BalatroBot JSON-RPC client for real-game validation and execution
-- fast integer-card training env with fixed action ids and legal action masks
-- source-derived rule coverage inventory helpers
-- canonical action model shared by the fast env and BalatroBot
-- run/economy scaffold for blind progression, rewards, interest, and shop phase
-- deterministic full-run fast gym that advances blinds, shops, antes, and red-deck
-  ante-8 evaluation
+## What exists
 
-## Fast Training Env
+- Frozen typed public observations. Seed, raw IDs, draw order, face-down card
+  identity, internal ability trees, RNG, and event state cannot cross the
+  policy boundary.
+- Typed public actions with verified phase, capacity, affordability, and slot
+  validation before RPC execution. Consumable actions whose complete public
+  legality is not yet encoded are deliberately omitted.
+- A strict BalatroBot backend that requires two stable reads at a real decision
+  boundary. It never auto-skips, substitutes a poll for a rejected action, or
+  force-accepts a changing state.
+- Canonical observed-state hashing with stable entity IDs and fail-closed schema
+  checks.
+- Exclusive, hash-chained traces containing source/config/model/backend
+  provenance and an explicit complete/incomplete terminal reason.
+- A backend-neutral differential replay harness with no waivers or tolerances.
 
-The training hot loop should use `balatro_ai_v2.fast`, not BalatroBot. The env
-is designed to grow into full Balatro coverage with deterministic local
-rollouts, fixed tactical action ids plus explicit run-level actions, compact
-observations, and no network or rendering dependency.
-
-```python
-from balatro_ai_v2.fast import FastBalatroEnv
-
-env = FastBalatroEnv(required_score=300)
-obs = env.reset(seed=1)
-action_mask = env.action_mask()
-result = env.step(env.greedy_play_action())
-```
-
-Policies should emit `GameAction`, then convert it either to a fast tactical
-action id or a BalatroBot RPC call. That keeps training and real-game execution
-on the same action contract.
-
-Benchmark:
-
-```bash
-python scripts/benchmark_fast_env.py --episodes 10000
-```
-
-Full-game red-deck evaluation:
-
-```bash
-python scripts/evaluate_fast_full_game.py --deck b_red --seed-start 1 --seeds 32
-python scripts/train_fast_agent.py --deck b_red --seed-start 1 --seeds 32
-```
-
-BalatroBot reproduction, with BalatroBot serving on `127.0.0.1:12346`:
-
-```bash
-python scripts/run_balatrobot_agent.py --deck RED --stake WHITE --seed-start 1 --seeds 8
-```
-
-For faster clean BalatroBot runs, let the script launch BalatroBot with its
-headless fast settings:
-
-```bash
-python scripts/run_balatrobot_agent.py --launch-server --deck RED --stake WHITE --seed-start 1 --seeds 8
-```
-
-If you launch BalatroBot yourself, start it with the same server-side speed
-settings before running the agent:
-
-```bash
-uvx balatrobot serve --headless --fast --no-shaders --gamespeed 10 --animation-fps 60
-```
-
-Clean runs can be recorded as JSONL evidence. Use compact traces for quick
-policy analysis, or omit `--trace-compact` to store full BalatroBot states.
-
-```bash
-python scripts/run_balatrobot_agent.py --deck RED --stake WHITE --seed-start 1 --seeds 3 \
-  --trace-jsonl runs/red_deck_clean.jsonl --trace-compact
-```
-
-Fast simulator results only count after replaying a full, clean BalatroBot trace
-through the parity checker. This catches scoring, draw-order, shop, round, and
-other transition mismatches between the local hot loop and the game.
-
-```bash
-python scripts/run_balatrobot_agent.py --deck RED --stake WHITE --seed-start 1 --seeds 3 \
-  --trace-jsonl runs/red_deck_full.jsonl
-python scripts/replay_balatrobot_trace.py runs/red_deck_full.jsonl
-```
-
-Use the complete gate before treating any fast result as real:
-
-```bash
-python scripts/game_parity_gate.py runs/red_deck_full.jsonl
-```
-
-If this reports unchecked transitions, those are missing simulator/parity rules.
-If rule coverage is incomplete, the fast simulator does not yet cover the full
-game object surface. Do not treat a fast ante-8 result as solved until both
-gates pass for the relevant seeds.
-
-Policy tuning should happen through search and evaluator work, not one-off code
-edits or a fixed flush lane. The shipped fast baseline scores every legal hand
-family and discard mask, tracks the hand families a run actually uses, and
-levels the strongest observed hand instead of forcing one target family. The
-BalatroBot policy search script evaluates sampled policy configs through clean
-BalatroBot runs and stores every candidate with its seed set and metrics.
-
-The first training loop is search-imitation:
-
-```bash
-python scripts/generate_fast_oracle_data.py --deck b_red --seed-start 1 --seeds 64 \
-  --output-jsonl runs/fast_oracle_trajectories.jsonl
-python scripts/train_fast_imitation_policy.py \
-  --data-jsonl runs/fast_oracle_trajectories.jsonl \
-  --output-model runs/fast_imitation_policy.json
-python scripts/evaluate_fast_imitation_policy.py \
-  --model runs/fast_imitation_policy.json --deck b_red --seed-start 1 --seeds 64
-```
-
-This model is dependency-free and intentionally simple: by default it trains a
-linear state-action ranker over legal full-run actions. The full-game gym now
-requires the agent to choose blind, round-eval, shop, voucher, consumable, pack,
-and tactical play/discard actions instead of hiding shop behind auto-buy logic.
-The deterministic shop path includes weighted joker/planet cards, booster-spec
-pack costs/sizes/choices, rerolls, discounts, and supported run-modifier
-vouchers; it is still a training approximation until replayed through clean
-BalatroBot parity traces. A `--model-type nearest` baseline is also available
-for memorization/debugging.
-Neither is the final agent; the point is to create a stable data/model contract
-for later value heads, model-guided search, and BalatroBot validation.
-
-To replay a full-action model through the real game, use the full-action flag.
-This is the required reproduction path for fast full-run policies; the older
-`--imitation-model` flag only controls tactical play/discard decisions.
-
-```bash
-python scripts/run_balatrobot_agent.py --launch-server --fast-server --no-headless-server \
-  --deck RED --stake WHITE --seed-start 1 --seeds 1 \
-  --full-action-model runs/fast_imitation_policy.json \
-  --trace-jsonl runs/red_deck_full_action_replay.jsonl
-python scripts/game_parity_gate.py runs/red_deck_full_action_replay.jsonl
-```
-
-```bash
-python scripts/search_balatrobot_policy.py --deck RED --stake WHITE --seed-start 1 --seeds 3 --trials 12
-```
+BalatroBot does not expose its RNG and event queues, so the current claim is
+only exact *observed-state lockstep*. Snapshot fidelity and whole-engine parity
+remain unproven.
 
 ## Verify
 
 ```bash
-python -m pytest
+python -m pytest -q
 ```
+
+Run the deliberately weak public-information integration policy against a
+BalatroBot server:
+
+```bash
+python scripts/run_authority_smoke.py \
+  --seed 17 \
+  --balatrobot-version <exact-version-or-revision> \
+  --game-version <exact-game-build> \
+  --runtime-version <exact-love-luajit-build> \
+  --trace-jsonl runs/evidence/red-white-seed17.jsonl
+```
+
+Add `--launch-server` to let the script start and stop BalatroBot. Evidence
+files are created exclusively; an existing path is never appended or
+overwritten. Version flags are mandatory when writing evidence because the
+current BalatroBot health endpoint may report only `status=ok`.
+
+Reproduce every recorded public action in a fresh real run and compare the full
+canonical observed state after each decision:
+
+```bash
+python scripts/replay_observed_lockstep.py \
+  runs/evidence/red-white-seed17.jsonl \
+  --launch-server
+```
+
+## What comes next
+
+Jackdaw is pinned. Its raw bridge initially differed from BalatroBot in 638
+initial-state fields; a narrow adapter now derives the equivalent BalatroBot
+representation from Jackdaw's own state. The candidate matches all five
+transitions in the seed-1 smoke trace, but remains untrusted beyond that tiny
+losing run. The next gate is broad randomized candidate lockstep over the full
+action/rule surface. In parallel, BalatroBot needs an in-memory
+snapshot/restore and batched rollout extension whose RNG and branch isolation
+are proven before it can generate search labels. Search and a learned
+policy/value model come only after those gates pass.
+
+Jackdaw is pinned in `kernels/jackdaw.lock.json` but is deliberately marked
+untrusted. Its optional environment requires Python 3.12:
+
+```bash
+python3.12 -m pip install '.[candidate]'
+```
+
+The full design and kill criteria are in [plan.md](plan.md).

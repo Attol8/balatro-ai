@@ -1,114 +1,527 @@
+"""Typed actions that can be performed through BalatroBot's public API.
+
+The policy never emits simulator action IDs.  Area-specific slot wrappers make
+it impossible to accidentally use, for example, a shop index as a hand index.
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
+from itertools import combinations, permutations
+from typing import Iterator, Mapping, TypeAlias
 
-from balatro_ai_v2.fast.env import DISCARD_ACTION_OFFSET
+from balatro_ai_v2.public_state import Phase, PublicItem, PublicObservation, VisiblePlayingCard
 
 
-class ActionKind(str, Enum):
-    PLAY = "play"
-    DISCARD = "discard"
-    SELECT_BLIND = "select"
-    SKIP_BLIND = "skip"
-    CASH_OUT = "cash_out"
-    NEXT_ROUND = "next_round"
-    REROLL = "reroll"
-    BUY_CARD = "buy_card"
-    BUY_VOUCHER = "buy_voucher"
-    BUY_PACK = "buy_pack"
-    SELL_JOKER = "sell_joker"
-    SELL_CONSUMABLE = "sell_consumable"
-    USE_CONSUMABLE = "use_consumable"
-    PACK_SELECT = "pack_select"
-    PACK_SKIP = "pack_skip"
-    REARRANGE_JOKERS = "rearrange_jokers"
+@dataclass(frozen=True, slots=True, order=True)
+class HandSlot:
+    value: int
+
+    def __post_init__(self) -> None:
+        _validate_slot(self.value)
+
+
+@dataclass(frozen=True, slots=True, order=True)
+class ShopSlot:
+    value: int
+
+    def __post_init__(self) -> None:
+        _validate_slot(self.value)
+
+
+@dataclass(frozen=True, slots=True, order=True)
+class VoucherSlot:
+    value: int
+
+    def __post_init__(self) -> None:
+        _validate_slot(self.value)
+
+
+@dataclass(frozen=True, slots=True, order=True)
+class PackOfferSlot:
+    value: int
+
+    def __post_init__(self) -> None:
+        _validate_slot(self.value)
+
+
+@dataclass(frozen=True, slots=True, order=True)
+class OpenedPackSlot:
+    value: int
+
+    def __post_init__(self) -> None:
+        _validate_slot(self.value)
+
+
+@dataclass(frozen=True, slots=True, order=True)
+class JokerSlot:
+    value: int
+
+    def __post_init__(self) -> None:
+        _validate_slot(self.value)
+
+
+@dataclass(frozen=True, slots=True, order=True)
+class ConsumableSlot:
+    value: int
+
+    def __post_init__(self) -> None:
+        _validate_slot(self.value)
+
+
+class BuyMode(str, Enum):
+    STORE = "store"
+    USE = "use"
 
 
 @dataclass(frozen=True, slots=True)
-class GameAction:
-    kind: ActionKind
-    indices: tuple[int, ...] = ()
-    index: int | None = None
-
-    @staticmethod
-    def from_fast_action_id(action_id: int) -> GameAction:
-        if action_id >= DISCARD_ACTION_OFFSET:
-            return GameAction(
-                kind=ActionKind.DISCARD,
-                indices=_indices_from_mask(action_id - DISCARD_ACTION_OFFSET),
-            )
-        return GameAction(kind=ActionKind.PLAY, indices=_indices_from_mask(action_id))
-
-    def to_fast_action_id(self) -> int:
-        mask = _mask_from_indices(self.indices)
-        if self.kind == ActionKind.PLAY:
-            return mask
-        if self.kind == ActionKind.DISCARD:
-            return DISCARD_ACTION_OFFSET + mask
-        raise ValueError(f"{self.kind.value} cannot be encoded as a fast tactical action")
-
-    def to_balatrobot_rpc(self) -> tuple[str, dict]:
-        if self.kind == ActionKind.PLAY:
-            return "play", {"cards": list(self.indices)}
-        if self.kind == ActionKind.DISCARD:
-            return "discard", {"cards": list(self.indices)}
-        if self.kind == ActionKind.SELECT_BLIND:
-            return "select", {}
-        if self.kind == ActionKind.SKIP_BLIND:
-            return "skip", {}
-        if self.kind == ActionKind.REARRANGE_JOKERS:
-            return "rearrange", {"jokers": list(self.indices)}
-        if self.kind == ActionKind.CASH_OUT:
-            return "cash_out", {}
-        if self.kind == ActionKind.NEXT_ROUND:
-            return "next_round", {}
-        if self.kind == ActionKind.REROLL:
-            return "reroll", {}
-        if self.kind == ActionKind.BUY_CARD:
-            return "buy", {"card": _required_index(self)}
-        if self.kind == ActionKind.BUY_VOUCHER:
-            return "buy", {"voucher": _required_index(self)}
-        if self.kind == ActionKind.BUY_PACK:
-            return "buy", {"pack": _required_index(self)}
-        if self.kind == ActionKind.SELL_JOKER:
-            return "sell", {"joker": _required_index(self)}
-        if self.kind == ActionKind.SELL_CONSUMABLE:
-            return "sell", {"consumable": _required_index(self)}
-        if self.kind == ActionKind.USE_CONSUMABLE:
-            params = {"consumable": _required_index(self)}
-            if self.indices:
-                params["cards"] = list(self.indices)
-            return "use", params
-        if self.kind == ActionKind.PACK_SELECT:
-            params = {"card": _required_index(self)}
-            if self.indices:
-                params["targets"] = list(self.indices)
-            return "pack", params
-        if self.kind == ActionKind.PACK_SKIP:
-            return "pack", {"skip": True}
-        raise ValueError(f"unsupported action kind: {self.kind}")
+class SelectBlind:
+    pass
 
 
-def _mask_from_indices(indices: tuple[int, ...]) -> int:
-    if not indices:
-        raise ValueError("tactical action must contain at least one card index")
-    mask = 0
-    for index in indices:
-        if not 0 <= index < 8:
-            raise ValueError(f"card index out of tactical range: {index}")
-        mask |= 1 << index
-    return mask
+@dataclass(frozen=True, slots=True)
+class SkipBlind:
+    pass
 
 
-def _indices_from_mask(mask: int) -> tuple[int, ...]:
-    if mask <= 0:
-        raise ValueError("mask must select at least one card")
-    return tuple(index for index in range(8) if mask & (1 << index))
+@dataclass(frozen=True, slots=True)
+class CashOut:
+    pass
 
 
-def _required_index(action: GameAction) -> int:
-    if action.index is None:
-        raise ValueError(f"{action.kind.value} requires index")
-    return action.index
+@dataclass(frozen=True, slots=True)
+class LeaveShop:
+    pass
 
+
+@dataclass(frozen=True, slots=True)
+class RerollShop:
+    pass
+
+
+@dataclass(frozen=True, slots=True)
+class PlayCards:
+    cards: tuple[HandSlot, ...]
+
+    def __post_init__(self) -> None:
+        _validate_typed_selection(self.cards, HandSlot, minimum=1, maximum=5)
+
+
+@dataclass(frozen=True, slots=True)
+class DiscardCards:
+    cards: tuple[HandSlot, ...]
+
+    def __post_init__(self) -> None:
+        _validate_typed_selection(self.cards, HandSlot, minimum=1, maximum=5)
+
+
+@dataclass(frozen=True, slots=True)
+class BuyShopCard:
+    card: ShopSlot
+    mode: BuyMode = BuyMode.STORE
+
+
+@dataclass(frozen=True, slots=True)
+class BuyVoucher:
+    voucher: VoucherSlot
+
+
+@dataclass(frozen=True, slots=True)
+class BuyPack:
+    pack: PackOfferSlot
+
+
+@dataclass(frozen=True, slots=True)
+class SellJoker:
+    joker: JokerSlot
+
+
+@dataclass(frozen=True, slots=True)
+class SellConsumable:
+    consumable: ConsumableSlot
+
+
+@dataclass(frozen=True, slots=True)
+class UseConsumable:
+    consumable: ConsumableSlot
+    targets: tuple[HandSlot, ...] = ()
+
+    def __post_init__(self) -> None:
+        _validate_typed_selection(self.targets, HandSlot, minimum=0, maximum=5)
+
+
+@dataclass(frozen=True, slots=True)
+class ChoosePackCard:
+    card: OpenedPackSlot
+    targets: tuple[HandSlot, ...] = ()
+
+    def __post_init__(self) -> None:
+        _validate_typed_selection(self.targets, HandSlot, minimum=0, maximum=5)
+
+
+@dataclass(frozen=True, slots=True)
+class SkipPack:
+    pass
+
+
+@dataclass(frozen=True, slots=True)
+class ReorderHand:
+    order: tuple[HandSlot, ...]
+
+    def __post_init__(self) -> None:
+        _validate_typed_selection(self.order, HandSlot, minimum=0, maximum=None)
+
+
+@dataclass(frozen=True, slots=True)
+class ReorderJokers:
+    order: tuple[JokerSlot, ...]
+
+    def __post_init__(self) -> None:
+        _validate_typed_selection(self.order, JokerSlot, minimum=0, maximum=None)
+
+
+@dataclass(frozen=True, slots=True)
+class ReorderConsumables:
+    order: tuple[ConsumableSlot, ...]
+
+    def __post_init__(self) -> None:
+        _validate_typed_selection(self.order, ConsumableSlot, minimum=0, maximum=None)
+
+
+PublicAction: TypeAlias = (
+    SelectBlind
+    | SkipBlind
+    | CashOut
+    | LeaveShop
+    | RerollShop
+    | PlayCards
+    | DiscardCards
+    | BuyShopCard
+    | BuyVoucher
+    | BuyPack
+    | SellJoker
+    | SellConsumable
+    | UseConsumable
+    | ChoosePackCard
+    | SkipPack
+    | ReorderHand
+    | ReorderJokers
+    | ReorderConsumables
+)
+
+
+_SELL_USE_PHASES = {Phase.SELECTING_HAND, Phase.SHOP}
+_REORDER_PHASES = {Phase.SELECTING_HAND, Phase.SHOP, Phase.PACK}
+
+
+def iter_legal_actions(observation: PublicObservation) -> Iterator[PublicAction]:
+    """Yield concrete legal actions using public state only.
+
+    Reorder actions are intentionally lazy: an eight-card hand has 40,320
+    possible orders and callers should normally generate or score them on
+    demand instead of materializing the whole set.
+    """
+
+    phase = observation.phase
+    if phase == Phase.BLIND_SELECT:
+        yield SelectBlind()
+        selected = next((blind for blind in observation.blinds if blind.status == "SELECT"), None)
+        if selected is not None and selected.kind != "BOSS":
+            yield SkipBlind()
+    elif phase == Phase.SELECTING_HAND:
+        hand_slots = tuple(HandSlot(index) for index in range(len(observation.hand)))
+        maximum = min(5, observation.selection_limit, len(hand_slots))
+        for size in range(1, maximum + 1):
+            for selected in combinations(hand_slots, size):
+                yield PlayCards(selected)
+                if observation.round.discards_left > 0:
+                    yield DiscardCards(selected)
+    elif phase == Phase.ROUND_EVAL:
+        yield CashOut()
+    elif phase == Phase.SHOP:
+        if _can_spend(observation, observation.round.reroll_cost):
+            yield RerollShop()
+        for index, item in enumerate(observation.shop):
+            action = BuyShopCard(ShopSlot(index))
+            if is_legal(observation, action):
+                yield action
+        for index, item in enumerate(observation.vouchers):
+            action = BuyVoucher(VoucherSlot(index))
+            if is_legal(observation, action):
+                yield action
+        for index, item in enumerate(observation.packs):
+            action = BuyPack(PackOfferSlot(index))
+            if is_legal(observation, action):
+                yield action
+        yield LeaveShop()
+    elif phase == Phase.PACK:
+        yield SkipPack()
+        for index, item in enumerate(observation.opened_pack):
+            if _pack_offer_legal(observation, item):
+                yield ChoosePackCard(OpenedPackSlot(index))
+
+    if phase in _SELL_USE_PHASES:
+        for index, item in enumerate(observation.jokers):
+            action = SellJoker(JokerSlot(index))
+            if is_legal(observation, action):
+                yield action
+        for index, item in enumerate(observation.consumables):
+            sell = SellConsumable(ConsumableSlot(index))
+            if is_legal(observation, sell):
+                yield sell
+
+    if phase in _REORDER_PHASES:
+        if phase != Phase.SHOP and len(observation.hand) > 1:
+            identity = tuple(HandSlot(index) for index in range(len(observation.hand)))
+            yield from (ReorderHand(order) for order in permutations(identity) if order != identity)
+        if len(observation.jokers) > 1:
+            identity_j = tuple(JokerSlot(index) for index in range(len(observation.jokers)))
+            yield from (ReorderJokers(order) for order in permutations(identity_j) if order != identity_j)
+        if len(observation.consumables) > 1:
+            identity_c = tuple(ConsumableSlot(index) for index in range(len(observation.consumables)))
+            yield from (ReorderConsumables(order) for order in permutations(identity_c) if order != identity_c)
+
+
+def is_legal(observation: PublicObservation, action: PublicAction) -> bool:
+    phase = observation.phase
+    if isinstance(action, SelectBlind):
+        return phase == Phase.BLIND_SELECT and any(blind.status == "SELECT" for blind in observation.blinds)
+    if isinstance(action, SkipBlind):
+        return phase == Phase.BLIND_SELECT and any(
+            blind.status == "SELECT" and blind.kind != "BOSS" for blind in observation.blinds
+        )
+    if isinstance(action, CashOut):
+        return phase == Phase.ROUND_EVAL
+    if isinstance(action, LeaveShop):
+        return phase == Phase.SHOP
+    if isinstance(action, RerollShop):
+        return phase == Phase.SHOP and _can_spend(observation, observation.round.reroll_cost)
+    if isinstance(action, PlayCards):
+        return phase == Phase.SELECTING_HAND and _valid_hand_selection(observation, action.cards)
+    if isinstance(action, DiscardCards):
+        return (
+            phase == Phase.SELECTING_HAND
+            and observation.round.discards_left > 0
+            and _valid_hand_selection(observation, action.cards)
+        )
+    if isinstance(action, BuyShopCard):
+        if phase != Phase.SHOP or action.mode != BuyMode.STORE or action.card.value >= len(observation.shop):
+            return False
+        item = observation.shop[action.card.value]
+        return _can_spend(observation, item.buy_cost) and _has_room(observation, item)
+    if isinstance(action, BuyVoucher):
+        return (
+            phase == Phase.SHOP
+            and action.voucher.value < len(observation.vouchers)
+            and _can_spend(observation, observation.vouchers[action.voucher.value].buy_cost)
+        )
+    if isinstance(action, BuyPack):
+        return (
+            phase == Phase.SHOP
+            and action.pack.value < len(observation.packs)
+            and _can_spend(observation, observation.packs[action.pack.value].buy_cost)
+        )
+    if isinstance(action, SellJoker):
+        return (
+            phase in _SELL_USE_PHASES
+            and action.joker.value < len(observation.jokers)
+            and not observation.jokers[action.joker.value].eternal
+        )
+    if isinstance(action, SellConsumable):
+        return phase in _SELL_USE_PHASES and action.consumable.value < len(observation.consumables)
+    if isinstance(action, UseConsumable):
+        # BalatroBot delegates additional can_use/check_use rules to the game.
+        # Until those public conditions are encoded and tested, fail closed.
+        return False
+    if isinstance(action, ChoosePackCard):
+        if phase != Phase.PACK or action.card.value >= len(observation.opened_pack):
+            return False
+        return not action.targets and _pack_offer_legal(observation, observation.opened_pack[action.card.value])
+    if isinstance(action, SkipPack):
+        return phase == Phase.PACK
+    if isinstance(action, ReorderHand):
+        return phase in {Phase.SELECTING_HAND, Phase.PACK} and _is_permutation(action.order, len(observation.hand))
+    if isinstance(action, ReorderJokers):
+        return phase in _REORDER_PHASES and _is_permutation(action.order, len(observation.jokers))
+    if isinstance(action, ReorderConsumables):
+        return phase in _REORDER_PHASES and _is_permutation(action.order, len(observation.consumables))
+    return False
+
+
+def _pack_offer_legal(observation: PublicObservation, item: PublicItem | VisiblePlayingCard) -> bool:
+    if isinstance(item, VisiblePlayingCard):
+        return True
+    if item.kind == "PLANET":
+        return True
+    if item.kind == "JOKER":
+        return len(observation.jokers) < observation.joker_limit
+    return False
+
+
+def _valid_hand_selection(observation: PublicObservation, cards: tuple[HandSlot, ...]) -> bool:
+    return (
+        1 <= len(cards) <= min(5, observation.selection_limit)
+        and all(card.value < len(observation.hand) for card in cards)
+    )
+
+
+def _is_permutation(order: tuple[object, ...], size: int) -> bool:
+    return len(order) == size and {getattr(slot, "value", -1) for slot in order} == set(range(size))
+
+
+def _can_spend(observation: PublicObservation, cost: int | None) -> bool:
+    if cost is None:
+        return False
+    floor = -20 if any(item.key == "j_credit_card" for item in observation.jokers) else 0
+    return observation.money - cost >= floor
+
+
+def _has_room(observation: PublicObservation, item: PublicItem) -> bool:
+    kind = item.kind.upper()
+    if kind == "JOKER":
+        # Match BalatroBot's current public buy endpoint, which rejects at the
+        # limit even for a Negative shop Joker.
+        return len(observation.jokers) < observation.joker_limit
+    if kind in {"TAROT", "PLANET", "SPECTRAL"}:
+        return len(observation.consumables) < observation.consumable_limit
+    return False
+
+
+def action_to_data(action: PublicAction) -> dict[str, object]:
+    if isinstance(action, (SelectBlind, SkipBlind, CashOut, LeaveShop, RerollShop, SkipPack)):
+        return {"type": _action_type(action)}
+    if isinstance(action, (PlayCards, DiscardCards)):
+        return {"type": _action_type(action), "cards": [slot.value for slot in action.cards]}
+    if isinstance(action, BuyShopCard):
+        return {"type": "buy_shop_card", "card": action.card.value, "mode": action.mode.value}
+    if isinstance(action, BuyVoucher):
+        return {"type": "buy_voucher", "voucher": action.voucher.value}
+    if isinstance(action, BuyPack):
+        return {"type": "buy_pack", "pack": action.pack.value}
+    if isinstance(action, SellJoker):
+        return {"type": "sell_joker", "joker": action.joker.value}
+    if isinstance(action, SellConsumable):
+        return {"type": "sell_consumable", "consumable": action.consumable.value}
+    if isinstance(action, UseConsumable):
+        return {
+            "type": "use_consumable",
+            "consumable": action.consumable.value,
+            "targets": [slot.value for slot in action.targets],
+        }
+    if isinstance(action, ChoosePackCard):
+        return {
+            "type": "choose_pack_card",
+            "card": action.card.value,
+            "targets": [slot.value for slot in action.targets],
+        }
+    if isinstance(action, ReorderHand):
+        return {"type": "reorder_hand", "order": [slot.value for slot in action.order]}
+    if isinstance(action, ReorderJokers):
+        return {"type": "reorder_jokers", "order": [slot.value for slot in action.order]}
+    if isinstance(action, ReorderConsumables):
+        return {"type": "reorder_consumables", "order": [slot.value for slot in action.order]}
+    raise TypeError(f"unsupported public action {type(action).__name__}")
+
+
+def action_from_data(data: Mapping[str, object]) -> PublicAction:
+    kind = data.get("type")
+    if kind == "select_blind":
+        return SelectBlind()
+    if kind == "skip_blind":
+        return SkipBlind()
+    if kind == "cash_out":
+        return CashOut()
+    if kind == "leave_shop":
+        return LeaveShop()
+    if kind == "reroll_shop":
+        return RerollShop()
+    if kind == "skip_pack":
+        return SkipPack()
+    if kind == "play_cards":
+        return PlayCards(_slots(data, "cards", HandSlot))
+    if kind == "discard_cards":
+        return DiscardCards(_slots(data, "cards", HandSlot))
+    if kind == "buy_shop_card":
+        return BuyShopCard(ShopSlot(_integer(data, "card")), BuyMode(str(data.get("mode"))))
+    if kind == "buy_voucher":
+        return BuyVoucher(VoucherSlot(_integer(data, "voucher")))
+    if kind == "buy_pack":
+        return BuyPack(PackOfferSlot(_integer(data, "pack")))
+    if kind == "sell_joker":
+        return SellJoker(JokerSlot(_integer(data, "joker")))
+    if kind == "sell_consumable":
+        return SellConsumable(ConsumableSlot(_integer(data, "consumable")))
+    if kind == "use_consumable":
+        return UseConsumable(
+            ConsumableSlot(_integer(data, "consumable")),
+            _slots(data, "targets", HandSlot),
+        )
+    if kind == "choose_pack_card":
+        return ChoosePackCard(OpenedPackSlot(_integer(data, "card")), _slots(data, "targets", HandSlot))
+    if kind == "reorder_hand":
+        return ReorderHand(_slots(data, "order", HandSlot))
+    if kind == "reorder_jokers":
+        return ReorderJokers(_slots(data, "order", JokerSlot))
+    if kind == "reorder_consumables":
+        return ReorderConsumables(_slots(data, "order", ConsumableSlot))
+    raise ValueError(f"unknown public action type {kind!r}")
+
+
+def _action_type(action: object) -> str:
+    names = {
+        SelectBlind: "select_blind",
+        SkipBlind: "skip_blind",
+        CashOut: "cash_out",
+        LeaveShop: "leave_shop",
+        RerollShop: "reroll_shop",
+        PlayCards: "play_cards",
+        DiscardCards: "discard_cards",
+        SkipPack: "skip_pack",
+    }
+    return names[type(action)]
+
+
+def _integer(data: Mapping[str, object], key: str) -> int:
+    value = data.get(key)
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValueError(f"action field {key!r} must be an integer")
+    return value
+
+
+def _slots(data: Mapping[str, object], key: str, wrapper: type) -> tuple:
+    values = data.get(key)
+    if not isinstance(values, list):
+        raise ValueError(f"action field {key!r} must be a list")
+    return tuple(wrapper(_list_integer(value, key)) for value in values)
+
+
+def _list_integer(value: object, key: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValueError(f"action field {key!r} must contain only integers")
+    return value
+
+
+def _validate_slot(value: int) -> None:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise ValueError(f"slot must be a non-negative integer, got {value!r}")
+
+
+def _validate_selection(values: tuple[object, ...], *, minimum: int, maximum: int | None) -> None:
+    if len(values) < minimum or (maximum is not None and len(values) > maximum):
+        upper = "unbounded" if maximum is None else str(maximum)
+        raise ValueError(f"selection size must be in [{minimum}, {upper}]")
+    if len(values) != len(set(values)):
+        raise ValueError("selection contains duplicate slots")
+
+
+def _validate_typed_selection(
+    values: tuple[object, ...],
+    expected: type,
+    *,
+    minimum: int,
+    maximum: int | None,
+) -> None:
+    if not all(isinstance(value, expected) for value in values):
+        raise TypeError(f"selection requires {expected.__name__} values")
+    _validate_selection(values, minimum=minimum, maximum=maximum)
