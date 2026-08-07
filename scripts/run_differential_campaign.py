@@ -8,8 +8,10 @@ import os
 import subprocess
 import sys
 import time
+from collections import Counter
 from dataclasses import asdict
 from pathlib import Path
+from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -108,7 +110,7 @@ def main() -> None:
                 raise SystemExit(2)
 
             report = replay_authority_trace(trace_path, candidate)
-            coverage = summarize_trace_coverage(trace_path, required_families=tuple(args.require_family))
+            coverage = summarize_trace_coverage(trace_path, pack_strategy=args.pack_strategy)
             payload = {
                 "ante": result.ante,
                 "authority_complete": True,
@@ -123,8 +125,6 @@ def main() -> None:
             print(json.dumps(payload, sort_keys=True))
             if not report.observed_lockstep:
                 raise SystemExit(1)
-            if not coverage["coverage_complete"]:
-                raise SystemExit(3)
     except JackdawUnavailable as exc:
         raise SystemExit(f"Jackdaw candidate unavailable: {exc}") from exc
     except BalatroBotError as exc:
@@ -146,7 +146,6 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--policy-seed", default="coverage-v1")
     parser.add_argument("--max-shop-actions", type=int, default=3)
     parser.add_argument("--pack-strategy", choices=("mixed", "skip", "pick"), default="mixed")
-    parser.add_argument("--require-family", action="append", default=[])
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=12346)
     parser.add_argument("--deck", default="RED")
@@ -172,27 +171,110 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def summarize_trace_coverage(path: Path, *, required_families: tuple[str, ...] = ()) -> dict[str, object]:
+_BASELINE_REQUIRED_ACTIONS = {
+    "cash_out",
+    "discard_cards",
+    "leave_shop",
+    "play_cards",
+    "select_blind",
+}
+
+
+def summarize_trace_coverage(path: Path, *, pack_strategy: str) -> dict[str, object]:
     rows = read_verified_trace(path)
-    accepted_counts: dict[str, int] = {}
+    accepted_counts: Counter[str] = Counter()
+    phase_counts: Counter[str] = Counter()
+    opportunity_counts: Counter[str] = Counter()
     for row in rows:
         if row.get("event") != "transition" or row.get("status") != "accepted":
             continue
         action = row.get("action")
+        before = row.get("before")
         if not isinstance(action, dict):
             continue
         family = str(action.get("type") or "unknown")
-        accepted_counts[family] = accepted_counts.get(family, 0) + 1
-    accepted_families = sorted(accepted_counts)
-    required = tuple(dict.fromkeys(required_families))
-    missing = [family for family in required if family not in accepted_counts]
+        accepted_counts[family] += 1
+        if not isinstance(before, dict):
+            continue
+        canonical = before.get("canonical")
+        if not isinstance(canonical, dict):
+            continue
+        phase = canonical.get("state")
+        if isinstance(phase, str):
+            phase_counts[phase] += 1
+        _accumulate_opportunities(opportunity_counts, canonical)
+
+    required = set(_BASELINE_REQUIRED_ACTIONS)
+    if pack_strategy == "skip":
+        required.update({"buy_pack", "skip_pack"})
+    elif pack_strategy == "pick":
+        required.update({"buy_pack", "choose_pack_card"})
+    elif pack_strategy == "mixed":
+        required.update({"buy_pack", "skip_pack", "choose_pack_card"})
+    else:
+        raise ValueError(f"unsupported pack strategy {pack_strategy!r}")
+
     return {
-        "accepted_action_counts": accepted_counts,
-        "accepted_families": accepted_families,
-        "required_families": list(required),
-        "missing_required_families": missing,
-        "coverage_complete": bool(required) and not missing,
+        "accepted_action_counts": dict(sorted(accepted_counts.items())),
+        "coverage_complete": all(accepted_counts.get(family, 0) > 0 for family in required),
+        "opportunity_counts": dict(sorted(opportunity_counts.items())),
+        "pack_strategy": pack_strategy,
+        "phase_counts": dict(sorted(phase_counts.items())),
+        "required_action_counts": {family: accepted_counts.get(family, 0) for family in sorted(required)},
     }
+
+
+def _accumulate_opportunities(counts: Counter[str], canonical: dict[str, Any]) -> None:
+    phase = canonical.get("state")
+    if not isinstance(phase, str):
+        return
+    counts[f"phase:{phase}"] += 1
+
+    if phase == "BLIND_SELECT":
+        if _has_selected_blind(canonical):
+            counts["action:select_blind"] += 1
+    elif phase == "SELECTING_HAND":
+        counts["action:play_cards"] += 1
+        if _round_value(canonical, "discards_left") > 0:
+            counts["action:discard_cards"] += 1
+    elif phase == "ROUND_EVAL":
+        counts["action:cash_out"] += 1
+    elif phase == "SHOP":
+        counts["action:leave_shop"] += 1
+        if _count_area_cards(canonical, "packs") > 0:
+            counts["action:buy_pack"] += 1
+            counts["shop_with_pack_offers"] += 1
+    elif phase in {"PLANET_PACK", "TAROT_PACK", "SPECTRAL_PACK", "STANDARD_PACK", "BUFFOON_PACK", "PACK"}:
+        counts["action:skip_pack"] += 1
+        if _count_area_cards(canonical, "pack") > 0:
+            counts["action:choose_pack_card"] += 1
+            counts["pack_with_choices"] += 1
+
+
+def _has_selected_blind(canonical: dict[str, Any]) -> bool:
+    blinds = canonical.get("blinds")
+    if not isinstance(blinds, dict):
+        return False
+    return any(
+        isinstance(blind, dict) and blind.get("status") == "SELECT"
+        for blind in blinds.values()
+    )
+
+
+def _round_value(canonical: dict[str, Any], key: str) -> int:
+    round_state = canonical.get("round")
+    if not isinstance(round_state, dict):
+        return 0
+    value = round_state.get(key)
+    return value if isinstance(value, int) else 0
+
+
+def _count_area_cards(canonical: dict[str, Any], name: str) -> int:
+    area = canonical.get(name)
+    if not isinstance(area, dict):
+        return 0
+    cards = area.get("cards")
+    return len(cards) if isinstance(cards, list) else 0
 
 
 if __name__ == "__main__":

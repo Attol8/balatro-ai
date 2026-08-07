@@ -176,38 +176,98 @@ def test_incomplete_authority_trace_never_passes(tmp_path: Path) -> None:
     assert report.mismatch.message == "authority trace is incomplete"
 
 
-def test_trace_coverage_summary_requires_explicit_families(tmp_path: Path) -> None:
+def test_trace_coverage_summary_is_fail_closed_without_required_baseline_actions(tmp_path: Path) -> None:
     path = tmp_path / "trace.jsonl"
     writer = AuthorityTraceWriter(path, _manifest())
     writer.record("run_start", authority={"canonical": {}})
-    writer.record("transition", status="accepted", action={"type": "buy_pack"}, after={"canonical": {}})
-    writer.record("transition", status="accepted", action={"type": "skip_pack"}, after={"canonical": {}})
+    writer.record(
+        "transition",
+        status="accepted",
+        action={"type": "buy_pack"},
+        before={"canonical": {"state": "SHOP", "packs": {"cards": [{}]}, "round": {}}},
+        after={"canonical": {}},
+    )
+    writer.record(
+        "transition",
+        status="accepted",
+        action={"type": "skip_pack"},
+        before={"canonical": {"state": "BUFFOON_PACK", "pack": {"cards": [{}]}, "round": {}}},
+        after={"canonical": {}},
+    )
     writer.record("run_end", complete=True)
 
-    summary = summarize_trace_coverage(path)
+    summary = summarize_trace_coverage(path, pack_strategy="skip")
 
-    assert summary == {
-        "accepted_action_counts": {"buy_pack": 1, "skip_pack": 1},
-        "accepted_families": ["buy_pack", "skip_pack"],
-        "required_families": [],
-        "missing_required_families": [],
-        "coverage_complete": False,
-    }
+    assert summary["accepted_action_counts"] == {"buy_pack": 1, "skip_pack": 1}
+    assert summary["required_action_counts"]["select_blind"] == 0
+    assert summary["opportunity_counts"]["action:buy_pack"] == 1
+    assert summary["opportunity_counts"]["action:skip_pack"] == 1
+    assert summary["coverage_complete"] is False
 
 
-def test_trace_coverage_summary_reports_missing_required_families(tmp_path: Path) -> None:
+def test_trace_coverage_summary_reports_complete_pick_lane(tmp_path: Path) -> None:
     path = tmp_path / "trace.jsonl"
     writer = AuthorityTraceWriter(path, _manifest())
     writer.record("run_start", authority={"canonical": {}})
-    writer.record("transition", status="accepted", action={"type": "buy_pack"}, after={"canonical": {}})
+    writer.record(
+        "transition",
+        status="accepted",
+        action={"type": "select_blind"},
+        before={"canonical": {"state": "BLIND_SELECT", "blinds": {"small": {"status": "SELECT"}}, "round": {}}},
+        after={"canonical": {}},
+    )
+    writer.record(
+        "transition",
+        status="accepted",
+        action={"type": "discard_cards"},
+        before={"canonical": {"state": "SELECTING_HAND", "round": {"discards_left": 2}}},
+        after={"canonical": {}},
+    )
+    writer.record(
+        "transition",
+        status="accepted",
+        action={"type": "play_cards"},
+        before={"canonical": {"state": "SELECTING_HAND", "round": {"discards_left": 1}}},
+        after={"canonical": {}},
+    )
+    writer.record(
+        "transition",
+        status="accepted",
+        action={"type": "cash_out"},
+        before={"canonical": {"state": "ROUND_EVAL", "round": {}}},
+        after={"canonical": {}},
+    )
+    writer.record(
+        "transition",
+        status="accepted",
+        action={"type": "buy_pack"},
+        before={"canonical": {"state": "SHOP", "packs": {"cards": [{}, {}]}, "round": {}}},
+        after={"canonical": {}},
+    )
+    writer.record(
+        "transition",
+        status="accepted",
+        action={"type": "choose_pack_card"},
+        before={"canonical": {"state": "PLANET_PACK", "pack": {"cards": [{}, {}]}, "round": {}}},
+        after={"canonical": {}},
+    )
+    writer.record(
+        "transition",
+        status="accepted",
+        action={"type": "leave_shop"},
+        before={"canonical": {"state": "SHOP", "packs": {"cards": [{}]}, "round": {}}},
+        after={"canonical": {}},
+    )
     writer.record("run_end", complete=True)
 
-    summary = summarize_trace_coverage(path, required_families=("buy_pack", "skip_pack"))
+    summary = summarize_trace_coverage(path, pack_strategy="pick")
 
-    assert summary == {
-        "accepted_action_counts": {"buy_pack": 1},
-        "accepted_families": ["buy_pack"],
-        "required_families": ["buy_pack", "skip_pack"],
-        "missing_required_families": ["skip_pack"],
-        "coverage_complete": False,
+    assert summary["coverage_complete"] is True
+    assert summary["phase_counts"] == {
+        "BLIND_SELECT": 1,
+        "PLANET_PACK": 1,
+        "ROUND_EVAL": 1,
+        "SELECTING_HAND": 2,
+        "SHOP": 2,
     }
+    assert summary["required_action_counts"]["choose_pack_card"] == 1
