@@ -44,6 +44,7 @@ from balatro_ai_v2.public_state import (
     HandStat,
     HiddenHandCard,
     Phase,
+    PublicItem,
     PublicObservation,
     VisiblePlayingCard,
 )
@@ -54,8 +55,50 @@ _RANK_ORDER = {"A": 14, "K": 13, "Q": 12, "J": 11, "T": 10, **{str(value): value
 _REORDER_TYPES = (ReorderHand, ReorderJokers, ReorderConsumables)
 _MAX_TACTICAL_CANDIDATES = 2048
 _MAX_PUBLIC_ACTIONS = 256
+_MAX_STRATEGIC_ACTIONS = 512
 _MAX_PUBLIC_DRAW_BRANCHES = 512
-PUBLIC_BASELINE_NAMES = ("random", "greedy", "tactical")
+PUBLIC_BASELINE_NAMES = ("random", "greedy", "tactical", "strategic")
+
+_GREAT_JOKERS = {
+    "j_blackboard",
+    "j_blueprint",
+    "j_brainstorm",
+    "j_duo",
+    "j_family",
+    "j_hologram",
+    "j_order",
+    "j_steel_joker",
+    "j_stencil",
+    "j_tribe",
+    "j_trio",
+}
+_GOOD_JOKERS = {
+    "j_ancient",
+    "j_blue_joker",
+    "j_business",
+    "j_chaos",
+    "j_cloud_9",
+    "j_constellation",
+    "j_delayed_grat",
+    "j_dusk",
+    "j_faceless",
+    "j_golden",
+    "j_green_joker",
+    "j_hack",
+    "j_hanging_chad",
+    "j_ice_cream",
+    "j_idol",
+    "j_loyalty_card",
+    "j_obelisk",
+    "j_photograph",
+    "j_red_card",
+    "j_ride_the_bus",
+    "j_runner",
+    "j_sock_and_buskin",
+    "j_swashbuckler",
+    "j_to_the_moon",
+    "j_trousers",
+}
 
 
 def build_public_baseline(name: str, policy_seed: str) -> tuple[PublicPolicy, str]:
@@ -65,6 +108,8 @@ def build_public_baseline(name: str, policy_seed: str) -> tuple[PublicPolicy, st
         return GreedyImmediatePolicy(), "GreedyImmediatePolicy"
     if name == "tactical":
         return PublicBeliefTacticalPolicy(), "PublicBeliefTacticalPolicy"
+    if name == "strategic":
+        return PublicStrategicPolicy(), "PublicStrategicPolicy"
     raise ValueError(f"unknown public baseline {name!r}")
 
 
@@ -121,6 +166,38 @@ class PublicBeliefTacticalPolicy:
 
 
 @dataclass(frozen=True, slots=True)
+class PublicStrategicPolicy:
+    """Bounded strategic baseline using only explicit public state."""
+
+    max_shop_actions: int = 6
+
+    def choose_action(
+        self,
+        observation: PublicObservation,
+        legal_actions: ActionSource,
+        history: tuple[PublicHistoryStep, ...],
+    ) -> PublicAction:
+        if observation.phase == Phase.BLIND_SELECT:
+            return SelectBlind()
+        if observation.phase == Phase.SELECTING_HAND:
+            actions = _bounded_actions(legal_actions(), _MAX_STRATEGIC_ACTIONS)
+            planet = _held_planet_action(observation)
+            if planet is not None and planet in actions:
+                return planet
+            best, hand_name = _best_available_play(observation, actions)
+            discard = _coverage_discard(observation, best, hand_name)
+            return discard if discard in actions else best
+        if observation.phase == Phase.ROUND_EVAL:
+            return CashOut()
+        actions = _bounded_actions(legal_actions())
+        if observation.phase == Phase.SHOP:
+            return _strategic_shop_action(observation, actions, history, self.max_shop_actions)
+        if observation.phase == Phase.PACK:
+            return _strategic_pack_action(observation, actions)
+        raise RuntimeError(f"no strategic action for {observation.phase.value}")
+
+
+@dataclass(frozen=True, slots=True)
 class DeterministicCoveragePolicy:
     """Exercise public action families without consulting privileged state."""
 
@@ -149,7 +226,7 @@ class DeterministicCoveragePolicy:
             return next(action for action in actions if isinstance(action, SelectBlind))
 
         if observation.phase == Phase.SELECTING_HAND:
-            planet = self._held_planet(observation)
+            planet = _held_planet_action(observation)
             if self.coverage_mode == "extended" and planet is not None:
                 return planet
             best, hand_name = _best_play(observation, self._number(observation, history, "tactical"))
@@ -169,7 +246,7 @@ class DeterministicCoveragePolicy:
             rerolls = [action for action in actions if isinstance(action, RerollShop)]
             if self.coverage_mode == "extended" and rerolls and shop_steps == 0:
                 return rerolls[0]
-            planet = self._held_planet(observation)
+            planet = _held_planet_action(observation)
             if self.coverage_mode == "extended" and planet is not None:
                 return planet
             pack_purchases = [action for action in actions if isinstance(action, BuyPack)]
@@ -196,13 +273,6 @@ class DeterministicCoveragePolicy:
             return next(action for action in actions if isinstance(action, SkipPack))
 
         raise RuntimeError(f"no coverage action for {observation.phase.value}")
-
-    @staticmethod
-    def _held_planet(observation: PublicObservation) -> UseConsumable | None:
-        for index, item in enumerate(observation.consumables):
-            if item.kind.upper() == "PLANET":
-                return UseConsumable(ConsumableSlot(index))
-        return None
 
     def _pick(
         self,
@@ -243,20 +313,7 @@ def _best_play_with_score(
     stats = hand_stats if hand_stats is not None else {hand.name: hand for hand in observation.hand_stats}
     best: tuple[int | Fraction, int, tuple[HandSlot, ...], str] | None = None
     for selected in candidate_slots:
-        cards = tuple(observation.hand[slot.value] for slot in selected)
-        hand_name = _classify(cards)
-        stat = stats.get(hand_name)
-        base_chips = stat.chips if stat is not None else 0
-        base_mult = stat.mult if stat is not None else 1
-        card_chips = sum(_card_chips(card) for card in cards)
-        mult_bonus = sum(4 for card in cards if isinstance(card, VisiblePlayingCard) and card.enhancement == "MULT")
-        multiplier: int | Fraction = 1
-        for card in cards:
-            if isinstance(card, VisiblePlayingCard) and card.enhancement == "GLASS":
-                multiplier *= 2
-            if isinstance(card, VisiblePlayingCard) and card.edition == "POLYCHROME":
-                multiplier *= Fraction(3, 2)
-        score = (base_chips + card_chips) * (base_mult + mult_bonus) * multiplier
+        score, hand_name = _play_score(observation, selected, stats)
         tie = (tie_seed ^ sum((slot.value + 1) * 0x9E3779B1 for slot in selected)) & 0xFFFFFFFF
         candidate = (score, tie, selected, hand_name)
         if best is None or (candidate[0], candidate[1]) > (best[0], best[1]):
@@ -265,6 +322,47 @@ def _best_play_with_score(
         raise RuntimeError("selecting-hand state has no legal cards")
     score, _, selected, hand_name = best
     return PlayCards(selected), hand_name, score
+
+
+def _best_available_play(
+    observation: PublicObservation,
+    actions: list[PublicAction],
+) -> tuple[PlayCards, str]:
+    stats = {hand.name: hand for hand in observation.hand_stats}
+    plays = [action for action in actions if isinstance(action, PlayCards)]
+    if not plays:
+        raise RuntimeError("strategic proposal contains no playable hand")
+    scored = [(*_play_score(observation, action.cards, stats), action) for action in plays]
+    _, hand_name, best = max(
+        scored,
+        key=lambda row: (row[0], tuple(-slot.value for slot in row[2].cards)),
+    )
+    return best, hand_name
+
+
+def _play_score(
+    observation: PublicObservation,
+    selected: tuple[HandSlot, ...],
+    stats: Mapping[str, HandStat],
+) -> tuple[int | Fraction, str]:
+    cards = tuple(observation.hand[slot.value] for slot in selected)
+    hand_name = _classify(cards)
+    stat = stats.get(hand_name)
+    base_chips = stat.chips if stat is not None else 0
+    base_mult = stat.mult if stat is not None else 1
+    card_chips = sum(_card_chips(card) for card in cards)
+    mult_bonus = sum(
+        4
+        for card in cards
+        if isinstance(card, VisiblePlayingCard) and card.enhancement == "MULT"
+    )
+    multiplier: int | Fraction = 1
+    for card in cards:
+        if isinstance(card, VisiblePlayingCard) and card.enhancement == "GLASS":
+            multiplier *= 2
+        if isinstance(card, VisiblePlayingCard) and card.edition == "POLYCHROME":
+            multiplier *= Fraction(3, 2)
+    return (base_chips + card_chips) * (base_mult + mult_bonus) * multiplier, hand_name
 
 
 def _belief_tactical_action(observation: PublicObservation) -> PublicAction:
@@ -323,6 +421,155 @@ def _passive_control_action(
     return next(action for action in actions if isinstance(action, expected))
 
 
+def _held_planet_action(observation: PublicObservation) -> UseConsumable | None:
+    for index, item in enumerate(observation.consumables):
+        if item.kind.upper() == "PLANET":
+            action = UseConsumable(ConsumableSlot(index))
+            return action if is_legal(observation, action) else None
+    return None
+
+
+def _strategic_shop_action(
+    observation: PublicObservation,
+    actions: list[PublicAction],
+    history: tuple[PublicHistoryStep, ...],
+    max_shop_actions: int,
+) -> PublicAction:
+    planet = _held_planet_action(observation)
+    if planet is not None and planet in actions:
+        return planet
+    shop_steps = _current_shop_action_count(history)
+    if shop_steps >= max_shop_actions:
+        return _action_of_type(actions, LeaveShop)
+
+    building = len(observation.jokers) < min(4, observation.joker_limit)
+    interest_floor = 0 if observation.ante <= 2 and len(observation.jokers) < 3 else 5
+    if observation.ante > 5:
+        interest_floor = 10
+    spendable = observation.money - interest_floor
+
+    joker_buys = [
+        action
+        for action in actions
+        if isinstance(action, BuyShopCard)
+        and observation.shop[action.card.value].kind.upper() == "JOKER"
+    ]
+    affordable_jokers = [
+        action
+        for action in joker_buys
+        if (observation.shop[action.card.value].buy_cost or 0) <= observation.money
+    ]
+    if affordable_jokers:
+        best_joker = max(
+            affordable_jokers,
+            key=lambda action: (
+                _joker_value(observation.shop[action.card.value]),
+                -(observation.shop[action.card.value].buy_cost or 0),
+                -action.card.value,
+            ),
+        )
+        item = observation.shop[best_joker.card.value]
+        cost = item.buy_cost or 0
+        item_value = _joker_value(item)
+        if (building or item_value >= 25) and cost <= spendable:
+            return best_joker
+
+    rerolls = [action for action in actions if isinstance(action, RerollShop)]
+    if building and not affordable_jokers and rerolls and shop_steps < 3:
+        if observation.round.reroll_cost <= spendable:
+            return rerolls[0]
+
+    vouchers = [action for action in actions if isinstance(action, BuyVoucher)]
+    if vouchers:
+        return min(
+            vouchers,
+            key=lambda action: (
+                observation.vouchers[action.voucher.value].buy_cost or 0,
+                action.voucher.value,
+            ),
+        )
+
+    pack_buys = [
+        action
+        for action in actions
+        if isinstance(action, BuyPack)
+        and (observation.packs[action.pack.value].buy_cost or 0) <= spendable
+    ]
+    if pack_buys:
+        return max(
+            pack_buys,
+            key=lambda action: (
+                int(
+                    building
+                    and observation.packs[action.pack.value].key.startswith("p_buffoon")
+                ),
+                -(observation.packs[action.pack.value].buy_cost or 0),
+                -action.pack.value,
+            ),
+        )
+
+    if len(observation.consumables) < observation.consumable_limit:
+        planet_buys = [
+            action
+            for action in actions
+            if isinstance(action, BuyShopCard)
+            and observation.shop[action.card.value].kind.upper() == "PLANET"
+            and (observation.shop[action.card.value].buy_cost or 0) <= spendable
+        ]
+        if planet_buys:
+            return min(planet_buys, key=lambda action: action.card.value)
+
+    if rerolls and observation.round.reroll_cost == 0:
+        return rerolls[0]
+    return _action_of_type(actions, LeaveShop)
+
+
+def _strategic_pack_action(
+    observation: PublicObservation,
+    actions: list[PublicAction],
+) -> PublicAction:
+    choices = [action for action in actions if isinstance(action, ChoosePackCard)]
+    if not choices:
+        return _action_of_type(actions, SkipPack)
+
+    def value(action: ChoosePackCard) -> tuple[int, int]:
+        offer = observation.opened_pack[action.card.value]
+        if isinstance(offer, VisiblePlayingCard):
+            return 5, -action.card.value
+        if offer.kind.upper() == "PLANET":
+            return 70, -action.card.value
+        if offer.kind.upper() == "JOKER":
+            return 40 + _joker_value(offer), -action.card.value
+        return 0, -action.card.value
+
+    return max(choices, key=value)
+
+
+def _joker_value(item: PublicItem) -> int:
+    if item.key in _GREAT_JOKERS:
+        value = 90
+    elif item.key in _GOOD_JOKERS:
+        value = 60
+    else:
+        value = 15
+    if item.edition == "POLYCHROME":
+        value += 25
+    elif item.edition in {"FOIL", "HOLO", "HOLOGRAPHIC"}:
+        value += 10
+    if item.rental:
+        value -= 25
+    if item.perishable_rounds is not None:
+        value -= 10
+    return value
+
+
+def _action_of_type(
+    actions: list[PublicAction],
+    action_type: type[object],
+) -> PublicAction:
+    return next(action for action in actions if isinstance(action, action_type))
+
+
 def _coverage_discard(
     observation: PublicObservation,
     best: PlayCards,
@@ -353,7 +600,8 @@ def _coverage_discard(
         best_slots = {slot.value for slot in best.cards}
         candidates = [index for index in visible if index not in best_slots]
     limit = min(5, observation.selection_limit, len(candidates))
-    return DiscardCards(tuple(HandSlot(index) for index in candidates[:limit])) if limit else None
+    selected = sorted(candidates[:limit])
+    return DiscardCards(tuple(HandSlot(index) for index in selected)) if selected else None
 
 
 def _classify(cards: tuple[VisiblePlayingCard | HiddenHandCard, ...]) -> str:
@@ -399,10 +647,13 @@ def _card_chips(card: VisiblePlayingCard | HiddenHandCard) -> int:
     return chips + card.permanent_bonus
 
 
-def _bounded_actions(actions: Iterator[PublicAction]) -> list[PublicAction]:
+def _bounded_actions(
+    actions: Iterator[PublicAction],
+    limit: int = _MAX_PUBLIC_ACTIONS,
+) -> list[PublicAction]:
     return [
         action
-        for action in islice(actions, _MAX_PUBLIC_ACTIONS)
+        for action in islice(actions, limit)
         if not isinstance(action, _REORDER_TYPES)
     ]
 

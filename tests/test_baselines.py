@@ -7,6 +7,7 @@ import pytest
 
 from balatro_ai_v2.actions import (
     BuyPack,
+    BuyShopCard,
     ChoosePackCard,
     ConsumableSlot,
     LeaveShop,
@@ -23,6 +24,7 @@ from balatro_ai_v2.baselines import (
     DeterministicRandomPolicy,
     GreedyImmediatePolicy,
     PublicBeliefTacticalPolicy,
+    PublicStrategicPolicy,
     _classify,
     build_public_baseline,
 )
@@ -58,7 +60,11 @@ def test_random_and_greedy_baselines_are_identical_for_hidden_twins() -> None:
     left_public = to_public_observation(left)
     right_public = to_public_observation(right)
 
-    for policy in (DeterministicRandomPolicy("control-v1"), GreedyImmediatePolicy()):
+    for policy in (
+        DeterministicRandomPolicy("control-v1"),
+        GreedyImmediatePolicy(),
+        PublicStrategicPolicy(),
+    ):
         left_action = policy.choose_action(left_public, lambda: iter_legal_actions(left_public), ())
         right_action = policy.choose_action(right_public, lambda: iter_legal_actions(right_public), ())
         assert action_to_data(left_action) == action_to_data(right_action)
@@ -176,6 +182,69 @@ def test_greedy_baseline_leaves_shop_without_private_economy_model() -> None:
     )
 
     assert isinstance(action, LeaveShop)
+
+
+def test_strategic_baseline_buys_an_early_public_joker() -> None:
+    shop = to_public_observation(state("SHOP", money=10))
+
+    action = PublicStrategicPolicy().choose_action(
+        shop,
+        lambda: iter_legal_actions(shop),
+        (),
+    )
+
+    assert isinstance(action, BuyShopCard)
+    assert action.card.value == 0
+
+
+def test_strategic_tactical_action_is_in_the_canonical_legal_set() -> None:
+    raw = state("SELECTING_HAND")
+    raw["hand"]["cards"].extend(
+        playing_card(key, card_id=index)
+        for index, key in enumerate(("S_A", "H_K", "D_Q", "C_J", "S_9"), 40)
+    )
+    raw["hand"]["count"] = 8
+    observation = to_public_observation(raw)
+    legal = tuple(iter_legal_actions(observation))
+
+    action = PublicStrategicPolicy().choose_action(observation, lambda: iter(legal), ())
+
+    assert action_to_data(action) in [action_to_data(candidate) for candidate in legal]
+    assert action_to_data(action)["cards"] == sorted(action_to_data(action)["cards"])
+
+
+def test_strategic_baseline_preserves_visible_interest_floor() -> None:
+    raw = state("SHOP", money=8)
+    raw["ante_num"] = 4
+    raw["shop"]["cards"][0]["cost"]["buy"] = 4
+    shop = to_public_observation(raw)
+
+    action = PublicStrategicPolicy().choose_action(
+        shop,
+        lambda: iter_legal_actions(shop),
+        (),
+    )
+
+    assert isinstance(action, LeaveShop)
+
+
+def test_strategic_baseline_prefers_a_great_joker_pack_pick() -> None:
+    raw = state("BUFFOON_PACK")
+    raw["pack"]["cards"] = [
+        item_card("c_mercury", card_id=30, kind="PLANET"),
+        item_card("j_blueprint", card_id=31, kind="JOKER"),
+    ]
+    raw["pack"]["count"] = 2
+    pack = to_public_observation(raw)
+
+    action = PublicStrategicPolicy().choose_action(
+        pack,
+        lambda: iter_legal_actions(pack),
+        (),
+    )
+
+    assert isinstance(action, ChoosePackCard)
+    assert action.card.value == 1
 
 
 def test_coverage_policy_leaves_shop_at_its_public_budget() -> None:
