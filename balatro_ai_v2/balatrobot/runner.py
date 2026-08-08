@@ -55,8 +55,8 @@ class AuthorityRunner:
             final = public
             self._record("run_start", authority=_authority_data(authority), public=json.loads(public.canonical_json()))
             for _ in range(self.max_decisions):
-                if public.phase == Phase.GAME_OVER:
-                    terminal_reason = "game_over"
+                if public.terminal:
+                    terminal_reason = _terminal_reason(public)
                     break
                 try:
                     action = self.policy.choose_action(
@@ -103,8 +103,8 @@ class AuthorityRunner:
                 authority = result.after
                 public = after_public
                 final = public
-                if public.phase == Phase.GAME_OVER:
-                    terminal_reason = "game_over"
+                if public.terminal:
+                    terminal_reason = _terminal_reason(public)
                     break
             else:
                 terminal_reason = "decision_limit"
@@ -112,7 +112,7 @@ class AuthorityRunner:
             terminal_reason = "unsettled"
             self._record("authority_error", error=str(exc))
 
-        complete = terminal_reason == "game_over" and final is not None
+        complete = terminal_reason in {"game_over", "won"} and final is not None
         result = RunResult(
             complete=complete,
             won=bool(final.won) if complete else False,
@@ -170,6 +170,10 @@ def _public(authority: AuthorityObservation) -> PublicObservation:
     if not isinstance(raw, dict):
         raise AssertionError("authority state root is not an object")
     return to_public_observation(raw)
+
+
+def _terminal_reason(observation: PublicObservation) -> str:
+    return "game_over" if observation.phase == Phase.GAME_OVER else "won"
 
 
 def _authority_data(authority: AuthorityObservation) -> dict[str, object]:

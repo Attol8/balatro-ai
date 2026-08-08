@@ -162,6 +162,30 @@ def _refresh_swashbuckler_mult(game_state: Mapping[str, Any]) -> None:
             ability["mult"] = owned_sell_total - own_sell_cost
 
 
+def _refresh_stencil_x_mult(game_state: Mapping[str, Any]) -> None:
+    """Mirror ``Card:update`` for owned, shop, and pack Joker Stencils."""
+
+    jokers = game_state.get("jokers")
+    joker_slots = game_state.get("joker_slots", 5)
+    if not isinstance(jokers, list):
+        raise RuntimeError("Jackdaw joker state is unavailable")
+    if not isinstance(joker_slots, int) or isinstance(joker_slots, bool):
+        raise RuntimeError("Jackdaw joker slot count is unavailable")
+    stencil_count = sum(getattr(card, "center_key", None) == "j_stencil" for card in jokers)
+    runtime_x_mult = joker_slots - len(jokers) + stencil_count
+    for area_name in ("jokers", "shop_cards", "pack_cards"):
+        cards = game_state.get(area_name, [])
+        if not isinstance(cards, list):
+            raise RuntimeError(f"Jackdaw {area_name} state is unavailable")
+        for card in cards:
+            if getattr(card, "center_key", None) != "j_stencil":
+                continue
+            ability = getattr(card, "ability", None)
+            if not isinstance(ability, dict):
+                raise RuntimeError("Jackdaw Joker Stencil ability state is unavailable")
+            ability["x_mult"] = runtime_x_mult
+
+
 @dataclass(slots=True)
 class JackdawBackend:
     profile_mode: str = field(default="all_unlocked", init=False)
@@ -174,6 +198,8 @@ class JackdawBackend:
     _stale_shop_areas: dict[str, dict[str, Any]] | None = field(default=None, init=False, repr=False)
     _pending_ante_setup: int | None = field(default=None, init=False, repr=False)
     _poker_hand_iteration_order: tuple[str, ...] | None = field(default=None, init=False, repr=False)
+    _active_pack_cards: list[Any] | None = field(default=None, init=False, repr=False)
+    _pack_card_limit: int | None = field(default=None, init=False, repr=False)
 
     def __post_init__(self) -> None:
         try:
@@ -204,6 +230,8 @@ class JackdawBackend:
         self._round_targets_rolled = False
         self._stale_shop_areas = None
         self._pending_ante_setup = None
+        self._active_pack_cards = None
+        self._pack_card_limit = None
         self._handle("menu", {})
         raw = self._handle(
             "start",
@@ -273,10 +301,6 @@ class JackdawBackend:
             raw_after = self._handle("gamestate", {})
         if voucher_effect is not None and self._apply_immediate_voucher_effect(voucher_effect):
             raw_after = self._handle("gamestate", {})
-        if method == "play" and raw_after.get("won") is True:
-            game_state = getattr(self._backend, "_gs", None)
-            _finish_vanilla_win(game_state)
-            raw_after = self._handle("gamestate", {})
         if method == "next_round" and raw_after.get("state") == "BLIND_SELECT":
             self._initialize_orbital_choices()
         if method == "play" and raw_after.get("state") == "ROUND_EVAL":
@@ -302,6 +326,8 @@ class JackdawBackend:
         self._stale_shop_areas = None
         self._pending_ante_setup = None
         self._poker_hand_iteration_order = None
+        self._active_pack_cards = None
+        self._pack_card_limit = None
 
     def _handle(self, method: str, params: dict[str, Any]) -> dict[str, Any]:
         with self._poker_hand_order_compatibility(), self._standard_pack_cost_compatibility():
@@ -473,15 +499,35 @@ class JackdawBackend:
         if not isinstance(game_state, Mapping):
             raise RuntimeError("Jackdaw backend does not expose its active game state")
         _refresh_swashbuckler_mult(game_state)
+        _refresh_stencil_x_mult(game_state)
+        pack_card_limit = self._track_pack_card_limit(game_state)
         normalized = _normalize_jackdaw_bridge(
             raw,
             game_state,
             self._stale_shop_areas,
             self._poker_hand_iteration_order,
+            pack_card_limit,
         )
         to_public_observation(normalized)
         observed = self.canonicalizer.canonicalize(normalized)
         return AuthorityObservation(observed=observed, settled=True, polls=(observed.raw_json,))
+
+    def _track_pack_card_limit(self, game_state: Mapping[str, Any]) -> int | None:
+        pack_cards = game_state.get("pack_cards")
+        if pack_cards is None:
+            self._active_pack_cards = None
+            self._pack_card_limit = None
+            return None
+        if not isinstance(pack_cards, list):
+            raise RuntimeError("Jackdaw pack state is unavailable")
+        if not pack_cards:
+            self._active_pack_cards = None
+            self._pack_card_limit = None
+            return None
+        if pack_cards is not self._active_pack_cards:
+            self._active_pack_cards = pack_cards
+            self._pack_card_limit = len(pack_cards)
+        return self._pack_card_limit
 
     def _roll_round_targets(self) -> None:
         from jackdaw.engine.round_lifecycle import reset_round_targets
@@ -670,9 +716,6 @@ class JackdawBackend:
                 game._advance_ante = original_advance_ante
 
     def _advance_ante_at_round_end(self, game_state: dict[str, Any]) -> None:
-        if game_state.get("won") is True:
-            return
-
         from jackdaw.engine.vouchers import get_next_voucher_key
 
         hand_levels = game_state.get("hand_levels")
@@ -765,25 +808,12 @@ class JackdawBackend:
                 game._populate_shop = original_populate_shop
 
 
-def _finish_vanilla_win(game_state: object) -> None:
-    """Expose Balatro's immediate terminal win instead of Jackdaw Endless setup."""
-
-    if not isinstance(game_state, dict) or game_state.get("won") is not True:
-        raise RuntimeError("Jackdaw win state is unavailable")
-    phase = game_state.get("phase")
-    phase_value = getattr(phase, "value", phase)
-    if phase_value in {"game_over", "GAME_OVER"}:
-        return
-    if phase_value not in {"round_eval", "ROUND_EVAL"}:
-        raise RuntimeError(f"Jackdaw won in unexpected phase {phase_value!r}")
-    game_state["phase"] = getattr(type(phase), "GAME_OVER", "GAME_OVER")
-
-
 def _normalize_jackdaw_bridge(
     raw: dict[str, Any],
     game_state: object,
     stale_shop_areas: Mapping[str, Mapping[str, Any]] | None = None,
     poker_hand_iteration_order: tuple[str, ...] | None = None,
+    pack_card_limit: int | None = None,
 ) -> dict[str, Any]:
     """Translate Jackdaw serializer defaults into BalatroBot's observed schema.
 
@@ -888,7 +918,12 @@ def _normalize_jackdaw_bridge(
         elif area_name == "packs":
             area["limit"] = 2
         elif area_name == "pack":
-            area["limit"] = len(private_cards)
+            if private_cards:
+                if not isinstance(pack_card_limit, int) or pack_card_limit < len(private_cards):
+                    raise RuntimeError("Jackdaw opened-pack capacity is unavailable")
+                area["limit"] = pack_card_limit
+            else:
+                area["limit"] = 0
         for card, private_card in zip(area["cards"], private_cards, strict=True):
             if not isinstance(card, dict):
                 continue

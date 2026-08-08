@@ -146,11 +146,11 @@ A fresh public-action Red/White seed-1 smoke run completed in real Balatro and i
 
 ### Active Increment: Win-Boundary Integrity
 
-- Real public-action evidence fixes the exact contract: beating the ante-8 boss transitions directly from the final play to `GAME_OVER` with `won=true` and `ante=8`; there is no round-eval cash-out action. Jackdaw instead marks `won`, advances to ante 9, and waits in `ROUND_EVAL`, so the unchanged evaluator drives a genuine clear into Endless Mode and can overwrite the flag with a later loss.
-- Correct the pinned-candidate compatibility layer, not the authority runner or differential gate. When the win ante boss is beaten, suppress Jackdaw's next-ante setup and expose the engine state as `GAME_OVER` immediately. Exact authority semantics remain mandatory.
-- Add focused compatibility regressions for no ante advance and terminal phase conversion, then rerun the unchanged 100-seed panel. Historical candidate reports that continued after `won=true` are outcome-invalid and must not be used as win-rate evidence.
-- This repairs candidate outcome accounting only. Any candidate win remains candidate evidence until the exact frozen policy reproduces every public action and canonical state through BalatroBot.
-- The corrected dirty panel reports seed 63 as `GAME_OVER`, `won=true`, ante 8, round 24 after 212 decisions. The full development panel records 1/100 candidate wins at 7.89 average rounds. This is the first honest candidate clear in the rebuild, not yet a Balatro solve claim.
+- Candidate-only evidence originally led to a false compatibility rule that forced an ante-8 clear directly to `GAME_OVER`. The completed real seed-63 trace corrects the contract: Balatro returns `ROUND_EVAL`, increments to ante 9, and sets `won=true`. Cashing out opts into Endless Mode; it is not required to establish the win.
+- Remove the candidate-only terminal conversion and the suppression of ante advancement. Make the authority runner treat the first settled public observation with `won=true` as a complete terminal result, before any cash-out or Endless action. Losses remain complete only at `GAME_OVER`.
+- Add a runner regression for `ROUND_EVAL` plus `won=true`, replay the completed diagnostic trace through the corrected candidate to verify the winning transition, then capture a fresh trace that closes immediately at the win. A solve trace must end at that boundary and pass exact differential replay; post-win Endless transitions are outside the run being evaluated.
+- Historical candidate panels that used the false forced-`GAME_OVER` state are retained only as strategy-development evidence. Rerun the frozen panel under the corrected terminal contract before quoting its outcome metrics at the new revision.
+- The corrected candidate now matches the completed diagnostic authority trace through the win transition and 27 further optional Endless transitions: 240 transitions are exact. The next mismatch is an Endless-only deck-capacity difference at transition 241. This is useful simulator work later, but it is outside the declared run endpoint; the next clean trace must stop at the already-exact `won=true` boundary.
 
 ### Active Increment: Empty-Shop Authority Settling
 
@@ -165,6 +165,20 @@ A fresh public-action Red/White seed-1 smoke run completed in real Balatro and i
 - Fix the pinned BalatroBot endpoint at the root cause. Capture the public pack state before `G.FUNCS.use_card`; when a multi-choice pack decrements `pack_choices` by one, require the same state to be restored, a live pack area, and `G.STATE_COMPLETE`. This follows Balatro's own `use_card` contract and covers vanilla and SMODS pack states without admitting unrelated states.
 - Add a regression that opens a vanilla Mega Standard Pack, verifies the first selection returns in `STANDARD_PACK` with the pack still open, and verifies the second selection closes back to `SHOP`. Do not solve this with a longer transport timeout, an unconditional response, or a policy-side pack skip.
 - Regenerate the tracked authority patch digest, commit the authority fix, and rerun the unchanged frozen seed-63 policy. The run counts only if it reaches `run_end` and differential replay reports zero mismatches, zero unchecked transitions, and zero waivers.
+
+### Active Increment: Joker Stencil Runtime State
+
+- The patched authority completed the frozen seed-63 run with `won=true`, but differential replay stopped at transition 71. In the ante-4 shop, Balatro's visible Joker Stencil had runtime `enhancement_x_mult=0`; Jackdaw emitted the same Joker without that field.
+- Mirror vanilla `Card:update` in the existing candidate compatibility refresh. For every owned, shop, and pack Joker Stencil, set runtime `ability.x_mult` to `joker_slots - owned_joker_count + owned_stencil_count` before serialization. Preserve zero because it is a real visible runtime value; do not erase it in canonicalization or add a parity waiver.
+- Add focused full-slot and owned-Stencil regressions, rerun the project suite, then replay the already-complete authority trace without launching Balatro. Continue stop-on-first-mismatch until the entire winning trace is exact.
+- The Stencil runtime correction moves the stop-on-first-mismatch boundary from transition 71 to transition 202.
+
+### Active Increment: Open-Pack Capacity
+
+- With Joker Stencil fixed, the completed seed-63 trace matches through 201 transitions. After the first Mega Standard selection, both kernels retain four offers, but Balatro keeps the pack area's original `limit=5` while the candidate rewrites the limit to the remaining count of four.
+- Track the active candidate pack list by object identity and capture its size when the pack opens. Preserve that capacity while selections mutate the same list; clear it when the pack closes, and replace it when a queued/new pack installs a new list. Pass the tracked value into bridge normalization instead of deriving capacity from the shrinking offer count.
+- Add a focused normalization/tracking regression, rerun the suite, and replay the same immutable authority trace. Do not canonicalize `limit` away: it is visible UI capacity and affects observation equality.
+- Preserving the active pack capacity moves the mismatch boundary from transition 202 to the previously incorrect win-boundary compatibility at transition 212.
 
 ## Design
 

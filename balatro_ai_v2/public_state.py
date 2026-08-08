@@ -124,6 +124,12 @@ class PublicObservation:
     used_vouchers: tuple[str, ...]
     won: bool
 
+    @property
+    def terminal(self) -> bool:
+        """An evaluated run ends at a win or a loss, before optional Endless play."""
+
+        return self.won or self.phase == Phase.GAME_OVER
+
     def canonical_json(self) -> str:
         return json.dumps(_json_value(self), sort_keys=True, separators=(",", ":"), ensure_ascii=False)
 

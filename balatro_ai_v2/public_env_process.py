@@ -29,7 +29,7 @@ from balatro_ai_v2.jsonl_process import (
     JsonlProcessError,
     minimal_child_environment,
 )
-from balatro_ai_v2.public_state import Phase, PublicObservation
+from balatro_ai_v2.public_state import PublicObservation
 
 
 class PublicEnvironmentError(RuntimeError):
@@ -103,7 +103,7 @@ class PublicEnvironmentProcess:
         if not isinstance(response, EnvResetResult) or response.request_id != self._request_id:
             self.close()
             raise PublicEnvironmentError("environment reset response is stale or has the wrong type")
-        if response.step_index != 0 or response.observation.phase == Phase.GAME_OVER:
+        if response.step_index != 0 or response.observation.terminal:
             self.close()
             raise PublicEnvironmentError("environment reset returned an invalid public state")
         self._request_id += 1
@@ -115,7 +115,7 @@ class PublicEnvironmentProcess:
     def step(self, action: PublicAction) -> PublicTransition:
         if self._current is None:
             raise PublicEnvironmentError("environment must be reset before stepping")
-        if self._done or self._current.phase == Phase.GAME_OVER or not is_legal(self._current, action):
+        if self._done or self._current.terminal or not is_legal(self._current, action):
             raise PublicEnvironmentError("action is illegal in the current public observation")
         response = self._exchange(EnvStepRequest(self._request_id, self._step_index, action))
         if not isinstance(response, EnvStepResult) or response.request_id != self._request_id:

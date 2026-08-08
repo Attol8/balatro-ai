@@ -90,14 +90,14 @@ def main() -> None:
                 raise RuntimeError("environment must be reset before stepping")
             if request.step_index != step_index:
                 raise RuntimeError("environment step index is stale")
-            if current.phase == Phase.GAME_OVER or not is_legal(current, request.action):
+            if current.terminal or not is_legal(current, request.action):
                 raise RuntimeError("environment received an illegal or post-terminal action")
             result = backend.step(request.action)
             if result.status != "accepted" or result.after is None:
                 raise RuntimeError(f"candidate rejected public action: {result.status}")
             current = _public(result.after)
             step_index += 1
-            terminated = current.phase == Phase.GAME_OVER
+            terminated = current.terminal
             truncated = not terminated and step_index >= max_steps
             done = terminated or truncated
             reward = (1 if current.won else -1) if terminated else 0
@@ -108,7 +108,15 @@ def main() -> None:
                 reward=reward,
                 terminated=terminated,
                 truncated=truncated,
-                terminal_reason="game_over" if terminated else "step_limit" if truncated else None,
+                terminal_reason=(
+                    "game_over"
+                    if terminated and current.phase == Phase.GAME_OVER
+                    else "won"
+                    if terminated
+                    else "step_limit"
+                    if truncated
+                    else None
+                ),
                 won=current.won if terminated else None,
             )
             _write(encode_env_response(response))

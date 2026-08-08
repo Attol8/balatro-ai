@@ -34,7 +34,7 @@ from balatro_ai_v2.balatrobot.runner import PublicHistoryStep
 from balatro_ai_v2.balatrobot.tracing import build_manifest
 from balatro_ai_v2.baselines import DeterministicCoveragePolicy
 from balatro_ai_v2.canonical import BalatroBotCanonicalizer
-from balatro_ai_v2.public_state import Phase, PublicObservation
+from balatro_ai_v2.public_state import PublicObservation
 
 
 def main() -> None:
@@ -284,7 +284,7 @@ def _record_branch(
     actions: list[PublicAction] = []
     digests: list[str] = []
     for _ in range(depth):
-        if public.phase == Phase.GAME_OVER:
+        if public.terminal:
             break
         action = policy.choose_action(public, lambda: iter_legal_actions(public), tuple(history))
         result = backend.step(action)

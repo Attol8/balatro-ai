@@ -75,14 +75,17 @@ def test_environment_reset_response_contains_no_seed() -> None:
 def test_environment_step_response_enforces_sparse_public_reward() -> None:
     playing = to_public_observation(state("SELECTING_HAND"))
     terminal = to_public_observation(state("GAME_OVER", won=True))
+    win_boundary = to_public_observation(state("ROUND_EVAL", won=True))
     ongoing = EnvStepResult(2, 1, playing, 0, False, False, None, None)
     won = EnvStepResult(3, 2, terminal, 1, True, False, "game_over", True)
-    truncated = EnvStepResult(4, 3, playing, 0, False, True, "step_limit", None)
+    won_before_endless = EnvStepResult(4, 2, win_boundary, 1, True, False, "won", True)
+    truncated = EnvStepResult(5, 3, playing, 0, False, True, "step_limit", None)
 
     assert decode_env_response(encode_env_response(ongoing)) == ongoing
     assert decode_env_response(encode_env_response(won)) == won
+    assert decode_env_response(encode_env_response(won_before_endless)) == won_before_endless
     assert decode_env_response(encode_env_response(truncated)) == truncated
-    assert decode_env_response(encode_env_response(EnvClosed(5))) == EnvClosed(5)
+    assert decode_env_response(encode_env_response(EnvClosed(6))) == EnvClosed(6)
 
 
 def test_environment_wire_rejects_inconsistent_terminal_data() -> None:

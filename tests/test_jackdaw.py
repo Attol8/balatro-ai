@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from enum import Enum
 from types import SimpleNamespace
 
 import pytest
@@ -28,25 +27,20 @@ def test_candidate_module_is_lazy_and_revision_is_pinned() -> None:
     assert jackdaw.JACKDAW_REVISION == "dbedc66255fe594cce7b7cccc188c8a11649d9ec"
 
 
-def test_candidate_win_uses_vanilla_terminal_phase() -> None:
-    class CandidatePhase(Enum):
-        ROUND_EVAL = "round_eval"
-        GAME_OVER = "game_over"
-
-    game_state = {"won": True, "phase": CandidatePhase.ROUND_EVAL}
-
-    jackdaw._finish_vanilla_win(game_state)
-
-    assert game_state["phase"] is CandidatePhase.GAME_OVER
-
-
-def test_candidate_win_does_not_advance_to_endless_ante() -> None:
+def test_candidate_pack_capacity_survives_selections_and_resets() -> None:
     backend = object.__new__(jackdaw.JackdawBackend)
-    game_state = {"won": True, "round_resets": {"ante": 8}}
+    backend._active_pack_cards = None
+    backend._pack_card_limit = None
+    first_pack = [object() for _ in range(5)]
 
-    backend._advance_ante_at_round_end(game_state)
+    assert backend._track_pack_card_limit({"pack_cards": first_pack}) == 5
+    first_pack.pop()
+    assert backend._track_pack_card_limit({"pack_cards": first_pack}) == 5
 
-    assert game_state["round_resets"]["ante"] == 8
+    queued_pack = [object() for _ in range(3)]
+    assert backend._track_pack_card_limit({"pack_cards": queued_pack}) == 3
+    assert backend._track_pack_card_limit({"pack_cards": []}) is None
+    assert backend._track_pack_card_limit({}) is None
 
 
 def test_bridge_normalization_preserves_candidate_round_timing() -> None:
@@ -156,6 +150,41 @@ def test_swashbuckler_display_mult_tracks_other_owned_sell_values() -> None:
 
     assert owned_swash.ability["mult"] == 3
     assert pack_swash.ability["mult"] == 5
+
+
+def test_stencil_display_xmult_tracks_visible_joker_slots(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(jackdaw, "_jackdaw_center", lambda card: {"effect": "Hand Size Mult"})
+    owned = [SimpleNamespace(center_key="j_joker", ability={}) for _ in range(5)]
+    shop_stencil = SimpleNamespace(
+        center_key="j_stencil", ability={"effect": "Hand Size Mult"}, edition=None
+    )
+    pack_stencil = SimpleNamespace(
+        center_key="j_stencil", ability={"effect": "Hand Size Mult"}, edition=None
+    )
+    game_state = {
+        "joker_slots": 5,
+        "jokers": owned,
+        "shop_cards": [shop_stencil],
+        "pack_cards": [pack_stencil],
+    }
+
+    jackdaw._refresh_stencil_x_mult(game_state)
+    modifier: dict[str, object] = {}
+    jackdaw._apply_balatrobot_card_modifiers(modifier, shop_stencil)
+
+    assert shop_stencil.ability["x_mult"] == 0
+    assert pack_stencil.ability["x_mult"] == 0
+    assert modifier == {"enhancement": "HAND SIZE MULT", "enhancement_x_mult": 0}
+
+    owned_stencil = SimpleNamespace(center_key="j_stencil", ability={})
+    game_state["jokers"] = [owned_stencil, *owned[1:]]
+    jackdaw._refresh_stencil_x_mult(game_state)
+
+    assert owned_stencil.ability["x_mult"] == 1
+    assert shop_stencil.ability["x_mult"] == 1
+    assert pack_stencil.ability["x_mult"] == 1
 
 
 def test_card_modifier_normalization_preserves_explicit_empty_effect(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -327,15 +327,16 @@ def _observation(raw: dict[str, object]) -> PublicObservation:
 
 
 def _validate_step_result(result: EnvStepResult) -> None:
-    terminal_public = result.observation.phase == Phase.GAME_OVER
+    terminal_public = result.observation.terminal
     if result.terminated != terminal_public:
         raise EnvWireError("terminated flag disagrees with the public phase")
     if result.terminated and result.truncated:
         raise EnvWireError("an environment result cannot terminate and truncate")
     if result.terminated:
         expected_reward = 1 if result.observation.won else -1
+        expected_reason = "game_over" if result.observation.phase == Phase.GAME_OVER else "won"
         if (
-            result.terminal_reason != "game_over"
+            result.terminal_reason != expected_reason
             or result.won != result.observation.won
             or result.reward != expected_reward
         ):
