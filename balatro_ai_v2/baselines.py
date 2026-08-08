@@ -396,7 +396,7 @@ def _card_chips(card: VisiblePlayingCard | HiddenHandCard) -> int:
         chips += 30
     if card.edition == "FOIL":
         chips += 50
-    return chips
+    return chips + card.permanent_bonus
 
 
 def _bounded_actions(actions: Iterator[PublicAction]) -> list[PublicAction]:

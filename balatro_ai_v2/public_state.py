@@ -30,6 +30,7 @@ class VisiblePlayingCard:
     edition: str | None = None
     seal: str | None = None
     debuffed: bool = False
+    permanent_bonus: int = 0
     effect_text: str = ""
 
 

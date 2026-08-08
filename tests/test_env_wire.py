@@ -7,6 +7,7 @@ import pytest
 from balatro_ai_v2.actions import SelectBlind
 from balatro_ai_v2.balatrobot.adapter import to_public_observation
 from balatro_ai_v2.env_wire import (
+    ENV_CANONICAL_SCHEMA_VERSION,
     ENV_REWARD_SCHEMA,
     EnvCloseRequest,
     EnvClosed,
@@ -41,7 +42,7 @@ def test_environment_hello_round_trip() -> None:
         repository_dirty=False,
         profile_mode="all_unlocked",
         config_digest="config-digest",
-        canonical_schema_version=4,
+        canonical_schema_version=ENV_CANONICAL_SCHEMA_VERSION,
         reward_schema=ENV_REWARD_SCHEMA,
     )
 

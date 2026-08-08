@@ -37,7 +37,13 @@ def test_face_down_card_identity_is_completely_anonymous() -> None:
     left["hand"]["cards"][0] = playing_card(
         "S_A", card_id=800, hidden=True, modifier=["POLYCHROME"], debuffed=True
     )
-    right["hand"]["cards"][0] = playing_card("D_2", card_id=999, hidden=True, modifier=["GOLD"])
+    right["hand"]["cards"][0] = playing_card(
+        "D_2",
+        card_id=999,
+        hidden=True,
+        modifier=["GOLD"],
+        permanent_bonus=25,
+    )
 
     left_public = to_public_observation(left)
     right_public = to_public_observation(right)
@@ -52,9 +58,12 @@ def test_draw_pile_is_public_composition_but_not_private_order() -> None:
     reordered["cards"]["cards"].reverse()
     changed = deepcopy(left)
     changed["cards"]["cards"][0] = playing_card("C_7", card_id=1, hidden=True)
+    changed_bonus = deepcopy(left)
+    changed_bonus["cards"]["cards"][0]["value"]["perma_bonus"] = 5
 
     assert to_public_observation(left) == to_public_observation(reordered)
     assert to_public_observation(left) != to_public_observation(changed)
+    assert to_public_observation(left) != to_public_observation(changed_bonus)
 
 
 def test_vm_poker_hand_iteration_order_is_private() -> None:

@@ -704,6 +704,10 @@ def _add_card(
     ):
         vector.category(f"{prefix}.{name}", value, weight)
     vector.add(f"{prefix}.debuffed", weight if card.debuffed else 0.0)
+    vector.add(
+        f"{prefix}.permanent_bonus",
+        math.tanh(card.permanent_bonus / 100) * weight,
+    )
 
 
 def _add_item(vector: _HashedVector, prefix: str, item: PublicItem) -> None:

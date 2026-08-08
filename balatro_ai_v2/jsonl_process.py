@@ -146,6 +146,10 @@ def _signal_process_group(process: subprocess.Popen[bytes], sig: signal.Signals)
             return
         except ProcessLookupError:
             return
+        except PermissionError:
+            pass
+        if process.poll() is not None:
+            return
     if sig == signal.SIGTERM:
         process.terminate()
     else:

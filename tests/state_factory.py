@@ -11,11 +11,20 @@ def playing_card(
     hidden: bool = False,
     modifier: list[str] | None = None,
     debuffed: bool = False,
+    permanent_bonus: int = 0,
 ) -> dict[str, Any]:
     suit, rank = key.split("_", 1)
     state: dict[str, bool] | list[object] = {}
     if hidden or debuffed:
         state = {"hidden": hidden, "debuff": debuffed}
+    value = {
+        "ability": {"x_mult": 1},
+        "effect": f"+{rank} chips",
+        "rank": rank,
+        "suit": suit,
+    }
+    if permanent_bonus:
+        value["perma_bonus"] = permanent_bonus
     return {
         "cost": {"buy": 1, "sell": 1},
         "id": card_id,
@@ -24,12 +33,7 @@ def playing_card(
         "modifier": modifier or [],
         "set": "DEFAULT",
         "state": state,
-        "value": {
-            "ability": {"x_mult": 1},
-            "effect": f"+{rank} chips",
-            "rank": rank,
-            "suit": suit,
-        },
+        "value": value,
     }
 
 

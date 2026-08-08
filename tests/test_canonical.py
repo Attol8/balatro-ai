@@ -40,6 +40,18 @@ def test_order_and_mutable_ability_are_semantic() -> None:
     assert BalatroBotCanonicalizer().canonicalize(mutated).canonical_digest != baseline
 
 
+def test_permanent_card_bonus_is_canonical_semantic_state() -> None:
+    raw = state("SELECTING_HAND")
+    changed = deepcopy(raw)
+    changed["hand"]["cards"][0]["value"]["perma_bonus"] = 5
+
+    baseline = BalatroBotCanonicalizer().canonicalize(raw).canonical_digest
+    canonical = BalatroBotCanonicalizer().canonicalize(changed)
+
+    assert canonical.canonical["hand"]["cards"][0]["value"]["perma_bonus"] == 5
+    assert canonical.canonical_digest != baseline
+
+
 def test_numbered_booster_artwork_is_not_policy_or_semantic_state() -> None:
     first = state("SHOP")
     second = deepcopy(first)

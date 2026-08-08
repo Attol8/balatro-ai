@@ -192,6 +192,34 @@ def test_candidate_seed_one_shop_and_pack_compatibility() -> None:
     assert next_blind.after.observed.canonical["shop"]["cards"] == []
 
 
+def test_candidate_hiker_permanent_bonus_survives_discard_serialization() -> None:
+    pytest.importorskip("jackdaw")
+    actions = (
+        {"type": "select_blind"},
+        {"type": "play_cards", "cards": [0, 2, 4, 5, 7]},
+        {"type": "play_cards", "cards": [0, 1, 2, 4, 5]},
+        {"type": "cash_out"},
+        {"type": "buy_shop_card", "card": 1, "mode": "store"},
+        {"type": "leave_shop"},
+        {"type": "select_blind"},
+        {"type": "play_cards", "cards": [0, 3, 4, 5, 7]},
+    )
+    backend = jackdaw.JackdawBackend()
+    try:
+        backend.reset(RunSpec("RED", "WHITE", "40096"))
+        result = None
+        for action in actions:
+            result = backend.step(action_from_data(action))
+            assert result.after is not None
+        assert result is not None and result.after is not None
+        discard_values = [
+            card["value"] for card in result.after.observed.canonical["discard"]["cards"]
+        ]
+        assert any(value.get("perma_bonus") == 5 for value in discard_values)
+    finally:
+        backend.close()
+
+
 def test_candidate_seed_two_ante_pack_and_voucher_regression() -> None:
     pytest.importorskip("jackdaw")
     actions = [

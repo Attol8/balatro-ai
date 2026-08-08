@@ -10,7 +10,7 @@ import math
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -18,7 +18,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import torch
 from torch import Tensor
 
-from balatro_ai_v2.actions import CashOut, PublicAction, SelectBlind, iter_legal_actions
+from balatro_ai_v2.actions import (
+    CashOut,
+    PublicAction,
+    SelectBlind,
+    action_to_data,
+    iter_legal_actions,
+)
 from balatro_ai_v2.baselines import build_public_baseline
 from balatro_ai_v2.policy import PublicPolicy
 from balatro_ai_v2.public_env_process import (
@@ -53,6 +59,7 @@ class WorkerState:
     episode_steps: int = 0
     environment_return: float = 0.0
     training_return: float = 0.0
+    episode_actions: list[dict[str, object]] = field(default_factory=list)
 
 
 @dataclass(frozen=True, slots=True)
@@ -262,7 +269,20 @@ def _collect_rollout(
             executor.submit(state.environment.step, action)
             for state, action in zip(states, actions)
         ]
-        transitions = [future.result() for future in futures]
+        transitions = []
+        for worker_index, future in enumerate(futures):
+            try:
+                transitions.append(future.result())
+            except Exception as exc:
+                action_history = [
+                    *states[worker_index].episode_actions,
+                    action_to_data(actions[worker_index]),
+                ][-64:]
+                raise RuntimeError(
+                    "public worker failed "
+                    f"worker={worker_index} seed={states[worker_index].seed_number} "
+                    f"actions={action_history}"
+                ) from exc
 
         reset_work: list[tuple[int, object]] = []
         for worker_index, (state, action, transition) in enumerate(zip(states, actions, transitions)):
@@ -289,6 +309,7 @@ def _collect_rollout(
             truncated[time_index, worker_index] = transition.truncated
             values[time_index, worker_index] = output.values[worker_index].cpu()
             state.episode_steps += 1
+            state.episode_actions.append(action_to_data(action))
             state.environment_return += transition.reward
             state.training_return += training_reward
             if transition.truncated:
@@ -332,6 +353,7 @@ def _collect_rollout(
                 state.episode_steps = 0
                 state.environment_return = 0.0
                 state.training_return = 0.0
+                state.episode_actions.clear()
                 state.hidden = model.initial_hidden(1).cpu()
                 state.previous_action = None
             else:

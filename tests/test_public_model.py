@@ -111,6 +111,19 @@ def test_remaining_deck_encoding_is_order_invariant_and_count_sensitive() -> Non
     assert not torch.equal(original.values, changed.values)
 
 
+def test_model_encodes_visible_permanent_card_bonus() -> None:
+    observation = to_public_observation(state("SELECTING_HAND"))
+    card = observation.hand[0]
+    assert hasattr(card, "permanent_bonus")
+    changed = replace(
+        observation,
+        hand=(replace(card, permanent_bonus=15), *observation.hand[1:]),
+    )
+    model = _model()
+
+    assert not torch.equal(_step(model, observation).values, _step(model, changed).values)
+
+
 def test_dynamic_head_supports_every_non_reorder_action_family() -> None:
     selecting = state("SELECTING_HAND")
     selecting["jokers"] = {

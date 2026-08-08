@@ -231,6 +231,7 @@ def _playing_card(raw: Mapping[str, Any], *, respect_hidden: bool) -> VisiblePla
         edition=_named_modifier(modifiers, "edition", _EDITIONS),
         seal=_named_modifier(modifiers, "seal", _SEALS),
         debuffed=isinstance(state, Mapping) and bool(state.get("debuff")),
+        permanent_bonus=_optional_int(value, "perma_bonus") or 0,
         effect_text=str(value.get("effect") or ""),
     )
 
@@ -331,6 +332,7 @@ def _playing_card_sort_key(card: VisiblePlayingCard) -> tuple[object, ...]:
         card.edition or "",
         card.seal or "",
         card.debuffed,
+        card.permanent_bonus,
         card.effect_text,
     )
 

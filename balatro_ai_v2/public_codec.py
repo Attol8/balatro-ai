@@ -126,6 +126,7 @@ def _visible_card(value: object) -> VisiblePlayingCard:
         edition=_optional_string(raw["edition"], "card.edition"),
         seal=_optional_string(raw["seal"], "card.seal"),
         debuffed=_boolean(raw["debuffed"], "card.debuffed"),
+        permanent_bonus=_integer(raw["permanent_bonus"], "card.permanent_bonus"),
         effect_text=_string(raw["effect_text"], "card.effect_text"),
     )
 
