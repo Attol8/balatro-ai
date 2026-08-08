@@ -271,6 +271,9 @@ def iter_legal_actions(observation: PublicObservation) -> Iterator[PublicAction]
             sell = SellConsumable(ConsumableSlot(index))
             if is_legal(observation, sell):
                 yield sell
+            use = UseConsumable(ConsumableSlot(index))
+            if is_legal(observation, use):
+                yield use
 
     if phase in _REORDER_PHASES:
         if phase != Phase.SHOP and len(observation.hand) > 1:
@@ -332,9 +335,12 @@ def is_legal(observation: PublicObservation, action: PublicAction) -> bool:
     if isinstance(action, SellConsumable):
         return phase in _SELL_USE_PHASES and action.consumable.value < len(observation.consumables)
     if isinstance(action, UseConsumable):
-        # BalatroBot delegates additional can_use/check_use rules to the game.
-        # Until those public conditions are encoded and tested, fail closed.
-        return False
+        if phase not in _SELL_USE_PHASES or action.consumable.value >= len(observation.consumables):
+            return False
+        item = observation.consumables[action.consumable.value]
+        # Other consumables remain fail-closed until their check_use and target
+        # rules are represented in PublicObservation.
+        return item.kind.upper() == "PLANET" and not action.targets
     if isinstance(action, ChoosePackCard):
         if phase != Phase.PACK or action.card.value >= len(observation.opened_pack):
             return False

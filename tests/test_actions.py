@@ -103,8 +103,23 @@ def test_duplicate_or_negative_slots_fail() -> None:
         HandSlot(-1)
 
 
-def test_consumable_use_fails_closed_until_game_rules_are_encoded() -> None:
-    observation = to_public_observation(state("SELECTING_HAND"))
+def test_held_planet_is_a_legal_no_target_public_action() -> None:
+    raw = state("SELECTING_HAND")
+    raw["consumables"]["cards"] = [item_card("c_mercury", card_id=30, kind="PLANET")]
+    raw["consumables"]["count"] = 1
+    observation = to_public_observation(raw)
+    action = UseConsumable(ConsumableSlot(0))
+
+    assert is_legal(observation, action)
+    assert action in iter_legal_actions(observation)
+    assert action_to_rpc(action, observation) == ("use", {"consumable": 0})
+
+
+def test_targeted_consumables_still_fail_closed() -> None:
+    raw = state("SELECTING_HAND")
+    raw["consumables"]["cards"] = [item_card("c_death", card_id=31, kind="TAROT")]
+    raw["consumables"]["count"] = 1
+    observation = to_public_observation(raw)
     action = UseConsumable(ConsumableSlot(0))
 
     assert not is_legal(observation, action)

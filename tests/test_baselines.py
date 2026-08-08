@@ -5,10 +5,12 @@ from copy import deepcopy
 from balatro_ai_v2.actions import (
     BuyPack,
     ChoosePackCard,
+    ConsumableSlot,
     LeaveShop,
     PackOfferSlot,
     RerollShop,
     SkipPack,
+    UseConsumable,
     action_to_data,
     is_legal,
     iter_legal_actions,
@@ -17,7 +19,7 @@ from balatro_ai_v2.baselines import DeterministicCoveragePolicy, _classify
 from balatro_ai_v2.balatrobot.adapter import to_public_observation
 from balatro_ai_v2.balatrobot.runner import PublicHistoryStep
 from balatro_ai_v2.public_state import VisiblePlayingCard
-from state_factory import state
+from state_factory import item_card, state
 
 
 def test_coverage_policy_is_identical_for_hidden_state_twins() -> None:
@@ -63,6 +65,27 @@ def test_shop_budget_survives_a_pack_excursion() -> None:
     action = policy.choose_action(shop, lambda: iter_legal_actions(shop), history)
 
     assert isinstance(action, LeaveShop)
+
+
+def test_extended_coverage_rerolls_before_buying() -> None:
+    shop = to_public_observation(state("SHOP", money=10))
+    policy = DeterministicCoveragePolicy(coverage_mode="extended")
+
+    action = policy.choose_action(shop, lambda: iter_legal_actions(shop), ())
+
+    assert isinstance(action, RerollShop)
+
+
+def test_extended_coverage_uses_held_planet() -> None:
+    raw = state("SELECTING_HAND")
+    raw["consumables"]["cards"] = [item_card("c_mercury", card_id=30, kind="PLANET")]
+    raw["consumables"]["count"] = 1
+    observation = to_public_observation(raw)
+    policy = DeterministicCoveragePolicy(coverage_mode="extended")
+
+    action = policy.choose_action(observation, lambda: iter_legal_actions(observation), ())
+
+    assert action == UseConsumable(ConsumableSlot(0))
 
 
 def test_explicit_pack_lanes_skip_or_pick_safe_visible_offer() -> None:

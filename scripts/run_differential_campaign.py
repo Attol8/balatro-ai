@@ -78,6 +78,7 @@ def main() -> None:
             policy_seed=args.policy_seed,
             max_shop_actions=args.max_shop_actions,
             pack_strategy=args.pack_strategy,
+            coverage_mode=args.coverage_mode,
         )
         for seed_number in range(args.seed_start, args.seed_start + args.seeds):
             seed = str(seed_number)
@@ -86,7 +87,7 @@ def main() -> None:
             manifest = build_manifest(
                 repository_root=root,
                 command=tuple(sys.argv),
-                policy_name=f"DeterministicCoveragePolicy:{args.policy_seed}",
+                policy_name=f"DeterministicCoveragePolicy:{args.policy_seed}:{args.coverage_mode}",
                 backend=authority.metadata,
                 run=spec,
                 max_decisions=args.max_decisions,
@@ -120,7 +121,11 @@ def main() -> None:
                 raise SystemExit(2)
 
             report = replay_authority_trace(trace_path, candidate)
-            coverage = summarize_trace_coverage(trace_path, pack_strategy=args.pack_strategy)
+            coverage = summarize_trace_coverage(
+                trace_path,
+                pack_strategy=args.pack_strategy,
+                coverage_mode=args.coverage_mode,
+            )
             payload = {
                 "ante": result.ante,
                 "authority_complete": True,
@@ -156,6 +161,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--policy-seed", default="coverage-v1")
     parser.add_argument("--max-shop-actions", type=int, default=3)
     parser.add_argument("--pack-strategy", choices=("mixed", "skip", "pick"), default="mixed")
+    parser.add_argument("--coverage-mode", choices=("default", "extended"), default="default")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=12346)
     parser.add_argument("--deck", default="RED")
@@ -190,7 +196,12 @@ _BASELINE_REQUIRED_ACTIONS = {
 }
 
 
-def summarize_trace_coverage(path: Path, *, pack_strategy: str) -> dict[str, object]:
+def summarize_trace_coverage(
+    path: Path,
+    *,
+    pack_strategy: str,
+    coverage_mode: str = "default",
+) -> dict[str, object]:
     rows = read_verified_trace(path)
     accepted_counts: Counter[str] = Counter()
     phase_counts: Counter[str] = Counter()
@@ -226,9 +237,14 @@ def summarize_trace_coverage(path: Path, *, pack_strategy: str) -> dict[str, obj
         required.update({"buy_pack", "skip_pack", "choose_pack_card"})
     else:
         raise ValueError(f"unsupported pack strategy {pack_strategy!r}")
+    if coverage_mode == "extended":
+        required.update({"reroll_shop", "use_consumable"})
+    elif coverage_mode != "default":
+        raise ValueError(f"unsupported coverage mode {coverage_mode!r}")
 
     return {
         "accepted_action_counts": dict(sorted(accepted_counts.items())),
+        "coverage_mode": coverage_mode,
         "coverage_complete": all(accepted_counts.get(family, 0) > 0 for family in required),
         "opportunity_counts": dict(sorted(opportunity_counts.items())),
         "pack_strategy": pack_strategy,
@@ -250,10 +266,16 @@ def _accumulate_opportunities(counts: Counter[str], public: dict[str, Any]) -> N
             counts["action:play_cards"] += 1
         if _count_list(public, "hand") > 0 and _round_value(public, "discards_left") > 0:
             counts["action:discard_cards"] += 1
+        if _has_held_planet(public):
+            counts["action:use_consumable"] += 1
     elif phase == "ROUND_EVAL":
         counts["action:cash_out"] += 1
     elif phase == "SHOP":
         counts["action:leave_shop"] += 1
+        if _has_affordable_reroll(public):
+            counts["action:reroll_shop"] += 1
+        if _has_held_planet(public):
+            counts["action:use_consumable"] += 1
         if _has_affordable_pack(public):
             counts["action:buy_pack"] += 1
             counts["shop_with_pack_offers"] += 1
@@ -297,6 +319,27 @@ def _has_affordable_pack(public: dict[str, Any]) -> bool:
         and isinstance(pack.get("buy_cost"), int)
         and pack["buy_cost"] <= money
         for pack in packs
+    )
+
+
+def _has_affordable_reroll(public: dict[str, Any]) -> bool:
+    money = public.get("money")
+    round_state = public.get("round")
+    cost = round_state.get("reroll_cost") if isinstance(round_state, dict) else None
+    if not isinstance(money, int) or not isinstance(cost, int):
+        return False
+    jokers = public.get("jokers")
+    credit = isinstance(jokers, list) and any(
+        isinstance(joker, dict) and joker.get("key") == "j_credit_card" for joker in jokers
+    )
+    return money - cost >= (-20 if credit else 0)
+
+
+def _has_held_planet(public: dict[str, Any]) -> bool:
+    consumables = public.get("consumables")
+    return isinstance(consumables, list) and any(
+        isinstance(item, dict) and str(item.get("kind", "")).upper() == "PLANET"
+        for item in consumables
     )
 
 

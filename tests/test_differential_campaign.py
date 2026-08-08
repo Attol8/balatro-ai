@@ -58,6 +58,41 @@ def test_coverage_marks_complete_public_pick_lane(tmp_path: Path) -> None:
     assert coverage["opportunity_counts"]["pack_with_choices"] == 1
 
 
+def test_extended_coverage_requires_reroll_and_consumable_use(tmp_path: Path) -> None:
+    trace_path = tmp_path / "trace.jsonl"
+    states = _baseline_states(pack_card={"kind": "PLANET"})
+    states[4]["consumables"] = [{"kind": "PLANET"}]
+    states[4]["round"]["reroll_cost"] = 5
+    _write_trace(
+        trace_path,
+        states[0],
+        [
+            ("select_blind", states[1]),
+            ("discard_cards", states[2]),
+            ("play_cards", states[3]),
+            ("cash_out", states[4]),
+            ("reroll_shop", states[4]),
+            ("use_consumable", states[4]),
+            ("buy_pack", states[5]),
+            ("choose_pack_card", states[6]),
+            ("leave_shop", states[7]),
+        ],
+    )
+
+    coverage = summarize_trace_coverage(
+        trace_path,
+        pack_strategy="pick",
+        coverage_mode="extended",
+    )
+
+    assert coverage["coverage_complete"] is True
+    assert coverage["coverage_mode"] == "extended"
+    assert coverage["required_action_counts"]["reroll_shop"] == 1
+    assert coverage["required_action_counts"]["use_consumable"] == 1
+    assert coverage["opportunity_counts"]["action:reroll_shop"] >= 1
+    assert coverage["opportunity_counts"]["action:use_consumable"] >= 1
+
+
 def _baseline_states(*, pack_card: dict[str, object]) -> list[dict[str, object]]:
     return [
         _public("BLIND_SELECT", blinds=[{"status": "SELECT"}]),

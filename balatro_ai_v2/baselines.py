@@ -20,6 +20,7 @@ from balatro_ai_v2.actions import (
     BuyVoucher,
     CashOut,
     ChoosePackCard,
+    ConsumableSlot,
     DiscardCards,
     HandSlot,
     LeaveShop,
@@ -32,6 +33,7 @@ from balatro_ai_v2.actions import (
     SelectBlind,
     SkipBlind,
     SkipPack,
+    UseConsumable,
     action_to_data,
 )
 from balatro_ai_v2.balatrobot.runner import ActionSource, PublicHistoryStep
@@ -52,10 +54,13 @@ class DeterministicCoveragePolicy:
     policy_seed: str = "coverage-v1"
     max_shop_actions: int = 3
     pack_strategy: Literal["mixed", "skip", "pick"] = "mixed"
+    coverage_mode: Literal["default", "extended"] = "default"
 
     def __post_init__(self) -> None:
         if self.max_shop_actions < 0:
             raise ValueError("max_shop_actions must be non-negative")
+        if self.coverage_mode not in {"default", "extended"}:
+            raise ValueError(f"unsupported coverage mode {self.coverage_mode!r}")
 
     def choose_action(
         self,
@@ -71,6 +76,9 @@ class DeterministicCoveragePolicy:
             return next(action for action in actions if isinstance(action, SelectBlind))
 
         if observation.phase == Phase.SELECTING_HAND:
+            planet = self._held_planet(observation)
+            if self.coverage_mode == "extended" and planet is not None:
+                return planet
             best, hand_name = _best_play(observation, self._number(observation, history, "tactical"))
             discard = _coverage_discard(observation, best, hand_name)
             if discard is not None:
@@ -85,6 +93,12 @@ class DeterministicCoveragePolicy:
             shop_steps = _current_shop_action_count(history)
             if shop_steps >= self.max_shop_actions:
                 return next(action for action in actions if isinstance(action, LeaveShop))
+            rerolls = [action for action in actions if isinstance(action, RerollShop)]
+            if self.coverage_mode == "extended" and rerolls and shop_steps == 0:
+                return rerolls[0]
+            planet = self._held_planet(observation)
+            if self.coverage_mode == "extended" and planet is not None:
+                return planet
             pack_purchases = [action for action in actions if isinstance(action, BuyPack)]
             if pack_purchases and self.pack_strategy != "mixed" and shop_steps == 0:
                 return self._pick(pack_purchases, observation, history, "pack-buy")
@@ -93,7 +107,6 @@ class DeterministicCoveragePolicy:
             ]
             if purchases and (shop_steps == 0 or self._number(observation, history, "buy") % 3):
                 return self._pick(purchases, observation, history, "buy-choice")
-            rerolls = [action for action in actions if isinstance(action, RerollShop)]
             if rerolls and shop_steps == 0:
                 return rerolls[0]
             return next(action for action in actions if isinstance(action, LeaveShop))
@@ -110,6 +123,13 @@ class DeterministicCoveragePolicy:
             return next(action for action in actions if isinstance(action, SkipPack))
 
         raise RuntimeError(f"no coverage action for {observation.phase.value}")
+
+    @staticmethod
+    def _held_planet(observation: PublicObservation) -> UseConsumable | None:
+        for index, item in enumerate(observation.consumables):
+            if item.kind.upper() == "PLANET":
+                return UseConsumable(ConsumableSlot(index))
+        return None
 
     def _pick(
         self,
