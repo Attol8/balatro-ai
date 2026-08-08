@@ -48,6 +48,51 @@ _MAX_PUBLIC_ACTIONS = 256
 
 
 @dataclass(frozen=True, slots=True)
+class DeterministicRandomPolicy:
+    """Bounded random legal-action control using public state only."""
+
+    policy_seed: str = "random-v1"
+
+    def choose_action(
+        self,
+        observation: PublicObservation,
+        legal_actions: ActionSource,
+        history: tuple[PublicHistoryStep, ...],
+    ) -> PublicAction:
+        actions = _bounded_actions(legal_actions())
+        if not actions:
+            raise RuntimeError(f"no bounded public action for {observation.phase.value}")
+        payload = f"{self.policy_seed}\0{len(history)}\0{observation.digest()}"
+        number = int.from_bytes(hashlib.sha256(payload.encode("utf-8")).digest()[:8], "big")
+        return actions[number % len(actions)]
+
+
+@dataclass(frozen=True, slots=True)
+class GreedyImmediatePolicy:
+    """Immediate visible-score baseline with no strategic shop model."""
+
+    def choose_action(
+        self,
+        observation: PublicObservation,
+        legal_actions: ActionSource,
+        history: tuple[PublicHistoryStep, ...],
+    ) -> PublicAction:
+        del history
+        if observation.phase == Phase.SELECTING_HAND:
+            return _best_play(observation, 0)[0]
+        actions = _bounded_actions(legal_actions())
+        expected = {
+            Phase.BLIND_SELECT: SelectBlind,
+            Phase.ROUND_EVAL: CashOut,
+            Phase.SHOP: LeaveShop,
+            Phase.PACK: SkipPack,
+        }.get(observation.phase)
+        if expected is None:
+            raise RuntimeError(f"no greedy action for {observation.phase.value}")
+        return next(action for action in actions if isinstance(action, expected))
+
+
+@dataclass(frozen=True, slots=True)
 class DeterministicCoveragePolicy:
     """Exercise public action families without consulting privileged state."""
 

@@ -16,7 +16,11 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from balatro_ai_v2.backend import RunSpec
-from balatro_ai_v2.baselines import DeterministicCoveragePolicy
+from balatro_ai_v2.baselines import (
+    DeterministicCoveragePolicy,
+    DeterministicRandomPolicy,
+    GreedyImmediatePolicy,
+)
 from balatro_ai_v2.balatrobot.backend import BalatroBotBackend
 from balatro_ai_v2.balatrobot.client import BalatroBotClient, BalatroBotError
 from balatro_ai_v2.balatrobot.process import (
@@ -74,12 +78,20 @@ def main() -> None:
             game_version=args.game_version,
             runtime_version=args.runtime_version,
         )
-        policy = DeterministicCoveragePolicy(
-            policy_seed=args.policy_seed,
-            max_shop_actions=args.max_shop_actions,
-            pack_strategy=args.pack_strategy,
-            coverage_mode=args.coverage_mode,
-        )
+        if args.policy == "coverage":
+            policy = DeterministicCoveragePolicy(
+                policy_seed=args.policy_seed,
+                max_shop_actions=args.max_shop_actions,
+                pack_strategy=args.pack_strategy,
+                coverage_mode=args.coverage_mode,
+            )
+            policy_name = f"DeterministicCoveragePolicy:{args.policy_seed}:{args.coverage_mode}"
+        elif args.policy == "random":
+            policy = DeterministicRandomPolicy(args.policy_seed)
+            policy_name = f"DeterministicRandomPolicy:{args.policy_seed}"
+        else:
+            policy = GreedyImmediatePolicy()
+            policy_name = "GreedyImmediatePolicy"
         for seed_number in range(args.seed_start, args.seed_start + args.seeds):
             seed = str(seed_number)
             spec = RunSpec(args.deck, args.stake, seed)
@@ -87,7 +99,7 @@ def main() -> None:
             manifest = build_manifest(
                 repository_root=root,
                 command=tuple(sys.argv),
-                policy_name=f"DeterministicCoveragePolicy:{args.policy_seed}:{args.coverage_mode}",
+                policy_name=policy_name,
                 backend=authority.metadata,
                 run=spec,
                 max_decisions=args.max_decisions,
@@ -121,10 +133,14 @@ def main() -> None:
                 raise SystemExit(2)
 
             report = replay_authority_trace(trace_path, candidate)
-            coverage = summarize_trace_coverage(
-                trace_path,
-                pack_strategy=args.pack_strategy,
-                coverage_mode=args.coverage_mode,
+            coverage = (
+                summarize_trace_coverage(
+                    trace_path,
+                    pack_strategy=args.pack_strategy,
+                    coverage_mode=args.coverage_mode,
+                )
+                if args.policy == "coverage"
+                else None
             )
             payload = {
                 "ante": result.ante,
@@ -159,6 +175,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--seed-start", type=int, default=1)
     parser.add_argument("--seeds", type=int, default=4)
     parser.add_argument("--policy-seed", default="coverage-v1")
+    parser.add_argument("--policy", choices=("coverage", "random", "greedy"), default="coverage")
     parser.add_argument("--max-shop-actions", type=int, default=3)
     parser.add_argument("--pack-strategy", choices=("mixed", "skip", "pick"), default="mixed")
     parser.add_argument("--coverage-mode", choices=("default", "extended"), default="default")

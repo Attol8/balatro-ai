@@ -15,7 +15,12 @@ from balatro_ai_v2.actions import (
     is_legal,
     iter_legal_actions,
 )
-from balatro_ai_v2.baselines import DeterministicCoveragePolicy, _classify
+from balatro_ai_v2.baselines import (
+    DeterministicCoveragePolicy,
+    DeterministicRandomPolicy,
+    GreedyImmediatePolicy,
+    _classify,
+)
 from balatro_ai_v2.balatrobot.adapter import to_public_observation
 from balatro_ai_v2.balatrobot.runner import PublicHistoryStep
 from balatro_ai_v2.public_state import VisiblePlayingCard
@@ -38,6 +43,33 @@ def test_coverage_policy_is_identical_for_hidden_state_twins() -> None:
 
     assert action_to_data(left_action) == action_to_data(right_action)
     assert is_legal(left_public, left_action)
+
+
+def test_random_and_greedy_baselines_are_identical_for_hidden_twins() -> None:
+    left = state("SELECTING_HAND", seed="PRIVATE-A")
+    right = deepcopy(left)
+    right["seed"] = "PRIVATE-B"
+    right["cards"]["cards"].reverse()
+    left_public = to_public_observation(left)
+    right_public = to_public_observation(right)
+
+    for policy in (DeterministicRandomPolicy("control-v1"), GreedyImmediatePolicy()):
+        left_action = policy.choose_action(left_public, lambda: iter_legal_actions(left_public), ())
+        right_action = policy.choose_action(right_public, lambda: iter_legal_actions(right_public), ())
+        assert action_to_data(left_action) == action_to_data(right_action)
+        assert is_legal(left_public, left_action)
+
+
+def test_greedy_baseline_leaves_shop_without_private_economy_model() -> None:
+    shop = to_public_observation(state("SHOP", money=10))
+
+    action = GreedyImmediatePolicy().choose_action(
+        shop,
+        lambda: iter_legal_actions(shop),
+        (),
+    )
+
+    assert isinstance(action, LeaveShop)
 
 
 def test_coverage_policy_leaves_shop_at_its_public_budget() -> None:
