@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from balatro_ai_v2.actions import SelectBlind
+from balatro_ai_v2.actions import BuyShopCard, SelectBlind, ShopSlot
 from balatro_ai_v2.backend import RunSpec
 from balatro_ai_v2.balatrobot.backend import BalatroBotBackend, UnsettledStateError
 from balatro_ai_v2.balatrobot.client import BalatroBotRpcError, BalatroBotTransportError
@@ -120,6 +120,38 @@ def test_backend_never_settles_a_shop_missing_public_areas() -> None:
 
     with pytest.raises(UnsettledStateError):
         backend.reset(RunSpec("RED", "WHITE", "1"))
+
+
+def test_backend_never_settles_a_fresh_empty_shop() -> None:
+    empty = state("SHOP")
+    for name in ("shop", "packs", "vouchers"):
+        empty[name]["cards"] = []
+        empty[name]["count"] = 0
+    client = FakeClient(empty, polls=[empty])
+    backend = BalatroBotBackend(client, max_settle_polls=1, settle_poll_delay=0)  # type: ignore[arg-type]
+
+    with pytest.raises(UnsettledStateError):
+        backend.reset(RunSpec("RED", "WHITE", "1"))
+
+
+def test_backend_settles_shop_after_last_known_offer_is_bought() -> None:
+    initial = state("SHOP", money=10)
+    for name in ("packs", "vouchers"):
+        initial[name]["cards"] = []
+        initial[name]["count"] = 0
+    empty = deepcopy(initial)
+    empty["shop"]["cards"] = []
+    empty["shop"]["count"] = 0
+    client = FakeClient(initial, polls=[initial], action_result=empty)
+    backend = BalatroBotBackend(client, settle_poll_delay=0)  # type: ignore[arg-type]
+    backend.reset(RunSpec("RED", "WHITE", "1"))
+
+    result = backend.step(BuyShopCard(ShopSlot(0)))
+
+    assert result.after is not None
+    assert result.after.observed.canonical["state"] == "SHOP"
+    assert result.after.observed.canonical["shop"]["count"] == 0
+    assert len(result.after.polls) == 2
 
 
 def test_backend_waits_for_visible_hand_in_targeted_pack() -> None:

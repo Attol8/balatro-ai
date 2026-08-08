@@ -9,7 +9,13 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
 
-from balatro_ai_v2.actions import PublicAction
+from balatro_ai_v2.actions import (
+    BuyShopCard,
+    BuyVoucher,
+    ChoosePackCard,
+    PublicAction,
+    SkipPack,
+)
 from balatro_ai_v2.backend import (
     AuthorityObservation,
     BackendCapabilities,
@@ -81,7 +87,13 @@ class BalatroBotBackend:
         return self._current
 
     def observe(self) -> AuthorityObservation:
-        self._current = self._settle(self.client.gamestate())
+        allow_empty_shop = self._current is not None and _canonical_shop_empty(
+            self._current.observed.canonical
+        )
+        self._current = self._settle(
+            self.client.gamestate(),
+            allow_empty_shop=allow_empty_shop,
+        )
         return self._current
 
     def save_file_snapshot(self, path: Path) -> None:
@@ -158,7 +170,10 @@ class BalatroBotBackend:
                 error=str(exc),
             )
 
-        after = self._settle(rpc_state)
+        after = self._settle(
+            rpc_state,
+            allow_empty_shop=_action_can_empty_shop(before, action),
+        )
         self._current = after
         return StepResult(
             status="accepted",
@@ -173,7 +188,12 @@ class BalatroBotBackend:
     def close(self) -> None:
         return None
 
-    def _settle(self, initial: dict[str, Any]) -> AuthorityObservation:
+    def _settle(
+        self,
+        initial: dict[str, Any],
+        *,
+        allow_empty_shop: bool = False,
+    ) -> AuthorityObservation:
         captured: list[str] = []
         previous_ready_digest: str | None = None
         state = initial
@@ -186,7 +206,7 @@ class BalatroBotBackend:
                 allow_nan=False,
             )
             captured.append(raw_json)
-            if _is_ready(state):
+            if _is_ready(state, allow_empty_shop=allow_empty_shop):
                 ready_digest = hashlib.sha256(raw_json.encode("utf-8")).hexdigest()
                 if ready_digest == previous_ready_digest:
                     # Validate the information firewall at the boundary, before
@@ -208,7 +228,7 @@ class BalatroBotBackend:
         )
 
 
-def _is_ready(state: dict[str, Any]) -> bool:
+def _is_ready(state: dict[str, Any], *, allow_empty_shop: bool = False) -> bool:
     phase = state.get("state")
     if phase in _STABLE_PHASES:
         return True
@@ -216,8 +236,11 @@ def _is_ready(state: dict[str, Any]) -> bool:
         return _area_ready(state, "hand", require_cards=True)
     if phase == "SHOP":
         areas = ("shop", "packs", "vouchers")
-        return all(area in state and _area_ready(state, area, require_cards=False) for area in areas) and any(
-            _area_ready(state, area, require_cards=True) for area in areas
+        areas_ready = all(
+            area in state and _area_ready(state, area, require_cards=False) for area in areas
+        )
+        return areas_ready and (
+            allow_empty_shop or any(_area_ready(state, area, require_cards=True) for area in areas)
         )
     if phase in _PACK_PHASES:
         if not _area_ready(state, "pack", require_cards=True):
@@ -232,3 +255,27 @@ def _area_ready(state: dict[str, Any], name: str, *, require_cards: bool) -> boo
         return False
     cards = area["cards"]
     return area.get("count") == len(cards) and (bool(cards) or not require_cards)
+
+
+def _action_can_empty_shop(before: AuthorityObservation, action: PublicAction) -> bool:
+    canonical = before.observed.canonical
+    counts = {name: _canonical_area_count(canonical, name) for name in ("shop", "packs", "vouchers")}
+    if any(count is None for count in counts.values()):
+        return False
+    if isinstance(action, BuyShopCard):
+        return counts == {"shop": 1, "packs": 0, "vouchers": 0}
+    if isinstance(action, BuyVoucher):
+        return counts == {"shop": 0, "packs": 0, "vouchers": 1}
+    if isinstance(action, (ChoosePackCard, SkipPack)):
+        return counts == {"shop": 0, "packs": 0, "vouchers": 0}
+    return False
+
+
+def _canonical_shop_empty(canonical: dict[str, Any]) -> bool:
+    return all(_canonical_area_count(canonical, name) == 0 for name in ("shop", "packs", "vouchers"))
+
+
+def _canonical_area_count(canonical: dict[str, Any], name: str) -> int | None:
+    area = canonical.get(name)
+    count = area.get("count") if isinstance(area, dict) else None
+    return count if isinstance(count, int) and count >= 0 else None

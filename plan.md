@@ -152,6 +152,13 @@ A fresh public-action Red/White seed-1 smoke run completed in real Balatro and i
 - This repairs candidate outcome accounting only. Any candidate win remains candidate evidence until the exact frozen policy reproduces every public action and canonical state through BalatroBot.
 - The corrected dirty panel reports seed 63 as `GAME_OVER`, `won=true`, ante 8, round 24 after 212 decisions. The full development panel records 1/100 candidate wins at 7.89 average rounds. This is the first honest candidate clear in the rebuild, not yet a Balatro solve claim.
 
+### Active Increment: Empty-Shop Authority Settling
+
+- A frozen seed-63 authority replay reached ante 7 twice, then failed deterministically after using a held Planet and attempting to buy the final remaining shop Planet. Both 40-poll and 200-poll runs ended `unsettled` because the backend rejects every shop whose card, pack, and voucher areas are all empty.
+- Keep fresh-shop and reroll settling strict: an empty shop can be a transient animation state and must not be accepted merely because two polls match.
+- Permit an empty shop only when the preceding canonical state plus public action proves that the last known offer was consumed: buying the sole remaining shop card or voucher while the other offer areas were already empty, or returning from a pack whose persisted shop areas were already empty.
+- Add positive and negative settling regressions, then retry the frozen seed-63 authority run. The two incomplete traces remain failure diagnostics and never count as evidence.
+
 ## Design
 
 Use a two-kernel architecture. Actual Balatro under a pinned BalatroBot/LÖVE build is the authority. A pinned, independently audited Jackdaw fork is the candidate high-throughput training/search kernel. Expose the same typed state/action contract from both and continuously compare organic trajectories. In parallel, prototype in-memory snapshot/restore and batch rollouts inside real Balatro; use the real kernel directly wherever its measured throughput permits.
