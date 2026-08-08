@@ -6,8 +6,9 @@ import hashlib
 import json
 import math
 from dataclasses import asdict, dataclass
+from enum import Enum
 from pathlib import Path
-from typing import Final, Sequence
+from typing import Final, Sequence, TypeAlias
 
 try:
     import torch
@@ -21,8 +22,10 @@ from balatro_ai_v2.actions import (
     BuyVoucher,
     CashOut,
     ChoosePackCard,
+    ConsumableSlot,
     DiscardCards,
     LeaveShop,
+    HandSlot,
     PlayCards,
     PublicAction,
     ReorderConsumables,
@@ -32,6 +35,7 @@ from balatro_ai_v2.actions import (
     SelectBlind,
     SellConsumable,
     SellJoker,
+    JokerSlot,
     SkipBlind,
     SkipPack,
     UseConsumable,
@@ -47,8 +51,8 @@ from balatro_ai_v2.public_state import (
 )
 
 
-MODEL_FORMAT_VERSION: Final = 1
-PUBLIC_MODEL_ACTION_PROPOSAL_SCHEMA: Final = "no_reorder_enumerated_max2048_v1"
+MODEL_FORMAT_VERSION: Final = 2
+PUBLIC_MODEL_ACTION_PROPOSAL_SCHEMA: Final = "factorized_tactical_no_reorder_v2"
 _REORDER_ACTIONS = (ReorderHand, ReorderJokers, ReorderConsumables)
 _ACTION_FAMILIES = {
     SelectBlind: "select_blind",
@@ -73,12 +77,25 @@ class PublicModelError(RuntimeError):
     pass
 
 
+class TacticalFamily(str, Enum):
+    PLAY = "play_cards"
+    DISCARD = "discard_cards"
+
+
+@dataclass(frozen=True, slots=True)
+class TacticalCandidate:
+    family: TacticalFamily
+
+
+ModelCandidate: TypeAlias = PublicAction | TacticalCandidate
+
+
 @dataclass(frozen=True, slots=True)
 class PublicModelConfig:
     observation_features: int = 2048
     action_features: int = 512
     hidden_size: int = 128
-    max_candidates: int = 2048
+    max_candidates: int = 512
 
     def __post_init__(self) -> None:
         if min(
@@ -102,6 +119,15 @@ class DynamicPolicyOutput:
 class PublicModelDecision:
     action: PublicAction
     value: Tensor
+    hidden: Tensor
+
+
+@dataclass(frozen=True, slots=True)
+class PublicModelSample:
+    actions: tuple[PublicAction, ...]
+    log_probabilities: Tensor
+    entropies: Tensor
+    values: Tensor
     hidden: Tensor
 
 
@@ -137,7 +163,7 @@ class PublicRecurrentPolicyValue(nn.Module):
     def step(
         self,
         observations: Sequence[PublicObservation],
-        legal_actions: Sequence[Sequence[PublicAction]],
+        legal_actions: Sequence[Sequence[ModelCandidate]],
         previous_actions: Sequence[PublicAction | None],
         hidden: Tensor | None = None,
         reset_mask: Tensor | None = None,
@@ -182,7 +208,7 @@ class PublicRecurrentPolicyValue(nn.Module):
         for row, (observation, actions) in enumerate(zip(observations, candidates)):
             action_tensor = torch.tensor(
                 [
-                    _action_features(observation, action, self.config.action_features)
+                    _candidate_features(observation, action, self.config.action_features)
                     for action in actions
                 ],
                 dtype=torch.float32,
@@ -204,13 +230,13 @@ class PublicRecurrentPolicyValue(nn.Module):
     def choose_action(
         self,
         observation: PublicObservation,
-        legal_actions: Sequence[PublicAction],
+        legal_actions: Sequence[ModelCandidate],
         *,
         previous_action: PublicAction | None = None,
         hidden: Tensor | None = None,
         reset: bool = False,
     ) -> PublicModelDecision:
-        ordered = tuple(sorted(legal_actions, key=_canonical_action_json))
+        ordered = tuple(sorted(legal_actions, key=_canonical_candidate_json))
         reset_mask = torch.tensor([reset], dtype=torch.bool) if reset else None
         output = self.step(
             (observation,),
@@ -219,30 +245,254 @@ class PublicRecurrentPolicyValue(nn.Module):
             hidden,
             reset_mask,
         )
-        index = int(torch.argmax(output.logits[0]).item())
-        return PublicModelDecision(ordered[index], output.values[0], output.hidden)
+        candidate = ordered[int(torch.argmax(output.logits[0]).item())]
+        action = (
+            self._tactical_action(observation, candidate, output.hidden[0], sample=False)[0]
+            if isinstance(candidate, TacticalCandidate)
+            else candidate
+        )
+        return PublicModelDecision(action, output.values[0], output.hidden)
+
+    def sample_actions(
+        self,
+        observations: Sequence[PublicObservation],
+        candidates: Sequence[Sequence[ModelCandidate]],
+        previous_actions: Sequence[PublicAction | None],
+        hidden: Tensor | None = None,
+        reset_mask: Tensor | None = None,
+    ) -> PublicModelSample:
+        candidate_sets = tuple(tuple(values) for values in candidates)
+        output = self.step(observations, candidate_sets, previous_actions, hidden, reset_mask)
+        distribution = torch.distributions.Categorical(logits=output.logits)
+        indexes = distribution.sample()
+        log_probabilities = distribution.log_prob(indexes)
+        entropies = distribution.entropy()
+        actions: list[PublicAction] = []
+        for row, (observation, values) in enumerate(zip(observations, candidate_sets)):
+            candidate = values[int(indexes[row])]
+            if isinstance(candidate, TacticalCandidate):
+                action, extra_log_probability, extra_entropy = self._tactical_action(
+                    observation,
+                    candidate,
+                    output.hidden[row],
+                    sample=True,
+                )
+                log_probabilities[row] = log_probabilities[row] + extra_log_probability
+                entropies[row] = entropies[row] + extra_entropy
+                actions.append(action)
+            else:
+                actions.append(candidate)
+        return PublicModelSample(
+            tuple(actions),
+            log_probabilities,
+            entropies,
+            output.values,
+            output.hidden,
+        )
+
+    def evaluate_actions(
+        self,
+        observations: Sequence[PublicObservation],
+        candidates: Sequence[Sequence[ModelCandidate]],
+        previous_actions: Sequence[PublicAction | None],
+        actions: Sequence[PublicAction],
+        hidden: Tensor | None = None,
+        reset_mask: Tensor | None = None,
+    ) -> PublicModelSample:
+        if len(actions) != len(observations):
+            raise PublicModelError("evaluated action count differs from the model batch")
+        candidate_sets = tuple(tuple(values) for values in candidates)
+        output = self.step(observations, candidate_sets, previous_actions, hidden, reset_mask)
+        distribution = torch.distributions.Categorical(logits=output.logits)
+        indexes: list[int] = []
+        tactical: list[TacticalCandidate | None] = []
+        for values, action in zip(candidate_sets, actions):
+            wanted = _candidate_for_action(action)
+            try:
+                indexes.append(values.index(wanted))
+            except ValueError as exc:
+                raise PublicModelError("evaluated action is absent from the proposal") from exc
+            tactical.append(wanted if isinstance(wanted, TacticalCandidate) else None)
+        index_tensor = torch.tensor(indexes, dtype=torch.long, device=output.logits.device)
+        log_probabilities = distribution.log_prob(index_tensor)
+        entropies = distribution.entropy()
+        for row, (observation, candidate, action) in enumerate(
+            zip(observations, tactical, actions)
+        ):
+            if candidate is None:
+                continue
+            extra_log_probability, extra_entropy = self._evaluate_tactical_action(
+                observation,
+                candidate,
+                action,
+                output.hidden[row],
+            )
+            log_probabilities[row] = log_probabilities[row] + extra_log_probability
+            entropies[row] = entropies[row] + extra_entropy
+        return PublicModelSample(
+            tuple(actions),
+            log_probabilities,
+            entropies,
+            output.values,
+            output.hidden,
+        )
 
     def _validate_candidates(
         self,
         observation: PublicObservation,
-        actions: tuple[PublicAction, ...],
-    ) -> tuple[PublicAction, ...]:
+        actions: tuple[ModelCandidate, ...],
+    ) -> tuple[ModelCandidate, ...]:
         if not actions or len(actions) > self.config.max_candidates:
             raise PublicModelError("candidate count is outside the configured bound")
-        encoded = [_canonical_action_json(action) for action in actions]
+        encoded = [_canonical_candidate_json(action) for action in actions]
         if len(encoded) != len(set(encoded)):
             raise PublicModelError("candidate list contains duplicates")
         if any(isinstance(action, _REORDER_ACTIONS) for action in actions):
             raise PublicModelError("reorder actions require a future permutation head")
-        if any(type(action) not in _ACTION_FAMILIES or not is_legal(observation, action) for action in actions):
+        if any(not _candidate_is_legal(observation, action) for action in actions):
             raise PublicModelError("candidate list contains an unsupported or illegal action")
         return actions
 
+    def _tactical_action(
+        self,
+        observation: PublicObservation,
+        candidate: TacticalCandidate,
+        hidden: Tensor,
+        *,
+        sample: bool,
+    ) -> tuple[PublicAction, Tensor, Tensor]:
+        selected: list[int] = []
+        log_probability = hidden.new_zeros(())
+        entropy = hidden.new_zeros(())
+        while True:
+            choices, logits = self._tactical_logits(observation, candidate, selected, hidden)
+            if len(choices) == 1:
+                choice_index = 0
+            else:
+                distribution = torch.distributions.Categorical(logits=logits)
+                choice_index = (
+                    int(distribution.sample().item())
+                    if sample
+                    else int(torch.argmax(logits).item())
+                )
+                index_tensor = torch.tensor(choice_index, device=hidden.device)
+                log_probability = log_probability + distribution.log_prob(index_tensor)
+                entropy = entropy + distribution.entropy()
+            choice = choices[choice_index]
+            if choice is None:
+                break
+            selected.append(choice)
+            if len(selected) == _tactical_limit(observation) or choice == len(observation.hand) - 1:
+                break
+        slots = tuple(HandSlot(index) for index in selected)
+        action: PublicAction = (
+            PlayCards(slots) if candidate.family == TacticalFamily.PLAY else DiscardCards(slots)
+        )
+        return action, log_probability, entropy
 
-def public_model_candidates(observation: PublicObservation) -> tuple[PublicAction, ...]:
-    """Return the explicit no-reorder-v1 proposal set without truncation."""
+    def _evaluate_tactical_action(
+        self,
+        observation: PublicObservation,
+        candidate: TacticalCandidate,
+        action: PublicAction,
+        hidden: Tensor,
+    ) -> tuple[Tensor, Tensor]:
+        if candidate.family == TacticalFamily.PLAY and not isinstance(action, PlayCards):
+            raise PublicModelError("play-family proposal received a different action")
+        if candidate.family == TacticalFamily.DISCARD and not isinstance(action, DiscardCards):
+            raise PublicModelError("discard-family proposal received a different action")
+        wanted = [slot.value for slot in action.cards]
+        if (
+            not wanted
+            or wanted != sorted(wanted)
+            or len(wanted) > _tactical_limit(observation)
+        ):
+            raise PublicModelError("tactical action is not a canonical increasing selection")
+        selected: list[int] = []
+        log_probability = hidden.new_zeros(())
+        entropy = hidden.new_zeros(())
+        for wanted_choice in wanted:
+            choices, logits = self._tactical_logits(observation, candidate, selected, hidden)
+            if wanted_choice not in choices:
+                raise PublicModelError("tactical action selection is unavailable")
+            if len(choices) > 1:
+                distribution = torch.distributions.Categorical(logits=logits)
+                index = choices.index(wanted_choice)
+                log_probability = log_probability + distribution.log_prob(
+                    torch.tensor(index, device=hidden.device)
+                )
+                entropy = entropy + distribution.entropy()
+            selected.append(wanted_choice)
+        if (
+            len(selected) < _tactical_limit(observation)
+            and selected[-1] < len(observation.hand) - 1
+        ):
+            choices, logits = self._tactical_logits(observation, candidate, selected, hidden)
+            if None not in choices:
+                raise PublicModelError("tactical action cannot stop at its declared selection")
+            if len(choices) > 1:
+                distribution = torch.distributions.Categorical(logits=logits)
+                index = choices.index(None)
+                log_probability = log_probability + distribution.log_prob(
+                    torch.tensor(index, device=hidden.device)
+                )
+                entropy = entropy + distribution.entropy()
+        return log_probability, entropy
 
-    actions: list[PublicAction] = []
+    def _tactical_logits(
+        self,
+        observation: PublicObservation,
+        candidate: TacticalCandidate,
+        selected: list[int],
+        hidden: Tensor,
+    ) -> tuple[list[int | None], Tensor]:
+        start = selected[-1] + 1 if selected else 0
+        choices: list[int | None] = list(range(start, len(observation.hand)))
+        if selected:
+            choices.append(None)
+        if not choices:
+            raise PublicModelError("tactical proposal has no selectable card")
+        feature_tensor = torch.tensor(
+            [
+                _tactical_choice_features(
+                    observation,
+                    candidate,
+                    selected,
+                    choice,
+                    self.config.action_features,
+                )
+                for choice in choices
+            ],
+            dtype=torch.float32,
+            device=hidden.device,
+        )
+        encoded = self.action_encoder(feature_tensor)
+        state_rows = hidden.unsqueeze(0).expand(len(choices), -1)
+        logits = self.policy_head(torch.cat((state_rows, encoded), dim=-1)).squeeze(-1)
+        return choices, logits
+
+
+def public_model_candidates(observation: PublicObservation) -> tuple[ModelCandidate, ...]:
+    """Return factorized tactical families plus exact non-tactical actions."""
+
+    if observation.phase.value == "SELECTING_HAND":
+        actions: list[ModelCandidate] = [TacticalCandidate(TacticalFamily.PLAY)]
+        if observation.round.discards_left > 0:
+            actions.append(TacticalCandidate(TacticalFamily.DISCARD))
+        for index in range(len(observation.jokers)):
+            action = SellJoker(JokerSlot(index))
+            if is_legal(observation, action):
+                actions.append(action)
+        for index in range(len(observation.consumables)):
+            for action in (
+                SellConsumable(ConsumableSlot(index)),
+                UseConsumable(ConsumableSlot(index)),
+            ):
+                if is_legal(observation, action):
+                    actions.append(action)
+        return tuple(actions)
+
+    actions = []
     for action in iter_legal_actions(observation):
         if isinstance(action, _REORDER_ACTIONS):
             break
@@ -250,9 +500,7 @@ def public_model_candidates(observation: PublicObservation) -> tuple[PublicActio
     if not actions:
         raise PublicModelError("no supported public model action is available")
     if len(actions) > PublicModelConfig().max_candidates:
-        raise PublicModelError(
-            f"public model action proposal has {len(actions)} actions, exceeding its declared bound"
-        )
+        raise PublicModelError("public model action proposal exceeds its declared bound")
     return tuple(actions)
 
 
@@ -382,6 +630,40 @@ def _action_features(
     return vector.values
 
 
+def _candidate_features(
+    observation: PublicObservation,
+    candidate: ModelCandidate,
+    size: int,
+) -> list[float]:
+    if isinstance(candidate, TacticalCandidate):
+        vector = _HashedVector(size)
+        vector.category("action.family", candidate.family.value)
+        vector.category("action.factorization", "tactical")
+        return vector.values
+    return _action_features(observation, candidate, size)
+
+
+def _tactical_choice_features(
+    observation: PublicObservation,
+    candidate: TacticalCandidate,
+    selected: Sequence[int],
+    choice: int | None,
+    size: int,
+) -> list[float]:
+    vector = _HashedVector(size)
+    vector.category("tactical.family", candidate.family.value)
+    vector.number("tactical.position", len(selected), 5)
+    for position, slot in enumerate(selected):
+        vector.category(f"tactical.selected.{position}.slot", str(slot))
+        _add_card(vector, f"tactical.selected.{position}", observation.hand[slot])
+    if choice is None:
+        vector.category("tactical.choice", "<STOP>")
+    else:
+        vector.category("tactical.choice.slot", str(choice))
+        _add_card(vector, "tactical.choice.card", observation.hand[choice])
+    return vector.values
+
+
 def _previous_action_features(action: PublicAction | None, size: int) -> list[float]:
     vector = _HashedVector(size)
     if action is None:
@@ -457,3 +739,41 @@ class _HashedVector:
 
 def _canonical_action_json(action: PublicAction) -> str:
     return json.dumps(action_to_data(action), sort_keys=True, separators=(",", ":"))
+
+
+def _canonical_candidate_json(candidate: ModelCandidate) -> str:
+    if isinstance(candidate, TacticalCandidate):
+        return json.dumps(
+            {"type": "tactical_family", "family": candidate.family.value},
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+    return _canonical_action_json(candidate)
+
+
+def _candidate_for_action(action: PublicAction) -> ModelCandidate:
+    if isinstance(action, PlayCards):
+        return TacticalCandidate(TacticalFamily.PLAY)
+    if isinstance(action, DiscardCards):
+        return TacticalCandidate(TacticalFamily.DISCARD)
+    return action
+
+
+def _candidate_is_legal(observation: PublicObservation, candidate: ModelCandidate) -> bool:
+    if isinstance(candidate, TacticalCandidate):
+        if (
+            observation.phase.value != "SELECTING_HAND"
+            or not observation.hand
+            or _tactical_limit(observation) < 1
+        ):
+            return False
+        if candidate.family == TacticalFamily.DISCARD:
+            return observation.round.discards_left > 0
+        return candidate.family == TacticalFamily.PLAY
+    if isinstance(candidate, (PlayCards, DiscardCards)):
+        return False
+    return type(candidate) in _ACTION_FAMILIES and is_legal(observation, candidate)
+
+
+def _tactical_limit(observation: PublicObservation) -> int:
+    return min(5, observation.selection_limit, len(observation.hand))

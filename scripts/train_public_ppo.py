@@ -25,6 +25,7 @@ from balatro_ai_v2.public_env_process import (
     PublicTransition,
 )
 from balatro_ai_v2.public_model import (
+    ModelCandidate,
     PUBLIC_MODEL_ACTION_PROPOSAL_SCHEMA,
     PublicModelConfig,
     PublicRecurrentPolicyValue,
@@ -42,7 +43,7 @@ TRAIN_REWARD_SCHEMAS = ("sparse_terminal_v1", "public_progress_v1")
 class WorkerState:
     environment: PublicEnvironmentProcess
     observation: PublicObservation
-    candidates: tuple[PublicAction, ...]
+    candidates: tuple[ModelCandidate, ...]
     hidden: Tensor
     previous_action: PublicAction | None
     seed_number: int
@@ -55,10 +56,10 @@ class WorkerState:
 @dataclass(frozen=True, slots=True)
 class RolloutRecord:
     observation: PublicObservation
-    candidates: tuple[PublicAction, ...]
+    candidates: tuple[ModelCandidate, ...]
     previous_action: PublicAction | None
     hidden: Tensor
-    action_index: int
+    action: PublicAction
     old_log_probability: float
     episode_start: bool
 
@@ -233,14 +234,13 @@ def _collect_rollout(
         previous_actions = tuple(state.previous_action for state in states)
         hidden_input = torch.cat([state.hidden for state in states]).to(next(model.parameters()).device)
         with torch.no_grad():
-            output = model.step(observations, candidate_sets, previous_actions, hidden_input)
-            distribution = torch.distributions.Categorical(logits=output.logits)
-            action_indexes = distribution.sample()
-            log_probabilities = distribution.log_prob(action_indexes)
-        actions = [
-            candidates[int(index)]
-            for candidates, index in zip(candidate_sets, action_indexes.tolist())
-        ]
+            output = model.sample_actions(
+                observations,
+                candidate_sets,
+                previous_actions,
+                hidden_input,
+            )
+        actions = output.actions
         futures = [
             executor.submit(state.environment.step, action)
             for state, action in zip(states, actions)
@@ -255,8 +255,8 @@ def _collect_rollout(
                     candidates=state.candidates,
                     previous_action=state.previous_action,
                     hidden=hidden_input[worker_index : worker_index + 1].detach().cpu(),
-                    action_index=int(action_indexes[worker_index]),
-                    old_log_probability=float(log_probabilities[worker_index]),
+                    action=action,
+                    old_log_probability=float(output.log_probabilities[worker_index]),
                     episode_start=state.previous_action is None,
                 )
             )
@@ -410,10 +410,11 @@ def _ppo_update(
         entropy_rows: list[Tensor] = []
         for time_index in range(rollout_steps):
             batch = records[time_index * workers : (time_index + 1) * workers]
-            output = model.step(
+            output = model.evaluate_actions(
                 tuple(record.observation for record in batch),
                 tuple(record.candidates for record in batch),
                 tuple(record.previous_action for record in batch),
+                tuple(record.action for record in batch),
                 hidden,
                 torch.tensor(
                     [record.episode_start for record in batch],
@@ -422,13 +423,9 @@ def _ppo_update(
                 ),
             )
             hidden = output.hidden
-            distribution = torch.distributions.Categorical(logits=output.logits)
-            action_indexes = torch.tensor(
-                [record.action_index for record in batch], dtype=torch.long, device=device
-            )
-            new_log_probability_rows.append(distribution.log_prob(action_indexes))
+            new_log_probability_rows.append(output.log_probabilities)
             value_rows.append(output.values)
-            entropy_rows.append(distribution.entropy())
+            entropy_rows.append(output.entropies)
         new_log_probabilities = torch.cat(new_log_probability_rows)
         new_values = torch.cat(value_rows)
         entropy = torch.cat(entropy_rows).mean()

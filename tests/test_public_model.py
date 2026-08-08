@@ -15,6 +15,7 @@ from balatro_ai_v2.actions import (  # noqa: E402
     CashOut,
     ChoosePackCard,
     DiscardCards,
+    HandSlot,
     LeaveShop,
     PlayCards,
     ReorderHand,
@@ -33,6 +34,8 @@ from balatro_ai_v2.public_model import (  # noqa: E402
     PublicModelConfig,
     PublicModelError,
     PublicRecurrentPolicyValue,
+    TacticalCandidate,
+    TacticalFamily,
     load_public_model,
     public_model_candidates,
     save_public_model,
@@ -132,8 +135,6 @@ def test_dynamic_head_supports_every_non_reorder_action_family() -> None:
     expected = {
         SelectBlind,
         SkipBlind,
-        PlayCards,
-        DiscardCards,
         SellJoker,
         SellConsumable,
         UseConsumable,
@@ -145,6 +146,7 @@ def test_dynamic_head_supports_every_non_reorder_action_family() -> None:
         LeaveShop,
         SkipPack,
         ChoosePackCard,
+        TacticalCandidate,
     }
     actions = [public_model_candidates(observation) for observation in observations]
     actual = {type(action) for group in actions for action in group}
@@ -153,8 +155,40 @@ def test_dynamic_head_supports_every_non_reorder_action_family() -> None:
     output = model.step(observations, actions, (None,) * len(observations))
 
     assert actual == expected
+    tactical_families = {
+        action.family
+        for group in actions
+        for action in group
+        if isinstance(action, TacticalCandidate)
+    }
+    assert tactical_families == {TacticalFamily.PLAY, TacticalFamily.DISCARD}
     assert output.logits.shape[0] == len(observations)
     assert torch.isfinite(output.logits[output.legal_mask]).all()
+
+
+def test_factorized_tactical_sampling_and_replay_have_identical_log_probability() -> None:
+    observation = to_public_observation(state("SELECTING_HAND"))
+    candidates = public_model_candidates(observation)
+    model = _model()
+    hidden = model.initial_hidden(1)
+    torch.manual_seed(11)
+
+    with torch.no_grad():
+        sample = model.sample_actions((observation,), (candidates,), (None,), hidden)
+        replay = model.evaluate_actions(
+            (observation,),
+            (candidates,),
+            (None,),
+            sample.actions,
+            hidden,
+        )
+
+    assert isinstance(sample.actions[0], (PlayCards, DiscardCards))
+    assert 1 <= len(sample.actions[0].cards) <= 5
+    assert tuple(slot.value for slot in sample.actions[0].cards) == tuple(
+        sorted(slot.value for slot in sample.actions[0].cards)
+    )
+    assert torch.allclose(sample.log_probabilities, replay.log_probabilities)
 
 
 def test_reorder_actions_fail_closed_and_are_not_silently_proposed() -> None:
@@ -268,6 +302,27 @@ def test_tiny_public_batch_has_finite_gradients() -> None:
     policy_loss = torch.nn.functional.cross_entropy(output.logits, torch.tensor([0, 0]))
     value_loss = torch.nn.functional.mse_loss(output.values, torch.tensor([0.0, -1.0]))
     loss = policy_loss + value_loss
+    loss.backward()
+
+    assert torch.isfinite(loss)
+    gradients = [parameter.grad for parameter in model.parameters() if parameter.grad is not None]
+    assert gradients
+    assert all(torch.isfinite(gradient).all() for gradient in gradients)
+
+
+def test_factorized_tactical_log_probability_has_finite_gradients() -> None:
+    observation = to_public_observation(state("SELECTING_HAND"))
+    candidates = public_model_candidates(observation)
+    model = PublicRecurrentPolicyValue(PublicModelConfig(hidden_size=16))
+    model.train()
+
+    output = model.evaluate_actions(
+        (observation,),
+        (candidates,),
+        (None,),
+        (PlayCards((HandSlot(0),)),),
+    )
+    loss = -output.log_probabilities.mean() + output.values.square().mean()
     loss.backward()
 
     assert torch.isfinite(loss)
