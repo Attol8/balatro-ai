@@ -61,6 +61,14 @@ A fresh public-action Red/White seed-1 smoke run completed in real Balatro and i
 - Evaluate fixed development seed ranges in pinned Jackdaw for throughput and outcome diagnostics, then run representative policies unchanged through clean BalatroBot differential traces. Fast results alone are not strength evidence.
 - Freeze baseline name, code revision, policy seed, deck/stake, and seed range in every report. Report all losses and incomplete runs; never tune on the claimed comparison range.
 - Before accepting a sweep, make terminal detection exact at the decision-budget boundary, require every run to terminate normally, record terminal-reason counts, label candidate-only diagnostics explicitly, and verify that the imported Jackdaw tree is the clean pinned revision.
+- Commit `4f0d42e` hardened that evidence path. On candidate Red/White seeds 1-100, greedy completed 100/100 with 0 wins and average ante 1.05; deterministic-random completed 100/100 with 0 wins and average ante 1.0. The unchanged seed-1 policies then ran through real Balatro and reproduced in Jackdaw for 18/18 and 11/11 transitions respectively, both terminal losses at ante 1. These controls establish a trustworthy floor and no more.
+
+### Active Increment: Fair Public-Belief Search
+
+- Introduce a backend-free belief surface derived only from `PublicObservation` and public action/observation history. It must not import Jackdaw, BalatroBot, snapshots, seeds, RNG objects, raw states, or private IDs.
+- Start with exact without-replacement draw probabilities over the public remaining-deck multiset. This is a chance model, not a clone of the live game and not yet full-run search.
+- Require public hidden twins to produce identical beliefs, action rankings, and policy distributions. Malformed counts and unsupported hidden mechanics fail closed.
+- Use the public chance model to build a bounded tactical search baseline before introducing learned values or latent particles for future shops and RNG streams.
 
 ## Design
 
