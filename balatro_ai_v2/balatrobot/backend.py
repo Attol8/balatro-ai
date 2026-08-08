@@ -14,6 +14,7 @@ from balatro_ai_v2.actions import (
     BuyVoucher,
     ChoosePackCard,
     PublicAction,
+    RerollShop,
     SkipPack,
 )
 from balatro_ai_v2.backend import (
@@ -259,6 +260,8 @@ def _area_ready(state: dict[str, Any], name: str, *, require_cards: bool) -> boo
 
 def _action_can_empty_shop(before: AuthorityObservation, action: PublicAction) -> bool:
     canonical = before.observed.canonical
+    if _canonical_shop_empty(canonical):
+        return not isinstance(action, RerollShop)
     counts = {name: _canonical_area_count(canonical, name) for name in ("shop", "packs", "vouchers")}
     if any(count is None for count in counts.values()):
         return False

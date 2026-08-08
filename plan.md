@@ -156,7 +156,7 @@ A fresh public-action Red/White seed-1 smoke run completed in real Balatro and i
 
 - A frozen seed-63 authority replay reached ante 7 twice, then failed deterministically after using a held Planet and attempting to buy the final remaining shop Planet. Both 40-poll and 200-poll runs ended `unsettled` because the backend rejects every shop whose card, pack, and voucher areas are all empty.
 - Keep fresh-shop and reroll settling strict: an empty shop can be a transient animation state and must not be accepted merely because two polls match.
-- Permit an empty shop only when the preceding canonical state plus public action proves that the last known offer was consumed: buying the sole remaining shop card or voucher while the other offer areas were already empty, or returning from a pack whose persisted shop areas were already empty.
+- Permit an empty shop only when the preceding canonical state plus public action proves that the last known offer was consumed: buying the sole remaining shop card or voucher while the other offer areas were already empty, or returning from a pack whose persisted shop areas were already empty. Once that empty shop is canonically established, normal use, sell, and leave actions may remain there; rerolls still require visible generated offers.
 - Add positive and negative settling regressions, then retry the frozen seed-63 authority run. The two incomplete traces remain failure diagnostics and never count as evidence.
 
 ## Design
