@@ -699,6 +699,10 @@ class JackdawBackend:
         def vanilla_populate_shop(populate_state: dict[str, Any]) -> None:
             self._apply_pending_ante_setup(populate_state)
             original_populate_shop(populate_state)
+            populate_state["shop_voucher_limit"] = max(
+                1,
+                len(populate_state.get("shop_vouchers", [])),
+            )
             self._pending_ante_setup = None
 
         with _JACKDAW_PATCH_LOCK:
@@ -812,6 +816,11 @@ def _normalize_jackdaw_bridge(
             if not isinstance(shop_config, Mapping) or not isinstance(shop_config.get("joker_max"), int):
                 raise RuntimeError("Jackdaw shop capacity is unavailable")
             area["limit"] = shop_config["joker_max"]
+        elif area_name == "vouchers":
+            voucher_limit = private.get("shop_voucher_limit")
+            if not isinstance(voucher_limit, int):
+                raise RuntimeError("Jackdaw voucher capacity is unavailable")
+            area["limit"] = voucher_limit
         elif area_name == "packs":
             area["limit"] = 2
         elif area_name == "pack":

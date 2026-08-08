@@ -52,6 +52,7 @@ def test_bridge_normalization_preserves_candidate_round_timing() -> None:
         "shop_cards": [],
         "shop": {"joker_max": 0},
         "shop_vouchers": [],
+        "shop_voucher_limit": 2,
         "shop_boosters": [],
         "pack_cards": [],
         "current_round": {
