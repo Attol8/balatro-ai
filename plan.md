@@ -151,6 +151,7 @@ A fresh public-action Red/White seed-1 smoke run completed in real Balatro and i
 - Add a runner regression for `ROUND_EVAL` plus `won=true`, replay the completed diagnostic trace through the corrected candidate to verify the winning transition, then capture a fresh trace that closes immediately at the win. A solve trace must end at that boundary and pass exact differential replay; post-win Endless transitions are outside the run being evaluated.
 - Historical candidate panels that used the false forced-`GAME_OVER` state are retained only as strategy-development evidence. Rerun the frozen panel under the corrected terminal contract before quoting its outcome metrics at the new revision.
 - The corrected candidate now matches the completed diagnostic authority trace through the win transition and 27 further optional Endless transitions: 240 transitions are exact. The next mismatch is an Endless-only deck-capacity difference at transition 241. This is useful simulator work later, but it is outside the declared run endpoint; the next clean trace must stop at the already-exact `won=true` boundary.
+- A fresh clean trace does stop at that boundary after 212 decisions, and every recorded transition matches. The differential gate still rejects it only because its final assertion hardcodes `state=GAME_OVER`; update that assertion to accept either `GAME_OVER` or canonical `won=true`, while continuing to require an exact complete authority trace and exact final canonical transition.
 
 ### Active Increment: Empty-Shop Authority Settling
 

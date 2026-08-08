@@ -146,9 +146,10 @@ def test_trace_rejects_changed_run_id_even_with_valid_hash_chain(tmp_path: Path)
 class ReplayBackend:
     metadata = _metadata()
 
-    def __init__(self, *, changed_money: bool = False) -> None:
+    def __init__(self, *, changed_money: bool = False, terminal_phase: str = "GAME_OVER") -> None:
         self.canonicalizer = BalatroBotCanonicalizer()
         self.changed_money = changed_money
+        self.terminal_phase = terminal_phase
         self.current = None
 
     def reset(self, spec: RunSpec) -> AuthorityObservation:
@@ -157,7 +158,7 @@ class ReplayBackend:
         return self.current
 
     def step(self, action) -> StepResult:
-        terminal = state("GAME_OVER", won=True, money=5 if self.changed_money else 4)
+        terminal = state(self.terminal_phase, won=True, money=5 if self.changed_money else 4)
         after = AuthorityObservation(self.canonicalizer.canonicalize(terminal), True)
         before = self.current
         self.current = after
@@ -170,10 +171,12 @@ class ReplayBackend:
         return None
 
 
-def _write_complete_trace(path: Path, *, terminal_money: int = 4) -> None:
+def _write_complete_trace(
+    path: Path, *, terminal_money: int = 4, terminal_phase: str = "GAME_OVER"
+) -> None:
     canonicalizer = BalatroBotCanonicalizer()
     initial = canonicalizer.canonicalize(state())
-    terminal = canonicalizer.canonicalize(state("GAME_OVER", won=True, money=terminal_money))
+    terminal = canonicalizer.canonicalize(state(terminal_phase, won=True, money=terminal_money))
     writer = AuthorityTraceWriter(path, _manifest())
     writer.record("run_start", authority={"canonical": initial.canonical})
     writer.record(
@@ -190,6 +193,16 @@ def test_identical_backend_passes_observed_lockstep(tmp_path: Path) -> None:
     _write_complete_trace(path)
 
     report = replay_authority_trace(path, ReplayBackend())
+
+    assert report.observed_lockstep
+    assert report.checked_transitions == 1
+
+
+def test_win_boundary_passes_before_optional_endless_mode(tmp_path: Path) -> None:
+    path = tmp_path / "trace.jsonl"
+    _write_complete_trace(path, terminal_phase="ROUND_EVAL")
+
+    report = replay_authority_trace(path, ReplayBackend(terminal_phase="ROUND_EVAL"))
 
     assert report.observed_lockstep
     assert report.checked_transitions == 1

@@ -219,8 +219,16 @@ def replay_authority_trace(path: Path, candidate: GameBackend) -> DifferentialRe
         checked += 1
 
     final_phase = current.observed.canonical.get("state")
-    if final_phase != "GAME_OVER":
-        return _failure(checked, "/state", "GAME_OVER", final_phase, "candidate did not terminate", checked)
+    final_won = current.observed.canonical.get("won")
+    if final_phase != "GAME_OVER" and final_won is not True:
+        return _failure(
+            checked,
+            "/state",
+            "GAME_OVER or won=true",
+            final_phase,
+            "candidate did not terminate",
+            checked,
+        )
     return DifferentialReport(True, checked)
 
 
