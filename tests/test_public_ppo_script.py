@@ -69,16 +69,19 @@ def test_truncation_bootstraps_without_crossing_episode_boundary() -> None:
     assert returns[:, 0].tolist() == [3.0, 11.0]
 
 
-def test_public_progress_reward_uses_only_bounded_round_delta() -> None:
+def test_public_blind_clear_reward_uses_only_the_public_phase_transition() -> None:
     script = _load_script()
     before = to_public_observation(state("SELECTING_HAND"))
-    after = to_public_observation(state("GAME_OVER", won=False))
-    transition = PublicTransition(after, -1, True, False, "game_over", False, 1)
+    cleared = to_public_observation(state("ROUND_EVAL"))
+    lost = to_public_observation(state("GAME_OVER", won=False))
+    clear_transition = PublicTransition(cleared, 0, False, False, None, None, 1)
+    loss_transition = PublicTransition(lost, -1, True, False, "game_over", False, 1)
 
-    reward = script._training_reward(before, transition, "public_progress_v1", 0.25)
+    reward = script._training_reward(before, clear_transition, "public_blind_clear_v1", 0.25)
 
-    assert reward == -0.75
-    assert script._training_reward(before, transition, "sparse_terminal_v1", 0.25) == -1.0
+    assert reward == 0.25
+    assert script._training_reward(before, loss_transition, "public_blind_clear_v1", 0.25) == -1.0
+    assert script._training_reward(before, clear_transition, "sparse_terminal_v1", 0.25) == 0.0
 
 
 def test_public_ppo_cli_defaults_are_bounded_and_public() -> None:

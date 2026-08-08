@@ -34,9 +34,10 @@ from balatro_ai_v2.public_model import (
     save_public_model,
 )
 from balatro_ai_v2.public_state import PublicObservation
+from balatro_ai_v2.public_state import Phase
 
 
-TRAIN_REWARD_SCHEMAS = ("sparse_terminal_v1", "public_progress_v1")
+TRAIN_REWARD_SCHEMAS = ("sparse_terminal_v1", "public_blind_clear_v1")
 
 
 @dataclass(slots=True)
@@ -474,9 +475,12 @@ def _training_reward(
     progress_reward: float,
 ) -> float:
     reward = float(transition.reward)
-    if schema == "public_progress_v1":
-        public_round_delta = max(0, transition.observation.round_no - before.round_no)
-        reward += progress_reward * min(1, public_round_delta)
+    if (
+        schema == "public_blind_clear_v1"
+        and before.phase == Phase.SELECTING_HAND
+        and transition.observation.phase == Phase.ROUND_EVAL
+    ):
+        reward += progress_reward
     return reward
 
 
