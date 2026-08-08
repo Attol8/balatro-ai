@@ -464,3 +464,29 @@ def test_standard_pack_edition_reprices_playing_card(monkeypatch: pytest.MonkeyP
     assert generated is card
     assert generated.cost == 3
     assert generated.sell_cost == 1
+
+
+def test_credit_card_floor_applies_to_all_candidate_purchases() -> None:
+    pytest.importorskip("jackdaw")
+    backend = jackdaw.JackdawBackend()
+    game_state = {
+        "bankrupt_at": -20,
+        "current_round": {"free_rerolls": 0, "reroll_cost": 5},
+        "dollars": 3,
+        "shop_boosters": [SimpleNamespace(cost=6)],
+        "shop_cards": [SimpleNamespace(cost=4)],
+        "shop_vouchers": [SimpleNamespace(cost=10)],
+    }
+    backend._backend._gs = game_state
+
+    for method, params, cost in (
+        ("buy", {"card": 0}, 4),
+        ("buy", {"voucher": 0}, 10),
+        ("buy", {"pack": 0}, 6),
+        ("reroll", {}, 5),
+    ):
+        game_state["dollars"] = 3
+        with backend._credit_compatibility(method, params) as used_credit:
+            assert used_credit
+            game_state["dollars"] -= cost
+        assert game_state["dollars"] == 3 - cost

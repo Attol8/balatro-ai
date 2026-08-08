@@ -258,7 +258,71 @@ class JackdawBackend:
 
     def _handle(self, method: str, params: dict[str, Any]) -> dict[str, Any]:
         with self._poker_hand_order_compatibility(), self._standard_pack_cost_compatibility():
-            return self._backend.handle(method, params)
+            with self._credit_compatibility(method, params) as used_credit:
+                raw = self._backend.handle(method, params)
+            return self._backend.handle("gamestate", {}) if used_credit else raw
+
+    @contextmanager
+    def _credit_compatibility(
+        self,
+        method: str,
+        params: Mapping[str, Any],
+    ) -> Iterator[bool]:
+        """Let Jackdaw purchase handlers honor Balatro's ``bankrupt_at`` floor."""
+
+        game_state = getattr(self._backend, "_gs", None)
+        if not isinstance(game_state, dict):
+            yield False
+            return
+        cost = self._purchase_cost(method, params, game_state)
+        dollars = game_state.get("dollars")
+        bankrupt_at = game_state.get("bankrupt_at")
+        if (
+            cost is None
+            or not isinstance(dollars, int)
+            or not isinstance(bankrupt_at, int)
+            or bankrupt_at >= 0
+            or cost <= dollars
+            or cost > dollars - bankrupt_at
+        ):
+            yield False
+            return
+        game_state["dollars"] = dollars - bankrupt_at
+        try:
+            yield True
+        finally:
+            game_state["dollars"] += bankrupt_at
+
+    @staticmethod
+    def _purchase_cost(
+        method: str,
+        params: Mapping[str, Any],
+        game_state: Mapping[str, Any],
+    ) -> int | None:
+        if method == "reroll":
+            current_round = game_state.get("current_round")
+            if not isinstance(current_round, Mapping):
+                return None
+            if int(current_round.get("free_rerolls", 0)) > 0:
+                return 0
+            cost = current_round.get("reroll_cost")
+            return cost if isinstance(cost, int) else None
+        if method != "buy":
+            return None
+        for parameter, area_name in (
+            ("card", "shop_cards"),
+            ("voucher", "shop_vouchers"),
+            ("pack", "shop_boosters"),
+        ):
+            index = params.get(parameter)
+            cards = game_state.get(area_name)
+            if not isinstance(index, int) or isinstance(index, bool) or not isinstance(cards, list):
+                continue
+            if not 0 <= index < len(cards):
+                return None
+            cost = getattr(cards[index], "cost", None)
+            return cost if isinstance(cost, int) else None
+        return None
 
     @contextmanager
     def _poker_hand_order_compatibility(self) -> Iterator[None]:
