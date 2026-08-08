@@ -17,8 +17,8 @@ contracts that cannot be compromised:
   identity, internal ability trees, RNG, and event state cannot cross the
   policy boundary.
 - Typed public actions with verified phase, capacity, affordability, and slot
-  validation before RPC execution. Consumable actions whose complete public
-  legality is not yet encoded are deliberately omitted.
+  validation before RPC execution. Safe no-target Planets are encoded; targeted
+  consumables whose complete public legality is unknown remain fail-closed.
 - A strict BalatroBot backend that requires two stable reads at a real decision
   boundary. It never auto-skips, substitutes a poll for a rejected action, or
   force-accepts a changing state.
@@ -29,8 +29,9 @@ contracts that cannot be compromised:
 - A backend-neutral differential replay harness with no waivers or tolerances.
 
 BalatroBot does not expose its RNG and event queues, so the current claim is
-only exact *observed-state lockstep*. Snapshot fidelity and whole-engine parity
-remain unproven.
+only exact *observed-state lockstep*. Game-native file and in-memory snapshots
+have replayed one eight-action branch exactly, but complete Lua-state fidelity
+and whole-engine parity remain unproven.
 
 ## Verify
 
@@ -68,13 +69,13 @@ python scripts/replay_observed_lockstep.py \
 
 Jackdaw is pinned. Its raw bridge initially differed from BalatroBot in 638
 initial-state fields; a narrow adapter now derives the equivalent BalatroBot
-representation from Jackdaw's own state. The candidate matches all five
-transitions in the seed-1 smoke trace, but remains untrusted beyond that tiny
-losing run. The next gate is broad randomized candidate lockstep over the full
-action/rule surface. In parallel, BalatroBot needs an in-memory
-snapshot/restore and batched rollout extension whose RNG and branch isolation
-are proven before it can generate search labels. Search and a learned
-policy/value model come only after those gates pass.
+representation from Jackdaw's own state. Clean schema-v4 campaigns currently
+cover 1,017 exact transitions, all in losing runs. The next gate is broader
+randomized action/rule lockstep plus fair public-only baselines. Balatro's
+in-memory restore is exact on the tested branch but only modestly faster than
+file restore, so it will serve as an oracle/audit worker while Jackdaw carries
+high-volume search and training. A learned policy/value model follows search,
+not the other way around.
 
 Jackdaw is pinned in `kernels/jackdaw.lock.json` but is deliberately marked
 untrusted. Its optional environment requires Python 3.12:
