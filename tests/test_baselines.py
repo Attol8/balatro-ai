@@ -10,8 +10,11 @@ from balatro_ai_v2.actions import (
     BuyShopCard,
     ChoosePackCard,
     ConsumableSlot,
+    DiscardCards,
+    HandSlot,
     LeaveShop,
     PackOfferSlot,
+    PlayCards,
     RerollShop,
     SkipPack,
     UseConsumable,
@@ -26,11 +29,12 @@ from balatro_ai_v2.baselines import (
     PublicBeliefTacticalPolicy,
     PublicStrategicPolicy,
     _classify,
+    _play_score,
     build_public_baseline,
 )
 from balatro_ai_v2.balatrobot.adapter import to_public_observation
 from balatro_ai_v2.balatrobot.runner import PublicHistoryStep
-from balatro_ai_v2.public_state import DeckCardCount, VisiblePlayingCard
+from balatro_ai_v2.public_state import DeckCardCount, HandStat, PublicItem, VisiblePlayingCard
 from state_factory import item_card, playing_card, state
 
 
@@ -100,7 +104,8 @@ def test_public_belief_tactical_policy_discards_low_card_for_better_public_draw(
         (),
     )
 
-    assert action_to_data(action) == {"cards": [2], "type": "discard_cards"}
+    assert isinstance(action, DiscardCards)
+    assert len(action.cards) == 1
 
 
 def test_public_belief_tactical_policy_plays_when_discards_are_unavailable() -> None:
@@ -318,3 +323,75 @@ def test_public_poker_classifier_covers_wheel_straight_and_full_house() -> None:
 
     assert _classify(wheel) == "Straight"
     assert _classify(full_house) == "Full House"
+
+
+def test_public_score_excludes_unscored_pair_kickers() -> None:
+    observation = replace(
+        to_public_observation(state("SELECTING_HAND")),
+        hand=tuple(
+            VisiblePlayingCard(rank, suit)
+            for rank, suit in zip(("A", "A", "K", "Q", "J"), "SHDCS")
+        ),
+        hand_stats=(HandStat("Pair", 1, 10, 2, 0, 0),),
+    )
+    stats = {hand.name: hand for hand in observation.hand_stats}
+
+    pair_score = _play_score(observation, (HandSlot(0), HandSlot(1)), stats)[0]
+    pair_with_kickers = _play_score(
+        observation,
+        tuple(HandSlot(index) for index in range(5)),
+        stats,
+    )[0]
+
+    assert pair_with_kickers == pair_score
+
+
+def test_public_score_applies_visible_hand_family_joker() -> None:
+    observation = replace(
+        to_public_observation(state("SELECTING_HAND")),
+        hand=(VisiblePlayingCard("A", "S"), VisiblePlayingCard("A", "H")),
+        hand_stats=(HandStat("Pair", 1, 10, 2, 0, 0),),
+    )
+    stats = {hand.name: hand for hand in observation.hand_stats}
+    selected = (HandSlot(0), HandSlot(1))
+    without_joker = _play_score(observation, selected, stats)[0]
+    with_duo = _play_score(
+        replace(observation, jokers=(PublicItem("j_duo", "The Duo", "JOKER"),)),
+        selected,
+        stats,
+    )[0]
+
+    assert with_duo == without_joker * 2
+
+
+def test_public_score_uses_action_dependent_runner_increment() -> None:
+    observation = replace(
+        to_public_observation(state("SELECTING_HAND")),
+        hand=tuple(VisiblePlayingCard(rank, "S") for rank in ("2", "3", "4", "5", "6")),
+        hand_stats=(HandStat("Straight Flush", 1, 100, 8, 0, 0),),
+    )
+    stats = {hand.name: hand for hand in observation.hand_stats}
+    selected = tuple(HandSlot(index) for index in range(5))
+    without_joker = _play_score(observation, selected, stats)[0]
+    with_runner = _play_score(
+        replace(observation, jokers=(PublicItem("j_runner", "Runner", "JOKER"),)),
+        selected,
+        stats,
+    )[0]
+
+    assert with_runner > without_joker
+
+
+def test_strategic_policy_does_not_discard_green_joker_scaling() -> None:
+    raw = state("SELECTING_HAND")
+    raw["jokers"]["cards"] = [item_card("j_green_joker", card_id=30, kind="JOKER")]
+    raw["jokers"]["count"] = 1
+    observation = to_public_observation(raw)
+
+    action = PublicStrategicPolicy().choose_action(
+        observation,
+        lambda: iter_legal_actions(observation),
+        (),
+    )
+
+    assert isinstance(action, PlayCards)

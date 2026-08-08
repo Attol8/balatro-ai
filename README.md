@@ -83,8 +83,12 @@ is operational, but raw PPO, behavior cloning, and the first strategic hybrid
 still have zero wins. A frozen public-only strategic baseline improves average
 round from 2.22 to 7.29 on the same candidate panel, but also wins 0/100. Its
 unchanged seed-1 policy reproduces 23/23 real Balatro transitions exactly and
-loses at ante 1. The next useful policy step is a fair strategic value/search
-teacher, not more blind PPO tuning. Balatro's in-memory restore is exact
+loses at ante 1. Strategic behavior cloning reaches 6.84 rounds and a bounded
+20,480-step public-return PPO continuation reaches 7.03; both win 0/100 and are
+below the heuristic, so that tuning lane is closed. The immediate bottleneck is
+public tactical scoring that ignores owned-joker synergies, not optimizer
+choice. A first public-only scoring repair raises the dirty development panel
+from 7.29 to 7.86 average rounds but still wins 0/100. Balatro's in-memory restore is exact
 on the tested branch but only modestly faster than file restore, so it will
 serve as an oracle/audit worker while Jackdaw carries high-volume training.
 

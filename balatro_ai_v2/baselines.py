@@ -59,6 +59,36 @@ _MAX_STRATEGIC_ACTIONS = 512
 _MAX_PUBLIC_DRAW_BRANCHES = 512
 PUBLIC_BASELINE_NAMES = ("random", "greedy", "tactical", "strategic")
 
+_TYPE_MULT_JOKERS = {
+    "j_jolly": ("Pair", 8),
+    "j_zany": ("Three of a Kind", 12),
+    "j_mad": ("Two Pair", 10),
+    "j_crazy": ("Straight", 12),
+    "j_droll": ("Flush", 10),
+}
+_TYPE_CHIP_JOKERS = {
+    "j_sly": ("Pair", 50),
+    "j_wily": ("Three of a Kind", 100),
+    "j_clever": ("Two Pair", 80),
+    "j_devious": ("Straight", 100),
+    "j_crafty": ("Flush", 80),
+}
+_TYPE_XMULT_JOKERS = {
+    "j_duo": ("Pair", 2),
+    "j_trio": ("Three of a Kind", 3),
+    "j_family": ("Four of a Kind", 4),
+    "j_order": ("Straight", 3),
+    "j_tribe": ("Flush", 2),
+}
+_SUIT_MULT_JOKERS = {
+    "j_greedy_joker": "D",
+    "j_lusty_joker": "H",
+    "j_wrathful_joker": "S",
+    "j_gluttenous_joker": "C",
+}
+_FACE_RANKS = {"J", "Q", "K"}
+_FIBONACCI_RANKS = {"A", "2", "3", "5", "8"}
+
 _GREAT_JOKERS = {
     "j_blackboard",
     "j_blueprint",
@@ -348,21 +378,152 @@ def _play_score(
     cards = tuple(observation.hand[slot.value] for slot in selected)
     hand_name = _classify(cards)
     stat = stats.get(hand_name)
-    base_chips = stat.chips if stat is not None else 0
-    base_mult = stat.mult if stat is not None else 1
-    card_chips = sum(_card_chips(card) for card in cards)
-    mult_bonus = sum(
+    scoring_cards = (
+        tuple(card for card in cards if isinstance(card, VisiblePlayingCard))
+        if any(joker.key == "j_splash" for joker in observation.jokers)
+        else _scoring_cards(cards, hand_name)
+    )
+    chips = (stat.chips if stat is not None else 0) + sum(
+        _card_chips(card) for card in scoring_cards
+    )
+    mult: int | Fraction = (stat.mult if stat is not None else 1) + sum(
         4
-        for card in cards
-        if isinstance(card, VisiblePlayingCard) and card.enhancement == "MULT"
+        for card in scoring_cards
+        if card.enhancement == "MULT" and not card.debuffed
+    )
+    mult += sum(
+        10
+        for card in scoring_cards
+        if card.edition in {"HOLO", "HOLOGRAPHIC"} and not card.debuffed
     )
     multiplier: int | Fraction = 1
-    for card in cards:
-        if isinstance(card, VisiblePlayingCard) and card.enhancement == "GLASS":
+    for card in scoring_cards:
+        if card.enhancement == "GLASS" and not card.debuffed:
             multiplier *= 2
-        if isinstance(card, VisiblePlayingCard) and card.edition == "POLYCHROME":
+        if card.edition == "POLYCHROME" and not card.debuffed:
             multiplier *= Fraction(3, 2)
-    return (base_chips + card_chips) * (base_mult + mult_bonus) * multiplier, hand_name
+    selected_slots = {slot.value for slot in selected}
+    for index, card in enumerate(observation.hand):
+        if (
+            index not in selected_slots
+            and isinstance(card, VisiblePlayingCard)
+            and card.enhancement == "STEEL"
+            and not card.debuffed
+        ):
+            multiplier *= Fraction(3, 2)
+
+    for joker in observation.jokers:
+        if joker.perishable_rounds == 0:
+            continue
+        card_chips, card_mult = _card_joker_effect(joker.key, scoring_cards)
+        chips += card_chips
+        mult += card_mult
+        joker_chips, joker_mult, joker_xmult = _joker_main_effect(
+            observation,
+            cards,
+            hand_name,
+            stats,
+            joker.key,
+        )
+        chips += joker_chips
+        mult += joker_mult
+        mult *= joker_xmult
+        if joker.edition == "FOIL":
+            chips += 50
+        elif joker.edition in {"HOLO", "HOLOGRAPHIC"}:
+            mult += 10
+        elif joker.edition == "POLYCHROME":
+            mult *= Fraction(3, 2)
+    return chips * mult * multiplier, hand_name
+
+
+def _card_joker_effect(
+    key: str,
+    cards: tuple[VisiblePlayingCard, ...],
+) -> tuple[int, int]:
+    chips = 0
+    mult = 0
+    for card in cards:
+        if card.debuffed:
+            continue
+        if key in _SUIT_MULT_JOKERS and card.suit == _SUIT_MULT_JOKERS[key]:
+            mult += 3
+        elif key == "j_fibonacci" and card.rank in _FIBONACCI_RANKS:
+            mult += 8
+        elif key == "j_even_steven" and card.rank in {"2", "4", "6", "8", "T"}:
+            mult += 4
+        elif key == "j_odd_todd" and card.rank in {"A", "3", "5", "7", "9"}:
+            chips += 31
+        elif key == "j_scary_face" and card.rank in _FACE_RANKS:
+            chips += 30
+        elif key == "j_smiley" and card.rank in _FACE_RANKS:
+            mult += 5
+        elif key == "j_scholar" and card.rank == "A":
+            chips += 20
+            mult += 4
+        elif key == "j_walkie_talkie" and card.rank in {"4", "T"}:
+            chips += 10
+            mult += 4
+    return chips, mult
+
+
+def _joker_main_effect(
+    observation: PublicObservation,
+    cards: tuple[VisiblePlayingCard | HiddenHandCard, ...],
+    hand_name: str,
+    stats: Mapping[str, HandStat],
+    key: str,
+) -> tuple[int, int, int | Fraction]:
+    chips = 0
+    mult = 0
+    xmult: int | Fraction = 1
+    if key == "j_joker":
+        mult += 4
+    if key in _TYPE_MULT_JOKERS:
+        family, value = _TYPE_MULT_JOKERS[key]
+        mult += value if _hand_matches(cards, hand_name, family) else 0
+    if key in _TYPE_CHIP_JOKERS:
+        family, value = _TYPE_CHIP_JOKERS[key]
+        chips += value if _hand_matches(cards, hand_name, family) else 0
+    if key in _TYPE_XMULT_JOKERS:
+        family, value = _TYPE_XMULT_JOKERS[key]
+        xmult *= value if _hand_matches(cards, hand_name, family) else 1
+    if key == "j_half" and len(cards) <= 3:
+        mult += 20
+    elif key == "j_abstract":
+        mult += 3 * len(observation.jokers)
+    elif key == "j_acrobat" and observation.round.hands_left == 1:
+        xmult *= 3
+    elif key == "j_mystic_summit" and observation.round.discards_left == 0:
+        mult += 15
+    elif key == "j_banner":
+        chips += 30 * observation.round.discards_left
+    elif key == "j_supernova":
+        stat = stats.get(hand_name)
+        mult += (stat.played + 1) if stat is not None else 1
+    elif key == "j_blue_joker":
+        chips += 2 * observation.draw_count
+    elif key == "j_bull":
+        chips += 2 * max(0, observation.money)
+    elif key == "j_stuntman":
+        chips += 250
+    elif key == "j_gros_michel":
+        mult += 15
+    elif key == "j_cavendish":
+        xmult *= 3
+    elif key == "j_card_sharp":
+        stat = stats.get(hand_name)
+        if stat is not None and stat.played_this_round >= 1:
+            xmult *= 3
+    elif key == "j_bootstraps":
+        mult += 2 * (max(0, observation.money) // 5)
+    elif key == "j_runner" and _hand_matches(cards, hand_name, "Straight"):
+        chips += 15
+    elif key == "j_square" and len(cards) == 4:
+        chips += 4
+    elif key == "j_trousers" and hand_name in {"Two Pair", "Full House", "Flush House"}:
+        mult += 2
+    return chips, mult, xmult
 
 
 def _belief_tactical_action(observation: PublicObservation) -> PublicAction:
@@ -577,6 +738,8 @@ def _coverage_discard(
 ) -> DiscardCards | None:
     if observation.round.discards_left <= 0 or observation.round.discards_used >= 2:
         return None
+    if any(joker.key in {"j_green_joker", "j_ramen"} for joker in observation.jokers):
+        return None
     if hand_name not in {"High Card", "Pair", "Two Pair", "Three of a Kind"}:
         return None
 
@@ -615,6 +778,10 @@ def _classify(cards: tuple[VisiblePlayingCard | HiddenHandCard, ...]) -> str:
     straight = len(unique) == 5 and (
         unique[-1] - unique[0] == 4 or unique == [2, 3, 4, 5, 14]
     )
+    if counts[:1] == [5]:
+        return "Flush Five" if flush else "Five of a Kind"
+    if counts == [3, 2] and flush:
+        return "Flush House"
     if straight and flush:
         return "Straight Flush"
     if counts[:1] == [4]:
@@ -634,8 +801,64 @@ def _classify(cards: tuple[VisiblePlayingCard | HiddenHandCard, ...]) -> str:
     return "High Card"
 
 
+def _scoring_cards(
+    cards: tuple[VisiblePlayingCard | HiddenHandCard, ...],
+    hand_name: str,
+) -> tuple[VisiblePlayingCard, ...]:
+    visible = tuple(card for card in cards if isinstance(card, VisiblePlayingCard))
+    stones = tuple(card for card in visible if card.enhancement == "STONE")
+    playing = tuple(card for card in visible if card.enhancement != "STONE")
+    if hand_name == "High Card":
+        if not playing:
+            return stones
+        highest = max(_RANK_ORDER.get(card.rank, 0) for card in playing)
+        ranked = tuple(card for card in playing if _RANK_ORDER.get(card.rank, 0) == highest)
+        return (*ranked, *stones)
+    rank_counts = Counter(card.rank for card in playing)
+    minimum = {
+        "Pair": 2,
+        "Three of a Kind": 3,
+        "Four of a Kind": 4,
+    }.get(hand_name)
+    if minimum is not None:
+        ranked = tuple(card for card in playing if rank_counts[card.rank] >= minimum)
+        return (*ranked, *stones)
+    if hand_name == "Two Pair":
+        ranked = tuple(card for card in playing if rank_counts[card.rank] >= 2)
+        return (*ranked, *stones)
+    return (*playing, *stones)
+
+
+def _hand_matches(
+    cards: tuple[VisiblePlayingCard | HiddenHandCard, ...],
+    hand_name: str,
+    family: str,
+) -> bool:
+    ranks = Counter(
+        card.rank
+        for card in cards
+        if isinstance(card, VisiblePlayingCard) and card.enhancement != "STONE"
+    )
+    if family == "Pair":
+        return any(count >= 2 for count in ranks.values())
+    if family == "Two Pair":
+        return sum(count >= 2 for count in ranks.values()) >= 2 or hand_name in {
+            "Full House",
+            "Flush House",
+        }
+    if family == "Three of a Kind":
+        return any(count >= 3 for count in ranks.values())
+    if family == "Four of a Kind":
+        return any(count >= 4 for count in ranks.values())
+    if family == "Straight":
+        return hand_name in {"Straight", "Straight Flush"}
+    if family == "Flush":
+        return hand_name in {"Flush", "Straight Flush", "Flush House", "Flush Five"}
+    return hand_name == family
+
+
 def _card_chips(card: VisiblePlayingCard | HiddenHandCard) -> int:
-    if not isinstance(card, VisiblePlayingCard):
+    if not isinstance(card, VisiblePlayingCard) or card.debuffed:
         return 0
     if card.enhancement == "STONE":
         return 50

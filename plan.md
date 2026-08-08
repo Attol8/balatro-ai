@@ -125,6 +125,15 @@ A fresh public-action Red/White seed-1 smoke run completed in real Balatro and i
 - Bootstrap only `SHOP` and `PACK` decisions from the frozen `PublicStrategicPolicy`; fixed public tactical control continues to own blind flow and hand play because the earlier model failed to recover that deterministic floor.
 - Resume the strategic checkpoint with on-policy `public_blind_clear_v1` returns. The learned policy owns only shop and pack actions; episode seeds remain environment-driver inputs and never become observation, history, feature, reward, or recurrent-state fields.
 - Training metrics, imitation accuracy, and candidate loss reductions are diagnostics. Keep the learner only if its frozen evaluation on disjoint Red/White seeds beats the 7.29-round strategic floor or records a complete win; validate any retained policy unchanged through real Balatro lockstep.
+- Commit `ccca3e4` implements that bounded path. A clean 200-episode strategic bootstrap reaches 86.96% sampled shop/pack imitation accuracy, but its frozen seeds 1-100 evaluation averages only 6.84 rounds with 0 wins. A 20,480-step public-return PPO continuation recovers to 7.03 rounds with 0 wins, still below the 7.29 teacher. This closes imitation and PPO tuning as failed strength paths.
+
+### Active Increment: Public Joker-Aware Tactics
+
+- Fix the public tactical surrogate before training another strategic model. Only cards that actually score contribute card chips, enhancements, and editions; selected kickers no longer create imaginary score.
+- Apply deterministic joker effects sequentially in visible joker order using public semantic keys and public state. Start with fixed hand-family effects, visible money/discard/deck-count effects, card-rank/suit effects, and editions. Do not parse locale-dependent tooltip prose or invent hidden scaling counters.
+- For scaling jokers whose accumulated value is not yet structured, model only the action-dependent public delta: Runner gains on Straights, Spare Trousers on Two Pair/Full House, and Square Joker on four-card hands. Their unknown current constant must not be guessed.
+- Keep the patch only if the frozen Red/White seeds 1-100 panel materially beats 7.29 rounds or produces a complete win, then replay the unchanged policy through real Balatro lockstep.
+- The dirty development panel passes the retention threshold: 100/100 episodes complete at 96.55 decisions/s, average round rises from 7.29 to 7.86 and average ante from 2.50 to 2.67. Seed 63 reaches ante 7 instead of ante 6. It still wins 0/100, so freeze and authority replay are required before using it as a new floor.
 
 ## Design
 
