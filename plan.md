@@ -117,7 +117,14 @@ A fresh public-action Red/White seed-1 smoke run completed in real Balatro and i
 - Treat the pinned candidate's private-state smart heuristic only as a diagnostic ceiling: it wins 1/100 Red/White seeds and averages 7.67 rounds, but it is not fair evidence and none of its private inputs may be ported.
 - Freeze and evaluate the public port on candidate Red/White seeds 1-100. Keep it only if it materially beats the 2.22-round greedy floor without truncations or policy errors, then reproduce the unchanged policy through a fresh real Balatro schema-v5 trace.
 - Commit `7a8cc74` passed that retention gate. Its clean isolated candidate panel completed 100/100 episodes without truncation or policy error at 100.84 decisions/s, averaging 6.95 rounds versus greedy's 2.22; it still won 0/100. The unchanged seed-1 policy then reproduced 23/23 schema-v5 transitions in real Balatro and lost at ante 1.
-- A 10-card hand exposed noncanonical discard ordering and an out-of-proposal tactical choice; selections are now increasing and strategic tactics optimize strictly within the 512 transported public actions. The proposal itself was also ordered smallest-first, which consumed that bound before many strategically useful five-card actions. Enumerating the unchanged complete legal set largest-first raised the dirty development panel to 7.29 average rounds at 101.19 decisions/s, still with 0/100 wins. Freeze and recapture this result before generating value targets.
+- A 10-card hand exposed noncanonical discard ordering and an out-of-proposal tactical choice; selections are now increasing and strategic tactics optimize strictly within the 512 transported public actions. Commit `9840961` orders the unchanged complete legal set largest-first so the bound includes strategically useful five-card actions. Its clean candidate panel completes 100/100 at 101.50 decisions/s, averages 7.29 rounds and 2.50 ante, and still wins 0/100. The unchanged seed-1 policy reproduces 23/23 real Balatro transitions exactly and loses at ante 1.
+
+### Active Increment: Strategic Value Learning
+
+- Reuse the existing public recurrent model, isolated environment worker, evaluator, and PPO loop. Do not add a second dataset format, replay service, model family, or private simulator callback.
+- Bootstrap only `SHOP` and `PACK` decisions from the frozen `PublicStrategicPolicy`; fixed public tactical control continues to own blind flow and hand play because the earlier model failed to recover that deterministic floor.
+- Resume the strategic checkpoint with on-policy `public_blind_clear_v1` returns. The learned policy owns only shop and pack actions; episode seeds remain environment-driver inputs and never become observation, history, feature, reward, or recurrent-state fields.
+- Training metrics, imitation accuracy, and candidate loss reductions are diagnostics. Keep the learner only if its frozen evaluation on disjoint Red/White seeds beats the 7.29-round strategic floor or records a complete win; validate any retained policy unchanged through real Balatro lockstep.
 
 ## Design
 

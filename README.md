@@ -81,10 +81,10 @@ and reproduced its seed-1 terminal loss for 27/27 real transitions. These are
 honest strength floors, not a solver. Process-isolated public recurrent training
 is operational, but raw PPO, behavior cloning, and the first strategic hybrid
 still have zero wins. A frozen public-only strategic baseline improves average
-round from 2.22 to 6.95 on the same candidate panel, but also wins 0/100; a
-largest-first bounded action proposal reaches 7.29 in development. The next
-useful policy step is a fair strategic value/search teacher, not more blind PPO
-tuning. Balatro's in-memory restore is exact
+round from 2.22 to 7.29 on the same candidate panel, but also wins 0/100. Its
+unchanged seed-1 policy reproduces 23/23 real Balatro transitions exactly and
+loses at ante 1. The next useful policy step is a fair strategic value/search
+teacher, not more blind PPO tuning. Balatro's in-memory restore is exact
 on the tested branch but only modestly faster than file restore, so it will
 serve as an oracle/audit worker while Jackdaw carries high-volume training.
 
