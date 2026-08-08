@@ -30,6 +30,7 @@ def test_public_model_evaluation_requires_frozen_model_and_worker() -> None:
     assert args.model == Path("/model.pt")
     assert args.seeds == 20
     assert args.max_decisions == 800
+    assert args.tactical_controller == "model"
     assert not hasattr(args, "training_seed")
     assert not hasattr(args, "policy_seed")
 

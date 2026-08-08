@@ -18,7 +18,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import torch
 from torch import Tensor
 
-from balatro_ai_v2.actions import PublicAction
+from balatro_ai_v2.actions import CashOut, PublicAction, SelectBlind, iter_legal_actions
+from balatro_ai_v2.baselines import build_public_baseline
+from balatro_ai_v2.policy import PublicPolicy
 from balatro_ai_v2.public_env_process import (
     PublicEnvironmentProcess,
     PublicEpisodeSpec,
@@ -33,8 +35,7 @@ from balatro_ai_v2.public_model import (
     public_model_candidates,
     save_public_model,
 )
-from balatro_ai_v2.public_state import PublicObservation
-from balatro_ai_v2.public_state import Phase
+from balatro_ai_v2.public_state import Phase, PublicObservation
 
 
 TRAIN_REWARD_SCHEMAS = ("sparse_terminal_v1", "public_blind_clear_v1")
@@ -63,6 +64,7 @@ class RolloutRecord:
     action: PublicAction
     old_log_probability: float
     episode_start: bool
+    policy_trainable: bool
 
 
 def main() -> None:
@@ -78,6 +80,11 @@ def main() -> None:
         ).to(device)
     )
     optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate)
+    tactical_controller = (
+        None
+        if args.tactical_controller == "model"
+        else build_public_baseline(args.tactical_controller, "hybrid-controller-v1")[0]
+    )
     environments: list[PublicEnvironmentProcess] = []
     started = time.perf_counter()
     episode_results: list[dict[str, object]] = []
@@ -134,6 +141,7 @@ def main() -> None:
                     args,
                     episode_results,
                     started_seeds,
+                    tactical_controller,
                 )
                 bootstrap = _bootstrap_values(model, states)
                 advantages, returns = generalized_advantage_estimate(
@@ -170,6 +178,7 @@ def main() -> None:
             "environment_reward_schema": hello.reward_schema,
             "training_reward_schema": args.training_reward,
             "action_proposal_schema": PUBLIC_MODEL_ACTION_PROPOSAL_SCHEMA,
+            "control_schema": _control_schema(args.tactical_controller),
             "deck": args.deck,
             "stake": args.stake,
             "seed_start": args.seed_start,
@@ -220,6 +229,7 @@ def _collect_rollout(
     args: argparse.Namespace,
     episode_results: list[dict[str, object]],
     started_seeds: list[int],
+    tactical_controller: PublicPolicy | None,
 ) -> tuple[list[RolloutRecord], Tensor, Tensor, Tensor, Tensor, Tensor]:
     workers = len(states)
     records: list[RolloutRecord] = []
@@ -241,7 +251,13 @@ def _collect_rollout(
                 previous_actions,
                 hidden_input,
             )
-        actions = output.actions
+        actions = list(output.actions)
+        policy_trainable: list[bool] = []
+        for worker_index, observation in enumerate(observations):
+            controlled = _fixed_control_action(observation, tactical_controller)
+            policy_trainable.append(controlled is None)
+            if controlled is not None:
+                actions[worker_index] = controlled
         futures = [
             executor.submit(state.environment.step, action)
             for state, action in zip(states, actions)
@@ -259,6 +275,7 @@ def _collect_rollout(
                     action=action,
                     old_log_probability=float(output.log_probabilities[worker_index]),
                     episode_start=state.previous_action is None,
+                    policy_trainable=policy_trainable[worker_index],
                 )
             )
             training_reward = _training_reward(
@@ -429,9 +446,14 @@ def _ppo_update(
             entropy_rows.append(output.entropies)
         new_log_probabilities = torch.cat(new_log_probability_rows)
         new_values = torch.cat(value_rows)
-        entropy = torch.cat(entropy_rows).mean()
+        entropies = torch.cat(entropy_rows)
         old_log_probabilities = torch.tensor(
             [record.old_log_probability for record in records], device=device
+        )
+        trainable_mask = torch.tensor(
+            [record.policy_trainable for record in records],
+            dtype=torch.bool,
+            device=device,
         )
         ratio = torch.exp(new_log_probabilities - old_log_probabilities)
         normalized_advantages = flat_advantages.to(device)
@@ -440,7 +462,12 @@ def _ppo_update(
             torch.clamp(ratio, 1 - args.clip_ratio, 1 + args.clip_ratio)
             * normalized_advantages
         )
-        policy_loss = -torch.minimum(unclipped, clipped).mean()
+        if torch.any(trainable_mask):
+            policy_loss = -torch.minimum(unclipped, clipped)[trainable_mask].mean()
+            entropy = entropies[trainable_mask].mean()
+        else:
+            policy_loss = new_log_probabilities.sum() * 0.0
+            entropy = new_log_probabilities.sum() * 0.0
         value_loss = torch.nn.functional.mse_loss(new_values, flat_returns.to(device))
         loss = (
             policy_loss
@@ -460,10 +487,14 @@ def _ppo_update(
         totals["entropy"] += float(entropy.detach())
         totals["gradient_norm_before_clip"] += float(gradient_norm)
         totals["approximate_kl"] += float(
-            (old_log_probabilities - new_log_probabilities).mean().detach()
+            (old_log_probabilities - new_log_probabilities)[trainable_mask].mean().detach()
+            if torch.any(trainable_mask)
+            else 0.0
         )
         totals["clip_fraction"] += float(
-            ((ratio - 1.0).abs() > args.clip_ratio).float().mean().detach()
+            ((ratio - 1.0).abs() > args.clip_ratio)[trainable_mask].float().mean().detach()
+            if torch.any(trainable_mask)
+            else 0.0
         )
     return {name: value / args.ppo_epochs for name, value in totals.items()}
 
@@ -482,6 +513,33 @@ def _training_reward(
     ):
         reward += progress_reward
     return reward
+
+
+def _fixed_control_action(
+    observation: PublicObservation,
+    tactical_controller: PublicPolicy | None,
+) -> PublicAction | None:
+    if tactical_controller is None:
+        return None
+    if observation.phase == Phase.BLIND_SELECT:
+        return SelectBlind()
+    if observation.phase == Phase.SELECTING_HAND:
+        return tactical_controller.choose_action(
+            observation,
+            lambda: iter_legal_actions(observation),
+            (),
+        )
+    if observation.phase == Phase.ROUND_EVAL:
+        return CashOut()
+    return None
+
+
+def _control_schema(tactical_controller: str) -> str:
+    return (
+        "model_all_public_actions_v1"
+        if tactical_controller == "model"
+        else f"fixed_flow_{tactical_controller}_hands_model_shop_pack_v1"
+    )
 
 
 def _validate_args(args: argparse.Namespace) -> None:
@@ -519,6 +577,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--rollout-steps", type=int, default=32)
     parser.add_argument("--max-episode-steps", type=int, default=800)
     parser.add_argument("--training-seed", type=int, default=1)
+    parser.add_argument(
+        "--tactical-controller",
+        choices=("model", "greedy", "tactical"),
+        default="greedy",
+    )
     parser.add_argument("--training-reward", choices=TRAIN_REWARD_SCHEMAS, default="sparse_terminal_v1")
     parser.add_argument("--progress-reward", type=float, default=0.02)
     parser.add_argument("--hidden-size", type=int, default=128)

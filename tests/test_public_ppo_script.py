@@ -9,6 +9,8 @@ import pytest
 
 torch = pytest.importorskip("torch")
 
+from balatro_ai_v2.actions import CashOut, PlayCards, SelectBlind  # noqa: E402
+from balatro_ai_v2.baselines import build_public_baseline  # noqa: E402
 from balatro_ai_v2.balatrobot.adapter import to_public_observation  # noqa: E402
 from balatro_ai_v2.public_env_process import PublicTransition  # noqa: E402
 from state_factory import state  # noqa: E402
@@ -99,10 +101,30 @@ def test_public_ppo_cli_defaults_are_bounded_and_public() -> None:
     )
 
     assert args.training_reward == "sparse_terminal_v1"
+    assert args.tactical_controller == "greedy"
     assert args.workers == 4
     assert args.max_episode_steps == 800
     assert not hasattr(args, "model_seed")
     assert not hasattr(args, "snapshot")
+
+
+def test_hybrid_controller_owns_fixed_flow_and_hand_play_only() -> None:
+    script = _load_script()
+    controller, _ = build_public_baseline("greedy", "hybrid-controller-v1")
+
+    assert isinstance(
+        script._fixed_control_action(to_public_observation(state()), controller),
+        SelectBlind,
+    )
+    assert isinstance(
+        script._fixed_control_action(to_public_observation(state("SELECTING_HAND")), controller),
+        PlayCards,
+    )
+    assert isinstance(
+        script._fixed_control_action(to_public_observation(state("ROUND_EVAL")), controller),
+        CashOut,
+    )
+    assert script._fixed_control_action(to_public_observation(state("SHOP")), controller) is None
 
 
 def test_public_ppo_argument_validation_rejects_invalid_bounds() -> None:
