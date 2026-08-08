@@ -70,15 +70,17 @@ python scripts/replay_observed_lockstep.py \
 Jackdaw is pinned. Its raw bridge initially differed from BalatroBot in 638
 initial-state fields; a narrow adapter now derives the equivalent BalatroBot
 representation from Jackdaw's own state. Clean schema-v4 campaigns currently
-cover 1,046 exact transitions, all in losing runs. On Red/White seeds 1-100,
+cover 1,073 exact transitions, all in losing runs. On Red/White seeds 1-100,
 the frozen public greedy and deterministic-random controls both won 0/100 in
 the candidate; their seed-1 policies then reproduced in real Balatro for 18/18
-and 11/11 transitions respectively. These are honest strength floors, not a
-solver. The next gate is fair public-belief search plus broader randomized
-action/rule lockstep. Balatro's in-memory restore is exact on the tested branch
-but only modestly faster than file restore, so it will serve as an oracle/audit
-worker while Jackdaw carries high-volume search and training. A learned
-policy/value model follows search, not the other way around.
+and 11/11 transitions respectively. A fair one-ply public draw policy improved
+average ante from 1.05 to 1.23 but still won 0/100, ran at only 2.80 decisions/s,
+and reproduced its seed-1 terminal loss for 27/27 real transitions. These are
+honest strength floors, not a solver. The next gate is process-isolated policy
+execution followed by a scalable public-history training/search path plus
+broader randomized action/rule lockstep. Balatro's in-memory restore is exact
+on the tested branch but only modestly faster than file restore, so it will
+serve as an oracle/audit worker while Jackdaw carries high-volume training.
 
 Jackdaw is pinned in `kernels/jackdaw.lock.json` but is deliberately marked
 untrusted. Its optional environment requires Python 3.12:

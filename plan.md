@@ -69,6 +69,16 @@ A fresh public-action Red/White seed-1 smoke run completed in real Balatro and i
 - Start with exact without-replacement draw probabilities over the public remaining-deck multiset. This is a chance model, not a clone of the live game and not yet full-run search.
 - Require public hidden twins to produce identical beliefs, action rankings, and policy distributions. Malformed counts and unsupported hidden mechanics fail closed.
 - Use the public chance model to build a bounded tactical search baseline before introducing learned values or latent particles for future shops and RNG streams.
+- Commits `d1866af`, `0a4f323`, and `b8f1759` added exact public hypergeometric beliefs, a bounded one-ply single-card-discard expectimax policy, and a semantics-preserving scoring optimization. The frozen optimized policy completed candidate Red/White seeds 1-100 with 0 wins, average ante 1.23, average round 2.90, and only 2.80 decisions/s. Its unchanged seed-1 run reproduced through real Balatro for 27/27 transitions and lost at ante 1.
+- This closes the one-ply baseline as a negative result: it is fair and reproducible, but neither strong nor fast enough for expert iteration. Do not deepen the same Python enumerator.
+- Naive rejection sampling over candidate seeds is also rejected as the rollout architecture: matching a public hand makes acceptance exponentially small. A usable particle worker must sample latent states from the correct public-history conditional distribution, including VM-order and RNG latents, without using the live seed or snapshot.
+
+### Active Increment: Policy Process Isolation
+
+- Move the policy callback behind a strict JSON-lines child-process boundary before adding any model or training loop. The parent sends only canonical `PublicObservation`, public legal actions, and bounded public history.
+- Reject unknown fields, raw authority state, seed/RNG/snapshot tokens, oversized messages, malformed actions, stale observations, timeouts, crashes, and extra stdout. Revalidate returned actions against the parent observation before execution.
+- Keep environment kernels and private candidate state entirely in the parent/evaluator process. The child process must not import Jackdaw or BalatroBot.
+- Once isolation passes adversarial hidden-twin tests, choose between public-history recurrent RL and a conditional latent-state worker based on measured feasibility; do not build seed-rejection particles.
 
 ## Design
 
