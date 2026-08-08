@@ -48,6 +48,7 @@ from balatro_ai_v2.public_state import (
 
 
 MODEL_FORMAT_VERSION: Final = 1
+PUBLIC_MODEL_ACTION_PROPOSAL_SCHEMA: Final = "no_reorder_enumerated_max2048_v1"
 _REORDER_ACTIONS = (ReorderHand, ReorderJokers, ReorderConsumables)
 _ACTION_FAMILIES = {
     SelectBlind: "select_blind",
@@ -77,7 +78,7 @@ class PublicModelConfig:
     observation_features: int = 2048
     action_features: int = 512
     hidden_size: int = 128
-    max_candidates: int = 512
+    max_candidates: int = 2048
 
     def __post_init__(self) -> None:
         if min(
@@ -249,7 +250,9 @@ def public_model_candidates(observation: PublicObservation) -> tuple[PublicActio
     if not actions:
         raise PublicModelError("no supported public model action is available")
     if len(actions) > PublicModelConfig().max_candidates:
-        raise PublicModelError("public model action proposal exceeds its declared bound")
+        raise PublicModelError(
+            f"public model action proposal has {len(actions)} actions, exceeding its declared bound"
+        )
     return tuple(actions)
 
 
