@@ -475,6 +475,17 @@ def action_from_data(data: Mapping[str, object]) -> PublicAction:
     raise ValueError(f"unknown public action type {kind!r}")
 
 
+def canonical_action_from_data(data: object) -> PublicAction:
+    """Parse only the exact canonical output of :func:`action_to_data`."""
+
+    if not isinstance(data, Mapping) or not all(isinstance(key, str) for key in data):
+        raise ValueError("public action must be an object with string keys")
+    action = action_from_data(data)
+    if action_to_data(action) != data:
+        raise ValueError("public action is not in canonical form")
+    return action
+
+
 def _action_type(action: object) -> str:
     names = {
         SelectBlind: "select_blind",

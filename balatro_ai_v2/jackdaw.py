@@ -100,7 +100,7 @@ def verify_jackdaw_runtime() -> dict[str, object]:
         ).stdout.strip()
         dirty = bool(
             subprocess.run(
-                ["git", "status", "--porcelain", "--untracked-files=no"],
+                ["git", "status", "--porcelain", "--untracked-files=all"],
                 cwd=root,
                 check=True,
                 capture_output=True,
@@ -114,7 +114,7 @@ def verify_jackdaw_runtime() -> dict[str, object]:
             f"Jackdaw revision {revision!r} does not match pinned {JACKDAW_REVISION!r}"
         )
     if dirty:
-        raise JackdawUnavailable("imported Jackdaw checkout has tracked modifications")
+        raise JackdawUnavailable("imported Jackdaw checkout has modifications")
     return {"revision": revision, "dirty": False}
 
 
