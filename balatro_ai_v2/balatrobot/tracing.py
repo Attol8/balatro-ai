@@ -16,7 +16,7 @@ from balatro_ai_v2.backend import BackendMetadata, RunSpec
 
 
 TRACE_SCHEMA_VERSION = 1
-CANONICAL_SCHEMA_VERSION = 3
+CANONICAL_SCHEMA_VERSION = 4
 
 
 @dataclass(frozen=True, slots=True)

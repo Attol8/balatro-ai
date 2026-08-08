@@ -39,6 +39,7 @@ _SUIT_LETTER = {"Spades": "S", "Hearts": "H", "Clubs": "C", "Diamonds": "D"}
 _OPTIONAL_AREAS = {"shop", "vouchers", "packs", "pack"}
 _PRIVATE_AREA_KEYS = {
     "cards": "deck",
+    "discard": "discard_pile",
     "hand": "hand",
     "jokers": "jokers",
     "consumables": "consumables",
@@ -54,7 +55,7 @@ _PACK_STATES = {
     "Standard": "STANDARD_PACK",
     "Buffoon": "BUFFOON_PACK",
 }
-_DEFAULT_VISIBLE_POKER_HAND_ORDER = (
+_DEFAULT_POKER_HAND_ITERATION_ORDER = (
     "High Card",
     "Pair",
     "Two Pair",
@@ -64,11 +65,36 @@ _DEFAULT_VISIBLE_POKER_HAND_ORDER = (
     "Full House",
     "Four of a Kind",
     "Straight Flush",
+    "Five of a Kind",
+    "Flush House",
+    "Flush Five",
 )
 
 
 class JackdawUnavailable(RuntimeError):
     pass
+
+
+def _vanilla_most_played_hand(
+    hand_levels: Any,
+    iteration_order: tuple[str, ...] | None,
+) -> Any:
+    """Match vanilla's process-order tie bug at a defeated boss blind."""
+
+    from jackdaw.engine.data.hands import HandType
+
+    order = iteration_order or _DEFAULT_POKER_HAND_ITERATION_ORDER
+    best = HandType.HIGH_CARD
+    best_count = -1
+    for name in order:
+        hand_type = HandType(name)
+        count = hand_levels.get_state(hand_type).played
+        # Vanilla never updates its `_order` sentinel, so every later hand with
+        # the same maximum replaces the earlier one.
+        if count >= best_count:
+            best = hand_type
+            best_count = count
+    return best
 
 
 @dataclass(slots=True)
@@ -82,7 +108,7 @@ class JackdawBackend:
     _round_targets_rolled: bool = field(default=False, init=False, repr=False)
     _stale_shop_areas: dict[str, dict[str, Any]] | None = field(default=None, init=False, repr=False)
     _pending_ante_setup: int | None = field(default=None, init=False, repr=False)
-    _visible_poker_hand_order: tuple[str, ...] | None = field(default=None, init=False, repr=False)
+    _poker_hand_iteration_order: tuple[str, ...] | None = field(default=None, init=False, repr=False)
 
     def __post_init__(self) -> None:
         try:
@@ -118,6 +144,8 @@ class JackdawBackend:
             "start",
             {"deck": spec.deck, "stake": spec.stake, "seed": spec.seed or "DEFAULT"},
         )
+        self._initialize_orbital_choices()
+        raw = self._handle("gamestate", {})
         self._current = self._observation(raw)
         return self._current
 
@@ -130,15 +158,17 @@ class JackdawBackend:
 
         if not isinstance(authority_start, Mapping):
             raise RuntimeError("authority replay start state is not a mapping")
-        order = authority_start.get("visible_poker_hand_order")
+        order = authority_start.get("poker_hand_iteration_order")
         hands = authority_start.get("hands")
         if not isinstance(order, list) or not order or not isinstance(hands, Mapping):
             raise RuntimeError("authority replay is missing visible poker-hand order")
-        if not all(isinstance(name, str) and name in hands for name in order):
-            raise RuntimeError("authority replay has an invalid visible poker-hand order")
+        if len(order) != len(hands) or not all(
+            isinstance(name, str) and name in hands for name in order
+        ):
+            raise RuntimeError("authority replay has an invalid poker-hand iteration order")
         if len(set(order)) != len(order):
             raise RuntimeError("authority replay poker-hand order contains duplicates")
-        self._visible_poker_hand_order = tuple(order)
+        self._poker_hand_iteration_order = tuple(order)
 
     def step(self, action: PublicAction) -> StepResult:
         if self._current is None:
@@ -152,7 +182,7 @@ class JackdawBackend:
         voucher_effect = self._selected_voucher_effect(method, params)
         try:
             if method == "play":
-                with self._round_end_compatibility():
+                with self._play_compatibility(), self._round_end_compatibility():
                     raw_after = self._handle(method, params)
             elif method == "cash_out" and self._round_targets_rolled:
                 with self._cash_out_compatibility():
@@ -178,6 +208,8 @@ class JackdawBackend:
             raw_after = self._handle("gamestate", {})
         if voucher_effect is not None and self._apply_immediate_voucher_effect(voucher_effect):
             raw_after = self._handle("gamestate", {})
+        if method == "next_round" and raw_after.get("state") == "BLIND_SELECT":
+            self._initialize_orbital_choices()
         if method == "play" and raw_after.get("state") == "ROUND_EVAL":
             self._roll_round_targets()
             self._round_targets_rolled = True
@@ -200,15 +232,15 @@ class JackdawBackend:
         self._round_targets_rolled = False
         self._stale_shop_areas = None
         self._pending_ante_setup = None
-        self._visible_poker_hand_order = None
+        self._poker_hand_iteration_order = None
 
     def _handle(self, method: str, params: dict[str, Any]) -> dict[str, Any]:
-        with self._poker_hand_order_compatibility():
+        with self._poker_hand_order_compatibility(), self._standard_pack_cost_compatibility():
             return self._backend.handle(method, params)
 
     @contextmanager
     def _poker_hand_order_compatibility(self) -> Iterator[None]:
-        order = self._visible_poker_hand_order
+        order = self._poker_hand_iteration_order
         if order is None:
             yield
             return
@@ -216,12 +248,90 @@ class JackdawBackend:
         from jackdaw.engine.data.hands import HandType
 
         with _JACKDAW_PATCH_LOCK:
-            original = tags._ORBITAL_HANDS
+            original_hands = tags._ORBITAL_HANDS
+            original_apply = tags.Tag.apply
             tags._ORBITAL_HANDS = [HandType(name) for name in order]
+
+            def vanilla_apply(
+                tag: Any,
+                context: str,
+                game_state: dict[str, Any],
+                rng: Any = None,
+                **kwargs: Any,
+            ) -> Any:
+                if context == "immediate" and tag.key == "tag_orbital":
+                    ante = game_state.get("round_resets", {}).get("ante")
+                    blind_type = game_state.get("blind_on_deck")
+                    choices = game_state.get("orbital_choices", {}).get(ante, {})
+                    hand_type = choices.get(blind_type)
+                    if hand_type is None:
+                        raise RuntimeError("Jackdaw Orbital Tag choice was not initialized")
+                    return tags.TagResult(level_up=(hand_type, tag.config["levels"]))
+                return original_apply(tag, context, game_state, rng, **kwargs)
+
+            tags.Tag.apply = vanilla_apply
             try:
                 yield
             finally:
-                tags._ORBITAL_HANDS = original
+                tags.Tag.apply = original_apply
+                tags._ORBITAL_HANDS = original_hands
+
+    def _initialize_orbital_choices(self) -> None:
+        """Mirror blind-select UI's three once-per-ante Orbital rolls."""
+
+        from jackdaw.engine.data.hands import HandType
+
+        game_state = getattr(self._backend, "_gs", None)
+        if not isinstance(game_state, dict):
+            raise RuntimeError("Jackdaw backend does not expose its active game state")
+        round_resets = game_state.get("round_resets")
+        rng = game_state.get("rng")
+        hand_levels = game_state.get("hand_levels")
+        if not isinstance(round_resets, Mapping) or rng is None or hand_levels is None:
+            raise RuntimeError("Jackdaw Orbital choice state is incomplete")
+        ante = round_resets.get("ante")
+        if not isinstance(ante, int):
+            raise RuntimeError("Jackdaw ante is unavailable for Orbital choices")
+        all_choices = game_state.setdefault("orbital_choices", {})
+        if ante in all_choices:
+            return
+        order = self._poker_hand_iteration_order or _DEFAULT_POKER_HAND_ITERATION_ORDER
+        visible = [
+            HandType(name)
+            for name in order
+            if hand_levels.get_state(HandType(name)).visible
+        ]
+        if not visible:
+            raise RuntimeError("Jackdaw has no visible poker hands for Orbital choices")
+        choices: dict[str, Any] = {}
+        for blind_type in ("Small", "Big", "Boss"):
+            index = rng.random(rng.seed("orbital"), 1, len(visible))
+            choices[blind_type] = visible[index - 1]
+        all_choices[ante] = choices
+
+    @contextmanager
+    def _standard_pack_cost_compatibility(self) -> Iterator[None]:
+        """Reprice Standard-pack cards after their edition is assigned."""
+
+        from jackdaw.engine import packs
+
+        original_generate = packs._gen_standard
+
+        def vanilla_generate(rng: Any, ante: int, game_state: dict[str, Any]) -> Any:
+            card = original_generate(rng, ante, game_state)
+            card.set_cost(
+                inflation=game_state.get("inflation", 0),
+                discount_percent=game_state.get("discount_percent", 0),
+                ante=ante,
+            )
+            return card
+
+        with _JACKDAW_PATCH_LOCK:
+            packs._gen_standard = vanilla_generate
+            try:
+                yield
+            finally:
+                packs._gen_standard = original_generate
 
     def _observation(self, raw: dict[str, Any]) -> AuthorityObservation:
         # Both adapters must pass independently.  The public conversion catches
@@ -230,7 +340,7 @@ class JackdawBackend:
             raw,
             getattr(self._backend, "_gs", None),
             self._stale_shop_areas,
-            self._visible_poker_hand_order,
+            self._poker_hand_iteration_order,
         )
         to_public_observation(normalized)
         observed = self.canonicalizer.canonicalize(normalized)
@@ -373,6 +483,42 @@ class JackdawBackend:
         return True
 
     @contextmanager
+    def _play_compatibility(self) -> Iterator[None]:
+        """Sort Hook discards by hand position, as vanilla does before moving them."""
+
+        from jackdaw.engine import game
+
+        game_state = getattr(self._backend, "_gs", None)
+        if not isinstance(game_state, Mapping):
+            raise RuntimeError("Jackdaw backend does not expose its active game state")
+        hand = game_state.get("hand")
+        if not isinstance(hand, list):
+            raise RuntimeError("Jackdaw hand state is unavailable before play")
+        hand_positions = {id(card): index for index, card in enumerate(hand)}
+
+        original_fire_discard_effects = game._fire_discard_effects
+
+        def vanilla_fire_discard_effects(
+            state: dict[str, Any],
+            discarded: list[Any],
+            *,
+            hook: bool,
+        ) -> None:
+            if hook:
+                missing = [card for card in discarded if id(card) not in hand_positions]
+                if missing:
+                    raise RuntimeError("Jackdaw Hook discarded a card absent from the pre-play hand")
+                discarded = sorted(discarded, key=lambda card: hand_positions[id(card)])
+            original_fire_discard_effects(state, discarded, hook=hook)
+
+        with _JACKDAW_PATCH_LOCK:
+            game._fire_discard_effects = vanilla_fire_discard_effects
+            try:
+                yield
+            finally:
+                game._fire_discard_effects = original_fire_discard_effects
+
+    @contextmanager
     def _round_end_compatibility(self) -> Iterator[None]:
         """Keep next-ante blind setup in vanilla's split round-end/cash-out order."""
 
@@ -400,7 +546,10 @@ class JackdawBackend:
         if self._pending_ante_setup is not None:
             raise RuntimeError(f"Jackdaw ante {self._pending_ante_setup} setup is already pending")
 
-        most_played = hand_levels.most_played()
+        most_played = _vanilla_most_played_hand(
+            hand_levels,
+            self._poker_hand_iteration_order,
+        )
         current_round["most_played_poker_hand"] = most_played.value
         round_resets["ante"] += 1
         ante = int(round_resets["ante"])
@@ -476,7 +625,7 @@ def _normalize_jackdaw_bridge(
     raw: dict[str, Any],
     game_state: object,
     stale_shop_areas: Mapping[str, Mapping[str, Any]] | None = None,
-    visible_poker_hand_order: tuple[str, ...] | None = None,
+    poker_hand_iteration_order: tuple[str, ...] | None = None,
 ) -> dict[str, Any]:
     """Translate Jackdaw serializer defaults into BalatroBot's observed schema.
 
@@ -486,9 +635,18 @@ def _normalize_jackdaw_bridge(
 
     result = deepcopy(raw)
     private = game_state if isinstance(game_state, Mapping) else {}
-    if visible_poker_hand_order is None:
-        visible_poker_hand_order = _DEFAULT_VISIBLE_POKER_HAND_ORDER
-    result["visible_poker_hand_order"] = list(visible_poker_hand_order)
+    if poker_hand_iteration_order is None:
+        poker_hand_iteration_order = _DEFAULT_POKER_HAND_ITERATION_ORDER
+    result["poker_hand_iteration_order"] = list(poker_hand_iteration_order)
+    discard_pile = private.get("discard_pile")
+    if not isinstance(discard_pile, list):
+        raise RuntimeError("Jackdaw discard pile is unavailable")
+    if discard_pile:
+        from jackdaw.bridge.serializer import serialize_area
+
+        result["discard"] = serialize_area(discard_pile, 500, 5)
+    else:
+        result["discard"] = {"cards": [], "count": 0, "highlighted_limit": 5, "limit": 500}
     used_vouchers = result.get("used_vouchers")
     if isinstance(used_vouchers, Mapping):
         result["used_vouchers"] = {str(key): "" for key in used_vouchers}
@@ -519,6 +677,7 @@ def _normalize_jackdaw_bridge(
 
     limits = {
         "cards": 5,
+        "discard": 5,
         "hand": 5,
         "jokers": 1,
         "consumables": 1,
@@ -541,7 +700,17 @@ def _normalize_jackdaw_bridge(
         if isinstance(permanent_deck_size, int):
             deck_area["limit"] = permanent_deck_size
 
-    for area_name in ("cards", "hand", "jokers", "consumables", "shop", "vouchers", "packs", "pack"):
+    for area_name in (
+        "cards",
+        "discard",
+        "hand",
+        "jokers",
+        "consumables",
+        "shop",
+        "vouchers",
+        "packs",
+        "pack",
+    ):
         area = result.get(area_name)
         if not isinstance(area, Mapping) or not isinstance(area.get("cards"), list):
             continue
@@ -574,14 +743,17 @@ def _normalize_jackdaw_bridge(
                 semantic_state = {
                     str(key): value for key, value in state.items() if value is not None and value is not False
                 }
-                if area_name == "cards":
+                if area_name in {"cards", "discard"}:
                     semantic_state["hidden"] = True
                 card["state"] = semantic_state or []
             value = card.get("value")
             if isinstance(value, dict):
                 _apply_balatrobot_card_values(value, private_card)
             if str(card.get("set") or "").upper() in {"DEFAULT", "ENHANCED"}:
-                card["cost"] = {"buy": 1, "sell": 1}
+                card["cost"] = {
+                    "buy": max(1, int(getattr(private_card, "cost", 0))),
+                    "sell": max(1, int(getattr(private_card, "sell_cost", 0))),
+                }
 
     hands = result.get("hands")
     if isinstance(hands, dict):

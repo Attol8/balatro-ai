@@ -21,8 +21,9 @@ _TOP_LEVEL_FIELDS = {
     "cards",
     "consumables",
     "deck",
+    "discard",
     "hand",
-    "visible_poker_hand_order",
+    "poker_hand_iteration_order",
     "hands",
     "jokers",
     "money",
@@ -44,6 +45,7 @@ _REQUIRED_TOP_LEVEL_FIELDS = {
     "cards",
     "consumables",
     "deck",
+    "discard",
     "hand",
     "hands",
     "jokers",
@@ -54,7 +56,7 @@ _REQUIRED_TOP_LEVEL_FIELDS = {
     "stake",
     "state",
     "used_vouchers",
-    "visible_poker_hand_order",
+    "poker_hand_iteration_order",
     "won",
 }
 _AREA_FIELDS = {"cards", "count", "highlighted_limit", "limit"}
@@ -205,6 +207,9 @@ class BalatroBotCanonicalizer:
         if isinstance(value, float):
             if not math.isfinite(value):
                 raise CanonicalizationError(f"non-finite number at {'/'.join(path)}")
+            # Match the 14-significant-digit number boundary used by the Lua
+            # JSON encoder so Python arithmetic noise is not semantic drift.
+            value = float(format(value, ".14g"))
             if value == 0:
                 return 0
             if value.is_integer():
@@ -222,7 +227,17 @@ def _validate_state(raw: Mapping[str, Any]) -> None:
     if missing:
         raise CanonicalizationError(f"missing top-level fields: {sorted(missing)}")
 
-    for area_name in ("cards", "consumables", "hand", "jokers", "pack", "packs", "shop", "vouchers"):
+    for area_name in (
+        "cards",
+        "consumables",
+        "discard",
+        "hand",
+        "jokers",
+        "pack",
+        "packs",
+        "shop",
+        "vouchers",
+    ):
         if area_name not in raw:
             continue
         area = _expect_mapping(raw[area_name], area_name)
@@ -256,7 +271,17 @@ def _validate_state(raw: Mapping[str, Any]) -> None:
 
 def _walk_cards(raw: Mapping[str, Any]) -> Sequence[Mapping[str, Any]]:
     cards: list[Mapping[str, Any]] = []
-    for area_name in ("cards", "consumables", "hand", "jokers", "pack", "packs", "shop", "vouchers"):
+    for area_name in (
+        "cards",
+        "consumables",
+        "discard",
+        "hand",
+        "jokers",
+        "pack",
+        "packs",
+        "shop",
+        "vouchers",
+    ):
         area = raw.get(area_name)
         if not isinstance(area, Mapping):
             continue

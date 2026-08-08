@@ -118,19 +118,23 @@ index e92043c..58731bb 100644
 +  end
 +
 diff --git a/src/lua/utils/gamestate.lua b/src/lua/utils/gamestate.lua
-index 5d9d29f..358539b 100644
+index 5d9d29f..171031e 100644
 --- a/src/lua/utils/gamestate.lua
 +++ b/src/lua/utils/gamestate.lua
 @@ -390,0 +391,3 @@ local function extract_card_value(card)
 +    -- To Do List's current target is runtime state, not the prototype's
 +    -- initial `extra.poker_hand`. It is visible in the normal card tooltip.
 +    if card.ability.to_do_poker_hand then ab.poker_hand = card.ability.to_do_poker_hand end
-@@ -899,0 +903,8 @@ function gamestate.get_gamestate()
+@@ -899,0 +903,6 @@ function gamestate.get_gamestate()
 +      -- LuaJIT's string-table iteration order varies between fresh VMs. Vanilla
-+      -- uses this order for To Do List and Orbital Tag chance pools.
-+      state_data.visible_poker_hand_order = {}
-+      for hand_name, hand_state in pairs(G.GAME.hands) do
-+        if hand_state.visible then
-+          state_data.visible_poker_hand_order[#state_data.visible_poker_hand_order + 1] = hand_name
-+        end
++      -- uses this order for chance pools and a boss-round tie-break bug.
++      state_data.poker_hand_iteration_order = {}
++      for hand_name in pairs(G.GAME.hands) do
++        state_data.poker_hand_iteration_order[#state_data.poker_hand_iteration_order + 1] = hand_name
 +      end
+@@ -917,0 +927,5 @@ function gamestate.get_gamestate()
++  -- Private discard-pile order affects how cards return to the deck.
++  if G.discard then
++    state_data.discard = extract_area(G.discard)
++  end
++

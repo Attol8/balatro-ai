@@ -110,6 +110,7 @@ def state(
         },
         "consumables": {"cards": [], "count": 0, "highlighted_limit": 1, "limit": 2},
         "deck": "RED",
+        "discard": {"cards": [], "count": 0, "highlighted_limit": 5, "limit": 500},
         "hand": {"cards": [], "count": 0, "highlighted_limit": 5, "limit": 8},
         "hands": {
             "High Card": {
@@ -139,7 +140,7 @@ def state(
         "stake": "WHITE",
         "state": phase,
         "used_vouchers": [],
-        "visible_poker_hand_order": ["High Card"],
+        "poker_hand_iteration_order": ["High Card"],
         "won": won,
     }
     if phase == "SELECTING_HAND":

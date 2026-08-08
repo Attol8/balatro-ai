@@ -43,6 +43,7 @@ def test_bridge_normalization_preserves_candidate_round_timing() -> None:
     raw["used_vouchers"] = {"v_grabber": True}
     private = {
         "deck": [SimpleNamespace(ability={"x_mult": 1}) for _ in raw["cards"]["cards"]],
+        "discard_pile": [],
         "hand": [],
         "jokers": [],
         "consumables": [],
@@ -305,11 +306,11 @@ def test_replay_uses_authority_vm_order_for_to_do_list() -> None:
     backend.configure_replay(
         {
             "hands": {name: {} for name in order},
-            "visible_poker_hand_order": list(order),
+            "poker_hand_iteration_order": list(order),
         }
     )
     observation = backend.reset(RunSpec("RED", "WHITE", "5"))
-    assert observation.observed.canonical["visible_poker_hand_order"] == list(order)
+    assert observation.observed.canonical["poker_hand_iteration_order"] == list(order)
     for action in (
         {"type": "skip_blind"},
         {"type": "skip_pack"},
@@ -327,3 +328,123 @@ def test_replay_uses_authority_vm_order_for_to_do_list() -> None:
     assert observation.observed.canonical["shop"]["cards"][1]["value"]["ability"][
         "poker_hand"
     ] == "Full House"
+
+
+def test_boss_most_played_tie_uses_last_runtime_table_entry() -> None:
+    pytest.importorskip("jackdaw")
+    from jackdaw.engine.hand_levels import HandLevels
+
+    levels = HandLevels()
+    for name in ("Straight Flush", "Full House", "Straight", "Two Pair"):
+        levels.record_play(name)
+    order = (
+        "Straight Flush",
+        "Four of a Kind",
+        "Full House",
+        "Flush",
+        "Straight",
+        "Three of a Kind",
+        "Two Pair",
+        "Pair",
+        "High Card",
+        "Flush Five",
+        "Flush House",
+        "Five of a Kind",
+    )
+
+    assert jackdaw._vanilla_most_played_hand(levels, order).value == "Two Pair"
+
+
+def test_orbital_tag_uses_visible_authority_table_order() -> None:
+    pytest.importorskip("jackdaw")
+    from jackdaw.engine.hand_levels import HandLevels
+    from jackdaw.engine.tags import Tag
+
+    class Seventh:
+        @staticmethod
+        def seed(_key: str) -> float:
+            return 0.5
+
+        @staticmethod
+        def random(_seed: float, _minimum: int, _maximum: int) -> int:
+            return 7
+
+    order = (
+        "Flush",
+        "Straight",
+        "Three of a Kind",
+        "Two Pair",
+        "Pair",
+        "High Card",
+        "Flush Five",
+        "Flush House",
+        "Five of a Kind",
+        "Straight Flush",
+        "Four of a Kind",
+        "Full House",
+    )
+    backend = jackdaw.JackdawBackend()
+    backend._poker_hand_iteration_order = order
+    game_state = {
+        "blind_on_deck": "Small",
+        "hand_levels": HandLevels(),
+        "rng": Seventh(),
+        "round_resets": {"ante": 3},
+    }
+    backend._backend._gs = game_state
+    backend._initialize_orbital_choices()
+
+    with backend._poker_hand_order_compatibility():
+        result = Tag("tag_orbital").apply(
+            "immediate",
+            game_state,
+            game_state["rng"],
+        )
+
+    assert result is not None
+    assert result.level_up is not None
+    assert result.level_up[0].value == "Straight Flush"
+    assert set(game_state["orbital_choices"][3]) == {"Small", "Big", "Boss"}
+
+
+def test_hook_discards_follow_hand_position_not_random_selection_order(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pytest.importorskip("jackdaw")
+    from jackdaw.engine import game
+
+    left = object()
+    middle = object()
+    right = object()
+    backend = jackdaw.JackdawBackend()
+    backend._backend._gs = {"hand": [left, middle, right]}
+    calls: list[tuple[list[object], bool]] = []
+
+    monkeypatch.setattr(
+        game,
+        "_fire_discard_effects",
+        lambda _state, discarded, *, hook: calls.append((list(discarded), hook)),
+    )
+    with backend._play_compatibility():
+        game._fire_discard_effects({}, [right, left], hook=True)
+        game._fire_discard_effects({}, [right, left], hook=False)
+
+    assert calls == [([left, right], True), ([right, left], False)]
+
+
+def test_standard_pack_edition_reprices_playing_card(monkeypatch: pytest.MonkeyPatch) -> None:
+    pytest.importorskip("jackdaw")
+    from jackdaw.engine import packs
+    from jackdaw.engine.card_factory import create_playing_card
+    from jackdaw.engine.data.enums import Rank, Suit
+
+    card = create_playing_card(Suit.HEARTS, Rank.TEN, edition={"foil": True})
+    monkeypatch.setattr(packs, "_gen_standard", lambda *_args: card)
+    backend = jackdaw.JackdawBackend()
+
+    with backend._standard_pack_cost_compatibility():
+        generated = packs._gen_standard(None, 3, {})
+
+    assert generated is card
+    assert generated.cost == 3
+    assert generated.sell_cost == 1

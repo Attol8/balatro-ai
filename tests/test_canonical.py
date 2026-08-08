@@ -100,3 +100,15 @@ def test_empty_lua_table_normalization_is_path_specific() -> None:
         BalatroBotCanonicalizer().canonicalize(left).canonical_digest
         == BalatroBotCanonicalizer().canonicalize(right).canonical_digest
     )
+
+
+def test_lua_json_float_precision_is_canonicalized() -> None:
+    authority = state("SHOP")
+    candidate = deepcopy(authority)
+    authority["shop"]["cards"][0]["value"]["ability"]["x_mult"] = 1.87
+    candidate["shop"]["cards"][0]["value"]["ability"]["x_mult"] = 1.8699999999999999
+
+    assert (
+        BalatroBotCanonicalizer().canonicalize(authority).canonical_digest
+        == BalatroBotCanonicalizer().canonicalize(candidate).canonical_digest
+    )
