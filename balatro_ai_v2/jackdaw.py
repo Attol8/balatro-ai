@@ -12,7 +12,7 @@ from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from copy import deepcopy
 from dataclasses import dataclass, field
-from threading import Lock
+from threading import RLock
 from typing import Any
 
 from balatro_ai_v2.actions import PublicAction
@@ -28,7 +28,7 @@ from balatro_ai_v2.canonical import BalatroBotCanonicalizer
 
 
 JACKDAW_REVISION = "dbedc66255fe594cce7b7cccc188c8a11649d9ec"
-_JACKDAW_PATCH_LOCK = Lock()
+_JACKDAW_PATCH_LOCK = RLock()
 
 _SECRET_HANDS = {
     "Flush Five": {"order": 1, "level": 1, "chips": 160, "mult": 16, "played": 0, "played_this_round": 0},
@@ -54,6 +54,17 @@ _PACK_STATES = {
     "Standard": "STANDARD_PACK",
     "Buffoon": "BUFFOON_PACK",
 }
+_DEFAULT_VISIBLE_POKER_HAND_ORDER = (
+    "High Card",
+    "Pair",
+    "Two Pair",
+    "Three of a Kind",
+    "Straight",
+    "Flush",
+    "Full House",
+    "Four of a Kind",
+    "Straight Flush",
+)
 
 
 class JackdawUnavailable(RuntimeError):
@@ -71,6 +82,7 @@ class JackdawBackend:
     _round_targets_rolled: bool = field(default=False, init=False, repr=False)
     _stale_shop_areas: dict[str, dict[str, Any]] | None = field(default=None, init=False, repr=False)
     _pending_ante_setup: int | None = field(default=None, init=False, repr=False)
+    _visible_poker_hand_order: tuple[str, ...] | None = field(default=None, init=False, repr=False)
 
     def __post_init__(self) -> None:
         try:
@@ -101,8 +113,8 @@ class JackdawBackend:
         self._round_targets_rolled = False
         self._stale_shop_areas = None
         self._pending_ante_setup = None
-        self._backend.handle("menu", {})
-        raw = self._backend.handle(
+        self._handle("menu", {})
+        raw = self._handle(
             "start",
             {"deck": spec.deck, "stake": spec.stake, "seed": spec.seed or "DEFAULT"},
         )
@@ -110,8 +122,23 @@ class JackdawBackend:
         return self._current
 
     def observe(self) -> AuthorityObservation:
-        self._current = self._observation(self._backend.handle("gamestate", {}))
+        self._current = self._observation(self._handle("gamestate", {}))
         return self._current
+
+    def configure_replay(self, authority_start: object) -> None:
+        """Use private VM-order metadata from an authority trace during replay."""
+
+        if not isinstance(authority_start, Mapping):
+            raise RuntimeError("authority replay start state is not a mapping")
+        order = authority_start.get("visible_poker_hand_order")
+        hands = authority_start.get("hands")
+        if not isinstance(order, list) or not order or not isinstance(hands, Mapping):
+            raise RuntimeError("authority replay is missing visible poker-hand order")
+        if not all(isinstance(name, str) and name in hands for name in order):
+            raise RuntimeError("authority replay has an invalid visible poker-hand order")
+        if len(set(order)) != len(order):
+            raise RuntimeError("authority replay poker-hand order contains duplicates")
+        self._visible_poker_hand_order = tuple(order)
 
     def step(self, action: PublicAction) -> StepResult:
         if self._current is None:
@@ -126,16 +153,16 @@ class JackdawBackend:
         try:
             if method == "play":
                 with self._round_end_compatibility():
-                    raw_after = self._backend.handle(method, params)
+                    raw_after = self._handle(method, params)
             elif method == "cash_out" and self._round_targets_rolled:
                 with self._cash_out_compatibility():
-                    raw_after = self._backend.handle(method, params)
+                    raw_after = self._handle(method, params)
                 self._finish_cash_out_compatibility()
-                raw_after = self._backend.handle("gamestate", {})
+                raw_after = self._handle("gamestate", {})
                 self._round_targets_rolled = False
                 self._stale_shop_areas = None
             else:
-                raw_after = self._backend.handle(method, params)
+                raw_after = self._handle(method, params)
         except self._rpc_error as exc:
             return StepResult(
                 status="rejected",
@@ -148,13 +175,13 @@ class JackdawBackend:
                 error=str(exc),
             )
         if standard_pack_card is not None and self._place_standard_pack_card(standard_pack_card):
-            raw_after = self._backend.handle("gamestate", {})
+            raw_after = self._handle("gamestate", {})
         if voucher_effect is not None and self._apply_immediate_voucher_effect(voucher_effect):
-            raw_after = self._backend.handle("gamestate", {})
+            raw_after = self._handle("gamestate", {})
         if method == "play" and raw_after.get("state") == "ROUND_EVAL":
             self._roll_round_targets()
             self._round_targets_rolled = True
-            raw_after = self._backend.handle("gamestate", {})
+            raw_after = self._handle("gamestate", {})
         after = self._observation(raw_after)
         self._current = after
         return StepResult(
@@ -168,11 +195,33 @@ class JackdawBackend:
         )
 
     def close(self) -> None:
-        self._backend.handle("menu", {})
+        self._handle("menu", {})
         self._current = None
         self._round_targets_rolled = False
         self._stale_shop_areas = None
         self._pending_ante_setup = None
+        self._visible_poker_hand_order = None
+
+    def _handle(self, method: str, params: dict[str, Any]) -> dict[str, Any]:
+        with self._poker_hand_order_compatibility():
+            return self._backend.handle(method, params)
+
+    @contextmanager
+    def _poker_hand_order_compatibility(self) -> Iterator[None]:
+        order = self._visible_poker_hand_order
+        if order is None:
+            yield
+            return
+        from jackdaw.engine import tags
+        from jackdaw.engine.data.hands import HandType
+
+        with _JACKDAW_PATCH_LOCK:
+            original = tags._ORBITAL_HANDS
+            tags._ORBITAL_HANDS = [HandType(name) for name in order]
+            try:
+                yield
+            finally:
+                tags._ORBITAL_HANDS = original
 
     def _observation(self, raw: dict[str, Any]) -> AuthorityObservation:
         # Both adapters must pass independently.  The public conversion catches
@@ -181,6 +230,7 @@ class JackdawBackend:
             raw,
             getattr(self._backend, "_gs", None),
             self._stale_shop_areas,
+            self._visible_poker_hand_order,
         )
         to_public_observation(normalized)
         observed = self.canonicalizer.canonicalize(normalized)
@@ -426,6 +476,7 @@ def _normalize_jackdaw_bridge(
     raw: dict[str, Any],
     game_state: object,
     stale_shop_areas: Mapping[str, Mapping[str, Any]] | None = None,
+    visible_poker_hand_order: tuple[str, ...] | None = None,
 ) -> dict[str, Any]:
     """Translate Jackdaw serializer defaults into BalatroBot's observed schema.
 
@@ -435,6 +486,9 @@ def _normalize_jackdaw_bridge(
 
     result = deepcopy(raw)
     private = game_state if isinstance(game_state, Mapping) else {}
+    if visible_poker_hand_order is None:
+        visible_poker_hand_order = _DEFAULT_VISIBLE_POKER_HAND_ORDER
+    result["visible_poker_hand_order"] = list(visible_poker_hand_order)
     used_vouchers = result.get("used_vouchers")
     if isinstance(used_vouchers, Mapping):
         result["used_vouchers"] = {str(key): "" for key in used_vouchers}
@@ -445,19 +499,21 @@ def _normalize_jackdaw_bridge(
             raise RuntimeError(f"unsupported Jackdaw pack type {pack_type!r}")
         phase = result["state"] = _PACK_STATES[str(pack_type)]
 
+    in_pack = phase in {
+        "SMODS_BOOSTER_OPENED",
+        "PLANET_PACK",
+        "TAROT_PACK",
+        "SPECTRAL_PACK",
+        "STANDARD_PACK",
+        "BUFFOON_PACK",
+    }
+    pack_from_shop = str(private.get("shop_return_phase")) == "shop"
     for name in _OPTIONAL_AREAS:
         area = result.get(name)
-        in_pack = phase in {
-            "SMODS_BOOSTER_OPENED",
-            "PLANET_PACK",
-            "TAROT_PACK",
-            "SPECTRAL_PACK",
-            "STANDARD_PACK",
-            "BUFFOON_PACK",
-        }
-        relevant = ((phase == "SHOP" or in_pack) and name in {"shop", "vouchers", "packs"}) or (
-            in_pack and name == "pack"
-        )
+        relevant = (
+            (phase == "SHOP" or (in_pack and pack_from_shop))
+            and name in {"shop", "vouchers", "packs"}
+        ) or (in_pack and name == "pack")
         if isinstance(area, Mapping) and not area.get("cards") and not relevant:
             result.pop(name, None)
 
@@ -535,7 +591,10 @@ def _normalize_jackdaw_bridge(
     round_state = result.get("round")
     current_round = private.get("current_round") if isinstance(private, Mapping) else None
     if isinstance(round_state, dict) and isinstance(current_round, Mapping):
-        if phase == "BLIND_SELECT" and private.get("round", 0) == 0:
+        before_first_blind = private.get("round", 0) == 0 and (
+            phase == "BLIND_SELECT" or (in_pack and not pack_from_shop)
+        )
+        if before_first_blind:
             round_resets = private.get("round_resets")
             if not isinstance(round_resets, Mapping):
                 raise RuntimeError("Jackdaw initial round-reset state is unavailable")
@@ -618,6 +677,9 @@ def _apply_balatrobot_card_values(value: dict[str, Any], card: object) -> None:
         serialized["driver_tally"] = driver_tally
     if "loyalty_remaining" in ability and ability["loyalty_remaining"] is not None:
         serialized["loyalty_remaining"] = ability["loyalty_remaining"]
+    to_do_poker_hand = ability.get("to_do_poker_hand")
+    if isinstance(to_do_poker_hand, str):
+        serialized["poker_hand"] = to_do_poker_hand
 
     if serialized:
         value["ability"] = serialized

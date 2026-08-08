@@ -4,7 +4,11 @@ import os
 
 import pytest
 
-from balatro_ai_v2.balatrobot.process import build_launch_environment, require_profile_mode
+from balatro_ai_v2.balatrobot.process import (
+    build_launch_environment,
+    require_active_mods,
+    require_profile_mode,
+)
 
 
 def test_launch_environment_declares_all_unlocked_without_mutating_parent(monkeypatch) -> None:
@@ -28,3 +32,21 @@ def test_profile_mode_verification_fails_closed() -> None:
 def test_unknown_profile_mode_is_rejected() -> None:
     with pytest.raises(ValueError, match="unsupported profile mode"):
         build_launch_environment(profile_mode="mystery")
+
+
+def test_active_mod_verification_fails_closed() -> None:
+    identities = ("balatrobot@abc", "Lovely@1", "Steamodded@def")
+    require_active_mods(
+        {"active_mods": ["balatrobot", "Lovely", "Steamodded"]},
+        identities=identities,
+    )
+
+    with pytest.raises(RuntimeError, match="active mods"):
+        require_active_mods(
+            {"active_mods": ["balatrobot", "Lovely", "Steamodded", "JokerDisplay"]},
+            identities=identities,
+        )
+    with pytest.raises(RuntimeError, match="did not report"):
+        require_active_mods({"status": "ok"}, identities=identities)
+    with pytest.raises(ValueError, match="name@version"):
+        require_active_mods({"active_mods": []}, identities=("balatrobot",))

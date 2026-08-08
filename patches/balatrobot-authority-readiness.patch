@@ -24,11 +24,22 @@ index 03e7ee6..e9c5156 100644
 +
 +    G.FUNCS.cash_out(cash_out_button)
 diff --git a/src/lua/endpoints/health.lua b/src/lua/endpoints/health.lua
-index f43b412..84a1093 100644
+index f43b412..d551d2a 100644
 --- a/src/lua/endpoints/health.lua
 +++ b/src/lua/endpoints/health.lua
-@@ -30,0 +31 @@ return {
+@@ -28,0 +29,9 @@ return {
++    local active_mods = {}
++    if SMODS and SMODS.Mods then
++      for id, mod in pairs(SMODS.Mods) do
++        if id ~= "Balatro" and not mod.disabled and mod.can_load ~= false then
++          active_mods[#active_mods + 1] = id
++        end
++      end
++      table.sort(active_mods)
++    end
+@@ -30,0 +40,2 @@ return {
 +      profile_mode = BB_SETTINGS.all_unlocked and "all_unlocked" or "career",
++      active_mods = active_mods,
 diff --git a/src/lua/endpoints/play.lua b/src/lua/endpoints/play.lua
 index 2c63b56..fbb0985 100644
 --- a/src/lua/endpoints/play.lua
@@ -38,6 +49,19 @@ index 2c63b56..fbb0985 100644
 +            if b.config
 +              and b.config.major == G.round_eval
 +              and b:get_UIE_by_ID("cash_out_button") then
+diff --git a/src/lua/endpoints/pack.lua b/src/lua/endpoints/pack.lua
+index 214a0b4..9e1be16 100644
+--- a/src/lua/endpoints/pack.lua
++++ b/src/lua/endpoints/pack.lua
+@@ -140 +140 @@ return {
+-      -- Wait for pack to close and return to shop
++      -- Shop packs return to SHOP; blind-skip tag packs return to BLIND_SELECT.
+@@ -146 +146 @@ return {
+-          local back_to_shop = G.STATE == G.STATES.SHOP
++          local back_to_decision = G.STATE == G.STATES.SHOP or G.STATE == G.STATES.BLIND_SELECT
+@@ -148 +148 @@ return {
+-          if pack_closed and back_to_shop then
++          if pack_closed and back_to_decision then
 diff --git a/src/lua/settings.lua b/src/lua/settings.lua
 index e92043c..58731bb 100644
 --- a/src/lua/settings.lua
@@ -93,3 +117,20 @@ index e92043c..58731bb 100644
 +    configure_all_unlocked()
 +  end
 +
+diff --git a/src/lua/utils/gamestate.lua b/src/lua/utils/gamestate.lua
+index 5d9d29f..358539b 100644
+--- a/src/lua/utils/gamestate.lua
++++ b/src/lua/utils/gamestate.lua
+@@ -390,0 +391,3 @@ local function extract_card_value(card)
++    -- To Do List's current target is runtime state, not the prototype's
++    -- initial `extra.poker_hand`. It is visible in the normal card tooltip.
++    if card.ability.to_do_poker_hand then ab.poker_hand = card.ability.to_do_poker_hand end
+@@ -899,0 +903,8 @@ function gamestate.get_gamestate()
++      -- LuaJIT's string-table iteration order varies between fresh VMs. Vanilla
++      -- uses this order for To Do List and Orbital Tag chance pools.
++      state_data.visible_poker_hand_order = {}
++      for hand_name, hand_state in pairs(G.GAME.hands) do
++        if hand_state.visible then
++          state_data.visible_poker_hand_order[#state_data.visible_poker_hand_order + 1] = hand_name
++        end
++      end

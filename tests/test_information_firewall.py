@@ -57,6 +57,14 @@ def test_draw_pile_is_public_composition_but_not_private_order() -> None:
     assert to_public_observation(left) != to_public_observation(changed)
 
 
+def test_vm_poker_hand_iteration_order_is_private() -> None:
+    left = state()
+    right = deepcopy(left)
+    right["visible_poker_hand_order"] = list(reversed(left["visible_poker_hand_order"]))
+
+    assert to_public_observation(left) == to_public_observation(right)
+
+
 def test_visible_tooltip_and_money_remain_policy_information() -> None:
     raw = state("SHOP")
     changed = deepcopy(raw)

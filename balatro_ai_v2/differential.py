@@ -27,6 +27,123 @@ class DifferentialReport:
     mismatch: DifferentialMismatch | None = None
 
 
+_DETERMINISM_MANIFEST_FIELDS = (
+    "repository_revision",
+    "repository_dirty",
+    "source_digest",
+    "policy_name",
+    "model_digest",
+    "inference_budget",
+    "backend",
+    "run",
+    "sealed_seed_manifest_digest",
+    "max_decisions",
+    "max_settle_polls",
+    "wall_clock_limit_seconds",
+    "launch_fast",
+    "launch_headless",
+    "profile_mode",
+    "mods",
+    "canonical_schema_version",
+)
+
+
+def compare_authority_traces(first_path: Path, second_path: Path) -> DifferentialReport:
+    """Require two fresh authority runs to produce the same canonical trajectory."""
+
+    first_rows = read_verified_trace(first_path)
+    second_rows = read_verified_trace(second_path)
+    first_manifest = _nested(first_rows[0], "manifest")
+    second_manifest = _nested(second_rows[0], "manifest")
+    if not isinstance(first_manifest, dict) or not isinstance(second_manifest, dict):
+        return _failure(0, "/manifest", "manifest object", second_manifest, "invalid manifest")
+
+    first_config = {key: first_manifest.get(key) for key in _DETERMINISM_MANIFEST_FIELDS}
+    second_config = {key: second_manifest.get(key) for key in _DETERMINISM_MANIFEST_FIELDS}
+    mismatch = _compare_values(
+        first_config,
+        second_config,
+        transition=0,
+        path_prefix="/manifest",
+        message="authority trace configurations differ",
+    )
+    if mismatch is not None:
+        return DifferentialReport(False, 0, mismatch)
+
+    first_bounds = _complete_trace_bounds(first_rows)
+    second_bounds = _complete_trace_bounds(second_rows)
+    if isinstance(first_bounds, DifferentialReport):
+        return first_bounds
+    if isinstance(second_bounds, DifferentialReport):
+        return second_bounds
+    first_start, first_end = first_bounds
+    second_start, second_end = second_bounds
+
+    mismatch = _compare_values(
+        _nested(first_start, "authority", "canonical"),
+        _nested(second_start, "authority", "canonical"),
+        transition=0,
+        message="authority initial states differ",
+    )
+    if mismatch is not None:
+        return DifferentialReport(False, 0, mismatch)
+
+    first_transitions = [row for row in first_rows if row.get("event") == "transition"]
+    second_transitions = [row for row in second_rows if row.get("event") == "transition"]
+    checked = 0
+    for index, (first, second) in enumerate(
+        zip(first_transitions, second_transitions, strict=False), 1
+    ):
+        for row in (first, second):
+            if row.get("status") != "accepted":
+                return _failure(
+                    index,
+                    "/status",
+                    "accepted",
+                    row.get("status"),
+                    "determinism traces must contain only accepted actions",
+                    checked,
+                )
+        mismatch = _compare_values(
+            first.get("action"),
+            second.get("action"),
+            transition=index,
+            path_prefix="/action",
+            message="deterministic policy actions differ",
+        )
+        if mismatch is not None:
+            return DifferentialReport(False, checked, mismatch)
+        mismatch = _compare_values(
+            _nested(first, "after", "canonical"),
+            _nested(second, "after", "canonical"),
+            transition=index,
+            message="authority canonical states differ",
+        )
+        if mismatch is not None:
+            return DifferentialReport(False, checked, mismatch)
+        checked += 1
+
+    if len(first_transitions) != len(second_transitions):
+        return _failure(
+            checked + 1,
+            "/transition_count",
+            len(first_transitions),
+            len(second_transitions),
+            "authority transition counts differ",
+            checked,
+        )
+    mismatch = _compare_values(
+        {key: first_end.get(key) for key in ("complete", "won", "ante", "terminal_reason")},
+        {key: second_end.get(key) for key in ("complete", "won", "ante", "terminal_reason")},
+        transition=checked,
+        path_prefix="/run_end",
+        message="authority terminal outcomes differ",
+    )
+    if mismatch is not None:
+        return DifferentialReport(False, checked, mismatch)
+    return DifferentialReport(True, checked)
+
+
 def replay_authority_trace(path: Path, candidate: GameBackend) -> DifferentialReport:
     rows = read_verified_trace(path)
     manifest_row = rows[0].get("manifest")
@@ -61,6 +178,9 @@ def replay_authority_trace(path: Path, candidate: GameBackend) -> DifferentialRe
         return _failure(0, "/run_end/complete", True, ends[0].get("complete"), "authority trace is incomplete")
 
     expected_start = _nested(starts[0], "authority", "canonical")
+    configure_replay = getattr(candidate, "configure_replay", None)
+    if callable(configure_replay):
+        configure_replay(expected_start)
     initial = candidate.reset(spec)
     mismatch = _compare(expected_start, initial.observed.canonical, transition=0)
     if mismatch is not None:
@@ -105,17 +225,47 @@ def replay_authority_trace(path: Path, candidate: GameBackend) -> DifferentialRe
 
 
 def _compare(authority: object, candidate: object, *, transition: int) -> DifferentialMismatch | None:
+    return _compare_values(
+        authority,
+        candidate,
+        transition=transition,
+        message="canonical observed state differs",
+    )
+
+
+def _compare_values(
+    authority: object,
+    candidate: object,
+    *,
+    transition: int,
+    message: str,
+    path_prefix: str = "",
+) -> DifferentialMismatch | None:
     difference = _first_difference(authority, candidate, path="")
     if difference is None:
         return None
     path, expected, actual = difference
     return DifferentialMismatch(
         transition=transition,
-        path=path or "/",
+        path=f"{path_prefix}{path}" or "/",
         authority=expected,
         candidate=actual,
-        message="canonical observed state differs",
+        message=message,
     )
+
+
+def _complete_trace_bounds(
+    rows: tuple[dict[str, Any], ...],
+) -> tuple[dict[str, Any], dict[str, Any]] | DifferentialReport:
+    starts = [row for row in rows if row.get("event") == "run_start"]
+    ends = [row for row in rows if row.get("event") == "run_end"]
+    if len(starts) != 1 or len(ends) != 1:
+        return _failure(0, "/", "one run_start and one run_end", (len(starts), len(ends)), "truncated trace")
+    if ends[0] is not rows[-1]:
+        return _failure(0, "/", "run_end as final row", rows[-1].get("event"), "invalid terminal trace")
+    if not bool(ends[0].get("complete")):
+        return _failure(0, "/run_end/complete", True, ends[0].get("complete"), "authority trace is incomplete")
+    return starts[0], ends[0]
 
 
 def _first_difference(left: object, right: object, *, path: str) -> tuple[str, object, object] | None:

@@ -22,6 +22,7 @@ _TOP_LEVEL_FIELDS = {
     "consumables",
     "deck",
     "hand",
+    "visible_poker_hand_order",
     "hands",
     "jokers",
     "money",
@@ -53,6 +54,7 @@ _REQUIRED_TOP_LEVEL_FIELDS = {
     "stake",
     "state",
     "used_vouchers",
+    "visible_poker_hand_order",
     "won",
 }
 _AREA_FIELDS = {"cards", "count", "highlighted_limit", "limit"}

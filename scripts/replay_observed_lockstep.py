@@ -18,6 +18,7 @@ from balatro_ai_v2.balatrobot.client import BalatroBotClient
 from balatro_ai_v2.balatrobot.process import (
     build_launch_command,
     build_launch_environment,
+    require_active_mods,
     require_profile_mode,
     stop_balatrobot_server,
     wait_for_balatrobot,
@@ -55,6 +56,10 @@ def main() -> None:
                 time.sleep(args.post_launch_delay)
         health = client.health()
         require_profile_mode(health, expected=profile_mode)
+        mods = manifest.get("mods")
+        if not isinstance(mods, list) or not all(isinstance(item, str) for item in mods):
+            raise SystemExit("trace does not declare exact mod identities")
+        require_active_mods(health, identities=tuple(mods))
 
         backend = BalatroBotBackend(
             client,

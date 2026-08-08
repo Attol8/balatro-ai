@@ -139,6 +139,7 @@ def state(
         "stake": "WHITE",
         "state": phase,
         "used_vouchers": [],
+        "visible_poker_hand_order": ["High Card"],
         "won": won,
     }
     if phase == "SELECTING_HAND":

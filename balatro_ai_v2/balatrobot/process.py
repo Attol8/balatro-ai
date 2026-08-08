@@ -56,6 +56,25 @@ def require_profile_mode(health: object, *, expected: str) -> None:
         raise RuntimeError(f"BalatroBot profile mode is {actual!r}; expected {expected!r}")
 
 
+def require_active_mods(health: object, *, identities: tuple[str, ...]) -> None:
+    expected: set[str] = set()
+    for identity in identities:
+        mod_id, separator, version = identity.partition("@")
+        if not separator or not mod_id or not version:
+            raise ValueError(f"invalid mod identity {identity!r}; expected name@version-or-digest")
+        if mod_id in expected:
+            raise ValueError(f"duplicate mod identity {mod_id!r}")
+        expected.add(mod_id)
+    if not expected:
+        raise ValueError("at least one exact mod identity is required")
+    active = health.get("active_mods") if isinstance(health, dict) else None
+    if not isinstance(active, list) or not all(isinstance(item, str) for item in active):
+        raise RuntimeError("BalatroBot did not report its active mod set")
+    actual = set(active)
+    if len(actual) != len(active) or actual != expected:
+        raise RuntimeError(f"BalatroBot active mods are {sorted(actual)!r}; expected {sorted(expected)!r}")
+
+
 def wait_for_balatrobot(
     client: BalatroBotClient,
     *,

@@ -22,7 +22,7 @@ from balatro_ai_v2.balatrobot.tracing import (
     read_verified_trace,
 )
 from balatro_ai_v2.canonical import BalatroBotCanonicalizer
-from balatro_ai_v2.differential import replay_authority_trace
+from balatro_ai_v2.differential import compare_authority_traces, replay_authority_trace
 from state_factory import state
 
 
@@ -170,10 +170,10 @@ class ReplayBackend:
         return None
 
 
-def _write_complete_trace(path: Path) -> None:
+def _write_complete_trace(path: Path, *, terminal_money: int = 4) -> None:
     canonicalizer = BalatroBotCanonicalizer()
     initial = canonicalizer.canonicalize(state())
-    terminal = canonicalizer.canonicalize(state("GAME_OVER", won=True))
+    terminal = canonicalizer.canonicalize(state("GAME_OVER", won=True, money=terminal_money))
     writer = AuthorityTraceWriter(path, _manifest())
     writer.record("run_start", authority={"canonical": initial.canonical})
     writer.record(
@@ -230,3 +230,30 @@ def test_incomplete_authority_trace_never_passes(tmp_path: Path) -> None:
     assert not report.observed_lockstep
     assert report.mismatch is not None
     assert report.mismatch.message == "authority trace is incomplete"
+
+
+def test_repeated_authority_traces_must_be_exact(tmp_path: Path) -> None:
+    first = tmp_path / "first.jsonl"
+    second = tmp_path / "second.jsonl"
+    _write_complete_trace(first)
+    _write_complete_trace(second)
+
+    report = compare_authority_traces(first, second)
+
+    assert report.observed_lockstep
+    assert report.checked_transitions == 1
+
+
+def test_authority_self_divergence_reports_exact_path(tmp_path: Path) -> None:
+    first = tmp_path / "first.jsonl"
+    second = tmp_path / "second.jsonl"
+    _write_complete_trace(first)
+    _write_complete_trace(second, terminal_money=5)
+
+    report = compare_authority_traces(first, second)
+
+    assert not report.observed_lockstep
+    assert report.checked_transitions == 0
+    assert report.mismatch is not None
+    assert report.mismatch.path == "/money"
+    assert report.mismatch.message == "authority canonical states differ"

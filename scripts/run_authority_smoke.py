@@ -18,6 +18,7 @@ from balatro_ai_v2.balatrobot.client import BalatroBotClient, BalatroBotError
 from balatro_ai_v2.balatrobot.process import (
     build_launch_command,
     build_launch_environment,
+    require_active_mods,
     require_profile_mode,
     stop_balatrobot_server,
     wait_for_balatrobot,
@@ -54,6 +55,8 @@ def main() -> None:
 
         health = client.health()
         require_profile_mode(health, expected=args.profile_mode)
+        if args.trace_jsonl is not None:
+            require_active_mods(health, identities=tuple(args.mod))
         backend_version = _version(
             args.balatrobot_version,
             health.get("version"),

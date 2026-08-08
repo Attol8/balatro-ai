@@ -83,6 +83,7 @@ def test_card_ability_normalization_matches_balatrobot_extractor() -> None:
             "x_mult": 1,
             "driver_tally": 0,
             "loyalty_remaining": 0,
+            "to_do_poker_hand": "Two Pair",
             "perma_bonus": 7,
         }
     )
@@ -97,6 +98,7 @@ def test_card_ability_normalization_matches_balatrobot_extractor() -> None:
             "x_mult": 1,
             "driver_tally": 0,
             "loyalty_remaining": 0,
+            "poker_hand": "Two Pair",
         },
         "effect": "",
         "perma_bonus": 7,
@@ -264,3 +266,64 @@ def test_troubadour_hand_reset_waits_for_blind_selection() -> None:
     selected = backend.step(action_from_data({"type": "select_blind"}))
     assert selected.after is not None
     assert selected.after.observed.canonical["round"]["hands_left"] == 3
+
+
+def test_blind_skip_tag_pack_has_no_stale_shop_areas() -> None:
+    pytest.importorskip("jackdaw")
+    backend = jackdaw.JackdawBackend()
+    backend.reset(RunSpec("RED", "WHITE", "5"))
+
+    opened = backend.step(action_from_data({"type": "skip_blind"}))
+    assert opened.after is not None
+    assert opened.after.observed.canonical["state"] == "TAROT_PACK"
+    assert all(
+        area not in opened.after.observed.canonical
+        for area in ("shop", "packs", "vouchers")
+    )
+    assert opened.after.observed.canonical["round"]["hands_left"] == 4
+    assert opened.after.observed.canonical["round"]["discards_left"] == 4
+
+    skipped = backend.step(action_from_data({"type": "skip_pack"}))
+    assert skipped.after is not None
+    assert skipped.after.observed.canonical["state"] == "BLIND_SELECT"
+
+
+def test_replay_uses_authority_vm_order_for_to_do_list() -> None:
+    pytest.importorskip("jackdaw")
+    order = (
+        "Straight Flush",
+        "Four of a Kind",
+        "Full House",
+        "Flush",
+        "Straight",
+        "Three of a Kind",
+        "Two Pair",
+        "Pair",
+        "High Card",
+    )
+    backend = jackdaw.JackdawBackend()
+    backend.configure_replay(
+        {
+            "hands": {name: {} for name in order},
+            "visible_poker_hand_order": list(order),
+        }
+    )
+    observation = backend.reset(RunSpec("RED", "WHITE", "5"))
+    assert observation.observed.canonical["visible_poker_hand_order"] == list(order)
+    for action in (
+        {"type": "skip_blind"},
+        {"type": "skip_pack"},
+        {"type": "select_blind"},
+        {"cards": [7, 5, 4, 3], "type": "discard_cards"},
+        {"cards": [1, 3, 4, 5, 7], "type": "play_cards"},
+        {"cards": [5, 6, 3, 1], "type": "discard_cards"},
+        {"cards": [0, 1, 5, 6, 7], "type": "play_cards"},
+        {"type": "cash_out"},
+    ):
+        result = backend.step(action_from_data(action))
+        assert result.after is not None
+        observation = result.after
+
+    assert observation.observed.canonical["shop"]["cards"][1]["value"]["ability"][
+        "poker_hand"
+    ] == "Full House"
