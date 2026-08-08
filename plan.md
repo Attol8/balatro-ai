@@ -84,6 +84,15 @@ A fresh public-action Red/White seed-1 smoke run completed in real Balatro and i
 - Clean isolated candidate evidence at `b75831c`: greedy 0/100 at 94.50 decisions/s, deterministic-random 0/100 at 90.45 decisions/s, and tactical 0/20 with average ante 1.30, average round 3.05, and 6.95 decisions/s. The isolated tactical seed-1 policy then reproduced through real Balatro for 27/27 transitions and lost at ante 1.
 - This closes the process-isolation gate for the current baselines. The next architecture decision must be measured: prototype a public-history recurrent training loop and a conditional latent-state sampler behind the same boundary, then keep only the approach that can produce useful decisions without private-state leakage or rejection-sampling collapse.
 
+### Active Increment: Public Training Environment
+
+- Run the pinned Python 3.12 Jackdaw candidate in a separate environment worker. The Python 3.11 training/orchestration side receives only strict `PublicObservation` frames and sends typed public actions; it never imports Jackdaw or receives raw state, `_gs`, RNG, snapshots, RPC details, or private IDs.
+- Reuse the strict public codec, canonical action codec, bounded JSON-lines framing, deadlines, request/digest checks, and process cleanup already proven for policy isolation. Factor shared transport code instead of copying another subprocess implementation.
+- The minimum environment protocol is reset, step, and close. Reset configuration belongs to the environment driver; seed values and seed manifests never enter model observations, action features, recurrent state, or rewards.
+- Use `sparse_terminal_v1`: +1 for a public terminal win, -1 for a public terminal loss, and 0 otherwise. Any future shaping reward must be declared, public-state-derived, and evaluated separately.
+- Benchmark Red/White seeds 1-20 and 1-100 with a frozen public baseline through this reversed boundary. Require the same outcomes as direct candidate evaluation and report steps/s, episodes/s, failures, worker provenance, and config/seed-manifest digests.
+- Only after the worker passes should an optional PyTorch recurrent policy/value module be added in Python 3.11: compositional public card/item/set encoders, a GRU public-history state, dynamic legal-action scoring, and masked on-policy training. Behavior cloning of current baselines is a plumbing smoke test only; strength training uses public-history RL or later fair belief targets, never clairvoyant labels.
+
 ## Design
 
 Use a two-kernel architecture. Actual Balatro under a pinned BalatroBot/LÖVE build is the authority. A pinned, independently audited Jackdaw fork is the candidate high-throughput training/search kernel. Expose the same typed state/action contract from both and continuously compare organic trajectories. In parallel, prototype in-memory snapshot/restore and batch rollouts inside real Balatro; use the real kernel directly wherever its measured throughput permits.
