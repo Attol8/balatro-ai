@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections import deque
 from copy import deepcopy
+from pathlib import Path
 
 import pytest
 
@@ -41,6 +42,14 @@ class FakeClient:
             raise self.action_error
         return deepcopy(self.action_result)
 
+    def save(self, *, path):
+        self.calls.append(("save", path))
+        return {"success": True, "path": path}
+
+    def load(self, *, path):
+        self.calls.append(("load", path))
+        return {"success": True, "path": path}
+
 
 def test_backend_settles_after_two_identical_semantic_reads() -> None:
     initial = state()
@@ -63,6 +72,22 @@ def test_backend_never_force_accepts_a_changing_state() -> None:
 
     with pytest.raises(UnsettledStateError):
         backend.reset(RunSpec("RED", "WHITE", "1"))
+
+
+def test_file_snapshot_restore_replaces_current_branch_root() -> None:
+    initial = state(money=4)
+    restored = state(money=9)
+    client = FakeClient(initial, polls=[initial, restored, restored])
+    backend = BalatroBotBackend(client, settle_poll_delay=0)  # type: ignore[arg-type]
+    backend.reset(RunSpec("RED", "WHITE", "1"))
+
+    path = Path("/private/tmp/parent.jkr")
+    backend.save_file_snapshot(path)
+    observation = backend.load_file_snapshot(path)
+
+    assert observation.observed.canonical["money"] == 9
+    assert ("save", str(path)) in client.calls
+    assert ("load", str(path)) in client.calls
 
 
 def test_backend_never_settles_a_shop_missing_public_areas() -> None:

@@ -58,6 +58,24 @@ def test_start_uses_deck_stake_and_optional_seed() -> None:
     assert calls[0]["params"] == {"deck": "RED", "stake": "WHITE", "seed": "1"}
 
 
+def test_save_and_load_use_private_file_endpoint_paths() -> None:
+    calls = []
+
+    def transport(payload: dict) -> dict:
+        calls.append(payload)
+        return {"jsonrpc": "2.0", "result": {"success": True}, "id": payload["id"]}
+
+    client = BalatroBotClient(transport=transport)
+
+    client.save(path="/private/tmp/parent.jkr")
+    client.load(path="/private/tmp/parent.jkr")
+
+    assert [(call["method"], call["params"]) for call in calls] == [
+        ("save", {"path": "/private/tmp/parent.jkr"}),
+        ("load", {"path": "/private/tmp/parent.jkr"}),
+    ]
+
+
 def test_rpc_error_raises_balatrobot_error() -> None:
     def transport(payload: dict) -> dict:
         return {

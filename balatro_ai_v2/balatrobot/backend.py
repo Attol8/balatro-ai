@@ -6,6 +6,7 @@ import json
 import hashlib
 import time
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Callable
 
 from balatro_ai_v2.actions import PublicAction
@@ -80,6 +81,25 @@ class BalatroBotBackend:
         return self._current
 
     def observe(self) -> AuthorityObservation:
+        self._current = self._settle(self.client.gamestate())
+        return self._current
+
+    def save_file_snapshot(self, path: Path) -> None:
+        """Privileged evaluation hook; snapshot data never crosses the policy boundary."""
+
+        if self._current is None:
+            raise RuntimeError("reset must be called before saving a snapshot")
+        result = self.client.save(path=str(path))
+        if result.get("success") is not True:
+            raise RuntimeError("BalatroBot did not confirm snapshot save")
+
+    def load_file_snapshot(self, path: Path) -> AuthorityObservation:
+        """Restore a private file snapshot and establish a new canonical branch root."""
+
+        result = self.client.load(path=str(path))
+        if result.get("success") is not True:
+            raise RuntimeError("BalatroBot did not confirm snapshot restore")
+        self.canonicalizer.reset()
         self._current = self._settle(self.client.gamestate())
         return self._current
 

@@ -84,6 +84,12 @@ class BalatroBotClient:
             params["seed"] = seed
         return self.rpc("start", params)
 
+    def save(self, *, path: str) -> JsonObject:
+        return self.rpc("save", {"path": path})
+
+    def load(self, *, path: str) -> JsonObject:
+        return self.rpc("load", {"path": path})
+
     def call_action(self, method: str, params: JsonObject | None = None) -> JsonObject:
         return self.rpc(method, params)
 
