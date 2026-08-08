@@ -3,9 +3,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Callable, Iterator
 from dataclasses import dataclass
-from typing import Protocol
 
 from balatro_ai_v2.actions import (
     CashOut,
@@ -23,26 +21,8 @@ from balatro_ai_v2.backend import AuthorityObservation, GameBackend, RunSpec
 from balatro_ai_v2.balatrobot.adapter import to_public_observation
 from balatro_ai_v2.balatrobot.backend import UnsettledStateError
 from balatro_ai_v2.balatrobot.tracing import AuthorityTraceWriter
+from balatro_ai_v2.policy import ActionSource, PublicHistoryStep, PublicPolicy
 from balatro_ai_v2.public_state import Phase, PublicObservation
-
-
-ActionSource = Callable[[], Iterator[PublicAction]]
-
-
-@dataclass(frozen=True, slots=True)
-class PublicHistoryStep:
-    before: PublicObservation
-    action: PublicAction
-    after: PublicObservation
-
-
-class PublicPolicy(Protocol):
-    def choose_action(
-        self,
-        observation: PublicObservation,
-        legal_actions: ActionSource,
-        history: tuple[PublicHistoryStep, ...],
-    ) -> PublicAction: ...
 
 
 @dataclass(frozen=True, slots=True)

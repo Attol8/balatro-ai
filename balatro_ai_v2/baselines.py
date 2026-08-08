@@ -38,8 +38,8 @@ from balatro_ai_v2.actions import (
     action_to_data,
     is_legal,
 )
-from balatro_ai_v2.balatrobot.runner import ActionSource, PublicHistoryStep, PublicPolicy
 from balatro_ai_v2.belief import PublicDrawBelief
+from balatro_ai_v2.policy import ActionSource, PublicHistoryStep, PublicPolicy
 from balatro_ai_v2.public_state import (
     HandStat,
     HiddenHandCard,
