@@ -82,6 +82,16 @@ broader randomized action/rule lockstep. Balatro's in-memory restore is exact
 on the tested branch but only modestly faster than file restore, so it will
 serve as an oracle/audit worker while Jackdaw carries high-volume training.
 
+Public policies now run in a separate JSON-lines child process. The child sees
+only a strict `PublicObservation`, a bounded public legal-action set, and its
+own accumulated public history. The parent enforces frame limits and deadlines,
+echoes request IDs and observation digests, and independently rejects stale,
+noncanonical, out-of-set, or illegal actions. This prevents accidental access
+to Jackdaw or BalatroBot objects; it is not an OS sandbox for hostile code.
+Clean isolated panels preserved the baseline outcomes: greedy and random both
+won 0/100, while tactical won 0/20 with average ante 1.30. The isolated
+tactical seed-1 policy reproduced 27/27 transitions in real Balatro and lost.
+
 Jackdaw is pinned in `kernels/jackdaw.lock.json` but is deliberately marked
 untrusted. Its optional environment requires Python 3.12:
 

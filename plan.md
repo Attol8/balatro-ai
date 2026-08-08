@@ -79,6 +79,10 @@ A fresh public-action Red/White seed-1 smoke run completed in real Balatro and i
 - Reject unknown fields, raw authority state, seed/RNG/snapshot tokens, oversized messages, malformed actions, stale observations, timeouts, crashes, and extra stdout. Revalidate returned actions against the parent observation before execution.
 - Keep environment kernels and private candidate state entirely in the parent/evaluator process. The child process must not import Jackdaw or BalatroBot.
 - Once isolation passes adversarial hidden-twin tests, choose between public-history recurrent RL and a conditional latent-state worker based on measured feasibility; do not build seed-rejection particles.
+- Commits `abebc01`, `1067577`, and `b75831c` moved policy contracts out of the BalatroBot package, added a strict public-state codec and bounded stateful JSON-lines protocol, and made all non-coverage evaluation policies run in the child by default. The parent kills the child on timeout, crash, malformed/oversized output, stale request or digest, extra stdout, out-of-set action, or independently illegal action.
+- The process boundary passes 139 tests with 10 candidate-only skips. It deliberately scrubs the child environment down to the repository and basic runtime variables and asserts that neither Jackdaw nor BalatroBot was imported. This is accidental-leak isolation, not a hostile-code filesystem/network sandbox.
+- Clean isolated candidate evidence at `b75831c`: greedy 0/100 at 94.50 decisions/s, deterministic-random 0/100 at 90.45 decisions/s, and tactical 0/20 with average ante 1.30, average round 3.05, and 6.95 decisions/s. The isolated tactical seed-1 policy then reproduced through real Balatro for 27/27 transitions and lost at ante 1.
+- This closes the process-isolation gate for the current baselines. The next architecture decision must be measured: prototype a public-history recurrent training loop and a conditional latent-state sampler behind the same boundary, then keep only the approach that can produce useful decisions without private-state leakage or rejection-sampling collapse.
 
 ## Design
 
