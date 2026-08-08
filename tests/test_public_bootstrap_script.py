@@ -4,6 +4,9 @@ import importlib.util
 import sys
 from pathlib import Path
 
+from balatro_ai_v2.balatrobot.adapter import to_public_observation
+from state_factory import state
+
 
 def _load_script():
     path = Path(__file__).resolve().parents[1] / "scripts" / "bootstrap_public_model.py"
@@ -34,6 +37,30 @@ def test_public_bootstrap_cli_is_bounded_to_public_behavior_policies() -> None:
     assert args.max_decisions == 800
     assert not hasattr(args, "snapshot")
     assert not hasattr(args, "oracle")
+
+
+def test_strategic_bootstrap_trains_only_shop_and_pack_decisions() -> None:
+    script = _load_script()
+    parser = script.build_parser()
+    args = parser.parse_args(
+        [
+            "--worker-python",
+            "/python3.12",
+            "--candidate-root",
+            "/candidate",
+            "--output-model",
+            "/model.pt",
+            "--policy",
+            "strategic",
+        ]
+    )
+
+    assert script._behavior_scope(args.policy) == "shop_pack"
+    assert script._include_behavior_step(args.policy, to_public_observation(state("SHOP")))
+    assert not script._include_behavior_step(
+        args.policy,
+        to_public_observation(state("SELECTING_HAND")),
+    )
 
 
 def test_public_bootstrap_source_has_no_private_engine_imports() -> None:

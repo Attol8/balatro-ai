@@ -184,7 +184,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--environment-timeout", type=float, default=5.0)
     parser.add_argument(
         "--tactical-controller",
-        choices=("model", "greedy", "tactical"),
+        choices=("model", "greedy", "tactical", "strategic"),
         default="model",
     )
     parser.add_argument("--device", default="cpu")

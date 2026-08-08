@@ -35,11 +35,11 @@ from balatro_ai_v2.public_model import (
     public_model_candidates,
     save_public_model,
 )
-from balatro_ai_v2.public_state import PublicObservation
+from balatro_ai_v2.public_state import Phase, PublicObservation
 
 
-BOOTSTRAP_POLICIES = ("greedy", "tactical")
-BOOTSTRAP_SCHEMA = "stateless_public_behavior_v1"
+BOOTSTRAP_POLICIES = ("greedy", "tactical", "strategic")
+BOOTSTRAP_SCHEMA = "stateless_public_behavior_v2"
 
 
 @dataclass(frozen=True, slots=True)
@@ -101,7 +101,8 @@ def main() -> None:
                 )
                 candidates = public_model_candidates(observation)
                 _require_representable(action, candidates)
-                steps.append(BehaviorStep(observation, candidates, previous_action, action))
+                if _include_behavior_step(args.policy, observation):
+                    steps.append(BehaviorStep(observation, candidates, previous_action, action))
                 transition = environment.step(action)
                 history.append(PublicHistoryStep(observation, action, transition.observation))
                 previous_action = action
@@ -122,6 +123,8 @@ def main() -> None:
                     "decisions": len(history),
                 }
             )
+    if not steps:
+        raise RuntimeError(f"bootstrap policy {args.policy!r} produced no trainable public steps")
 
     optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate)
     losses: list[float] = []
@@ -163,6 +166,7 @@ def main() -> None:
             "environment_reward_schema": hello.reward_schema,
             "action_proposal_schema": PUBLIC_MODEL_ACTION_PROPOSAL_SCHEMA,
             "bootstrap_schema": BOOTSTRAP_SCHEMA,
+            "behavior_scope": _behavior_scope(args.policy),
             "behavior_policy": policy_name,
             "policy_seed": args.policy_seed,
             "deck": args.deck,
@@ -224,6 +228,14 @@ def _deterministic_accuracy(
             )
             correct += action_to_data(decision.action) == action_to_data(step.action)
     return correct / len(sample)
+
+
+def _include_behavior_step(policy: str, observation: PublicObservation) -> bool:
+    return policy != "strategic" or observation.phase in {Phase.SHOP, Phase.PACK}
+
+
+def _behavior_scope(policy: str) -> str:
+    return "shop_pack" if policy == "strategic" else "all_public_actions"
 
 
 def _require_representable(

@@ -601,7 +601,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--training-seed", type=int, default=1)
     parser.add_argument(
         "--tactical-controller",
-        choices=("model", "greedy", "tactical"),
+        choices=("model", "greedy", "tactical", "strategic"),
         default="greedy",
     )
     parser.add_argument("--training-reward", choices=TRAIN_REWARD_SCHEMAS, default="sparse_terminal_v1")

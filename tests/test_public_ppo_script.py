@@ -9,7 +9,7 @@ import pytest
 
 torch = pytest.importorskip("torch")
 
-from balatro_ai_v2.actions import CashOut, PlayCards, SelectBlind  # noqa: E402
+from balatro_ai_v2.actions import CashOut, DiscardCards, PlayCards, SelectBlind  # noqa: E402
 from balatro_ai_v2.baselines import build_public_baseline  # noqa: E402
 from balatro_ai_v2.balatrobot.adapter import to_public_observation  # noqa: E402
 from balatro_ai_v2.public_env_process import PublicTransition  # noqa: E402
@@ -123,6 +123,29 @@ def test_hybrid_controller_owns_fixed_flow_and_hand_play_only() -> None:
     assert isinstance(
         script._fixed_control_action(to_public_observation(state("ROUND_EVAL")), controller),
         CashOut,
+    )
+    assert script._fixed_control_action(to_public_observation(state("SHOP")), controller) is None
+
+
+def test_strategic_controller_is_available_only_as_fixed_tactical_control() -> None:
+    script = _load_script()
+    args = script.build_parser().parse_args(
+        [
+            "--worker-python",
+            "/python3.12",
+            "--candidate-root",
+            "/candidate",
+            "--output-model",
+            "/model.pt",
+            "--tactical-controller",
+            "strategic",
+        ]
+    )
+    controller, _ = build_public_baseline(args.tactical_controller, "hybrid-controller-v1")
+
+    assert isinstance(
+        script._fixed_control_action(to_public_observation(state("SELECTING_HAND")), controller),
+        (PlayCards, DiscardCards),
     )
     assert script._fixed_control_action(to_public_observation(state("SHOP")), controller) is None
 
