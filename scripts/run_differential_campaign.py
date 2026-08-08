@@ -34,7 +34,12 @@ from balatro_ai_v2.balatrobot.process import (
 from balatro_ai_v2.balatrobot.runner import AuthorityRunner
 from balatro_ai_v2.balatrobot.tracing import AuthorityTraceWriter, build_manifest, read_verified_trace
 from balatro_ai_v2.differential import replay_authority_trace
-from balatro_ai_v2.jackdaw import JACKDAW_REVISION, JackdawBackend, JackdawUnavailable
+from balatro_ai_v2.jackdaw import (
+    JACKDAW_REVISION,
+    JackdawBackend,
+    JackdawUnavailable,
+    verify_jackdaw_runtime,
+)
 
 
 def main() -> None:
@@ -47,6 +52,7 @@ def main() -> None:
     process: subprocess.Popen[bytes] | None = None
     candidate: JackdawBackend | None = None
     try:
+        verify_jackdaw_runtime()
         candidate = JackdawBackend()
         args.output_dir.mkdir(parents=True, exist_ok=False)
         if args.launch_server:

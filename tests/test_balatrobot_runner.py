@@ -183,6 +183,21 @@ def test_runner_passes_only_public_observation_and_completes_real_terminal() -> 
     assert "PRIVATE-SEED" not in result.final_observation.canonical_json()  # type: ignore[union-attr]
 
 
+def test_runner_recognizes_terminal_on_final_allowed_decision() -> None:
+    initial = state()
+    terminal = state("GAME_OVER", won=True)
+    client = FakeClient(initial, polls=[initial, terminal], action_result=terminal)
+    backend = BalatroBotBackend(client, settle_poll_delay=0)  # type: ignore[arg-type]
+
+    result = AuthorityRunner(backend, NoBuySmokePolicy(), max_decisions=1).run(
+        RunSpec("RED", "WHITE", "1")
+    )
+
+    assert result.complete
+    assert result.terminal_reason == "game_over"
+    assert result.decisions == 1
+
+
 def test_decision_limit_is_never_complete() -> None:
     initial = state()
     selecting = state("SELECTING_HAND")

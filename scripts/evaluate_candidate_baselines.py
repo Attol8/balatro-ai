@@ -6,6 +6,7 @@ import argparse
 import json
 import sys
 import time
+from collections import Counter
 from dataclasses import asdict
 from pathlib import Path
 
@@ -15,7 +16,7 @@ from balatro_ai_v2.backend import RunSpec
 from balatro_ai_v2.balatrobot.runner import AuthorityRunner
 from balatro_ai_v2.balatrobot.tracing import build_manifest
 from balatro_ai_v2.baselines import DeterministicRandomPolicy, GreedyImmediatePolicy
-from balatro_ai_v2.jackdaw import JackdawBackend, JackdawUnavailable
+from balatro_ai_v2.jackdaw import JackdawBackend, JackdawUnavailable, verify_jackdaw_runtime
 
 
 def main() -> None:
@@ -36,6 +37,7 @@ def main() -> None:
     backend: JackdawBackend | None = None
     started = time.perf_counter()
     try:
+        candidate_runtime = verify_jackdaw_runtime()
         backend = JackdawBackend()
         results = []
         for seed_number in range(args.seed_start, args.seed_start + args.seeds):
@@ -54,6 +56,8 @@ def main() -> None:
                 }
             )
         elapsed = time.perf_counter() - started
+        terminal_reasons = Counter(str(result["terminal_reason"]) for result in results)
+        complete_runs = sum(bool(result["complete"]) for result in results)
         manifest = build_manifest(
             repository_root=root,
             command=tuple(sys.argv),
@@ -63,21 +67,24 @@ def main() -> None:
             max_decisions=args.max_decisions,
             max_settle_polls=0,
             launch_fast=False,
-            launch_headless=True,
+            launch_headless=False,
             profile_mode="all_unlocked",
             inference_budget="public_actions<=256;tactical_candidates<=2048",
         )
         payload = {
+            "candidate_only": True,
+            "candidate_runtime": candidate_runtime,
             "manifest": asdict(manifest),
             "results": results,
             "summary": {
                 "runs": len(results),
-                "complete": sum(result["complete"] for result in results),
+                "complete": complete_runs,
                 "wins": sum(result["won"] for result in results),
                 "average_ante": sum(result["ante"] for result in results) / len(results),
                 "average_round": sum(result["round"] for result in results) / len(results),
                 "elapsed_seconds": elapsed,
                 "decisions_per_second": sum(result["decisions"] for result in results) / elapsed,
+                "terminal_reasons": dict(sorted(terminal_reasons.items())),
             },
         }
         encoded = json.dumps(payload, sort_keys=True)
@@ -86,6 +93,8 @@ def main() -> None:
             args.report_json.parent.mkdir(parents=True, exist_ok=True)
             with args.report_json.open("x", encoding="utf-8") as handle:
                 handle.write(encoded + "\n")
+        if complete_runs != len(results):
+            raise SystemExit(2)
     except JackdawUnavailable as exc:
         raise SystemExit(f"Jackdaw candidate unavailable: {exc}") from exc
     finally:

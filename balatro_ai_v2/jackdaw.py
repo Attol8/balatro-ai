@@ -8,10 +8,12 @@ uses Python 3.12 and the pinned optional dependency.
 from __future__ import annotations
 
 import json
+import subprocess
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from copy import deepcopy
 from dataclasses import dataclass, field
+from pathlib import Path
 from threading import RLock
 from typing import Any
 
@@ -73,6 +75,47 @@ _DEFAULT_POKER_HAND_ITERATION_ORDER = (
 
 class JackdawUnavailable(RuntimeError):
     pass
+
+
+def verify_jackdaw_runtime() -> dict[str, object]:
+    """Fail closed unless the imported candidate is the clean pinned tree."""
+
+    try:
+        import jackdaw
+    except ImportError as exc:
+        raise JackdawUnavailable(
+            "install the pinned 'candidate' extra under Python 3.12 to use Jackdaw"
+        ) from exc
+    module_path = Path(jackdaw.__file__).resolve()
+    root = next((parent for parent in module_path.parents if (parent / ".git").exists()), None)
+    if root is None:
+        raise JackdawUnavailable("cannot verify Jackdaw: imported package is not in a git checkout")
+    try:
+        revision = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=root,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        dirty = bool(
+            subprocess.run(
+                ["git", "status", "--porcelain", "--untracked-files=no"],
+                cwd=root,
+                check=True,
+                capture_output=True,
+                text=True,
+            ).stdout.strip()
+        )
+    except (OSError, subprocess.CalledProcessError) as exc:
+        raise JackdawUnavailable("cannot verify imported Jackdaw revision") from exc
+    if revision != JACKDAW_REVISION:
+        raise JackdawUnavailable(
+            f"Jackdaw revision {revision!r} does not match pinned {JACKDAW_REVISION!r}"
+        )
+    if dirty:
+        raise JackdawUnavailable("imported Jackdaw checkout has tracked modifications")
+    return {"revision": revision, "dirty": False}
 
 
 def _vanilla_most_played_hand(

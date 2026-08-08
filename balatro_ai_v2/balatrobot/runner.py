@@ -123,6 +123,9 @@ class AuthorityRunner:
                 authority = result.after
                 public = after_public
                 final = public
+                if public.phase == Phase.GAME_OVER:
+                    terminal_reason = "game_over"
+                    break
             else:
                 terminal_reason = "decision_limit"
         except UnsettledStateError as exc:
