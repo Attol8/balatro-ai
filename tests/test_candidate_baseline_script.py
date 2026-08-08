@@ -19,6 +19,7 @@ def test_candidate_baseline_cli_has_only_public_control_policies() -> None:
     args = parser.parse_args(["--policy", "greedy"])
 
     assert args.policy == "greedy"
+    assert args.policy_timeout == 5.0
     assert not hasattr(args, "model")
     assert not hasattr(args, "search")
 

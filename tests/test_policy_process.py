@@ -9,7 +9,7 @@ from balatro_ai_v2.baselines import DeterministicRandomPolicy
 from balatro_ai_v2.balatrobot.adapter import to_public_observation
 from balatro_ai_v2.policy import PublicHistoryStep
 from balatro_ai_v2.policy_process import PolicyProcess, PolicyProcessError
-from state_factory import state
+from state_factory import playing_card, state
 
 
 def test_actual_policy_child_returns_a_legal_public_action() -> None:
@@ -20,6 +20,21 @@ def test_actual_policy_child_returns_a_legal_public_action() -> None:
 
     assert action_to_data(action) == {"type": "select_blind"}
     assert policy.closed
+
+
+def test_policy_transport_covers_normal_eight_card_tactical_actions() -> None:
+    raw = state("SELECTING_HAND")
+    raw["hand"]["cards"].extend(
+        playing_card(key, card_id=index)
+        for index, key in enumerate(("S_A", "H_K", "D_Q", "C_J", "S_9"), 40)
+    )
+    raw["hand"]["count"] = 8
+    observation = to_public_observation(raw)
+
+    with PolicyProcess("greedy", timeout_seconds=2) as policy:
+        action = policy.choose_action(observation, lambda: iter_legal_actions(observation), ())
+
+    assert action_to_data(action)["type"] == "play_cards"
 
 
 def test_isolated_random_policy_preserves_full_public_history_length() -> None:

@@ -12,7 +12,7 @@ from balatro_ai_v2.public_state import PublicObservation
 
 
 POLICY_PROTOCOL_VERSION: Final = 1
-MAX_LEGAL_ACTIONS: Final = 256
+MAX_LEGAL_ACTIONS: Final = 512
 MAX_PUBLIC_HISTORY: Final = 2048
 MAX_REQUEST_BYTES: Final = 1_000_000
 MAX_RESPONSE_BYTES: Final = 32_000

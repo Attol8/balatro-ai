@@ -40,17 +40,21 @@ from balatro_ai_v2.jackdaw import (
     JackdawUnavailable,
     verify_jackdaw_runtime,
 )
+from balatro_ai_v2.policy_process import PolicyProcess
 
 
 def main() -> None:
     args = build_parser().parse_args()
     profile_mode = "all_unlocked"
-    if args.seeds < 1 or args.max_shop_actions < 0:
-        raise SystemExit("--seeds must be positive and --max-shop-actions must be non-negative")
+    if args.seeds < 1 or args.max_shop_actions < 0 or args.policy_timeout <= 0:
+        raise SystemExit(
+            "--seeds and --policy-timeout must be positive; --max-shop-actions must be non-negative"
+        )
     root = Path(__file__).resolve().parents[1]
     client = BalatroBotClient(host=args.host, port=args.port, timeout=args.timeout)
     process: subprocess.Popen[bytes] | None = None
     candidate: JackdawBackend | None = None
+    policy_process: PolicyProcess | None = None
     try:
         verify_jackdaw_runtime()
         candidate = JackdawBackend()
@@ -93,7 +97,14 @@ def main() -> None:
             )
             policy_name = f"DeterministicCoveragePolicy:{args.policy_seed}:{args.coverage_mode}"
         else:
-            policy, policy_name = build_public_baseline(args.policy, args.policy_seed)
+            _, implementation_name = build_public_baseline(args.policy, args.policy_seed)
+            policy_process = PolicyProcess(
+                args.policy,
+                policy_seed=args.policy_seed,
+                timeout_seconds=args.policy_timeout,
+            )
+            policy = policy_process
+            policy_name = f"{implementation_name}:process-v1"
         for seed_number in range(args.seed_start, args.seed_start + args.seeds):
             seed = str(seed_number)
             spec = RunSpec(args.deck, args.stake, seed)
@@ -110,8 +121,9 @@ def main() -> None:
                 launch_headless=args.headless_server,
                 profile_mode=profile_mode,
                 inference_budget=(
-                    "tactical_candidates<=2048;public_actions<=256;draw_branches<=512;"
-                    f"shop_actions<={args.max_shop_actions}"
+                    "tactical_candidates<=2048;transported_public_actions<=512;"
+                    "random_public_actions<=256;draw_branches<=512;"
+                    f"shop_actions<={args.max_shop_actions};policy_timeout_seconds={args.policy_timeout}"
                 ),
                 mods=tuple(args.mod),
             )
@@ -164,6 +176,8 @@ def main() -> None:
     except BalatroBotError as exc:
         raise SystemExit(f"BalatroBot authority failed: {exc}") from exc
     finally:
+        if policy_process is not None:
+            policy_process.close()
         if candidate is not None:
             candidate.close()
         if process is not None:
@@ -192,6 +206,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-settle-polls", type=int, default=40)
     parser.add_argument("--settle-poll-delay", type=float, default=0.02)
     parser.add_argument("--timeout", type=float, default=30.0)
+    parser.add_argument("--policy-timeout", type=float, default=5.0)
     parser.add_argument("--balatrobot-version", required=True)
     parser.add_argument("--game-version", required=True)
     parser.add_argument("--runtime-version", required=True)

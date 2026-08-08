@@ -17,19 +17,27 @@ from balatro_ai_v2.balatrobot.runner import AuthorityRunner
 from balatro_ai_v2.balatrobot.tracing import build_manifest
 from balatro_ai_v2.baselines import PUBLIC_BASELINE_NAMES, build_public_baseline
 from balatro_ai_v2.jackdaw import JackdawBackend, JackdawUnavailable, verify_jackdaw_runtime
+from balatro_ai_v2.policy_process import PolicyProcess
 
 
 def main() -> None:
     args = build_parser().parse_args()
-    if args.seeds < 1 or args.max_decisions < 1:
-        raise SystemExit("--seeds and --max-decisions must be positive")
+    if args.seeds < 1 or args.max_decisions < 1 or args.policy_timeout <= 0:
+        raise SystemExit("--seeds, --max-decisions, and --policy-timeout must be positive")
     root = Path(__file__).resolve().parents[1]
-    policy, policy_name = build_public_baseline(args.policy, args.policy_seed)
+    _, implementation_name = build_public_baseline(args.policy, args.policy_seed)
+    policy_name = f"{implementation_name}:process-v1"
     backend: JackdawBackend | None = None
+    policy: PolicyProcess | None = None
     started = time.perf_counter()
     try:
         candidate_runtime = verify_jackdaw_runtime()
         backend = JackdawBackend()
+        policy = PolicyProcess(
+            args.policy,
+            policy_seed=args.policy_seed,
+            timeout_seconds=args.policy_timeout,
+        )
         results = []
         for seed_number in range(args.seed_start, args.seed_start + args.seeds):
             result = AuthorityRunner(backend, policy, max_decisions=args.max_decisions).run(
@@ -60,7 +68,11 @@ def main() -> None:
             launch_fast=False,
             launch_headless=False,
             profile_mode="all_unlocked",
-            inference_budget="public_actions<=256;tactical_candidates<=2048;draw_branches<=512",
+            inference_budget=(
+                "transported_public_actions<=512;random_public_actions<=256;"
+                "tactical_candidates<=2048;draw_branches<=512;"
+                f"policy_timeout_seconds={args.policy_timeout}"
+            ),
         )
         payload = {
             "candidate_only": True,
@@ -89,6 +101,8 @@ def main() -> None:
     except JackdawUnavailable as exc:
         raise SystemExit(f"Jackdaw candidate unavailable: {exc}") from exc
     finally:
+        if policy is not None:
+            policy.close()
         if backend is not None:
             backend.close()
 
@@ -102,6 +116,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--deck", default="RED")
     parser.add_argument("--stake", default="WHITE")
     parser.add_argument("--max-decisions", type=int, default=800)
+    parser.add_argument("--policy-timeout", type=float, default=5.0)
     parser.add_argument("--report-json", type=Path)
     return parser
 
