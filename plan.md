@@ -159,6 +159,13 @@ A fresh public-action Red/White seed-1 smoke run completed in real Balatro and i
 - Permit an empty shop only when the preceding canonical state plus public action proves that the last known offer was consumed: buying the sole remaining shop card or voucher while the other offer areas were already empty, or returning from a pack whose persisted shop areas were already empty. Once that empty shop is canonically established, normal use, sell, and leave actions may remain there; rerolls still require visible generated offers.
 - Add positive and negative settling regressions, then retry the frozen seed-63 authority run. The two incomplete traces remain failure diagnostics and never count as evidence.
 
+### Active Increment: Vanilla Mega-Pack Endpoint Completion
+
+- The frozen seed-63 authority replay now reaches ante 8 and opens a Mega Standard Pack, but its first public pack selection times out after Balatro accepts the card. The authority log has no Lua error and shows `G.FUNCS.use_card` ran; the endpoint response condition never becomes true.
+- Fix the pinned BalatroBot endpoint at the root cause. Capture the public pack state before `G.FUNCS.use_card`; when a multi-choice pack decrements `pack_choices` by one, require the same state to be restored, a live pack area, and `G.STATE_COMPLETE`. This follows Balatro's own `use_card` contract and covers vanilla and SMODS pack states without admitting unrelated states.
+- Add a regression that opens a vanilla Mega Standard Pack, verifies the first selection returns in `STANDARD_PACK` with the pack still open, and verifies the second selection closes back to `SHOP`. Do not solve this with a longer transport timeout, an unconditional response, or a policy-side pack skip.
+- Regenerate the tracked authority patch digest, commit the authority fix, and rerun the unchanged frozen seed-63 policy. The run counts only if it reaches `run_end` and differential replay reports zero mismatches, zero unchecked transitions, and zero waivers.
+
 ## Design
 
 Use a two-kernel architecture. Actual Balatro under a pinned BalatroBot/LÖVE build is the authority. A pinned, independently audited Jackdaw fork is the candidate high-throughput training/search kernel. Expose the same typed state/action contract from both and continuously compare organic trajectories. In parallel, prototype in-memory snapshot/restore and batch rollouts inside real Balatro; use the real kernel directly wherever its measured throughput permits.

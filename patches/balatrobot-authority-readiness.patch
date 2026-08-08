@@ -50,7 +50,7 @@ index 2c63b56..fbb0985 100644
 +              and b.config.major == G.round_eval
 +              and b:get_UIE_by_ID("cash_out_button") then
 diff --git a/src/lua/endpoints/pack.lua b/src/lua/endpoints/pack.lua
-index 214a0b4..9e1be16 100644
+index 214a0b4..330af1b 100644
 --- a/src/lua/endpoints/pack.lua
 +++ b/src/lua/endpoints/pack.lua
 @@ -140 +140 @@ return {
@@ -62,6 +62,44 @@ index 214a0b4..9e1be16 100644
 @@ -148 +148 @@ return {
 -          if pack_closed and back_to_shop then
 +          if pack_closed and back_to_decision then
+@@ -296,0 +297 @@ return {
++      local pack_state_before = G.STATE
+@@ -306 +307,3 @@ return {
+-          if pack_choices_before == 2 and G.GAME.pack_choices and G.GAME.pack_choices == 1 then
++          if pack_choices_before > 1
++            and G.GAME.pack_choices
++            and G.GAME.pack_choices == pack_choices_before - 1 then
+@@ -312 +315 @@ return {
+-              and G.STATE == G.STATES.SMODS_BOOSTER_OPENED
++              and G.STATE == pack_state_before
+diff --git a/tests/lua/endpoints/test_pack.py b/tests/lua/endpoints/test_pack.py
+index 1ff2a51..1a6f386 100644
+--- a/tests/lua/endpoints/test_pack.py
++++ b/tests/lua/endpoints/test_pack.py
+@@ -412,0 +413,23 @@ class TestPackEndpointMegaPack:
++    def test_vanilla_mega_standard_returns_between_selections(
++        self, client: httpx.Client
++    ) -> None:
++        """The first vanilla Mega Standard pick returns while the pack stays open."""
++        load_fixture(client, "pack", "state-SHOP--packs.count-0")
++        assert_gamestate_response(api(client, "add", {"key": "p_standard_mega_1"}))
++        before = assert_gamestate_response(
++            api(client, "buy", {"pack": 0}), state="STANDARD_PACK"
++        )
++
++        after_first = assert_gamestate_response(
++            api(client, "pack", {"card": 0}), state="STANDARD_PACK"
++        )
++        assert after_first["cards"]["count"] == before["cards"]["count"] + 1
++        assert "pack" in after_first
++        assert len(after_first["pack"]["cards"]) == 4
++
++        after_second = assert_gamestate_response(
++            api(client, "pack", {"card": 0}), state="SHOP"
++        )
++        assert after_second["cards"]["count"] == before["cards"]["count"] + 2
++        assert "pack" not in after_second
++
 diff --git a/src/lua/settings.lua b/src/lua/settings.lua
 index e92043c..58731bb 100644
 --- a/src/lua/settings.lua
