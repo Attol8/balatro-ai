@@ -812,8 +812,6 @@ def _normalize_jackdaw_bridge(
             if not isinstance(shop_config, Mapping) or not isinstance(shop_config.get("joker_max"), int):
                 raise RuntimeError("Jackdaw shop capacity is unavailable")
             area["limit"] = shop_config["joker_max"]
-        elif area_name == "vouchers":
-            area["limit"] = 1
         elif area_name == "packs":
             area["limit"] = 2
         elif area_name == "pack":

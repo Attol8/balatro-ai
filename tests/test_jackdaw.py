@@ -29,6 +29,7 @@ def test_candidate_module_is_lazy_and_revision_is_pinned() -> None:
 
 def test_bridge_normalization_preserves_candidate_round_timing() -> None:
     raw = state()
+    raw["state"] = "SHOP"
     raw["cards"]["highlighted_limit"] = 0
     raw["cards"]["cards"][0]["set"] = "ENHANCED"
     raw["cards"]["cards"][0]["cost"] = {"buy": 0, "sell": 0}
@@ -36,6 +37,7 @@ def test_bridge_normalization_preserves_candidate_round_timing() -> None:
     raw["cards"]["cards"][0]["modifier"] = {"edition": None, "eternal": False}
     raw["cards"]["cards"][0]["value"].pop("ability")
     raw["shop"] = {"cards": [], "count": 0, "highlighted_limit": 0, "limit": 0}
+    raw["vouchers"] = {"cards": [], "count": 2, "highlighted_limit": 0, "limit": 2}
     raw["round"].pop("ancient_suit")
     raw["round"].pop("most_played_poker_hand")
     raw["round"]["hands_left"] = 0
@@ -48,6 +50,7 @@ def test_bridge_normalization_preserves_candidate_round_timing() -> None:
         "jokers": [],
         "consumables": [],
         "shop_cards": [],
+        "shop": {"joker_max": 0},
         "shop_vouchers": [],
         "shop_boosters": [],
         "pack_cards": [],
@@ -61,7 +64,8 @@ def test_bridge_normalization_preserves_candidate_round_timing() -> None:
 
     normalized = jackdaw._normalize_jackdaw_bridge(raw, private)
 
-    assert "shop" not in normalized
+    assert normalized["shop"]["cards"] == []
+    assert normalized["vouchers"]["limit"] == 2
     assert normalized["cards"]["highlighted_limit"] == 5
     assert normalized["cards"]["cards"][0]["cost"] == {"buy": 1, "sell": 1}
     assert normalized["cards"]["cards"][0]["state"] == {"hidden": True}
