@@ -9,7 +9,7 @@ from __future__ import annotations
 import hashlib
 import json
 from collections import Counter
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from dataclasses import dataclass, replace
 from fractions import Fraction
 from itertools import combinations, islice
@@ -40,7 +40,13 @@ from balatro_ai_v2.actions import (
 )
 from balatro_ai_v2.balatrobot.runner import ActionSource, PublicHistoryStep, PublicPolicy
 from balatro_ai_v2.belief import PublicDrawBelief
-from balatro_ai_v2.public_state import HiddenHandCard, Phase, PublicObservation, VisiblePlayingCard
+from balatro_ai_v2.public_state import (
+    HandStat,
+    HiddenHandCard,
+    Phase,
+    PublicObservation,
+    VisiblePlayingCard,
+)
 
 
 _RANK_CHIPS = {"A": 11, "K": 10, "Q": 10, "J": 10, "T": 10, **{str(value): value for value in range(2, 10)}}
@@ -100,7 +106,7 @@ class GreedyImmediatePolicy:
 
 @dataclass(frozen=True, slots=True)
 class PublicBeliefTacticalPolicy:
-    """One-ply public expectimax over a bounded set of single-card discards."""
+    """One-ply public expectimax over a bounded visible-score surrogate."""
 
     def choose_action(
         self,
@@ -226,24 +232,25 @@ def _best_play(observation: PublicObservation, tie_seed: int) -> tuple[PlayCards
 def _best_play_with_score(
     observation: PublicObservation,
     tie_seed: int,
-) -> tuple[PlayCards, str, Fraction]:
+    hand_stats: Mapping[str, HandStat] | None = None,
+) -> tuple[PlayCards, str, int | Fraction]:
     slots = tuple(HandSlot(index) for index in range(len(observation.hand)))
     maximum = min(5, observation.selection_limit, len(slots))
     candidate_slots = islice(
         (selected for size in range(maximum, 0, -1) for selected in combinations(slots, size)),
         _MAX_TACTICAL_CANDIDATES,
     )
-    hand_stats = {hand.name: hand for hand in observation.hand_stats}
-    best: tuple[Fraction, int, PlayCards, str] | None = None
+    stats = hand_stats if hand_stats is not None else {hand.name: hand for hand in observation.hand_stats}
+    best: tuple[int | Fraction, int, tuple[HandSlot, ...], str] | None = None
     for selected in candidate_slots:
         cards = tuple(observation.hand[slot.value] for slot in selected)
         hand_name = _classify(cards)
-        stat = hand_stats.get(hand_name)
+        stat = stats.get(hand_name)
         base_chips = stat.chips if stat is not None else 0
         base_mult = stat.mult if stat is not None else 1
         card_chips = sum(_card_chips(card) for card in cards)
         mult_bonus = sum(4 for card in cards if isinstance(card, VisiblePlayingCard) and card.enhancement == "MULT")
-        multiplier = Fraction(1)
+        multiplier: int | Fraction = 1
         for card in cards:
             if isinstance(card, VisiblePlayingCard) and card.enhancement == "GLASS":
                 multiplier *= 2
@@ -251,17 +258,18 @@ def _best_play_with_score(
                 multiplier *= Fraction(3, 2)
         score = (base_chips + card_chips) * (base_mult + mult_bonus) * multiplier
         tie = (tie_seed ^ sum((slot.value + 1) * 0x9E3779B1 for slot in selected)) & 0xFFFFFFFF
-        candidate = (score, tie, PlayCards(selected), hand_name)
+        candidate = (score, tie, selected, hand_name)
         if best is None or (candidate[0], candidate[1]) > (best[0], best[1]):
             best = candidate
     if best is None:
         raise RuntimeError("selecting-hand state has no legal cards")
-    score, _, action, hand_name = best
-    return action, hand_name, score
+    score, _, selected, hand_name = best
+    return PlayCards(selected), hand_name, score
 
 
 def _belief_tactical_action(observation: PublicObservation) -> PublicAction:
-    play, _, current_score = _best_play_with_score(observation, 0)
+    hand_stats = {hand.name: hand for hand in observation.hand_stats}
+    play, _, current_score = _best_play_with_score(observation, 0, hand_stats)
     if (
         observation.round.discards_left <= 0
         or any(isinstance(card, HiddenHandCard) for card in observation.hand)
@@ -289,7 +297,7 @@ def _belief_tactical_action(observation: PublicObservation) -> PublicAction:
             hand = list(observation.hand)
             hand[slot.value] = entry.card
             hypothetical = replace(observation, hand=tuple(hand))
-            _, _, score = _best_play_with_score(hypothetical, 0)
+            _, _, score = _best_play_with_score(hypothetical, 0, hand_stats)
             weighted_score += entry.count * score
         expected_score = weighted_score / belief.draw_count
         ranked.append((expected_score, -slot.value, discard))
