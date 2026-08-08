@@ -96,6 +96,15 @@ def test_action_generation_honours_live_selection_limit() -> None:
     assert max(len(action.cards) for action in tactical) == 2
 
 
+def test_tactical_actions_offer_full_hands_before_smaller_subsets() -> None:
+    observation = to_public_observation(state("SELECTING_HAND"))
+
+    first = next(iter_legal_actions(observation))
+
+    assert isinstance(first, PlayCards)
+    assert len(first.cards) == min(5, observation.selection_limit, len(observation.hand))
+
+
 def test_duplicate_or_negative_slots_fail() -> None:
     with pytest.raises(ValueError):
         PlayCards((HandSlot(0), HandSlot(0)))

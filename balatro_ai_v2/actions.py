@@ -233,7 +233,9 @@ def iter_legal_actions(observation: PublicObservation) -> Iterator[PublicAction]
     elif phase == Phase.SELECTING_HAND:
         hand_slots = tuple(HandSlot(index) for index in range(len(observation.hand)))
         maximum = min(5, observation.selection_limit, len(hand_slots))
-        for size in range(1, maximum + 1):
+        # Put strategically useful full hands before the bounded policy-wire
+        # cutoff while preserving the complete legal action set.
+        for size in range(maximum, 0, -1):
             for selected in combinations(hand_slots, size):
                 yield PlayCards(selected)
                 if observation.round.discards_left > 0:

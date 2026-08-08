@@ -71,7 +71,8 @@ Jackdaw is pinned. Its raw bridge initially differed from BalatroBot in 638
 initial-state fields; a narrow adapter now derives the equivalent BalatroBot
 representation from Jackdaw's own state. Historical schema-v4 campaigns cover
 1,073 exact transitions, all in losing runs; schema v5 now records permanent
-playing-card bonuses and requires fresh authority evidence. On Red/White seeds 1-100,
+playing-card bonuses, and two fresh seed-1 runs reproduce 48/48 observed
+transitions exactly. On Red/White seeds 1-100,
 the frozen public greedy and deterministic-random controls both won 0/100 in
 the candidate; their seed-1 policies then reproduced in real Balatro for 18/18
 and 11/11 transitions respectively. A fair one-ply public draw policy improved
@@ -79,8 +80,11 @@ average ante from 1.05 to 1.23 but still won 0/100, ran at only 2.80 decisions/s
 and reproduced its seed-1 terminal loss for 27/27 real transitions. These are
 honest strength floors, not a solver. Process-isolated public recurrent training
 is operational, but raw PPO, behavior cloning, and the first strategic hybrid
-still have zero wins. The next useful policy step is fair strategic search, not
-more blind PPO tuning. Balatro's in-memory restore is exact
+still have zero wins. A frozen public-only strategic baseline improves average
+round from 2.22 to 6.95 on the same candidate panel, but also wins 0/100; a
+largest-first bounded action proposal reaches 7.29 in development. The next
+useful policy step is a fair strategic value/search teacher, not more blind PPO
+tuning. Balatro's in-memory restore is exact
 on the tested branch but only modestly faster than file restore, so it will
 serve as an oracle/audit worker while Jackdaw carries high-volume training.
 
