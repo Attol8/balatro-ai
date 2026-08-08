@@ -90,6 +90,12 @@ class BalatroBotClient:
     def load(self, *, path: str) -> JsonObject:
         return self.rpc("load", {"path": path})
 
+    def checkpoint(self, *, op: str, snapshot_id: str | None = None) -> JsonObject:
+        params = {"op": op}
+        if snapshot_id is not None:
+            params["snapshot_id"] = snapshot_id
+        return self.rpc("checkpoint", params)
+
     def call_action(self, method: str, params: JsonObject | None = None) -> JsonObject:
         return self.rpc(method, params)
 

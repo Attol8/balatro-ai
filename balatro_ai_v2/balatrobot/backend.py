@@ -103,6 +103,29 @@ class BalatroBotBackend:
         self._current = self._settle(self.client.gamestate())
         return self._current
 
+    def create_memory_checkpoint(self) -> tuple[str, int]:
+        if self._current is None:
+            raise RuntimeError("reset must be called before creating a checkpoint")
+        result = self.client.checkpoint(op="create")
+        snapshot_id = result.get("snapshot_id")
+        size = result.get("bytes")
+        if not isinstance(snapshot_id, str) or not snapshot_id or not isinstance(size, int):
+            raise RuntimeError("BalatroBot returned an invalid checkpoint reference")
+        return snapshot_id, size
+
+    def load_memory_checkpoint(self, snapshot_id: str) -> AuthorityObservation:
+        result = self.client.checkpoint(op="restore", snapshot_id=snapshot_id)
+        if result.get("success") is not True:
+            raise RuntimeError("BalatroBot did not confirm checkpoint restore")
+        self.canonicalizer.reset()
+        self._current = self._settle(self.client.gamestate())
+        return self._current
+
+    def delete_memory_checkpoint(self, snapshot_id: str) -> None:
+        result = self.client.checkpoint(op="delete", snapshot_id=snapshot_id)
+        if result.get("success") is not True:
+            raise RuntimeError("BalatroBot did not confirm checkpoint deletion")
+
     def step(self, action: PublicAction) -> StepResult:
         if self._current is None:
             raise RuntimeError("reset must be called before step")

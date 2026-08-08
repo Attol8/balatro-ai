@@ -32,4 +32,5 @@ def test_snapshot_benchmark_requires_provenance_and_keeps_blob_ephemeral() -> No
 
     assert args.depth == 8
     assert args.repeats == 5
+    assert args.protocol == "file"
     assert not hasattr(args, "snapshot_path")

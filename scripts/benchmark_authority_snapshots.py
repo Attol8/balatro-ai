@@ -13,6 +13,7 @@ import tempfile
 import time
 from dataclasses import asdict
 from pathlib import Path
+from typing import Callable
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -90,15 +91,24 @@ def main() -> None:
             inference_budget=f"branch_depth={args.depth};repeats={args.repeats}",
             mods=tuple(args.mod),
         )
-        with tempfile.TemporaryDirectory(prefix="balatro-snapshot-") as temp_dir:
-            report = benchmark_file_snapshots(
+        if args.protocol == "memory":
+            report = benchmark_memory_snapshots(
                 backend,
                 spec,
-                Path(temp_dir) / "parent.jkr",
                 depth=args.depth,
                 repeats=args.repeats,
                 policy_seed=args.policy_seed,
             )
+        else:
+            with tempfile.TemporaryDirectory(prefix="balatro-snapshot-") as temp_dir:
+                report = benchmark_file_snapshots(
+                    backend,
+                    spec,
+                    Path(temp_dir) / "parent.jkr",
+                    depth=args.depth,
+                    repeats=args.repeats,
+                    policy_seed=args.policy_seed,
+                )
         payload = {"manifest": asdict(manifest), **report}
         encoded = json.dumps(payload, sort_keys=True)
         print(encoded)
@@ -125,14 +135,71 @@ def benchmark_file_snapshots(
     policy_seed: str,
 ) -> dict[str, object]:
     before_save = backend.reset(spec)
-    before_digest = _root_digest(before_save)
     started = time.perf_counter()
     backend.save_file_snapshot(path)
-    save_ms = _milliseconds_since(started)
+    capture_ms = _milliseconds_since(started)
     after_save = backend.observe()
-    after_digest = _root_digest(after_save)
-
     snapshot = path.read_bytes()
+    return _benchmark_restores(
+        backend,
+        before_save,
+        after_save,
+        lambda: backend.load_file_snapshot(path),
+        protocol="game_native_file_save_load",
+        snapshot={
+            "bytes": len(snapshot),
+            "sha256": hashlib.sha256(snapshot).hexdigest(),
+            "capture_ms": capture_ms,
+        },
+        depth=depth,
+        repeats=repeats,
+        policy_seed=policy_seed,
+    )
+
+
+def benchmark_memory_snapshots(
+    backend: BalatroBotBackend,
+    spec: RunSpec,
+    *,
+    depth: int,
+    repeats: int,
+    policy_seed: str,
+) -> dict[str, object]:
+    before_save = backend.reset(spec)
+    started = time.perf_counter()
+    snapshot_id, size = backend.create_memory_checkpoint()
+    capture_ms = _milliseconds_since(started)
+    after_save = backend.observe()
+    try:
+        return _benchmark_restores(
+            backend,
+            before_save,
+            after_save,
+            lambda: backend.load_memory_checkpoint(snapshot_id),
+            protocol="game_native_memory_checkpoint",
+            snapshot={"bytes": size, "capture_ms": capture_ms},
+            depth=depth,
+            repeats=repeats,
+            policy_seed=policy_seed,
+        )
+    finally:
+        backend.delete_memory_checkpoint(snapshot_id)
+
+
+def _benchmark_restores(
+    backend: BalatroBotBackend,
+    before_save: AuthorityObservation,
+    after_save: AuthorityObservation,
+    restore: Callable[[], AuthorityObservation],
+    *,
+    protocol: str,
+    snapshot: dict[str, object],
+    depth: int,
+    repeats: int,
+    policy_seed: str,
+) -> dict[str, object]:
+    before_digest = _root_digest(before_save)
+    after_digest = _root_digest(after_save)
     policy = DeterministicCoveragePolicy(policy_seed=policy_seed)
     actions, expected_digests = _record_branch(backend, after_save, policy, depth)
     mismatch: dict[str, object] | None = None
@@ -144,7 +211,7 @@ def benchmark_file_snapshots(
 
     for repeat in range(repeats):
         started = time.perf_counter()
-        restored = backend.load_file_snapshot(path)
+        restored = restore()
         restore_ms.append(_milliseconds_since(started))
         canonicalizer = BalatroBotCanonicalizer()
         restored_digest = _canonicalize(restored, canonicalizer)
@@ -183,18 +250,18 @@ def benchmark_file_snapshots(
         if mismatch is not None:
             break
 
-    return {
-        "protocol": "game_native_file_save_load",
-        "exact_observed_replay": mismatch is None,
-        "mismatch": mismatch,
-        "snapshot": {
-            "bytes": len(snapshot),
-            "sha256": hashlib.sha256(snapshot).hexdigest(),
-            "save_ms": save_ms,
+    snapshot.update(
+        {
             "restore_ms": restore_ms,
             "restore_p50_ms": statistics.median(restore_ms),
             "restore_max_ms": max(restore_ms),
-        },
+        }
+    )
+    return {
+        "protocol": protocol,
+        "exact_observed_replay": mismatch is None,
+        "mismatch": mismatch,
+        "snapshot": snapshot,
         "parent_canonical_digest": after_digest,
         "branch_actions": [action_to_data(action) for action in actions],
         "branch_canonical_digests": expected_digests,
@@ -265,6 +332,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--seed", default="1")
     parser.add_argument("--depth", type=int, default=8)
     parser.add_argument("--repeats", type=int, default=5)
+    parser.add_argument("--protocol", choices=("file", "memory"), default="file")
     parser.add_argument("--policy-seed", default="snapshot-benchmark-v1")
     parser.add_argument("--max-settle-polls", type=int, default=40)
     parser.add_argument("--settle-poll-delay", type=float, default=0.02)

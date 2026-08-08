@@ -50,6 +50,12 @@ class FakeClient:
         self.calls.append(("load", path))
         return {"success": True, "path": path}
 
+    def checkpoint(self, *, op, snapshot_id=None):
+        self.calls.append(("checkpoint", (op, snapshot_id)))
+        if op == "create":
+            return {"snapshot_id": "s1", "bytes": 123}
+        return {"success": True, "snapshot_id": snapshot_id}
+
 
 def test_backend_settles_after_two_identical_semantic_reads() -> None:
     initial = state()
@@ -88,6 +94,22 @@ def test_file_snapshot_restore_replaces_current_branch_root() -> None:
     assert observation.observed.canonical["money"] == 9
     assert ("save", str(path)) in client.calls
     assert ("load", str(path)) in client.calls
+
+
+def test_memory_checkpoint_restore_replaces_current_branch_root() -> None:
+    initial = state(money=4)
+    restored = state(money=9)
+    client = FakeClient(initial, polls=[initial, restored, restored])
+    backend = BalatroBotBackend(client, settle_poll_delay=0)  # type: ignore[arg-type]
+    backend.reset(RunSpec("RED", "WHITE", "1"))
+
+    snapshot_id, size = backend.create_memory_checkpoint()
+    observation = backend.load_memory_checkpoint(snapshot_id)
+    backend.delete_memory_checkpoint(snapshot_id)
+
+    assert (snapshot_id, size) == ("s1", 123)
+    assert observation.observed.canonical["money"] == 9
+    assert ("checkpoint", ("restore", "s1")) in client.calls
 
 
 def test_backend_never_settles_a_shop_missing_public_areas() -> None:

@@ -76,6 +76,24 @@ def test_save_and_load_use_private_file_endpoint_paths() -> None:
     ]
 
 
+def test_checkpoint_uses_opaque_reference_only_for_restore() -> None:
+    calls = []
+
+    def transport(payload: dict) -> dict:
+        calls.append(payload)
+        return {"jsonrpc": "2.0", "result": {"success": True}, "id": payload["id"]}
+
+    client = BalatroBotClient(transport=transport)
+
+    client.checkpoint(op="create")
+    client.checkpoint(op="restore", snapshot_id="s1")
+
+    assert [(call["method"], call["params"]) for call in calls] == [
+        ("checkpoint", {"op": "create"}),
+        ("checkpoint", {"op": "restore", "snapshot_id": "s1"}),
+    ]
+
+
 def test_rpc_error_raises_balatrobot_error() -> None:
     def transport(payload: dict) -> dict:
         return {

@@ -1,0 +1,297 @@
+diff --git a/balatrobot.lua b/balatrobot.lua
+--- a/balatrobot.lua
++++ b/balatrobot.lua
+@@ -16,5 +16 @@ BB_ENDPOINTS = {
+-  -- Screenshot endpoint
+-  "src/lua/endpoints/screenshot.lua",
+-  -- Game control endpoints
+-  "src/lua/endpoints/set.lua",
+-  "src/lua/endpoints/add.lua",
++  "src/lua/endpoints/checkpoint.lua",
+@@ -31,2 +26,0 @@ BB_ENDPOINTS = {
+-  "src/lua/endpoints/score_many.lua",
+-  "src/lua/endpoints/score_shop_candidate.lua",
+diff --git a/src/lua/endpoints/checkpoint.lua b/src/lua/endpoints/checkpoint.lua
+new file mode 100644
+--- /dev/null
++++ b/src/lua/endpoints/checkpoint.lua
+@@ -0,0 +1,79 @@
++-- Bounded in-memory checkpoints for privileged evaluator/search infrastructure.
++
++local RUN_RESTORE = assert(SMODS.load_file("src/lua/utils/run_restore.lua"))()
++local MAX_SNAPSHOTS = 64
++
++BB_CHECKPOINT_STORE = BB_CHECKPOINT_STORE or { entries = {}, count = 0, next_id = 1 }
++BB_CHECKPOINT_CLEAR = function()
++  BB_CHECKPOINT_STORE.entries = {}
++  BB_CHECKPOINT_STORE.count = 0
++end
++
++local function error_response(send_response, message, name)
++  send_response({ message = message, name = name or BB_ERROR_NAMES.BAD_REQUEST })
++end
++
++---@type Endpoint
++return {
++  name = "checkpoint",
++  description = "Create, restore, or delete a private in-memory run checkpoint",
++  schema = {
++    op = { type = "string", required = true, description = "create, restore, delete, or clear" },
++    snapshot_id = { type = "string", required = false, description = "Opaque checkpoint ID" },
++  },
++  requires_state = nil,
++
++  execute = function(args, send_response)
++    if args.op == "clear" then
++      BB_CHECKPOINT_CLEAR()
++      send_response({ success = true })
++      return
++    end
++    if args.op == "delete" then
++      if not BB_CHECKPOINT_STORE.entries[args.snapshot_id] then
++        error_response(send_response, "Unknown checkpoint")
++        return
++      end
++      BB_CHECKPOINT_STORE.entries[args.snapshot_id] = nil
++      BB_CHECKPOINT_STORE.count = BB_CHECKPOINT_STORE.count - 1
++      send_response({ success = true, snapshot_id = args.snapshot_id })
++      return
++    end
++    if args.op == "create" then
++      if G.STAGE ~= G.STAGES.RUN or G.F_NO_SAVING == true or G.action ~= nil
++        or not RUN_RESTORE.ready() then
++        error_response(send_response, "Checkpoint requires a settled decision state", BB_ERROR_NAMES.INVALID_STATE)
++        return
++      end
++      if BB_CHECKPOINT_STORE.count >= MAX_SNAPSHOTS then
++        error_response(send_response, "Checkpoint limit reached", BB_ERROR_NAMES.NOT_ALLOWED)
++        return
++      end
++
++      local old_run = G.FILE_HANDLER and G.FILE_HANDLER.run
++      local old_queued = G.FILE_HANDLER and G.FILE_HANDLER.update_queued
++      save_run()
++      local packed = STR_PACK(G.ARGS.save_run)
++      G.FILE_HANDLER.run = old_run
++      G.FILE_HANDLER.update_queued = old_queued
++      local snapshot_id = "s" .. tostring(BB_CHECKPOINT_STORE.next_id)
++      BB_CHECKPOINT_STORE.next_id = BB_CHECKPOINT_STORE.next_id + 1
++      BB_CHECKPOINT_STORE.entries[snapshot_id] = packed
++      BB_CHECKPOINT_STORE.count = BB_CHECKPOINT_STORE.count + 1
++      send_response({ snapshot_id = snapshot_id, bytes = #packed })
++      return
++    end
++    if args.op == "restore" then
++      local packed = BB_CHECKPOINT_STORE.entries[args.snapshot_id]
++      if not packed then
++        error_response(send_response, "Unknown checkpoint")
++        return
++      end
++      RUN_RESTORE.restore(packed, send_response, function()
++        send_response({ success = true, snapshot_id = args.snapshot_id })
++      end)
++      return
++    end
++    error_response(send_response, "Unknown checkpoint operation")
++  end,
++}
+diff --git a/src/lua/endpoints/load.lua b/src/lua/endpoints/load.lua
+--- a/src/lua/endpoints/load.lua
++++ b/src/lua/endpoints/load.lua
+@@ -14,0 +15 @@ local nativefs = require("nativefs")
++local RUN_RESTORE = assert(SMODS.load_file("src/lua/utils/run_restore.lua"))()
+@@ -40,0 +42 @@ return {
++    if BB_CHECKPOINT_CLEAR then BB_CHECKPOINT_CLEAR() end
+@@ -79,4 +81,2 @@ return {
+-    G:delete_run()
+-    G.SAVED_GAME = get_compressed(temp_filename) ---@diagnostic disable-line: undefined-global
+-
+-    if G.SAVED_GAME == nil then
++    local serialized = get_compressed(temp_filename) ---@diagnostic disable-line: undefined-global
++    if serialized == nil then
+@@ -91,19 +90,0 @@ return {
+-    G.SAVED_GAME = STR_UNPACK(G.SAVED_GAME)
+-
+-    -- Temporarily suppress "Card area not instantiated" warnings during load
+-    -- These are expected when loading a save from shop state (shop CardAreas
+-    -- are created later when the shop UI renders, and the game handles this)
+-    local original_print = print
+-    print = function(msg)
+-      if type(msg) == "string" and msg:find("ERROR LOADING GAME: Card area") then
+-        return -- suppress expected warning
+-      end
+-      original_print(msg)
+-    end
+-
+-    G:start_run({ savetext = G.SAVED_GAME })
+-
+-    -- Restore original print
+-    print = original_print
+-
+-    -- Clean up
+@@ -111,60 +92,4 @@ return {
+-
+-    local num_items = function(area)
+-      local count = 0
+-      if area and area.cards then
+-        for _, v in ipairs(area.cards) do
+-          if v.children.buy_button and v.children.buy_button.definition then
+-            count = count + 1
+-          end
+-        end
+-      end
+-      return count
+-    end
+-
+-    G.E_MANAGER:add_event(Event({
+-      no_delete = true,
+-      trigger = "condition",
+-      blocking = false,
+-      func = function()
+-        local done = false
+-
+-        if not G.STATE_COMPLETE or G.CONTROLLER.locked then
+-          return false
+-        end
+-
+-        if G.STATE == G.STATES.BLIND_SELECT then
+-          done = G.GAME.blind_on_deck ~= nil
+-            and G.blind_select_opts ~= nil
+-            and G.blind_select_opts["small"]:get_UIE_by_ID("tag_Small") ~= nil
+-        end
+-
+-        if G.STATE == G.STATES.SELECTING_HAND then
+-          done = G.hand ~= nil
+-        end
+-
+-        if G.STATE == G.STATES.ROUND_EVAL and G.round_eval then
+-          for _, b in ipairs(G.I.UIBOX) do
+-            if b:get_UIE_by_ID("cash_out_button") then
+-              done = true
+-            end
+-          end
+-        end
+-
+-        if G.STATE == G.STATES.SHOP then
+-          done = num_items(G.shop_booster) > 0 or num_items(G.shop_jokers) > 0 or num_items(G.shop_vouchers) > 0
+-        end
+-
+-        if G.STATE == G.STATES.SMODS_BOOSTER_OPENED then
+-          done = G.pack_cards and G.pack_cards.cards and #G.pack_cards.cards > 0
+-        end
+-
+-        if done then
+-          sendDebugMessage("Return load() - loaded from " .. path, "BB.ENDPOINTS")
+-          send_response({
+-            success = true,
+-            path = path,
+-          })
+-        end
+-        return done
+-      end,
+-    }))
++    RUN_RESTORE.restore(serialized, send_response, function()
++      sendDebugMessage("Return load() - loaded from " .. path, "BB.ENDPOINTS")
++      send_response({ success = true, path = path })
++    end)
+diff --git a/src/lua/endpoints/menu.lua b/src/lua/endpoints/menu.lua
+--- a/src/lua/endpoints/menu.lua
++++ b/src/lua/endpoints/menu.lua
+@@ -27,0 +28 @@ return {
++    if BB_CHECKPOINT_CLEAR then BB_CHECKPOINT_CLEAR() end
+diff --git a/src/lua/endpoints/start.lua b/src/lua/endpoints/start.lua
+--- a/src/lua/endpoints/start.lua
++++ b/src/lua/endpoints/start.lua
+@@ -79,0 +80 @@ return {
++    if BB_CHECKPOINT_CLEAR then BB_CHECKPOINT_CLEAR() end
+diff --git a/src/lua/utils/run_restore.lua b/src/lua/utils/run_restore.lua
+new file mode 100644
+--- /dev/null
++++ b/src/lua/utils/run_restore.lua
+@@ -0,0 +1,86 @@
++-- Shared game-native run restore and readiness checks.
++
++local run_restore = {}
++
++local function num_items(area)
++  local count = 0
++  for _, card in ipairs((area and area.cards) or {}) do
++    if card.children and card.children.buy_button and card.children.buy_button.definition then
++      count = count + 1
++    end
++  end
++  return count
++end
++
++function run_restore.ready()
++  if not G.STATE_COMPLETE or G.CONTROLLER.locked then return false end
++  if G.CONTROLLER.locks and G.CONTROLLER.locks.load then return false end
++
++  if G.STATE == G.STATES.BLIND_SELECT then
++    return G.GAME.blind_on_deck ~= nil
++      and G.blind_select_opts ~= nil
++      and G.blind_select_opts.small ~= nil
++      and G.blind_select_opts.small:get_UIE_by_ID("tag_Small") ~= nil
++  end
++  if G.STATE == G.STATES.SELECTING_HAND then
++    return G.hand ~= nil and G.hand.cards ~= nil
++  end
++  if G.STATE == G.STATES.ROUND_EVAL and G.round_eval then
++    for _, box in ipairs(G.I.UIBOX) do
++      if box.config and box.config.major == G.round_eval
++        and box:get_UIE_by_ID("cash_out_button") then return true end
++    end
++    return false
++  end
++  if G.STATE == G.STATES.SHOP then
++    return num_items(G.shop_booster) > 0
++      or num_items(G.shop_jokers) > 0
++      or num_items(G.shop_vouchers) > 0
++  end
++  if G.STATE == G.STATES.SMODS_BOOSTER_OPENED
++    or G.STATE == G.STATES.TAROT_PACK
++    or G.STATE == G.STATES.PLANET_PACK
++    or G.STATE == G.STATES.SPECTRAL_PACK
++    or G.STATE == G.STATES.STANDARD_PACK
++    or G.STATE == G.STATES.BUFFOON_PACK then
++    return G.pack_cards and G.pack_cards.cards and #G.pack_cards.cards > 0
++  end
++  return false
++end
++
++function run_restore.restore(serialized, send_response, on_ready)
++  local ok, save_table = pcall(STR_UNPACK, serialized)
++  if not ok or type(save_table) ~= "table" then
++    send_response({ message = "Invalid saved run", name = BB_ERROR_NAMES.INTERNAL_ERROR })
++    return
++  end
++
++  G:delete_run()
++  G.SAVED_GAME = save_table
++  local original_print = print
++  print = function(message)
++    if type(message) == "string" and message:find("ERROR LOADING GAME: Card area") then return end
++    original_print(message)
++  end
++  ok, save_table = pcall(G.start_run, G, { savetext = G.SAVED_GAME })
++  print = original_print
++  if not ok then
++    send_response({
++      message = "Failed to restore saved run: " .. tostring(save_table),
++      name = BB_ERROR_NAMES.INTERNAL_ERROR,
++    })
++    return
++  end
++
++  G.E_MANAGER:add_event(Event({
++    no_delete = true,
++    trigger = "condition",
++    blocking = false,
++    func = function()
++      if run_restore.ready() then on_ready() return true end
++      return false
++    end,
++  }))
++end
++
++return run_restore
