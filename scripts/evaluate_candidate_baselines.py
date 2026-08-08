@@ -15,7 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from balatro_ai_v2.backend import RunSpec
 from balatro_ai_v2.balatrobot.runner import AuthorityRunner
 from balatro_ai_v2.balatrobot.tracing import build_manifest
-from balatro_ai_v2.baselines import DeterministicRandomPolicy, GreedyImmediatePolicy
+from balatro_ai_v2.baselines import PUBLIC_BASELINE_NAMES, build_public_baseline
 from balatro_ai_v2.jackdaw import JackdawBackend, JackdawUnavailable, verify_jackdaw_runtime
 
 
@@ -24,16 +24,7 @@ def main() -> None:
     if args.seeds < 1 or args.max_decisions < 1:
         raise SystemExit("--seeds and --max-decisions must be positive")
     root = Path(__file__).resolve().parents[1]
-    policy = (
-        DeterministicRandomPolicy(args.policy_seed)
-        if args.policy == "random"
-        else GreedyImmediatePolicy()
-    )
-    policy_name = (
-        f"DeterministicRandomPolicy:{args.policy_seed}"
-        if args.policy == "random"
-        else "GreedyImmediatePolicy"
-    )
+    policy, policy_name = build_public_baseline(args.policy, args.policy_seed)
     backend: JackdawBackend | None = None
     started = time.perf_counter()
     try:
@@ -69,7 +60,7 @@ def main() -> None:
             launch_fast=False,
             launch_headless=False,
             profile_mode="all_unlocked",
-            inference_budget="public_actions<=256;tactical_candidates<=2048",
+            inference_budget="public_actions<=256;tactical_candidates<=2048;draw_branches<=512",
         )
         payload = {
             "candidate_only": True,
@@ -104,7 +95,7 @@ def main() -> None:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Evaluate public-only baselines in pinned Jackdaw")
-    parser.add_argument("--policy", choices=("random", "greedy"), required=True)
+    parser.add_argument("--policy", choices=PUBLIC_BASELINE_NAMES, required=True)
     parser.add_argument("--policy-seed", default="baseline-v1")
     parser.add_argument("--seed-start", type=int, default=1)
     parser.add_argument("--seeds", type=int, default=20)

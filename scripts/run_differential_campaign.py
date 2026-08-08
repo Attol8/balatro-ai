@@ -17,9 +17,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from balatro_ai_v2.backend import RunSpec
 from balatro_ai_v2.baselines import (
+    PUBLIC_BASELINE_NAMES,
     DeterministicCoveragePolicy,
-    DeterministicRandomPolicy,
-    GreedyImmediatePolicy,
+    build_public_baseline,
 )
 from balatro_ai_v2.balatrobot.backend import BalatroBotBackend
 from balatro_ai_v2.balatrobot.client import BalatroBotClient, BalatroBotError
@@ -92,12 +92,8 @@ def main() -> None:
                 coverage_mode=args.coverage_mode,
             )
             policy_name = f"DeterministicCoveragePolicy:{args.policy_seed}:{args.coverage_mode}"
-        elif args.policy == "random":
-            policy = DeterministicRandomPolicy(args.policy_seed)
-            policy_name = f"DeterministicRandomPolicy:{args.policy_seed}"
         else:
-            policy = GreedyImmediatePolicy()
-            policy_name = "GreedyImmediatePolicy"
+            policy, policy_name = build_public_baseline(args.policy, args.policy_seed)
         for seed_number in range(args.seed_start, args.seed_start + args.seeds):
             seed = str(seed_number)
             spec = RunSpec(args.deck, args.stake, seed)
@@ -114,7 +110,8 @@ def main() -> None:
                 launch_headless=args.headless_server,
                 profile_mode=profile_mode,
                 inference_budget=(
-                    f"tactical_candidates<=2048;public_actions<=256;shop_actions<={args.max_shop_actions}"
+                    "tactical_candidates<=2048;public_actions<=256;draw_branches<=512;"
+                    f"shop_actions<={args.max_shop_actions}"
                 ),
                 mods=tuple(args.mod),
             )
@@ -181,7 +178,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--seed-start", type=int, default=1)
     parser.add_argument("--seeds", type=int, default=4)
     parser.add_argument("--policy-seed", default="coverage-v1")
-    parser.add_argument("--policy", choices=("coverage", "random", "greedy"), default="coverage")
+    parser.add_argument(
+        "--policy", choices=("coverage", *PUBLIC_BASELINE_NAMES), default="coverage"
+    )
     parser.add_argument("--max-shop-actions", type=int, default=3)
     parser.add_argument("--pack-strategy", choices=("mixed", "skip", "pick"), default="mixed")
     parser.add_argument("--coverage-mode", choices=("default", "extended"), default="default")

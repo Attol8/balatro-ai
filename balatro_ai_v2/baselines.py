@@ -10,7 +10,8 @@ import hashlib
 import json
 from collections import Counter
 from collections.abc import Iterator
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+from fractions import Fraction
 from itertools import combinations, islice
 from typing import Literal
 
@@ -35,8 +36,10 @@ from balatro_ai_v2.actions import (
     SkipPack,
     UseConsumable,
     action_to_data,
+    is_legal,
 )
-from balatro_ai_v2.balatrobot.runner import ActionSource, PublicHistoryStep
+from balatro_ai_v2.balatrobot.runner import ActionSource, PublicHistoryStep, PublicPolicy
+from balatro_ai_v2.belief import PublicDrawBelief
 from balatro_ai_v2.public_state import HiddenHandCard, Phase, PublicObservation, VisiblePlayingCard
 
 
@@ -45,6 +48,18 @@ _RANK_ORDER = {"A": 14, "K": 13, "Q": 12, "J": 11, "T": 10, **{str(value): value
 _REORDER_TYPES = (ReorderHand, ReorderJokers, ReorderConsumables)
 _MAX_TACTICAL_CANDIDATES = 2048
 _MAX_PUBLIC_ACTIONS = 256
+_MAX_PUBLIC_DRAW_BRANCHES = 512
+PUBLIC_BASELINE_NAMES = ("random", "greedy", "tactical")
+
+
+def build_public_baseline(name: str, policy_seed: str) -> tuple[PublicPolicy, str]:
+    if name == "random":
+        return DeterministicRandomPolicy(policy_seed), f"DeterministicRandomPolicy:{policy_seed}"
+    if name == "greedy":
+        return GreedyImmediatePolicy(), "GreedyImmediatePolicy"
+    if name == "tactical":
+        return PublicBeliefTacticalPolicy(), "PublicBeliefTacticalPolicy"
+    raise ValueError(f"unknown public baseline {name!r}")
 
 
 @dataclass(frozen=True, slots=True)
@@ -80,16 +95,23 @@ class GreedyImmediatePolicy:
         del history
         if observation.phase == Phase.SELECTING_HAND:
             return _best_play(observation, 0)[0]
-        actions = _bounded_actions(legal_actions())
-        expected = {
-            Phase.BLIND_SELECT: SelectBlind,
-            Phase.ROUND_EVAL: CashOut,
-            Phase.SHOP: LeaveShop,
-            Phase.PACK: SkipPack,
-        }.get(observation.phase)
-        if expected is None:
-            raise RuntimeError(f"no greedy action for {observation.phase.value}")
-        return next(action for action in actions if isinstance(action, expected))
+        return _passive_control_action(observation, legal_actions)
+
+
+@dataclass(frozen=True, slots=True)
+class PublicBeliefTacticalPolicy:
+    """One-ply public expectimax over a bounded set of single-card discards."""
+
+    def choose_action(
+        self,
+        observation: PublicObservation,
+        legal_actions: ActionSource,
+        history: tuple[PublicHistoryStep, ...],
+    ) -> PublicAction:
+        del history
+        if observation.phase == Phase.SELECTING_HAND:
+            return _belief_tactical_action(observation)
+        return _passive_control_action(observation, legal_actions)
 
 
 @dataclass(frozen=True, slots=True)
@@ -197,6 +219,14 @@ class DeterministicCoveragePolicy:
 
 
 def _best_play(observation: PublicObservation, tie_seed: int) -> tuple[PlayCards, str]:
+    action, hand_name, _ = _best_play_with_score(observation, tie_seed)
+    return action, hand_name
+
+
+def _best_play_with_score(
+    observation: PublicObservation,
+    tie_seed: int,
+) -> tuple[PlayCards, str, Fraction]:
     slots = tuple(HandSlot(index) for index in range(len(observation.hand)))
     maximum = min(5, observation.selection_limit, len(slots))
     candidate_slots = islice(
@@ -204,7 +234,7 @@ def _best_play(observation: PublicObservation, tie_seed: int) -> tuple[PlayCards
         _MAX_TACTICAL_CANDIDATES,
     )
     hand_stats = {hand.name: hand for hand in observation.hand_stats}
-    ranked: list[tuple[float, int, PlayCards, str]] = []
+    best: tuple[Fraction, int, PlayCards, str] | None = None
     for selected in candidate_slots:
         cards = tuple(observation.hand[slot.value] for slot in selected)
         hand_name = _classify(cards)
@@ -213,19 +243,76 @@ def _best_play(observation: PublicObservation, tie_seed: int) -> tuple[PlayCards
         base_mult = stat.mult if stat is not None else 1
         card_chips = sum(_card_chips(card) for card in cards)
         mult_bonus = sum(4 for card in cards if isinstance(card, VisiblePlayingCard) and card.enhancement == "MULT")
-        multiplier = 1.0
+        multiplier = Fraction(1)
         for card in cards:
             if isinstance(card, VisiblePlayingCard) and card.enhancement == "GLASS":
-                multiplier *= 2.0
+                multiplier *= 2
             if isinstance(card, VisiblePlayingCard) and card.edition == "POLYCHROME":
-                multiplier *= 1.5
+                multiplier *= Fraction(3, 2)
         score = (base_chips + card_chips) * (base_mult + mult_bonus) * multiplier
         tie = (tie_seed ^ sum((slot.value + 1) * 0x9E3779B1 for slot in selected)) & 0xFFFFFFFF
-        ranked.append((score, tie, PlayCards(selected), hand_name))
-    if not ranked:
+        candidate = (score, tie, PlayCards(selected), hand_name)
+        if best is None or (candidate[0], candidate[1]) > (best[0], best[1]):
+            best = candidate
+    if best is None:
         raise RuntimeError("selecting-hand state has no legal cards")
-    _, _, action, hand_name = max(ranked, key=lambda item: (item[0], item[1]))
-    return action, hand_name
+    score, _, action, hand_name = best
+    return action, hand_name, score
+
+
+def _belief_tactical_action(observation: PublicObservation) -> PublicAction:
+    play, _, current_score = _best_play_with_score(observation, 0)
+    if (
+        observation.round.discards_left <= 0
+        or any(isinstance(card, HiddenHandCard) for card in observation.hand)
+        or not observation.hand
+    ):
+        return play
+    try:
+        belief = PublicDrawBelief.from_observation(observation)
+    except ValueError:
+        return play
+    if belief.draw_count == 0:
+        return play
+
+    candidates = tuple(HandSlot(index) for index in range(len(observation.hand)))
+    if len(candidates) * len(belief.remaining_deck) > _MAX_PUBLIC_DRAW_BRANCHES:
+        return play
+
+    ranked: list[tuple[Fraction, int, DiscardCards]] = []
+    for slot in candidates:
+        discard = DiscardCards((slot,))
+        if not is_legal(observation, discard):
+            continue
+        weighted_score = Fraction(0)
+        for entry in belief.remaining_deck:
+            hand = list(observation.hand)
+            hand[slot.value] = entry.card
+            hypothetical = replace(observation, hand=tuple(hand))
+            _, _, score = _best_play_with_score(hypothetical, 0)
+            weighted_score += entry.count * score
+        expected_score = weighted_score / belief.draw_count
+        ranked.append((expected_score, -slot.value, discard))
+    if not ranked:
+        return play
+    expected_score, _, discard = max(ranked, key=lambda item: (item[0], item[1]))
+    return discard if expected_score > current_score else play
+
+
+def _passive_control_action(
+    observation: PublicObservation,
+    legal_actions: ActionSource,
+) -> PublicAction:
+    actions = _bounded_actions(legal_actions())
+    expected = {
+        Phase.BLIND_SELECT: SelectBlind,
+        Phase.ROUND_EVAL: CashOut,
+        Phase.SHOP: LeaveShop,
+        Phase.PACK: SkipPack,
+    }.get(observation.phase)
+    if expected is None:
+        raise RuntimeError(f"no passive action for {observation.phase.value}")
+    return next(action for action in actions if isinstance(action, expected))
 
 
 def _coverage_discard(

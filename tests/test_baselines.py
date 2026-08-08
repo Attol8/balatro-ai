@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from dataclasses import replace
+
+import pytest
 
 from balatro_ai_v2.actions import (
     BuyPack,
@@ -19,12 +22,14 @@ from balatro_ai_v2.baselines import (
     DeterministicCoveragePolicy,
     DeterministicRandomPolicy,
     GreedyImmediatePolicy,
+    PublicBeliefTacticalPolicy,
     _classify,
+    build_public_baseline,
 )
 from balatro_ai_v2.balatrobot.adapter import to_public_observation
 from balatro_ai_v2.balatrobot.runner import PublicHistoryStep
-from balatro_ai_v2.public_state import VisiblePlayingCard
-from state_factory import item_card, state
+from balatro_ai_v2.public_state import DeckCardCount, VisiblePlayingCard
+from state_factory import item_card, playing_card, state
 
 
 def test_coverage_policy_is_identical_for_hidden_state_twins() -> None:
@@ -58,6 +63,107 @@ def test_random_and_greedy_baselines_are_identical_for_hidden_twins() -> None:
         right_action = policy.choose_action(right_public, lambda: iter_legal_actions(right_public), ())
         assert action_to_data(left_action) == action_to_data(right_action)
         assert is_legal(left_public, left_action)
+
+
+def test_public_belief_tactical_policy_is_identical_for_hidden_twins() -> None:
+    left = state("SELECTING_HAND", seed="PRIVATE-A")
+    right = deepcopy(left)
+    right["seed"] = "PRIVATE-B"
+    right["cards"]["cards"].reverse()
+    for card in right["cards"]["cards"]:
+        card["id"] += 5000
+    left_public = to_public_observation(left)
+    right_public = to_public_observation(right)
+    policy = PublicBeliefTacticalPolicy()
+
+    left_action = policy.choose_action(left_public, lambda: iter_legal_actions(left_public), ())
+    right_action = policy.choose_action(right_public, lambda: iter_legal_actions(right_public), ())
+
+    assert action_to_data(left_action) == action_to_data(right_action)
+    assert is_legal(left_public, left_action)
+
+
+def test_public_belief_tactical_policy_discards_low_card_for_better_public_draw() -> None:
+    raw = state("SELECTING_HAND")
+    raw["hand"]["cards"][2] = playing_card("D_2", card_id=6)
+    observation = to_public_observation(raw)
+
+    action = PublicBeliefTacticalPolicy().choose_action(
+        observation,
+        lambda: iter_legal_actions(observation),
+        (),
+    )
+
+    assert action_to_data(action) == {"cards": [2], "type": "discard_cards"}
+
+
+def test_public_belief_tactical_policy_plays_when_discards_are_unavailable() -> None:
+    raw = state("SELECTING_HAND")
+    raw["round"]["discards_left"] = 0
+    observation = to_public_observation(raw)
+
+    action = PublicBeliefTacticalPolicy().choose_action(
+        observation,
+        lambda: iter_legal_actions(observation),
+        (),
+    )
+
+    assert action_to_data(action)["type"] == "play_cards"
+
+
+def test_public_belief_tactical_policy_falls_back_for_face_down_hand() -> None:
+    raw = state("SELECTING_HAND")
+    raw["hand"]["cards"][0] = playing_card("S_A", card_id=100, hidden=True)
+    observation = to_public_observation(raw)
+
+    action = PublicBeliefTacticalPolicy().choose_action(
+        observation,
+        lambda: iter_legal_actions(observation),
+        (),
+    )
+
+    assert action_to_data(action)["type"] == "play_cards"
+
+
+def test_public_belief_tactical_policy_falls_back_for_invalid_counts() -> None:
+    observation = to_public_observation(state("SELECTING_HAND"))
+    malformed = replace(observation, draw_count=observation.draw_count + 1)
+
+    action = PublicBeliefTacticalPolicy().choose_action(
+        malformed,
+        lambda: iter_legal_actions(malformed),
+        (),
+    )
+
+    assert action_to_data(action)["type"] == "play_cards"
+
+
+def test_public_belief_tactical_policy_falls_back_above_branch_budget() -> None:
+    observation = to_public_observation(state("SELECTING_HAND"))
+    large_hand = (observation.hand * 3)[:8]
+    large_deck = tuple(
+        DeckCardCount(VisiblePlayingCard(str(index), "S", effect_text=str(index)), 1)
+        for index in range(65)
+    )
+    oversized = replace(
+        observation,
+        hand=large_hand,
+        remaining_deck=large_deck,
+        draw_count=len(large_deck),
+    )
+
+    action = PublicBeliefTacticalPolicy().choose_action(
+        oversized,
+        lambda: iter_legal_actions(oversized),
+        (),
+    )
+
+    assert action_to_data(action)["type"] == "play_cards"
+
+
+def test_public_baseline_factory_rejects_unknown_policy() -> None:
+    with pytest.raises(ValueError, match="unknown public baseline"):
+        build_public_baseline("private-clone", "seed")
 
 
 def test_greedy_baseline_leaves_shop_without_private_economy_model() -> None:

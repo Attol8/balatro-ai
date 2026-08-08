@@ -21,3 +21,11 @@ def test_candidate_baseline_cli_has_only_public_control_policies() -> None:
     assert args.policy == "greedy"
     assert not hasattr(args, "model")
     assert not hasattr(args, "search")
+
+
+def test_candidate_baseline_cli_exposes_public_belief_tactical_control() -> None:
+    parser = _load_script().build_parser()
+
+    args = parser.parse_args(["--policy", "tactical"])
+
+    assert args.policy == "tactical"
