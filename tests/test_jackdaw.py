@@ -115,6 +115,22 @@ def test_card_value_normalization_drops_null_optional_fields() -> None:
     assert value == {"effect": "", "ability": {"x_mult": 1}}
 
 
+def test_swashbuckler_display_mult_tracks_other_owned_sell_values() -> None:
+    owned = SimpleNamespace(center_key="j_joker", sell_cost=3, ability={})
+    owned_swash = SimpleNamespace(center_key="j_swashbuckler", sell_cost=2, ability={"mult": 1})
+    pack_swash = SimpleNamespace(center_key="j_swashbuckler", sell_cost=2, ability={"mult": 1})
+    state = {
+        "jokers": [owned, owned_swash],
+        "shop_cards": [],
+        "pack_cards": [pack_swash],
+    }
+
+    jackdaw._refresh_swashbuckler_mult(state)
+
+    assert owned_swash.ability["mult"] == 3
+    assert pack_swash.ability["mult"] == 5
+
+
 def test_card_modifier_normalization_preserves_explicit_empty_effect(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         jackdaw,

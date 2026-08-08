@@ -97,6 +97,28 @@ def _vanilla_most_played_hand(
     return best
 
 
+def _refresh_swashbuckler_mult(game_state: Mapping[str, Any]) -> None:
+    """Mirror ``Card:update`` for owned, shop, and pack Swashbucklers."""
+
+    jokers = game_state.get("jokers")
+    if not isinstance(jokers, list):
+        raise RuntimeError("Jackdaw joker state is unavailable")
+    owned_sell_total = sum(int(getattr(card, "sell_cost", 0)) for card in jokers)
+    for area_name in ("jokers", "shop_cards", "pack_cards"):
+        cards = game_state.get(area_name, [])
+        if not isinstance(cards, list):
+            raise RuntimeError(f"Jackdaw {area_name} state is unavailable")
+        for card in cards:
+            if getattr(card, "center_key", None) != "j_swashbuckler":
+                continue
+            ability = getattr(card, "ability", None)
+            if not isinstance(ability, dict):
+                raise RuntimeError("Jackdaw Swashbuckler ability state is unavailable")
+            is_owned = any(card is owned_card for owned_card in jokers)
+            own_sell_cost = int(getattr(card, "sell_cost", 0)) if is_owned else 0
+            ability["mult"] = owned_sell_total - own_sell_cost
+
+
 @dataclass(slots=True)
 class JackdawBackend:
     profile_mode: str = field(default="all_unlocked", init=False)
@@ -336,9 +358,13 @@ class JackdawBackend:
     def _observation(self, raw: dict[str, Any]) -> AuthorityObservation:
         # Both adapters must pass independently.  The public conversion catches
         # leaks/unsupported shapes; canonicalization catches semantic drift.
+        game_state = getattr(self._backend, "_gs", None)
+        if not isinstance(game_state, Mapping):
+            raise RuntimeError("Jackdaw backend does not expose its active game state")
+        _refresh_swashbuckler_mult(game_state)
         normalized = _normalize_jackdaw_bridge(
             raw,
-            getattr(self._backend, "_gs", None),
+            game_state,
             self._stale_shop_areas,
             self._poker_hand_iteration_order,
         )
