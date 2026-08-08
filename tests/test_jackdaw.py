@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from enum import Enum
 from types import SimpleNamespace
 
 import pytest
@@ -25,6 +26,27 @@ from state_factory import state
 
 def test_candidate_module_is_lazy_and_revision_is_pinned() -> None:
     assert jackdaw.JACKDAW_REVISION == "dbedc66255fe594cce7b7cccc188c8a11649d9ec"
+
+
+def test_candidate_win_uses_vanilla_terminal_phase() -> None:
+    class CandidatePhase(Enum):
+        ROUND_EVAL = "round_eval"
+        GAME_OVER = "game_over"
+
+    game_state = {"won": True, "phase": CandidatePhase.ROUND_EVAL}
+
+    jackdaw._finish_vanilla_win(game_state)
+
+    assert game_state["phase"] is CandidatePhase.GAME_OVER
+
+
+def test_candidate_win_does_not_advance_to_endless_ante() -> None:
+    backend = object.__new__(jackdaw.JackdawBackend)
+    game_state = {"won": True, "round_resets": {"ante": 8}}
+
+    backend._advance_ante_at_round_end(game_state)
+
+    assert game_state["round_resets"]["ante"] == 8
 
 
 def test_bridge_normalization_preserves_candidate_round_timing() -> None:

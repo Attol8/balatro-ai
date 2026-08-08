@@ -133,7 +133,24 @@ A fresh public-action Red/White seed-1 smoke run completed in real Balatro and i
 - Apply deterministic joker effects sequentially in visible joker order using public semantic keys and public state. Start with fixed hand-family effects, visible money/discard/deck-count effects, card-rank/suit effects, and editions. Do not parse locale-dependent tooltip prose or invent hidden scaling counters.
 - For scaling jokers whose accumulated value is not yet structured, model only the action-dependent public delta: Runner gains on Straights, Spare Trousers on Two Pair/Full House, and Square Joker on four-card hands. Their unknown current constant must not be guessed.
 - Keep the patch only if the frozen Red/White seeds 1-100 panel materially beats 7.29 rounds or produces a complete win, then replay the unchanged policy through real Balatro lockstep.
-- The dirty development panel passes the retention threshold: 100/100 episodes complete at 96.55 decisions/s, average round rises from 7.29 to 7.86 and average ante from 2.50 to 2.67. Seed 63 reaches ante 7 instead of ante 6. It still wins 0/100, so freeze and authority replay are required before using it as a new floor.
+- Commit `cf324f6` passes the retention threshold: its clean frozen panel completes 100/100 episodes at 96.98 decisions/s, average round rises from 7.29 to 7.86 and average ante from 2.50 to 2.67. Seed 63 reaches ante 7 instead of ante 6. The unchanged seed-1 policy reproduces 23/23 real Balatro transitions exactly and loses at ante 1. This is the new honest floor, not a solve: it still wins 0/100.
+
+### Active Increment: Replacement-Aware Joker Slots
+
+- Fix the smallest directly observed strategic dead end: a full joker area currently makes every better shop Joker disappear from the legal buy set, so the policy never upgrades. On candidate seed 63 it kept Business Card, Blue Joker, Banner, and Runner while passing on The Order at ante 6, then died at ante 7.
+- Starting at ante 6, inspect only the visible shop offers and owned public Joker descriptors. If the best affordable visible Joker exceeds the weakest sellable owned Joker by a fixed material margin, sell that owned Joker; on the next public decision the existing buy path purchases the still-visible offer. Permit at most one such replacement per run. Earlier and repeated replacement churn is excluded because the first bounded panel regressed after selling Banner in ante 2, and the seed-63 probe later tried to replace Banner with the build-incompatible Idol after correctly acquiring The Order.
+- Count the sale against the existing bounded shop-action budget, require purchase affordability after the visible sell proceeds, and never sell an Eternal Joker. If no material replacement is visible, preserve the current behavior.
+- Do not enable selling during an open pack, synthesize a combined sell-and-buy action, reserve a slot speculatively, parse tooltip prose, or add private candidate state. Pack-time selling is still outside the current verified public action contract.
+- Keep the patch only if hidden-twin and explicit replacement tests pass and a frozen Red/White seeds 1-100 panel beats the 7.86-round floor or records a complete win. Any retained policy then runs unchanged through a clean real Balatro differential trace that reaches the replacement action when feasible.
+- The dirty development panel passes that gate: 100/100 runs complete, average round rises from 7.86 to 7.89, and seed 63 clears ante 8 after replacing Business Card with The Order. This is candidate-only evidence from an unfrozen revision; commit, clean rerun, and exact real Balatro replay remain mandatory.
+
+### Active Increment: Win-Boundary Integrity
+
+- Real public-action evidence fixes the exact contract: beating the ante-8 boss transitions directly from the final play to `GAME_OVER` with `won=true` and `ante=8`; there is no round-eval cash-out action. Jackdaw instead marks `won`, advances to ante 9, and waits in `ROUND_EVAL`, so the unchanged evaluator drives a genuine clear into Endless Mode and can overwrite the flag with a later loss.
+- Correct the pinned-candidate compatibility layer, not the authority runner or differential gate. When the win ante boss is beaten, suppress Jackdaw's next-ante setup and expose the engine state as `GAME_OVER` immediately. Exact authority semantics remain mandatory.
+- Add focused compatibility regressions for no ante advance and terminal phase conversion, then rerun the unchanged 100-seed panel. Historical candidate reports that continued after `won=true` are outcome-invalid and must not be used as win-rate evidence.
+- This repairs candidate outcome accounting only. Any candidate win remains candidate evidence until the exact frozen policy reproduces every public action and canonical state through BalatroBot.
+- The corrected dirty panel reports seed 63 as `GAME_OVER`, `won=true`, ante 8, round 24 after 212 decisions. The full development panel records 1/100 candidate wins at 7.89 average rounds. This is the first honest candidate clear in the rebuild, not yet a Balatro solve claim.
 
 ## Design
 

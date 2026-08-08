@@ -12,10 +12,12 @@ from balatro_ai_v2.actions import (
     ConsumableSlot,
     DiscardCards,
     HandSlot,
+    JokerSlot,
     LeaveShop,
     PackOfferSlot,
     PlayCards,
     RerollShop,
+    SellJoker,
     SkipPack,
     UseConsumable,
     action_to_data,
@@ -34,7 +36,13 @@ from balatro_ai_v2.baselines import (
 )
 from balatro_ai_v2.balatrobot.adapter import to_public_observation
 from balatro_ai_v2.balatrobot.runner import PublicHistoryStep
-from balatro_ai_v2.public_state import DeckCardCount, HandStat, PublicItem, VisiblePlayingCard
+from balatro_ai_v2.public_state import (
+    DeckCardCount,
+    HandStat,
+    PublicItem,
+    PublicObservation,
+    VisiblePlayingCard,
+)
 from state_factory import item_card, playing_card, state
 
 
@@ -250,6 +258,175 @@ def test_strategic_baseline_prefers_a_great_joker_pack_pick() -> None:
 
     assert isinstance(action, ChoosePackCard)
     assert action.card.value == 1
+
+
+def _joker_shop(
+    *,
+    ante: int = 6,
+    money: int = 20,
+    offer_buy: int = 4,
+    joker_cards: list[dict[str, object]] | None = None,
+) -> PublicObservation:
+    raw = state("SHOP", money=money)
+    raw["ante_num"] = ante
+    raw["shop"]["cards"] = [item_card("j_order", card_id=20, kind="JOKER", buy=offer_buy)]
+    raw["shop"]["count"] = 1
+    cards = (
+        joker_cards
+        if joker_cards is not None
+        else [item_card(f"j_weak_{index}", card_id=40 + index, kind="JOKER") for index in range(5)]
+    )
+    raw["jokers"]["cards"] = cards
+    raw["jokers"]["count"] = len(cards)
+    return to_public_observation(raw)
+
+
+def test_strategic_baseline_sells_late_economy_joker_for_material_upgrade() -> None:
+    shop = _joker_shop(
+        money=12,
+        joker_cards=[
+            item_card("j_trousers", card_id=40, kind="JOKER", sell=4),
+            item_card("j_business", card_id=41, kind="JOKER", sell=2),
+            item_card("j_blue_joker", card_id=42, kind="JOKER", sell=3),
+            item_card("j_banner", card_id=43, kind="JOKER", sell=2),
+            item_card("j_runner", card_id=44, kind="JOKER", sell=3),
+        ],
+    )
+
+    action = PublicStrategicPolicy().choose_action(
+        shop,
+        lambda: iter_legal_actions(shop),
+        (),
+    )
+
+    assert action == SellJoker(JokerSlot(1))
+    assert is_legal(shop, action)
+
+
+def test_strategic_baseline_buys_replacement_after_slot_is_open() -> None:
+    shop = _joker_shop(
+        money=14,
+        joker_cards=[
+            item_card("j_trousers", card_id=40, kind="JOKER"),
+            item_card("j_blue_joker", card_id=42, kind="JOKER"),
+            item_card("j_banner", card_id=43, kind="JOKER"),
+            item_card("j_runner", card_id=44, kind="JOKER"),
+        ],
+    )
+
+    action = PublicStrategicPolicy().choose_action(
+        shop,
+        lambda: iter_legal_actions(shop),
+        (),
+    )
+
+    assert isinstance(action, BuyShopCard)
+    assert action.card.value == 0
+
+
+def test_strategic_baseline_never_sells_an_eternal_joker() -> None:
+    jokers = [item_card(f"j_eternal_{index}", card_id=40 + index, kind="JOKER") for index in range(5)]
+    for item in jokers:
+        item["modifier"] = {"eternal": True}
+    shop = _joker_shop(joker_cards=jokers)
+
+    action = PublicStrategicPolicy().choose_action(
+        shop,
+        lambda: iter_legal_actions(shop),
+        (),
+    )
+
+    assert not isinstance(action, SellJoker)
+
+
+def test_strategic_baseline_does_not_churn_early_jokers() -> None:
+    shop = _joker_shop(ante=5)
+
+    action = PublicStrategicPolicy().choose_action(
+        shop,
+        lambda: iter_legal_actions(shop),
+        (),
+    )
+
+    assert not isinstance(action, SellJoker)
+
+
+def test_strategic_baseline_makes_at_most_one_replacement() -> None:
+    shop = _joker_shop(ante=8)
+    history = (PublicHistoryStep(shop, SellJoker(JokerSlot(0)), shop),)
+
+    action = PublicStrategicPolicy().choose_action(
+        shop,
+        lambda: iter_legal_actions(shop),
+        history,
+    )
+
+    assert not isinstance(action, SellJoker)
+
+
+def test_strategic_baseline_never_sells_a_negative_joker() -> None:
+    negative = item_card("j_weak", card_id=40, kind="JOKER")
+    negative["modifier"] = {"edition": "NEGATIVE"}
+    eternals = [item_card(f"j_eternal_{index}", card_id=41 + index, kind="JOKER") for index in range(4)]
+    for item in eternals:
+        item["modifier"] = {"eternal": True}
+    shop = _joker_shop(joker_cards=[negative, *eternals])
+
+    action = PublicStrategicPolicy().choose_action(
+        shop,
+        lambda: iter_legal_actions(shop),
+        (),
+    )
+
+    assert not isinstance(action, SellJoker)
+
+
+def test_strategic_baseline_does_not_orphan_replacement_at_shop_budget() -> None:
+    shop = _joker_shop(money=12)
+    history = tuple(PublicHistoryStep(shop, RerollShop(), shop) for _ in range(5))
+
+    action = PublicStrategicPolicy().choose_action(
+        shop,
+        lambda: iter_legal_actions(shop),
+        history,
+    )
+
+    assert not isinstance(action, SellJoker)
+
+
+def test_strategic_baseline_preserves_interest_floor_before_replacement() -> None:
+    shop = _joker_shop(
+        money=10,
+        offer_buy=5,
+        joker_cards=[
+            item_card(f"j_weak_{index}", card_id=40 + index, kind="JOKER", sell=2)
+            for index in range(5)
+        ],
+    )
+
+    action = PublicStrategicPolicy().choose_action(
+        shop,
+        lambda: iter_legal_actions(shop),
+        (),
+    )
+
+    assert not isinstance(action, SellJoker)
+
+
+def test_strategic_baseline_keeps_pack_replacement_fail_closed() -> None:
+    raw = state("BUFFOON_PACK")
+    raw["pack"]["cards"] = [item_card("j_order", card_id=30, kind="JOKER")]
+    raw["jokers"]["cards"] = [
+        item_card(f"j_weak_{index}", card_id=40 + index, kind="JOKER") for index in range(5)
+    ]
+    raw["jokers"]["count"] = 5
+    pack = to_public_observation(raw)
+
+    legal = tuple(iter_legal_actions(pack))
+    action = PublicStrategicPolicy().choose_action(pack, lambda: iter(legal), ())
+
+    assert isinstance(action, SkipPack)
+    assert not any(isinstance(candidate, SellJoker) for candidate in legal)
 
 
 def test_coverage_policy_leaves_shop_at_its_public_budget() -> None:

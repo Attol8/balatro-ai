@@ -273,6 +273,10 @@ class JackdawBackend:
             raw_after = self._handle("gamestate", {})
         if voucher_effect is not None and self._apply_immediate_voucher_effect(voucher_effect):
             raw_after = self._handle("gamestate", {})
+        if method == "play" and raw_after.get("won") is True:
+            game_state = getattr(self._backend, "_gs", None)
+            _finish_vanilla_win(game_state)
+            raw_after = self._handle("gamestate", {})
         if method == "next_round" and raw_after.get("state") == "BLIND_SELECT":
             self._initialize_orbital_choices()
         if method == "play" and raw_after.get("state") == "ROUND_EVAL":
@@ -666,6 +670,9 @@ class JackdawBackend:
                 game._advance_ante = original_advance_ante
 
     def _advance_ante_at_round_end(self, game_state: dict[str, Any]) -> None:
+        if game_state.get("won") is True:
+            return
+
         from jackdaw.engine.vouchers import get_next_voucher_key
 
         hand_levels = game_state.get("hand_levels")
@@ -756,6 +763,20 @@ class JackdawBackend:
             finally:
                 round_lifecycle.reset_round_targets = original_reset
                 game._populate_shop = original_populate_shop
+
+
+def _finish_vanilla_win(game_state: object) -> None:
+    """Expose Balatro's immediate terminal win instead of Jackdaw Endless setup."""
+
+    if not isinstance(game_state, dict) or game_state.get("won") is not True:
+        raise RuntimeError("Jackdaw win state is unavailable")
+    phase = game_state.get("phase")
+    phase_value = getattr(phase, "value", phase)
+    if phase_value in {"game_over", "GAME_OVER"}:
+        return
+    if phase_value not in {"round_eval", "ROUND_EVAL"}:
+        raise RuntimeError(f"Jackdaw won in unexpected phase {phase_value!r}")
+    game_state["phase"] = getattr(type(phase), "GAME_OVER", "GAME_OVER")
 
 
 def _normalize_jackdaw_bridge(

@@ -87,8 +87,13 @@ loses at ante 1. Strategic behavior cloning reaches 6.84 rounds and a bounded
 20,480-step public-return PPO continuation reaches 7.03; both win 0/100 and are
 below the heuristic, so that tuning lane is closed. The immediate bottleneck is
 public tactical scoring that ignores owned-joker synergies, not optimizer
-choice. A first public-only scoring repair raises the dirty development panel
-from 7.29 to 7.86 average rounds but still wins 0/100. Balatro's in-memory restore is exact
+choice. A frozen public-only scoring repair raises the panel from 7.29 to 7.86
+average rounds but still wins 0/100. A bounded late-game Joker replacement then
+raises the dirty development panel to 7.89 and clears ante 8 on candidate seed
+63. Jackdaw had been advancing candidate wins into Endless Mode; the adapter now
+matches real Balatro's immediate `GAME_OVER`, ante-8 win boundary. The resulting
+1/100 candidate win is not a solve claim until the frozen policy reproduces
+exactly through BalatroBot. Balatro's in-memory restore is exact
 on the tested branch but only modestly faster than file restore, so it will
 serve as an oracle/audit worker while Jackdaw carries high-volume training.
 

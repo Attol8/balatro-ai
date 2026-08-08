@@ -24,6 +24,7 @@ from balatro_ai_v2.actions import (
     ConsumableSlot,
     DiscardCards,
     HandSlot,
+    JokerSlot,
     LeaveShop,
     PlayCards,
     PublicAction,
@@ -32,6 +33,7 @@ from balatro_ai_v2.actions import (
     ReorderJokers,
     RerollShop,
     SelectBlind,
+    SellJoker,
     SkipBlind,
     SkipPack,
     UseConsumable,
@@ -129,6 +131,22 @@ _GOOD_JOKERS = {
     "j_to_the_moon",
     "j_trousers",
 }
+_SCALING_JOKERS = {
+    "j_green_joker",
+    "j_ride_the_bus",
+    "j_runner",
+    "j_square",
+    "j_trousers",
+}
+_ECONOMY_JOKERS = {
+    "j_business",
+    "j_cloud_9",
+    "j_delayed_grat",
+    "j_faceless",
+    "j_golden",
+    "j_to_the_moon",
+}
+_REPLACEMENT_MARGIN = 20
 
 
 def build_public_baseline(name: str, policy_seed: str) -> tuple[PublicPolicy, str]:
@@ -609,6 +627,17 @@ def _strategic_shop_action(
         interest_floor = 10
     spendable = observation.money - interest_floor
 
+    replacement = _replacement_sale(
+        observation,
+        actions,
+        shop_steps=shop_steps,
+        max_shop_actions=max_shop_actions,
+        interest_floor=interest_floor,
+        already_replaced=any(isinstance(step.action, SellJoker) for step in history),
+    )
+    if replacement is not None:
+        return replacement
+
     joker_buys = [
         action
         for action in actions
@@ -722,6 +751,72 @@ def _joker_value(item: PublicItem) -> int:
     if item.perishable_rounds is not None:
         value -= 10
     return value
+
+
+def _owned_joker_value(item: PublicItem, ante: int) -> int:
+    value = _joker_value(item)
+    if item.key in _SCALING_JOKERS:
+        value += 20
+    if ante >= 4 and item.key in _ECONOMY_JOKERS:
+        value -= 50
+    return value
+
+
+def _replacement_sale(
+    observation: PublicObservation,
+    actions: list[PublicAction],
+    *,
+    shop_steps: int,
+    max_shop_actions: int,
+    interest_floor: int,
+    already_replaced: bool,
+) -> SellJoker | None:
+    if observation.ante < 6 or already_replaced:
+        return None
+    if observation.joker_limit <= 0 or len(observation.jokers) != observation.joker_limit:
+        return None
+    if shop_steps + 1 >= max_shop_actions:
+        return None
+
+    sellable = [
+        (index, item)
+        for index, item in enumerate(observation.jokers)
+        if not item.eternal
+        and item.edition != "NEGATIVE"
+        and item.sell_cost is not None
+        and item.sell_cost >= 0
+    ]
+    if not sellable:
+        return None
+    weakest_index, weakest = min(
+        sellable,
+        key=lambda entry: (
+            _owned_joker_value(entry[1], observation.ante),
+            -entry[1].sell_cost,
+            entry[0],
+        ),
+    )
+
+    owned_keys = {item.key for item in observation.jokers}
+    building_after_sale = len(observation.jokers) - 1 < min(4, observation.joker_limit)
+    offers = [
+        item
+        for item in observation.shop
+        if item.kind.upper() == "JOKER"
+        and item.key not in owned_keys
+        and item.buy_cost is not None
+        and item.buy_cost >= 0
+        and (building_after_sale or _joker_value(item) >= 25)
+        and observation.money + weakest.sell_cost - item.buy_cost >= interest_floor
+    ]
+    if not offers:
+        return None
+    best_offer = max(offers, key=lambda item: (_joker_value(item), -item.buy_cost, item.key))
+    if _joker_value(best_offer) < _owned_joker_value(weakest, observation.ante) + _REPLACEMENT_MARGIN:
+        return None
+
+    action = SellJoker(JokerSlot(weakest_index))
+    return action if action in actions else None
 
 
 def _action_of_type(
