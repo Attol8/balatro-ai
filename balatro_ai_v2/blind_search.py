@@ -19,6 +19,11 @@ from balatro_ai_v2.actions import (
     is_legal,
 )
 from balatro_ai_v2.baselines import _coverage_discard, _play_score
+from balatro_ai_v2.joker_rules import (
+    TACTICAL_EXACT_JOKERS,
+    exact_joker_multiplicity,
+    faceless_discard_reward,
+)
 from balatro_ai_v2.policy import PublicHistoryStep
 from balatro_ai_v2.preboss_search import ParticleResult
 from balatro_ai_v2.public_state import (
@@ -31,21 +36,6 @@ from balatro_ai_v2.public_state import (
 
 
 _SUPPORTED_CURRENT_BLINDS = frozenset({"small blind", "big blind"})
-_SUPPORTED_JOKERS = frozenset(
-    {
-        "j_bull",
-        "j_crafty",
-        "j_droll",
-        "j_greedy_joker",
-        "j_gluttenous_joker",
-        "j_joker",
-        "j_lusty_joker",
-        "j_mystic_summit",
-        "j_riff_raff",
-        "j_scary_face",
-        "j_wily",
-    }
-)
 _RANK_SORT = {
     "2": 2,
     "3": 3,
@@ -79,6 +69,7 @@ class _RolloutState:
     hand: tuple[VisiblePlayingCard, ...]
     deck_index: int
     chips: Fraction
+    money: int
     hands_left: int
     discards_left: int
     hands_played: int
@@ -218,6 +209,7 @@ class PublicBlindBeliefSearch:
             hand=tuple(card for card in observation.hand if isinstance(card, VisiblePlayingCard)),
             deck_index=0,
             chips=Fraction(observation.round.chips),
+            money=observation.money,
             hands_left=observation.round.hands_left,
             discards_left=observation.round.discards_left,
             hands_played=observation.round.hands_played,
@@ -320,7 +312,8 @@ def _supports_rollout(observation: PublicObservation) -> bool:
         *(entry.card for entry in observation.remaining_deck),
     )
     return (
-        all(joker.key in _SUPPORTED_JOKERS for joker in observation.jokers)
+        all(joker.key in TACTICAL_EXACT_JOKERS for joker in observation.jokers)
+        and exact_joker_multiplicity(observation.jokers)
         and all(joker.edition in {None, "FOIL"} and not joker.debuffed for joker in observation.jokers)
         and not any("observatory" in voucher.lower() for voucher in observation.used_vouchers)
         and all(card.enhancement is None for card in cards)
@@ -343,6 +336,7 @@ def _transition(
 ) -> _RolloutState:
     selected = tuple(slot.value for slot in action.cards)
     chips = state.chips
+    money = state.money
     hands_left = state.hands_left
     discards_left = state.discards_left
     hands_played = state.hands_played
@@ -360,6 +354,8 @@ def _transition(
         hands_played += 1
         stats = _increment_hand_stat(stats, hand_name)
     else:
+        discarded = tuple(state.hand[index] for index in selected)
+        money += faceless_discard_reward(root.jokers, discarded)
         discards_left -= 1
         discards_used += 1
 
@@ -376,6 +372,7 @@ def _transition(
         hand=tuple(hand),
         deck_index=end,
         chips=Fraction(chips),
+        money=money,
         hands_left=hands_left,
         discards_left=discards_left,
         hands_played=hands_played,
@@ -392,6 +389,7 @@ def _observation_for_state(
     return replace(
         root,
         hand=state.hand,
+        money=state.money,
         required_hand_slots=(),
         draw_count=max(0, tape_size - state.deck_index),
         round=replace(

@@ -32,6 +32,12 @@ from balatro_ai_v2.baselines import (
     _joker_value,
     _play_score,
 )
+from balatro_ai_v2.joker_rules import (
+    PREBLIND_EXACT_JOKERS,
+    exact_joker_multiplicity,
+    faceless_discard_reward,
+    purchased_discard_bonus,
+)
 from balatro_ai_v2.policy import ActionSource, PublicHistoryStep, PublicPolicy
 from balatro_ai_v2.public_state import (
     HandStat,
@@ -44,20 +50,6 @@ from balatro_ai_v2.public_state import (
 
 
 _SUPPORTED_BOSSES = frozenset({"the wall", "violet vessel", "the needle", "the water"})
-_SUPPORTED_JOKERS = frozenset(
-    {
-        "j_bull",
-        "j_crafty",
-        "j_droll",
-        "j_greedy_joker",
-        "j_gluttenous_joker",
-        "j_joker",
-        "j_lusty_joker",
-        "j_mystic_summit",
-        "j_scary_face",
-        "j_wily",
-    }
-)
 _RANK_SORT = {
     "2": 2,
     "3": 3,
@@ -106,6 +98,7 @@ class PublicPreBossSearchPolicy:
     last_decision: PreBossSearchDecision | None = field(default=None, init=False)
     decisions: list[PreBossSearchDecision] = field(default_factory=list, init=False)
     _searched_shop: tuple[int, int] | None = field(default=None, init=False, repr=False)
+    _pending_leave_shop: tuple[int, int] | None = field(default=None, init=False, repr=False)
 
     def __post_init__(self) -> None:
         if self.particles <= 0:
@@ -124,16 +117,24 @@ class PublicPreBossSearchPolicy:
         self.last_decision = None
         if not history and observation.phase == Phase.BLIND_SELECT:
             self._searched_shop = None
+            self._pending_leave_shop = None
             self.decisions.clear()
+
+        shop_key = (observation.ante, observation.round_no)
+        if observation.phase == Phase.SHOP and self._pending_leave_shop == shop_key:
+            self._pending_leave_shop = None
+            leave = LeaveShop()
+            if leave not in legal_actions():
+                raise ValueError("buy-then-leave option reached a shop without LeaveShop")
+            return leave
 
         baseline_action = self.baseline.choose_action(observation, legal_actions, history)
         blind = _eligible_next_blind(observation)
-        shop_key = (observation.ante, observation.round_no)
         if (
             blind is None
             or not _supports_shop_rollout(observation)
             or self._searched_shop == shop_key
-            or not _represented_baseline_action(observation, baseline_action)
+            or not isinstance(baseline_action, LeaveShop)
         ):
             return baseline_action
 
@@ -172,6 +173,8 @@ class PublicPreBossSearchPolicy:
             and best.wins >= baseline_result.wins + self.minimum_particle_gain
             else baseline_action
         )
+        if selected != baseline_action and isinstance(selected, BuyShopCard):
+            self._pending_leave_shop = shop_key
         self._searched_shop = shop_key
         decision = PreBossSearchDecision(
             root_digest=observation.digest(),
@@ -211,19 +214,6 @@ def _eligible_next_blind(observation: PublicObservation) -> PublicBlind | None:
     return blind
 
 
-def _represented_baseline_action(
-    observation: PublicObservation,
-    action: PublicAction,
-) -> bool:
-    if isinstance(action, LeaveShop):
-        return True
-    return (
-        isinstance(action, BuyShopCard)
-        and action.card.value < len(observation.shop)
-        and observation.shop[action.card.value].key in _SUPPORTED_JOKERS
-    )
-
-
 def _candidate_buys(
     observation: PublicObservation,
     maximum: int,
@@ -233,7 +223,8 @@ def _candidate_buys(
         action = BuyShopCard(ShopSlot(index))
         if (
             item.kind.upper() != "JOKER"
-            or item.key not in _SUPPORTED_JOKERS
+            or item.key not in PREBLIND_EXACT_JOKERS
+            or not exact_joker_multiplicity((*observation.jokers, item))
             or item.edition not in {None, "FOIL"}
             or item.rental
             or item.debuffed
@@ -309,12 +300,8 @@ def _simulate_boss(
     del deck[:hand_size]
     jokers = observation.jokers + ((bought_joker,) if bought_joker is not None else ())
     money = observation.money - ((bought_joker.buy_cost or 0) if bought_joker else 0)
-    previous_total_hands = observation.round.hands_left + observation.round.hands_played
-    hands = max(1, previous_total_hands)
-    if boss.name.lower() == "the needle":
-        hands = 1
-    previous_total_discards = observation.round.discards_left + observation.round.discards_used
-    discards = 0 if boss.name.lower() == "the water" else previous_total_discards
+    hands = _next_blind_hands(observation, boss)
+    discards = _next_blind_discards(observation, boss, bought_joker)
     stats = tuple(replace(stat, played_this_round=0) for stat in observation.hand_stats)
     total = Fraction(0)
 
@@ -351,6 +338,8 @@ def _simulate_boss(
         discard = _coverage_discard(tactical, play, hand_name)
         selected = discard if discard is not None and discard in legal else play
         if discard is not None and selected == discard:
+            discarded = tuple(hand[card.value] for card in discard.cards)
+            money += faceless_discard_reward(jokers, discarded)
             discards_left -= 1
             discards_used += 1
         else:
@@ -372,6 +361,29 @@ def _simulate_boss(
         if total >= boss.score:
             break
     return total
+
+
+def _next_blind_discards(
+    observation: PublicObservation,
+    blind: PublicBlind,
+    bought_joker: PublicItem | None,
+) -> int:
+    if blind.name.lower() == "the water":
+        return 0
+    # Cash-out has already reset discards_left for the next round.  The
+    # defeated round's discards_used remains visible but must not be added.
+    return observation.round.discards_left + purchased_discard_bonus(bought_joker)
+
+
+def _next_blind_hands(
+    observation: PublicObservation,
+    blind: PublicBlind,
+) -> int:
+    if blind.name.lower() == "the needle":
+        return 1
+    # Cash-out has already reset hands_left for the next round.  The defeated
+    # round's hands_played remains visible but must not be added.
+    return max(1, observation.round.hands_left)
 
 
 def _increment_hand_stat(stats: tuple[HandStat, ...], hand_name: str) -> tuple[HandStat, ...]:
@@ -398,7 +410,8 @@ def _supports_shop_rollout(observation: PublicObservation) -> bool:
     cards = tuple(entry.card for entry in observation.remaining_deck)
     return (
         not observation.consumables
-        and all(joker.key in _SUPPORTED_JOKERS for joker in observation.jokers)
+        and all(joker.key in PREBLIND_EXACT_JOKERS for joker in observation.jokers)
+        and exact_joker_multiplicity(observation.jokers)
         and all(joker.edition in {None, "FOIL"} and not joker.debuffed for joker in observation.jokers)
         and not any("observatory" in voucher.lower() for voucher in observation.used_vouchers)
         and all(card.enhancement is None for card in cards)

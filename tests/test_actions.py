@@ -208,6 +208,22 @@ def test_debuffed_credit_card_does_not_extend_purchase_floor() -> None:
     assert not is_legal(to_public_observation(debuffed_raw), action)
 
 
+def test_credit_card_purchase_floor_stacks_per_active_copy() -> None:
+    raw = state("SHOP", money=-20)
+    raw["jokers"]["cards"] = [
+        item_card("j_credit_card", card_id=30, kind="JOKER"),
+        item_card("j_credit_card", card_id=31, kind="JOKER"),
+    ]
+    raw["jokers"]["count"] = 2
+    raw["shop"]["cards"][0]["cost"]["buy"] = 20
+
+    action = BuyShopCard(ShopSlot(0))
+    assert is_legal(to_public_observation(raw), action)
+
+    raw["jokers"]["cards"][1]["state"] = {"debuff": True}
+    assert not is_legal(to_public_observation(raw), action)
+
+
 def test_reorder_generator_exposes_only_adjacent_swaps() -> None:
     observation = to_public_observation(state("SELECTING_HAND"))
     reorders = [

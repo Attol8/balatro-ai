@@ -467,14 +467,11 @@ def _is_adjacent_order(order: tuple[object, ...], size: int) -> bool:
 def _can_spend(observation: PublicObservation, cost: int | None) -> bool:
     if cost is None:
         return False
-    floor = (
-        -20
-        if any(
-            item.key == "j_credit_card" and not item.debuffed
-            for item in observation.jokers
-        )
-        else 0
+    active_credit_cards = sum(
+        item.key == "j_credit_card" and not item.debuffed
+        for item in observation.jokers
     )
+    floor = -20 * active_credit_cards
     return observation.money - cost >= floor
 
 

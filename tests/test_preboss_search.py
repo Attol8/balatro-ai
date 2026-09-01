@@ -1,11 +1,26 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from dataclasses import replace
 
 from balatro_ai_v2.actions import BuyShopCard, LeaveShop, iter_legal_actions
 from balatro_ai_v2.balatrobot.adapter import to_public_observation
-from balatro_ai_v2.preboss_search import PublicPreBossSearchPolicy
+from balatro_ai_v2.preboss_search import (
+    PublicPreBossSearchPolicy,
+    _next_blind_discards,
+    _next_blind_hands,
+)
 from state_factory import item_card, playing_card, state
+
+
+class _LeaveShopPolicy:
+    def choose_action(self, observation, legal_actions, history):
+        del observation, legal_actions, history
+        return LeaveShop()
+
+
+def _search_policy(**kwargs):
+    return PublicPreBossSearchPolicy(baseline=_LeaveShopPolicy(), **kwargs)
 
 
 def _preboss_shop(*, boss_score: int = 2500):
@@ -54,7 +69,7 @@ def _preboss_shop(*, boss_score: int = 2500):
 
 def test_preboss_search_buys_only_for_a_shared_particle_survival_gain() -> None:
     observation = to_public_observation(_preboss_shop())
-    policy = PublicPreBossSearchPolicy(particles=8, minimum_particle_gain=2)
+    policy = _search_policy(particles=8, minimum_particle_gain=2)
 
     action = policy.choose_action(
         observation,
@@ -70,21 +85,21 @@ def test_preboss_search_buys_only_for_a_shared_particle_survival_gain() -> None:
     assert policy.last_decision.selected == action
 
 
-def test_preboss_search_returns_control_to_baseline_after_one_shop_intervention() -> None:
+def test_preboss_search_executes_an_override_as_buy_then_leave() -> None:
     observation = to_public_observation(_preboss_shop())
-    policy = PublicPreBossSearchPolicy(particles=4, minimum_particle_gain=2)
+    policy = _search_policy(particles=4, minimum_particle_gain=2)
     first = policy.choose_action(observation, lambda: iter_legal_actions(observation), ())
     assert isinstance(first, BuyShopCard)
 
     after_raw = _preboss_shop()
-    after_raw["shop"]["cards"] = [
-        item_card("j_blue_joker", card_id=21, kind="JOKER", buy=2)
-    ]
-    after_raw["shop"]["count"] = 1
+    after_raw["jokers"]["cards"].append(after_raw["shop"]["cards"].pop(0))
+    after_raw["jokers"]["count"] = 5
+    after_raw["shop"]["count"] = 0
+    after_raw["money"] -= 2
     after = to_public_observation(after_raw)
     second = policy.choose_action(after, lambda: iter_legal_actions(after), ())
 
-    assert isinstance(second, BuyShopCard)
+    assert isinstance(second, LeaveShop)
 
 
 def test_preboss_search_hidden_twins_share_tapes_statistics_and_action() -> None:
@@ -96,8 +111,8 @@ def test_preboss_search_hidden_twins_share_tapes_statistics_and_action() -> None
         card["id"] += 10_000
     left_observation = to_public_observation(left)
     right_observation = to_public_observation(right)
-    left_policy = PublicPreBossSearchPolicy(particles=8)
-    right_policy = PublicPreBossSearchPolicy(particles=8)
+    left_policy = _search_policy(particles=8)
+    right_policy = _search_policy(particles=8)
 
     left_action = left_policy.choose_action(
         left_observation,
@@ -117,7 +132,7 @@ def test_preboss_search_hidden_twins_share_tapes_statistics_and_action() -> None
 
 def test_preboss_search_leaves_when_no_particle_gain_clears_the_margin() -> None:
     observation = to_public_observation(_preboss_shop(boss_score=4000))
-    policy = PublicPreBossSearchPolicy(particles=8, minimum_particle_gain=2)
+    policy = _search_policy(particles=8, minimum_particle_gain=2)
 
     action = policy.choose_action(
         observation,
@@ -131,7 +146,7 @@ def test_preboss_search_leaves_when_no_particle_gain_clears_the_margin() -> None
 
 
 def test_preboss_search_fails_closed_outside_the_scoring_envelope() -> None:
-    policy = PublicPreBossSearchPolicy(particles=4)
+    policy = _search_policy(particles=4)
     supported = to_public_observation(_preboss_shop())
     policy.choose_action(supported, lambda: iter_legal_actions(supported), ())
     assert policy.last_decision is not None
@@ -161,8 +176,123 @@ def test_preboss_search_fails_closed_with_a_held_consumable() -> None:
     ]
     raw["consumables"]["count"] = 1
     observation = to_public_observation(raw)
-    policy = PublicPreBossSearchPolicy(particles=4)
+    policy = _search_policy(particles=4)
 
     policy.choose_action(observation, lambda: iter_legal_actions(observation), ())
 
+    assert policy.last_decision is None
+
+
+def test_preboss_search_does_not_override_a_baseline_purchase() -> None:
+    raw = _preboss_shop()
+    raw["shop"]["cards"] = [
+        item_card("j_blue_joker", card_id=20, kind="JOKER", buy=2)
+    ]
+    observation = to_public_observation(raw)
+    policy = PublicPreBossSearchPolicy(particles=4)
+
+    action = policy.choose_action(
+        observation,
+        lambda: iter_legal_actions(observation),
+        (),
+    )
+
+    assert isinstance(action, BuyShopCard)
+    assert policy.last_decision is None
+
+
+def test_buying_drunkard_adds_a_next_blind_discard_except_against_water() -> None:
+    raw = _preboss_shop(boss_score=10_000)
+    raw["round"]["discards_left"] = 0
+    raw["round"]["discards_used"] = 0
+    raw["shop"]["cards"] = [
+        item_card("j_drunkard", card_id=20, kind="JOKER", buy=2)
+    ]
+    observation = to_public_observation(raw)
+    drunkard = observation.shop[0]
+    wall = next(blind for blind in observation.blinds if blind.kind == "BOSS")
+    water = replace(wall, name="The Water")
+
+    without = _next_blind_discards(observation, wall, None)
+    with_drunkard = _next_blind_discards(observation, wall, drunkard)
+    against_water = _next_blind_discards(observation, water, drunkard)
+
+    assert with_drunkard == without + 1
+    assert against_water == 0
+
+
+def test_shop_hands_are_already_reset_for_the_next_blind() -> None:
+    raw = _preboss_shop()
+    raw["round"]["hands_left"] = 4
+    raw["round"]["hands_played"] = 3
+    observation = to_public_observation(raw)
+    wall = next(blind for blind in observation.blinds if blind.kind == "BOSS")
+
+    assert _next_blind_hands(observation, wall) == 4
+    assert _next_blind_hands(observation, replace(wall, name="The Needle")) == 1
+
+
+def test_preboss_capability_rejects_riff_raff_before_blind_setup() -> None:
+    owned_raw = _preboss_shop()
+    owned_raw["jokers"]["cards"][0] = item_card(
+        "j_riff_raff",
+        card_id=40,
+        kind="JOKER",
+    )
+    offered_raw = _preboss_shop()
+    offered_raw["shop"]["cards"] = [
+        item_card("j_riff_raff", card_id=20, kind="JOKER", buy=2)
+    ]
+
+    for raw in (owned_raw, offered_raw):
+        observation = to_public_observation(raw)
+        policy = _search_policy(particles=4)
+        action = policy.choose_action(
+            observation,
+            lambda: iter_legal_actions(observation),
+            (),
+        )
+        assert isinstance(action, LeaveShop)
+        assert policy.last_decision is None
+
+
+def test_preboss_capability_rejects_uncertified_credit_card_duplicates() -> None:
+    raw = _preboss_shop()
+    raw["jokers"]["cards"][:2] = [
+        item_card("j_credit_card", card_id=40, kind="JOKER"),
+        item_card("j_credit_card", card_id=41, kind="JOKER"),
+    ]
+    observation = to_public_observation(raw)
+    policy = _search_policy(particles=4)
+
+    action = policy.choose_action(
+        observation,
+        lambda: iter_legal_actions(observation),
+        (),
+    )
+
+    assert isinstance(action, LeaveShop)
+    assert policy.last_decision is None
+
+
+def test_preboss_candidates_reject_a_second_credit_card() -> None:
+    raw = _preboss_shop()
+    raw["jokers"]["cards"][0] = item_card(
+        "j_credit_card",
+        card_id=40,
+        kind="JOKER",
+    )
+    raw["shop"]["cards"] = [
+        item_card("j_credit_card", card_id=20, kind="JOKER", buy=2)
+    ]
+    observation = to_public_observation(raw)
+    policy = _search_policy(particles=4)
+
+    action = policy.choose_action(
+        observation,
+        lambda: iter_legal_actions(observation),
+        (),
+    )
+
+    assert isinstance(action, LeaveShop)
     assert policy.last_decision is None

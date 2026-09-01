@@ -3,10 +3,21 @@ from __future__ import annotations
 from copy import deepcopy
 
 from balatro_ai_v2.actions import action_to_data, is_legal, iter_legal_actions
-from balatro_ai_v2.actions import ConsumableSlot, DiscardCards, HandSlot, UseConsumable
+from balatro_ai_v2.actions import (
+    ConsumableSlot,
+    DiscardCards,
+    HandSlot,
+    PlayCards,
+    UseConsumable,
+)
 from balatro_ai_v2.baselines import PublicStrategicPolicy, build_public_baseline
 from balatro_ai_v2.balatrobot.adapter import to_public_observation
-from balatro_ai_v2.blind_search import PublicBlindBeliefSearch
+from balatro_ai_v2.blind_search import (
+    PublicBlindBeliefSearch,
+    _RolloutState,
+    _transition,
+)
+from fractions import Fraction
 from state_factory import item_card, playing_card, state
 
 
@@ -114,6 +125,104 @@ def test_blind_search_fails_closed_for_unsupported_joker_and_clears_telemetry() 
 
     assert search.choose_action(unsupported, unsupported_baseline, ()) == unsupported_baseline
     assert search.last_decision is None
+
+
+def test_blind_search_fails_closed_for_uncertified_credit_card_duplicates() -> None:
+    raw = _supported_raw()
+    raw["jokers"]["cards"] = [
+        item_card("j_credit_card", card_id=98, kind="JOKER"),
+        item_card("j_credit_card", card_id=99, kind="JOKER"),
+    ]
+    raw["jokers"]["count"] = 2
+    observation = to_public_observation(raw)
+    baseline = PublicStrategicPolicy().choose_action(
+        observation,
+        lambda: iter_legal_actions(observation),
+        (),
+    )
+    search = _search()
+
+    assert search.choose_action(observation, baseline, ()) == baseline
+    assert search.last_decision is None
+
+
+def test_faceless_discard_updates_public_rollout_money() -> None:
+    raw = _supported_raw()
+    raw["hand"]["cards"] = [
+        playing_card("S_K", card_id=50),
+        playing_card("H_Q", card_id=51),
+        playing_card("D_J", card_id=52),
+    ]
+    raw["hand"]["count"] = 3
+    raw["jokers"]["cards"] = [
+        item_card("j_faceless", card_id=99, kind="JOKER")
+    ]
+    raw["jokers"]["count"] = 1
+    observation = to_public_observation(raw)
+    initial = _RolloutState(
+        hand=tuple(observation.hand),
+        deck_index=0,
+        chips=Fraction(0),
+        money=observation.money,
+        hands_left=observation.round.hands_left,
+        discards_left=observation.round.discards_left,
+        hands_played=observation.round.hands_played,
+        discards_used=observation.round.discards_used,
+        hand_stats=observation.hand_stats,
+    )
+
+    after = _transition(
+        observation,
+        initial,
+        DiscardCards((HandSlot(0), HandSlot(1), HandSlot(2))),
+        (),
+    )
+
+    assert after.money == observation.money + 5
+
+
+def test_faceless_reward_changes_later_bull_score() -> None:
+    raw = _supported_raw()
+    raw["hand"]["cards"] = [
+        playing_card("S_K", card_id=50),
+        playing_card("H_Q", card_id=51),
+        playing_card("D_J", card_id=52),
+        playing_card("C_T", card_id=53),
+    ]
+    raw["hand"]["count"] = 4
+    raw["jokers"]["cards"] = [
+        item_card("j_faceless", card_id=98, kind="JOKER"),
+        item_card("j_bull", card_id=99, kind="JOKER"),
+    ]
+    raw["jokers"]["count"] = 2
+    observation = to_public_observation(raw)
+    initial = _RolloutState(
+        hand=tuple(observation.hand),
+        deck_index=0,
+        chips=Fraction(0),
+        money=observation.money,
+        hands_left=observation.round.hands_left,
+        discards_left=observation.round.discards_left,
+        hands_played=observation.round.hands_played,
+        discards_used=observation.round.discards_used,
+        hand_stats=observation.hand_stats,
+    )
+
+    after_discard = _transition(
+        observation,
+        initial,
+        DiscardCards((HandSlot(0), HandSlot(1), HandSlot(2))),
+        (),
+    )
+    after_play = _transition(
+        observation,
+        after_discard,
+        PlayCards((HandSlot(0),)),
+        (),
+    )
+
+    assert after_discard.money == 9
+    assert after_play.chips == 33
 
 
 def test_discard_candidates_preserve_the_best_play_when_outsiders_exist() -> None:
