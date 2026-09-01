@@ -7,7 +7,11 @@ from pathlib import Path
 import pytest
 
 from balatro_ai_v2.balatrobot.adapter import to_public_observation
-from balatro_ai_v2.belief import PublicDrawBelief
+from balatro_ai_v2.belief import (
+    DrawOutcomeLimitExceeded,
+    PublicDrawBelief,
+    canonical_remaining_deck,
+)
 from balatro_ai_v2.public_state import DeckCardCount, VisiblePlayingCard
 from state_factory import playing_card, state
 
@@ -22,6 +26,51 @@ def test_exact_without_replacement_probability_and_expectation() -> None:
     assert belief.matching_count(lambda card: card.rank == "A") == 2
     assert belief.probability_at_least(lambda card: card.rank == "A", draws=2) == Fraction(5, 6)
     assert belief.expected_matches(lambda card: card.rank == "A", draws=2) == Fraction(1)
+
+
+def test_exact_multivariate_draw_outcomes_preserve_duplicate_multiplicity() -> None:
+    belief = PublicDrawBelief(
+        (_entry("A", "S", 2), _entry("K", "H", 1)),
+        draw_count=3,
+    )
+
+    outcomes = belief.exact_outcomes(2)
+
+    assert sum((outcome.probability for outcome in outcomes), Fraction(0)) == 1
+    probabilities = {
+        tuple(card.rank for card in outcome.drawn_cards): outcome.probability
+        for outcome in outcomes
+    }
+    assert probabilities == {("A", "A"): Fraction(1, 3), ("A", "K"): Fraction(2, 3)}
+
+
+def test_exact_draws_merge_split_entries_and_ignore_entry_order() -> None:
+    card = VisiblePlayingCard("A", "S")
+    split = PublicDrawBelief(
+        (
+            DeckCardCount(VisiblePlayingCard("K", "H"), 1),
+            DeckCardCount(card, 1),
+            DeckCardCount(card, 1),
+        ),
+        draw_count=3,
+    )
+    merged = PublicDrawBelief(
+        (DeckCardCount(card, 2), DeckCardCount(VisiblePlayingCard("K", "H"), 1)),
+        draw_count=3,
+    )
+
+    assert split.exact_outcomes(2) == merged.exact_outcomes(2)
+    assert canonical_remaining_deck(split.remaining_deck) == merged.remaining_deck
+
+
+def test_exact_draw_outcome_limit_fails_instead_of_truncating() -> None:
+    belief = PublicDrawBelief(
+        (_entry("A", "S", 1), _entry("K", "H", 1), _entry("Q", "D", 1)),
+        draw_count=3,
+    )
+
+    with pytest.raises(DrawOutcomeLimitExceeded, match="exceeds 2"):
+        belief.exact_outcomes(1, max_outcomes=2)
 
 
 def test_predicate_uses_only_visible_card_fields() -> None:

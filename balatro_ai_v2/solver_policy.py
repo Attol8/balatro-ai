@@ -21,7 +21,7 @@ class PublicRedGoldSearchPolicy:
 
     def __post_init__(self) -> None:
         self.strategic = PublicPreBossSearchPolicy(search_nonce=f"{self.search_nonce}:shop")
-        self.tactical = PublicBlindBeliefSearch(search_nonce=f"{self.search_nonce}:blind")
+        self.tactical = PublicBlindBeliefSearch()
 
     def choose_action(
         self,

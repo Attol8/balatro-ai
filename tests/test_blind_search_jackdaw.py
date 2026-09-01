@@ -16,7 +16,15 @@ from balatro_ai_v2.actions import (
 from balatro_ai_v2.backend import AuthorityObservation, RunSpec
 from balatro_ai_v2.balatrobot.adapter import to_public_observation
 from balatro_ai_v2.baselines import PublicStrategicPolicy
-from balatro_ai_v2.blind_search import _RolloutState, _supports_rollout, _transition
+from balatro_ai_v2.blind_search import (
+    PublicBlindBeliefSearch,
+    _RolloutState,
+    _exact_successors,
+    _initial_exact_state,
+    _new_exact_context,
+    _supports_rollout,
+    _transition,
+)
 from balatro_ai_v2.jackdaw import JackdawBackend
 from balatro_ai_v2.policy import PublicHistoryStep
 from balatro_ai_v2.preboss_search import _next_blind_discards, _next_blind_hands
@@ -36,6 +44,16 @@ def test_base_card_transition_matches_every_candidate_action() -> None:
     selected = backend.step(SelectBlind())
     assert selected.after is not None
     assert _assert_all_tactical_transitions(backend, selected.after) == 436
+    after_first = _assert_exact_successor_matches_actual(
+        backend,
+        selected.after,
+        DiscardCards((next(iter_legal_hand_slots(selected.after)),)),
+    )
+    _assert_exact_successor_matches_actual(
+        backend,
+        after_first,
+        DiscardCards((next(iter_legal_hand_slots(after_first)),)),
+    )
     backend.close()
 
 
@@ -223,6 +241,40 @@ def _assert_all_tactical_transitions(
     if require_money_change:
         assert money_changes > 0
     return checked
+
+
+def iter_legal_hand_slots(before: AuthorityObservation):
+    observation = to_public_observation(json.loads(before.observed.raw_json))
+    for action in iter_legal_actions(observation):
+        if isinstance(action, DiscardCards) and len(action.cards) == 1:
+            yield action.cards[0]
+
+
+def _assert_exact_successor_matches_actual(
+    backend: JackdawBackend,
+    before: AuthorityObservation,
+    action: DiscardCards,
+) -> AuthorityObservation:
+    observation = to_public_observation(json.loads(before.observed.raw_json))
+    target = next(blind.score for blind in observation.blinds if blind.status == "CURRENT")
+    search = PublicBlindBeliefSearch()
+    context = _new_exact_context(observation, target, search)
+    successors = _exact_successors(
+        context,
+        _initial_exact_state(observation),
+        action,
+    )
+
+    result = backend.step(action)
+    assert result.status == "accepted"
+    assert result.after is not None
+    actual = to_public_observation(json.loads(result.after.observed.raw_json))
+    actual_state = _initial_exact_state(actual)
+    matches = [successor for successor in successors if successor.state == actual_state]
+    assert len(matches) == 1
+    assert matches[0].probability == Fraction(1, observation.draw_count)
+    assert sum((successor.probability for successor in successors), Fraction(0)) == 1
+    return result.after
 
 
 def _public_base_card(card: object) -> VisiblePlayingCard:

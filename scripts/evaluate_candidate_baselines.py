@@ -16,6 +16,7 @@ from balatro_ai_v2.backend import RunSpec
 from balatro_ai_v2.balatrobot.runner import AuthorityRunner
 from balatro_ai_v2.balatrobot.tracing import build_manifest
 from balatro_ai_v2.baselines import PUBLIC_BASELINE_NAMES, build_public_baseline
+from balatro_ai_v2.blind_search import exact_blind_inference_budget
 from balatro_ai_v2.jackdaw import JackdawBackend, JackdawUnavailable, verify_jackdaw_runtime
 from balatro_ai_v2.policy_process import PolicyProcess
 
@@ -27,6 +28,9 @@ def main() -> None:
     root = Path(__file__).resolve().parents[1]
     _, implementation_name = build_public_baseline(args.policy, args.policy_seed)
     policy_name = f"{implementation_name}:process-v1"
+    exact_budget = (
+        f"{exact_blind_inference_budget()};" if args.policy == "red_gold_search" else ""
+    )
     backend: JackdawBackend | None = None
     policy: PolicyProcess | None = None
     started = time.perf_counter()
@@ -71,6 +75,7 @@ def main() -> None:
             inference_budget=(
                 "policy_action_contract=public_legality_v3;random_public_actions<=256;"
                 "tactical_candidates<=2048;draw_branches<=512;"
+                f"{exact_budget}"
                 f"policy_timeout_seconds={args.policy_timeout}"
             ),
         )

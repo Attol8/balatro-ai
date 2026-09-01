@@ -21,6 +21,7 @@ from balatro_ai_v2.baselines import (
     DeterministicCoveragePolicy,
     build_public_baseline,
 )
+from balatro_ai_v2.blind_search import exact_blind_inference_budget
 from balatro_ai_v2.balatrobot.backend import BalatroBotBackend
 from balatro_ai_v2.balatrobot.client import BalatroBotClient, BalatroBotError
 from balatro_ai_v2.balatrobot.process import (
@@ -51,6 +52,9 @@ def main() -> None:
             "--seeds and --policy-timeout must be positive; --max-shop-actions must be non-negative"
         )
     root = Path(__file__).resolve().parents[1]
+    exact_budget = (
+        f"{exact_blind_inference_budget()};" if args.policy == "red_gold_search" else ""
+    )
     client = BalatroBotClient(host=args.host, port=args.port, timeout=args.timeout)
     process: subprocess.Popen[bytes] | None = None
     candidate: JackdawBackend | None = None
@@ -123,6 +127,7 @@ def main() -> None:
                 inference_budget=(
                     "tactical_candidates<=2048;policy_action_contract=public_legality_v3;"
                     "random_public_actions<=256;draw_branches<=512;"
+                    f"{exact_budget}"
                     f"shop_actions<={args.max_shop_actions};policy_timeout_seconds={args.policy_timeout}"
                 ),
                 mods=tuple(args.mod),
