@@ -243,6 +243,71 @@ def test_candidate_seed_one_shop_and_pack_compatibility() -> None:
     assert next_blind.after.observed.canonical["shop"]["cards"] == []
 
 
+def test_candidate_seed_five_gold_shop_stickers_use_stake_modifiers() -> None:
+    pytest.importorskip("jackdaw")
+    actions = (
+        SelectBlind(),
+        DiscardCards(tuple(HandSlot(index) for index in (3, 4, 5, 7))),
+        PlayCards(tuple(HandSlot(index) for index in (1, 3, 4, 5, 7))),
+        DiscardCards(tuple(HandSlot(index) for index in (1, 3, 5, 6))),
+        PlayCards(tuple(HandSlot(index) for index in (0, 1, 5, 6, 7))),
+        CashOut(),
+    )
+    backend = jackdaw.JackdawBackend()
+    try:
+        poker_hand_order = [
+            "Five of a Kind",
+            "Straight Flush",
+            "Four of a Kind",
+            "Full House",
+            "Flush",
+            "Straight",
+            "Three of a Kind",
+            "Two Pair",
+            "Pair",
+            "High Card",
+            "Flush Five",
+            "Flush House",
+        ]
+        backend.configure_replay(
+            {"poker_hand_iteration_order": poker_hand_order, "hands": dict.fromkeys(poker_hand_order)}
+        )
+        backend.reset(RunSpec("RED", "GOLD", "5"))
+        result = None
+        for action in actions:
+            result = backend.step(action)
+            assert result.status == "accepted"
+            assert result.after is not None
+        assert result is not None and result.after is not None
+        offers = result.after.observed.canonical["shop"]["cards"]
+        assert [offer["key"] for offer in offers] == ["j_crafty", "j_todo_list"]
+        assert offers[0]["modifier"] == {"rental": True}
+        assert offers[0]["cost"] == {"buy": 1, "sell": 1}
+        assert offers[1]["modifier"] == {}
+        assert offers[1]["cost"] == {"buy": 4, "sell": 2}
+
+        continuation = (
+            BuyShopCard(ShopSlot(1)),
+            BuyShopCard(ShopSlot(0)),
+            LeaveShop(),
+            SelectBlind(),
+            DiscardCards(tuple(HandSlot(index) for index in (0, 7))),
+            DiscardCards(tuple(HandSlot(index) for index in (5, 6, 7))),
+            PlayCards(tuple(HandSlot(index) for index in (0, 1, 2, 4, 5))),
+            PlayCards(tuple(HandSlot(index) for index in (0, 1, 2, 3, 4))),
+            PlayCards(tuple(HandSlot(index) for index in (0, 1, 2, 4, 5))),
+            PlayCards(tuple(HandSlot(index) for index in (0, 1, 5, 6, 7))),
+        )
+        for action in continuation:
+            result = backend.step(action)
+            assert result.status == "accepted"
+            assert result.after is not None
+        assert result.after.observed.canonical["state"] == "GAME_OVER"
+        assert result.after.observed.canonical["money"] == 1
+    finally:
+        backend.close()
+
+
 def test_candidate_hiker_permanent_bonus_survives_discard_serialization() -> None:
     pytest.importorskip("jackdaw")
     actions = (

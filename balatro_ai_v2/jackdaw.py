@@ -331,10 +331,79 @@ class JackdawBackend:
         self._pack_card_limit = None
 
     def _handle(self, method: str, params: dict[str, Any]) -> dict[str, Any]:
-        with self._poker_hand_order_compatibility(), self._standard_pack_cost_compatibility():
+        with (
+            self._poker_hand_order_compatibility(),
+            self._shop_sticker_stake_compatibility(),
+            self._standard_pack_cost_compatibility(),
+        ):
             with self._credit_compatibility(method, params) as used_credit:
                 raw = self._backend.handle(method, params)
+                if method == "play" and raw.get("state") == "GAME_OVER":
+                    self._defer_terminal_rental_charge()
+                    raw = self._backend.handle("gamestate", {})
             return self._backend.handle("gamestate", {}) if used_credit else raw
+
+    def _defer_terminal_rental_charge(self) -> None:
+        """Match the authority snapshot before queued Rental dollar events run."""
+
+        game_state = getattr(self._backend, "_gs", None)
+        if not isinstance(game_state, dict):
+            raise RuntimeError("Jackdaw game state is unavailable at game over")
+        jokers = game_state.get("jokers")
+        dollars = game_state.get("dollars")
+        rental_rate = game_state.get("rental_rate")
+        if (
+            not isinstance(jokers, list)
+            or not isinstance(dollars, int)
+            or isinstance(dollars, bool)
+            or not isinstance(rental_rate, int)
+            or isinstance(rental_rate, bool)
+            or rental_rate < 0
+        ):
+            raise RuntimeError("Jackdaw Rental state is invalid at game over")
+        rental_count = 0
+        for joker in jokers:
+            ability = getattr(joker, "ability", None)
+            is_rental = getattr(joker, "rental", False) or (
+                isinstance(ability, Mapping) and ability.get("rental") is True
+            )
+            rental_count += int(is_rental)
+        game_state["dollars"] = dollars + rental_rate * rental_count
+
+    @contextmanager
+    def _shop_sticker_stake_compatibility(self) -> Iterator[None]:
+        """Expose Jackdaw's nested stake flags where its card factory reads them."""
+
+        game_state = getattr(self._backend, "_gs", None)
+        if not isinstance(game_state, dict):
+            yield
+            return
+        modifiers = game_state.get("modifiers")
+        if not isinstance(modifiers, Mapping):
+            yield
+            return
+
+        keys = (
+            "enable_eternals_in_shop",
+            "enable_perishables_in_shop",
+            "enable_rentals_in_shop",
+        )
+        inserted: list[str] = []
+        for key in keys:
+            nested = modifiers.get(key, False)
+            if not isinstance(nested, bool):
+                raise RuntimeError(f"Jackdaw stake modifier {key!r} is not boolean")
+            if key in game_state:
+                if game_state[key] is not nested:
+                    raise RuntimeError(f"Jackdaw stake modifier {key!r} is inconsistent")
+                continue
+            game_state[key] = nested
+            inserted.append(key)
+        try:
+            yield
+        finally:
+            for key in inserted:
+                game_state.pop(key, None)
 
     @contextmanager
     def _credit_compatibility(

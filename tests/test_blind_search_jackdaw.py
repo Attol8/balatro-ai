@@ -61,21 +61,18 @@ def test_base_card_transition_matches_every_candidate_action() -> None:
     ("seed", "blind_name", "joker_keys"),
     [
         ("1", "Big Blind", ("j_bull",)),
-        ("5", "Big Blind", ("j_crafty",)),
-        ("9", "Big Blind", ("j_gluttenous_joker",)),
         ("9", "Small Blind", ("j_gluttenous_joker", "j_credit_card")),
         ("11", "Big Blind", ("j_mystic_summit",)),
-        ("17", "Big Blind", ("j_wily",)),
         ("19", "Big Blind", ("j_drunkard",)),
         ("20", "Big Blind", ("j_faceless",)),
-        ("22", "Small Blind", ("j_joker", "j_greedy_joker", "j_crafty")),
-        (
-            "27",
-            "Small Blind",
-            ("j_droll", "j_riff_raff", "j_lusty_joker", "j_crafty", "j_scary_face"),
-        ),
+        ("22", "Big Blind", ("j_joker",)),
         ("29", "Big Blind", ("j_sly",)),
-        ("86", "Big Blind", ("j_banner",)),
+        ("32", "Big Blind", ("j_droll",)),
+        ("61", "Big Blind", ("j_scary_face",)),
+        ("171", "Big Blind", ("j_banner",)),
+        ("452", "Big Blind", ("j_wily",)),
+        ("491", "Big Blind", ("j_lusty_joker",)),
+        ("901", "Big Blind", ("j_riff_raff", "j_crafty", "j_greedy_joker")),
     ],
 )
 def test_organic_supported_joker_matches_every_candidate_action(
