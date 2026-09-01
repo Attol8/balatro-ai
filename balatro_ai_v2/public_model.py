@@ -22,7 +22,6 @@ from balatro_ai_v2.actions import (
     BuyVoucher,
     CashOut,
     ChoosePackCard,
-    ConsumableSlot,
     DiscardCards,
     LeaveShop,
     HandSlot,
@@ -35,7 +34,6 @@ from balatro_ai_v2.actions import (
     SelectBlind,
     SellConsumable,
     SellJoker,
-    JokerSlot,
     SkipBlind,
     SkipPack,
     UseConsumable,
@@ -51,8 +49,8 @@ from balatro_ai_v2.public_state import (
 )
 
 
-MODEL_FORMAT_VERSION: Final = 2
-PUBLIC_MODEL_ACTION_PROPOSAL_SCHEMA: Final = "factorized_tactical_no_reorder_v2"
+MODEL_FORMAT_VERSION: Final = 3
+PUBLIC_MODEL_ACTION_PROPOSAL_SCHEMA: Final = "factorized_tactical_targeted_adjacent_reorder_v3"
 _REORDER_ACTIONS = (ReorderHand, ReorderJokers, ReorderConsumables)
 _ACTION_FAMILIES = {
     SelectBlind: "select_blind",
@@ -70,6 +68,9 @@ _ACTION_FAMILIES = {
     UseConsumable: "use_consumable",
     ChoosePackCard: "choose_pack_card",
     SkipPack: "skip_pack",
+    ReorderHand: "reorder_hand",
+    ReorderJokers: "reorder_jokers",
+    ReorderConsumables: "reorder_consumables",
 }
 
 
@@ -347,8 +348,6 @@ class PublicRecurrentPolicyValue(nn.Module):
         encoded = [_canonical_candidate_json(action) for action in actions]
         if len(encoded) != len(set(encoded)):
             raise PublicModelError("candidate list contains duplicates")
-        if any(isinstance(action, _REORDER_ACTIONS) for action in actions):
-            raise PublicModelError("reorder actions require a future permutation head")
         if any(not _candidate_is_legal(observation, action) for action in actions):
             raise PublicModelError("candidate list contains an unsupported or illegal action")
         return actions
@@ -448,7 +447,16 @@ class PublicRecurrentPolicyValue(nn.Module):
     ) -> tuple[list[int | None], Tensor]:
         start = selected[-1] + 1 if selected else 0
         choices: list[int | None] = list(range(start, len(observation.hand)))
-        if selected:
+        missing_required = [
+            slot for slot in observation.required_hand_slots if slot not in selected
+        ]
+        if missing_required:
+            first_required = missing_required[0]
+            choices = [choice for choice in choices if choice <= first_required]
+            remaining = _tactical_limit(observation) - len(selected)
+            if remaining <= len(missing_required):
+                choices = [choice for choice in choices if choice == first_required]
+        elif selected:
             choices.append(None)
         if not choices:
             raise PublicModelError("tactical proposal has no selectable card")
@@ -479,23 +487,17 @@ def public_model_candidates(observation: PublicObservation) -> tuple[ModelCandid
         actions: list[ModelCandidate] = [TacticalCandidate(TacticalFamily.PLAY)]
         if observation.round.discards_left > 0:
             actions.append(TacticalCandidate(TacticalFamily.DISCARD))
-        for index in range(len(observation.jokers)):
-            action = SellJoker(JokerSlot(index))
-            if is_legal(observation, action):
-                actions.append(action)
-        for index in range(len(observation.consumables)):
-            for action in (
-                SellConsumable(ConsumableSlot(index)),
-                UseConsumable(ConsumableSlot(index)),
-            ):
-                if is_legal(observation, action):
-                    actions.append(action)
+        actions.extend(
+            action
+            for action in iter_legal_actions(observation)
+            if not isinstance(action, (PlayCards, DiscardCards))
+        )
+        if len(actions) > PublicModelConfig().max_candidates:
+            raise PublicModelError("public model action proposal exceeds its declared bound")
         return tuple(actions)
 
     actions = []
     for action in iter_legal_actions(observation):
-        if isinstance(action, _REORDER_ACTIONS):
-            break
         actions.append(action)
     if not actions:
         raise PublicModelError("no supported public model action is available")
@@ -551,6 +553,7 @@ def _observation_features(observation: PublicObservation, size: int) -> list[flo
         ("round.reroll_cost", observation.round.reroll_cost, 20),
         ("hand_limit", observation.hand_limit, 12),
         ("selection_limit", observation.selection_limit, 5),
+        ("required_hand_slots", len(observation.required_hand_slots), 5),
         ("draw_count", observation.draw_count, 52),
         ("deck_size", observation.deck_size, 80),
         ("joker_limit", observation.joker_limit, 10),
@@ -558,6 +561,11 @@ def _observation_features(observation: PublicObservation, size: int) -> list[flo
     ):
         vector.number(name, value, scale)
     vector.number("won", int(observation.won), 1)
+    vector.category("pack_kind", observation.pack_kind or "<NONE>")
+    vector.number("pack_choices_remaining", observation.pack_choices_remaining, 4)
+    vector.category("last_tarot_planet", observation.last_tarot_planet or "<NONE>")
+    for slot in observation.required_hand_slots:
+        vector.category("required_hand_slot", str(slot))
 
     for index, card in enumerate(observation.hand):
         _add_card(vector, f"hand.{index}", card)
@@ -599,7 +607,7 @@ def _action_features(
 ) -> list[float]:
     vector = _HashedVector(size)
     family = _ACTION_FAMILIES.get(type(action))
-    if family is None or isinstance(action, _REORDER_ACTIONS):
+    if family is None:
         raise PublicModelError(f"unsupported model action {type(action).__name__}")
     vector.category("action.family", family)
     if isinstance(action, (PlayCards, DiscardCards)):
@@ -627,6 +635,9 @@ def _action_features(
         else:
             _add_card(vector, "action.item", offer)
         _add_target_cards(vector, observation, action.targets)
+    elif isinstance(action, _REORDER_ACTIONS):
+        for position, slot in enumerate(action.order):
+            vector.category(f"action.order.{position}", str(slot.value))
     return vector.values
 
 
@@ -715,8 +726,10 @@ def _add_item(vector: _HashedVector, prefix: str, item: PublicItem) -> None:
     vector.category(f"{prefix}.kind", item.kind)
     vector.category(f"{prefix}.edition", item.edition or "<NONE>")
     vector.number(f"{prefix}.eternal", int(item.eternal), 1)
+    vector.number(f"{prefix}.perishable_present", int(item.perishable_rounds is not None), 1)
     vector.number(f"{prefix}.perishable", item.perishable_rounds or 0, 10)
     vector.number(f"{prefix}.rental", int(item.rental), 1)
+    vector.number(f"{prefix}.debuffed", int(item.debuffed), 1)
     vector.number(f"{prefix}.buy_cost", item.buy_cost or 0, 50)
     vector.number(f"{prefix}.sell_cost", item.sell_cost or 0, 50)
 
@@ -769,6 +782,7 @@ def _candidate_is_legal(observation: PublicObservation, candidate: ModelCandidat
             observation.phase.value != "SELECTING_HAND"
             or not observation.hand
             or _tactical_limit(observation) < 1
+            or observation.round.hands_left < 1
         ):
             return False
         if candidate.family == TacticalFamily.DISCARD:

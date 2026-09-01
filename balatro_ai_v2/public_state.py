@@ -38,6 +38,8 @@ class VisiblePlayingCard:
 class HiddenHandCard:
     """An anonymous selectable slot; intentionally contains no identity."""
 
+    pass
+
 
 HandCard: TypeAlias = VisiblePlayingCard | HiddenHandCard
 
@@ -58,6 +60,7 @@ class PublicItem:
     eternal: bool = False
     perishable_rounds: int | None = None
     rental: bool = False
+    debuffed: bool = False
     buy_cost: int | None = None
     sell_cost: int | None = None
 
@@ -109,6 +112,7 @@ class PublicObservation:
     hand: tuple[HandCard, ...]
     hand_limit: int
     selection_limit: int
+    required_hand_slots: tuple[int, ...]
     remaining_deck: tuple[DeckCardCount, ...]
     draw_count: int
     deck_size: int
@@ -121,8 +125,25 @@ class PublicObservation:
     vouchers: tuple[PublicItem, ...]
     packs: tuple[PublicItem, ...]
     opened_pack: tuple[PublicOffer, ...]
+    pack_kind: str | None
+    pack_choices_remaining: int
     used_vouchers: tuple[str, ...]
+    last_tarot_planet: str | None
     won: bool
+
+    def __post_init__(self) -> None:
+        if tuple(sorted(set(self.required_hand_slots))) != self.required_hand_slots:
+            raise ValueError("required hand slots must be unique and increasing")
+        if any(slot < 0 or slot >= len(self.hand) for slot in self.required_hand_slots):
+            raise ValueError("required hand slot is outside the visible hand")
+        if self.required_hand_slots and self.phase != Phase.SELECTING_HAND:
+            raise ValueError("required hand slots are valid only while selecting a hand")
+        pack_kinds = {"ARCANA", "CELESTIAL", "SPECTRAL", "STANDARD", "BUFFOON", "SMODS"}
+        if self.phase == Phase.PACK:
+            if self.pack_kind not in pack_kinds or self.pack_choices_remaining <= 0:
+                raise ValueError("pack observations require a kind and remaining choice")
+        elif self.pack_kind is not None or self.pack_choices_remaining != 0:
+            raise ValueError("pack metadata is valid only while a pack is open")
 
     @property
     def terminal(self) -> bool:

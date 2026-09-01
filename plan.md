@@ -2,7 +2,60 @@
 
 ## Objective
 
-Build an agent that exceeds a declared strong-human benchmark on clean Balatro runs while using only information available through the normal game interface. Fast-environment results, source-rule inventories, and isolated parity checks are supporting diagnostics, never success criteria.
+Build an agent that exceeds a declared strong-human benchmark on clean Balatro runs while using only information available through the normal game interface. The active promotion target is Red Deck at Gold Stake on the declared single-machine compute budget. All-deck Gold remains the later generalization target, not a prerequisite for the first superhuman result. Fast-environment results, source-rule inventories, and isolated parity checks are supporting diagnostics, never success criteria.
+
+## Active Objective (2026-09-01): Single-Machine Red/Gold Solver
+
+The current policy is a fair one-seed White-stake solver, not a generally winning agent. Do not scale the failed hashed-GRU, behavior-cloning, sparse-PPO, or short-horizon action-value lanes. Keep the authority, information firewall, pinned Jackdaw candidate, and exact replay system; replace the intelligence loop with a solver-first hierarchy that spends compute only on consequential uncertainty.
+
+### Fixed constraints
+
+- The development and final artifact run on the repository host class: one Apple M2 Pro with 32 GB memory. External rollout farms and hidden-state oracles are outside this milestone.
+- The policy and search receive only `PublicObservation`, typed public actions, bounded public history, and a policy-owned search nonce. The live seed, private clones, actual RNG state, hidden deck order, and future shops never enter search or training labels.
+- Jackdaw executes and validates candidate transitions. It does not define policy observations, public legality, belief state, or the learned action representation.
+- Real Balatro under the pinned BalatroBot/LÖVE stack remains authoritative. Candidate wins and snapshot branches never count as wins.
+- Promotion uses win probability. Average ante, rounds, prediction loss, search visits, and candidate-only outcomes are diagnostics.
+
+### Architecture
+
+1. **Action-sufficient public contract.** Own phase-specific legality in this repository. Represent every visible input needed for Cerulean Bell, targeted held consumables, targeted Arcana/Spectral pack choices, selling and replacement, multi-pick packs, ordering, and Gold-stake stickers/counters. Compile typed primitives independently to BalatroBot and Jackdaw, and revalidate after every primitive in a multi-step option.
+2. **Exact tactical solver.** Enumerate or beam-search play/discard/target/order choices with exact public scoring, mechanical-equivalence reduction, transposition caching, and exact without-replacement draw beliefs. The search ends at the current blind boundary and optimizes survival probability rather than raw expected chips.
+3. **Strategic option search.** Search coherent public shop/pack options such as sell-then-buy, bounded rerolls, pack multi-picks, consumable use, and build reordering. Pareto-prune on money, interest, guaranteed scoring floor, scaling, slot flexibility, rental liability, perishable lifetime, and Eternal commitment.
+4. **Fair uncertainty.** Draws use the exact public deck multiset. Future offers use source-defined public conditional distributions and policy-owned random tapes keyed by public digest, search nonce, and rollout index. Sibling options share tapes; sequential elimination spends additional samples only on close choices. The initial horizon ends at the next boss.
+5. **Learning as compression.** Only after learner-free search beats the frozen heuristic, fit a small structured ranking/distributional-value model from belief-averaged sibling comparisons. Encode explicit card/item entities, runtime counters, order, sticker liabilities, hand-family contributions, and low-rank Joker interactions. Search disagreements and uncertain high-impact roots receive priority; raw PPO and imitation remain closed.
+
+### Build and kill gates
+
+- [ ] Close the public action/schema gaps and require hidden twins to produce identical observations, legal options, random tapes, search statistics, and actions.
+- [ ] Produce a Red/Gold mechanism-by-phase-by-action coverage matrix with exact complete authority traces and zero waivers. Keep Jackdaw untrusted outside the certified envelope.
+- [ ] Implement a cached tactical scorer/solver and show exact agreement with candidate and authority outcomes over the covered mechanics.
+- [ ] Implement learner-free one-shop-to-next-boss option search. On a locked paired Red/Gold candidate panel it must produce action-sensitive sibling returns, strictly more wins than the unchanged strategic heuristic, and a positive paired survival lower bound on a separate replication panel.
+- [ ] Reject the search target if shuffled action identities or shuffled targets retain ranking performance. Reject the chance model if held-out public transition frequencies are miscalibrated.
+- [ ] Transfer the unchanged promoted search artifact through complete Red/Gold authority traces spanning every action family it uses. Any executor rejection, hidden-twin difference, mismatch, or incomplete run kills promotion.
+- [ ] Distill only after search passes. The compact artifact must retain most of the paired search gain on disjoint seeds under the declared candidate-transition and decision limits.
+- [ ] Freeze the final artifact before generating evaluator-secret seeds. Compare one attempt per seed against a preregistered qualified strong-human Red/Gold cohort under identical rules; failures count as losses and the confidence interval for the paired win-rate advantage must clear the declared material margin.
+
+### First decisive experiment
+
+Build the action-complete Gold public contract and a learner-free one-shop-to-next-boss search slice. Collect naturally reached Red/Gold shop roots with the frozen heuristic, stratified by ante and sticker mix. Generate legal public option beams, compare siblings on shared independently sampled futures, run the selected option organically, and evaluate against the unchanged heuristic on disjoint paired seeds. Include hidden-twin and shuffled-option negatives and replay representative promoted trajectories in real Balatro. If this slice cannot create fair action-sensitive paired improvement, revise the abstraction before adding a value model or increasing compute.
+
+#### Re-plan after the first reachability diagnostic
+
+The pre-boss-only guard failed as a useful primary intervention surface: 50 complete Red/Gold candidate runs produced zero wins, reached only two eligible search roots, and selected one buy. Keep it as a unit-tested fairness slice, but do not scale particles or train on it. Expand the same shared-public-particle comparison to every organically reached shop whose next blind is already visible. Compare the search choice with the frozen baseline's actual directly representable option, permit one search override per shop, and then return control to the baseline instead of forcing an early exit. Record root reachability, baseline/selected sibling returns, and intervention counts. If this broader slice still cannot create paired survival gains, stop extending shop heuristics and move the exact public tactical solver ahead of strategic learning.
+
+The broader 50-seed paired candidate diagnostic created a real but insufficient signal: 23 runs reached a represented search root, six final recorded choices differed from the baseline, five seeds survived farther, none regressed, and the paired total gained 18 rounds and three antes. Both policies still won zero runs. Treat this as permission to keep the public shared-particle abstraction, not as promotion evidence. The existing uncached one-card discard expectimax was stopped after sustained full-core execution because its repeated score enumeration is unsuitable for the single-machine controller. The next tactical slice must gate search on survival relevance, reuse score/transposition results, and prove gain per evaluated state before it is combined with strategic search.
+
+A bounded per-hand survival heuristic also failed its kill gate and was deleted: on 10 paired Red/Gold seeds it improved two runs, regressed four, lost two total rounds, and won none. The failure is conceptual rather than a threshold issue. Averaging the remaining blind target over hands does not correctly price guaranteed chip progress, hand depletion, or future draw opportunity. The replacement must solve the blind as a finite-horizon public belief process with play and discard transitions sharing cached hand-score results; do not revive per-hand pacing or uncached one-draw expectimax.
+
+The first finite-horizon particle beam is also rejected as evidence, despite advancing two of the first five paired candidate seeds from ante one to ante two. It consumed roughly 117 seconds for those five runs versus roughly one second for the heuristic, and its per-particle beam selected continuation branches using unseen tape tails. That strategy fusion is an oracle evaluation, not an executable public policy. Retain shared public particles and root comparison only. The replacement evaluates each root under one deterministic continuation policy that is a function of the simulated public state and uses a deterministic candidate-count budget. Its initial scorer-supported envelope is deliberately tiny: Red/Gold Small and Big Blinds with visible, unmodified base cards and no Observatory. Refill-to-capacity, public-equivalent hand sorting, integer score flooring, and complete hand-stat rows are part of the transition contract. Eleven stateless Jokers (`Bull`, `Crafty Joker`, `Droll Joker`, `Greedy Joker`, `Gluttonous Joker`, `Joker`, `Lusty Joker`, `Mystic Summit`, `Riff-Raff`, `Scary Face`, and `Wily Joker`) were added only after evaluator-only organic candidate states matched all 436 legal play/discard transitions for their observed single-Joker or interacting builds. Each additional mechanic expands only with the same differential proof.
+
+The corrected fixed-continuation search is efficient enough for the declared machine and shows a small honest candidate signal. On the frozen paired Red/Gold seeds 1–30, all 60 runs completed with no illegal actions or policy timeouts under the same source digest. After the shop simulator was restricted to the same certified scoring envelope and deterministic play/discard continuation, with held consumables failing closed, search improved terminal progress on three seeds, regressed none by terminal ante/round, gained seven total rounds and three total antes, and took roughly 46 seconds versus nine seconds for the heuristic. Both policies still won zero runs. This passes the narrow non-regression/relevance check, not the strategic promotion gate: the mechanism envelope and shop option model remain far too small for a winning policy.
+
+#### Re-plan after the checkpoint audit
+
+The pre-commit audit found that `HiddenHandCard.aura_eligible` revealed whether a face-down card already had an edition even though the normal card-back rendering does not expose that fact. Remove the predicate from the public contract and make Aura fail closed on face-down targets. It also found that public affordability retained Credit Card's debt floor while the Joker was debuffed; condition that rule on an active, nondebuffed Credit Card and add a shared-legality regression. These are checkpoint blockers, not tolerated limitations.
+
+The repository-local editable pinned Jackdaw checkout passes the complete candidate suite, but a fresh `uv --all-extras` installation currently loses Jackdaw's JSON data files. Keep the untracked lockfile outside the checkpoint and do not claim clean-install reproducibility until the upstream packaging boundary is repaired. This does not weaken the public search result, but it remains an evidence-infrastructure gap.
 
 ## Execution Status (2026-08-08)
 

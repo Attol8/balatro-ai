@@ -121,7 +121,7 @@ def main() -> None:
                 launch_headless=args.headless_server,
                 profile_mode=profile_mode,
                 inference_budget=(
-                    "tactical_candidates<=2048;transported_public_actions<=512;"
+                    "tactical_candidates<=2048;policy_action_contract=public_legality_v3;"
                     "random_public_actions<=256;draw_branches<=512;"
                     f"shop_actions<={args.max_shop_actions};policy_timeout_seconds={args.policy_timeout}"
                 ),

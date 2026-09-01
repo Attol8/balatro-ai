@@ -54,6 +54,14 @@ _PACK_PHASES = {
     "STANDARD_PACK",
     "BUFFOON_PACK",
 }
+_PACK_KINDS = {
+    "SMODS_BOOSTER_OPENED": "SMODS",
+    "PLANET_PACK": "CELESTIAL",
+    "TAROT_PACK": "ARCANA",
+    "SPECTRAL_PACK": "SPECTRAL",
+    "STANDARD_PACK": "STANDARD",
+    "BUFFOON_PACK": "BUFFOON",
+}
 _EDITIONS = {"FOIL", "HOLO", "HOLOGRAPHIC", "POLYCHROME", "NEGATIVE"}
 _ENHANCEMENTS = {"BONUS", "MULT", "WILD", "GLASS", "STEEL", "STONE", "GOLD", "LUCKY"}
 _SEALS = {"RED", "BLUE", "GOLD", "GOLD SEAL", "PURPLE"}
@@ -87,6 +95,12 @@ def to_public_observation(raw: Mapping[str, Any]) -> PublicObservation:
     hands_raw = _required_mapping(raw, "hands")
     joker_area = _area(raw, "jokers")
     consumable_area = _area(raw, "consumables")
+    blinds = tuple(
+        sorted(
+            (_blind(value) for value in blinds_raw.values()),
+            key=lambda blind: ("SMALL", "BIG", "BOSS").index(blind.kind),
+        )
+    )
 
     return PublicObservation(
         phase=phase,
@@ -103,15 +117,11 @@ def to_public_observation(raw: Mapping[str, Any]) -> PublicObservation:
             discards_used=_required_int(round_raw, "discards_used"),
             reroll_cost=_required_int(round_raw, "reroll_cost"),
         ),
-        blinds=tuple(
-            sorted(
-                (_blind(value) for value in blinds_raw.values()),
-                key=lambda blind: ("SMALL", "BIG", "BOSS").index(blind.kind),
-            )
-        ),
+        blinds=blinds,
         hand=hand,
         hand_limit=_required_int(hand_area, "limit"),
         selection_limit=_required_int(hand_area, "highlighted_limit"),
+        required_hand_slots=_required_hand_slots(hand_area, blinds, phase),
         remaining_deck=tuple(
             DeckCardCount(card=card, count=count)
             for card, count in sorted(deck_counts.items(), key=lambda pair: _playing_card_sort_key(pair[0]))
@@ -129,7 +139,10 @@ def to_public_observation(raw: Mapping[str, Any]) -> PublicObservation:
         vouchers=_items_from_optional_area(raw, "vouchers") if phase == Phase.SHOP else (),
         packs=_items_from_optional_area(raw, "packs") if phase == Phase.SHOP else (),
         opened_pack=_offers_from_optional_area(raw, "pack") if phase == Phase.PACK else (),
+        pack_kind=_PACK_KINDS[raw_phase] if phase == Phase.PACK else None,
+        pack_choices_remaining=_required_int(raw, "pack_choices_remaining"),
         used_vouchers=_string_tuple(raw.get("used_vouchers", ()), "used_vouchers"),
+        last_tarot_planet=_optional_key(raw, "last_tarot_planet"),
         won=_required_bool(raw, "won"),
     )
 
@@ -244,10 +257,14 @@ def _item(raw: Mapping[str, Any]) -> PublicItem:
     eternal = modifiers.get("eternal", False)
     rental = modifiers.get("rental", False)
     perishable = modifiers.get("perishable")
+    state = raw.get("state")
     if not isinstance(eternal, bool) or not isinstance(rental, bool):
         raise ObservationError("joker eternal/rental modifiers must be boolean")
     if perishable is not None and (isinstance(perishable, bool) or not isinstance(perishable, int) or perishable < 0):
         raise ObservationError("joker perishable modifier must be a non-negative integer")
+    debuffed = state.get("debuff", False) if isinstance(state, Mapping) else False
+    if not isinstance(debuffed, bool):
+        raise ObservationError("item debuff state must be boolean")
     kind = _required_string(raw, "set").upper()
     return PublicItem(
         key=semantic_card_key(kind, _required_string(raw, "key")),
@@ -258,6 +275,7 @@ def _item(raw: Mapping[str, Any]) -> PublicItem:
         eternal=eternal,
         perishable_rounds=perishable,
         rental=rental,
+        debuffed=debuffed,
         buy_cost=_optional_int(cost, "buy"),
         sell_cost=_optional_int(cost, "sell"),
     )
@@ -288,6 +306,28 @@ def _hand_stat(name: object, raw: object) -> HandStat:
         played=_required_int(raw, "played"),
         played_this_round=_required_int(raw, "played_this_round"),
     )
+
+
+def _required_hand_slots(
+    hand_area: Mapping[str, Any],
+    blinds: tuple[PublicBlind, ...],
+    phase: Phase,
+) -> tuple[int, ...]:
+    del blinds
+    if phase != Phase.SELECTING_HAND:
+        return ()
+    forced: list[int] = []
+    for index, card in enumerate(hand_area["cards"]):
+        state = card.get("state")
+        if isinstance(state, Mapping) and state.get("forced_selection") is True:
+            if state.get("highlight") is not True:
+                raise ObservationError("forced hand card is not visibly highlighted")
+            forced.append(index)
+    if len(forced) > 1:
+        raise ObservationError(
+            "multiple forced hand cards are outside the audited vanilla contract"
+        )
+    return tuple(forced)
 
 
 def _modifier_table(raw: Mapping[str, Any]) -> Mapping[str, object]:
@@ -364,6 +404,15 @@ def _optional_int(raw: Mapping[str, Any], key: str) -> int | None:
         return None
     if isinstance(value, bool) or not isinstance(value, int):
         raise ObservationError(f"{key} must be an integer or null")
+    return value
+
+
+def _optional_key(raw: Mapping[str, Any], key: str) -> str | None:
+    value = raw.get(key)
+    if value in {None, ""}:
+        return None
+    if not isinstance(value, str):
+        raise ObservationError(f"{key} must be a string")
     return value
 
 

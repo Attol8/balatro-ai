@@ -52,6 +52,10 @@ def public_observation_from_data(data: object) -> PublicObservation:
         hand=tuple(_hand_card(value) for value in _array(raw["hand"], "hand", 32)),
         hand_limit=_integer(raw["hand_limit"], "hand_limit"),
         selection_limit=_integer(raw["selection_limit"], "selection_limit"),
+        required_hand_slots=tuple(
+            _integer(value, "required_hand_slots item")
+            for value in _array(raw["required_hand_slots"], "required_hand_slots", 5)
+        ),
         remaining_deck=tuple(
             _deck_count(value) for value in _array(raw["remaining_deck"], "remaining_deck", 512)
         ),
@@ -72,10 +76,15 @@ def public_observation_from_data(data: object) -> PublicObservation:
         opened_pack=tuple(
             _offer(value) for value in _array(raw["opened_pack"], "opened_pack", 64)
         ),
+        pack_kind=_optional_string(raw["pack_kind"], "pack_kind"),
+        pack_choices_remaining=_integer(
+            raw["pack_choices_remaining"], "pack_choices_remaining"
+        ),
         used_vouchers=tuple(
             _string(value, "used_vouchers item")
             for value in _array(raw["used_vouchers"], "used_vouchers", 128)
         ),
+        last_tarot_planet=_optional_string(raw["last_tarot_planet"], "last_tarot_planet"),
         won=_boolean(raw["won"], "won"),
     )
 
@@ -163,6 +172,7 @@ def _item(value: object) -> PublicItem:
         eternal=_boolean(raw["eternal"], "item.eternal"),
         perishable_rounds=_optional_integer(raw["perishable_rounds"], "item.perishable_rounds"),
         rental=_boolean(raw["rental"], "item.rental"),
+        debuffed=_boolean(raw["debuffed"], "item.debuffed"),
         buy_cost=_optional_integer(raw["buy_cost"], "item.buy_cost"),
         sell_cost=_optional_integer(raw["sell_cost"], "item.sell_cost"),
     )

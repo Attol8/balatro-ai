@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from copy import deepcopy
 from dataclasses import replace
 
 import pytest
@@ -7,11 +8,13 @@ import pytest
 from balatro_ai_v2.actions import (
     BuyShopCard,
     CashOut,
+    ChoosePackCard,
     DiscardCards,
     HandSlot,
     JokerSlot,
     LeaveShop,
     PlayCards,
+    OpenedPackSlot,
     ReorderHand,
     SelectBlind,
     SellJoker,
@@ -124,16 +127,101 @@ def test_held_planet_is_a_legal_no_target_public_action() -> None:
     assert action_to_rpc(action, observation) == ("use", {"consumable": 0})
 
 
-def test_targeted_consumables_still_fail_closed() -> None:
+def test_targeted_consumable_requires_and_compiles_exact_public_targets() -> None:
     raw = state("SELECTING_HAND")
     raw["consumables"]["cards"] = [item_card("c_death", card_id=31, kind="TAROT")]
     raw["consumables"]["count"] = 1
     observation = to_public_observation(raw)
-    action = UseConsumable(ConsumableSlot(0))
+    no_targets = UseConsumable(ConsumableSlot(0))
+    action = UseConsumable(
+        ConsumableSlot(0),
+        (HandSlot(0), HandSlot(2)),
+    )
 
-    assert not is_legal(observation, action)
+    assert not is_legal(observation, no_targets)
+    assert is_legal(observation, action)
+    assert action in iter_legal_actions(observation)
+    assert action_to_rpc(action, observation) == (
+        "use",
+        {"consumable": 0, "cards": [0, 2]},
+    )
     with pytest.raises(IllegalPublicAction):
-        action_to_rpc(action, observation)
+        action_to_rpc(no_targets, observation)
+
+
+def test_cerulean_forced_slot_is_required_for_play_discard_and_consumable() -> None:
+    raw = state("SELECTING_HAND")
+    raw["hand"]["cards"][1]["state"] = {
+        "highlight": True,
+        "forced_selection": True,
+    }
+    raw["consumables"]["cards"] = [item_card("c_death", card_id=31, kind="TAROT")]
+    raw["consumables"]["count"] = 1
+    observation = to_public_observation(raw)
+
+    assert observation.required_hand_slots == (1,)
+    assert not is_legal(observation, PlayCards((HandSlot(0),)))
+    assert not is_legal(observation, DiscardCards((HandSlot(0),)))
+    assert not is_legal(
+        observation,
+        UseConsumable(ConsumableSlot(0), (HandSlot(0), HandSlot(2))),
+    )
+    assert is_legal(observation, PlayCards((HandSlot(0), HandSlot(1))))
+    assert is_legal(
+        observation,
+        UseConsumable(ConsumableSlot(0), (HandSlot(0), HandSlot(1))),
+    )
+    assert all(
+        not isinstance(action, (PlayCards, DiscardCards, UseConsumable))
+        or 1 in tuple(slot.value for slot in getattr(action, "cards", getattr(action, "targets", ())))
+        for action in iter_legal_actions(observation)
+    )
+
+
+def test_negative_joker_can_enter_a_full_area_from_shop_or_pack() -> None:
+    shop_raw = state("SHOP", money=10)
+    shop_raw["jokers"]["limit"] = 0
+    shop_raw["shop"]["cards"][0]["modifier"] = ["NEGATIVE"]
+    shop = to_public_observation(shop_raw)
+
+    pack_raw = state("BUFFOON_PACK")
+    pack_raw["jokers"]["limit"] = 0
+    pack_raw["pack"]["cards"][0]["modifier"] = ["NEGATIVE"]
+    pack = to_public_observation(pack_raw)
+
+    assert is_legal(shop, BuyShopCard(ShopSlot(0)))
+    assert is_legal(pack, ChoosePackCard(OpenedPackSlot(0)))
+
+
+def test_debuffed_credit_card_does_not_extend_purchase_floor() -> None:
+    active_raw = state("SHOP", money=0)
+    active_raw["jokers"]["cards"] = [
+        item_card("j_credit_card", card_id=30, kind="JOKER")
+    ]
+    active_raw["jokers"]["count"] = 1
+    active_raw["shop"]["cards"][0]["cost"]["buy"] = 1
+    debuffed_raw = deepcopy(active_raw)
+    debuffed_raw["jokers"]["cards"][0]["state"] = {"debuff": True}
+
+    action = BuyShopCard(ShopSlot(0))
+    assert is_legal(to_public_observation(active_raw), action)
+    assert not is_legal(to_public_observation(debuffed_raw), action)
+
+
+def test_reorder_generator_exposes_only_adjacent_swaps() -> None:
+    observation = to_public_observation(state("SELECTING_HAND"))
+    reorders = [
+        action
+        for action in iter_legal_actions(observation)
+        if isinstance(action, ReorderHand)
+    ]
+
+    assert len(reorders) == len(observation.hand) - 1
+    assert all(is_legal(observation, action) for action in reorders)
+    assert not is_legal(
+        observation,
+        ReorderHand((HandSlot(2), HandSlot(1), HandSlot(0))),
+    )
 
 
 def test_eternal_joker_cannot_be_sold() -> None:

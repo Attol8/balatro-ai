@@ -8,9 +8,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from itertools import combinations, permutations
+from itertools import combinations
 from typing import Iterator, Mapping, TypeAlias
 
+from balatro_ai_v2.consumable_rules import (
+    iter_public_targets,
+    public_consumable_is_usable,
+)
 from balatro_ai_v2.public_state import Phase, PublicItem, PublicObservation, VisiblePlayingCard
 
 
@@ -212,15 +216,14 @@ PublicAction: TypeAlias = (
 
 
 _SELL_USE_PHASES = {Phase.SELECTING_HAND, Phase.SHOP}
-_REORDER_PHASES = {Phase.SELECTING_HAND, Phase.SHOP, Phase.PACK}
+_REORDER_PHASES = {Phase.SELECTING_HAND, Phase.SHOP}
 
 
 def iter_legal_actions(observation: PublicObservation) -> Iterator[PublicAction]:
     """Yield concrete legal actions using public state only.
 
-    Reorder actions are intentionally lazy: an eight-card hand has 40,320
-    possible orders and callers should normally generate or score them on
-    demand instead of materializing the whole set.
+    Reordering is exposed as adjacent swaps.  This keeps each decision
+    bounded while repeated legal actions can still reach every permutation.
     """
 
     phase = observation.phase
@@ -237,9 +240,13 @@ def iter_legal_actions(observation: PublicObservation) -> Iterator[PublicAction]
         # cutoff while preserving the complete legal action set.
         for size in range(maximum, 0, -1):
             for selected in combinations(hand_slots, size):
-                yield PlayCards(selected)
+                play = PlayCards(selected)
+                if is_legal(observation, play):
+                    yield play
                 if observation.round.discards_left > 0:
-                    yield DiscardCards(selected)
+                    discard = DiscardCards(selected)
+                    if is_legal(observation, discard):
+                        yield discard
     elif phase == Phase.ROUND_EVAL:
         yield CashOut()
     elif phase == Phase.SHOP:
@@ -261,8 +268,18 @@ def iter_legal_actions(observation: PublicObservation) -> Iterator[PublicAction]
     elif phase == Phase.PACK:
         yield SkipPack()
         for index, item in enumerate(observation.opened_pack):
-            if _pack_offer_legal(observation, item):
-                yield ChoosePackCard(OpenedPackSlot(index))
+            if isinstance(item, VisiblePlayingCard) or item.kind.upper() == "JOKER":
+                action = ChoosePackCard(OpenedPackSlot(index))
+                if is_legal(observation, action):
+                    yield action
+            else:
+                for target_indexes in iter_public_targets(observation, item, from_pack=True):
+                    action = ChoosePackCard(
+                        OpenedPackSlot(index),
+                        tuple(HandSlot(target) for target in target_indexes),
+                    )
+                    if is_legal(observation, action):
+                        yield action
 
     if phase in _SELL_USE_PHASES:
         for index, item in enumerate(observation.jokers):
@@ -273,20 +290,30 @@ def iter_legal_actions(observation: PublicObservation) -> Iterator[PublicAction]
             sell = SellConsumable(ConsumableSlot(index))
             if is_legal(observation, sell):
                 yield sell
-            use = UseConsumable(ConsumableSlot(index))
-            if is_legal(observation, use):
-                yield use
+            for target_indexes in iter_public_targets(observation, item, from_pack=False):
+                use = UseConsumable(
+                    ConsumableSlot(index),
+                    tuple(HandSlot(target) for target in target_indexes),
+                )
+                if is_legal(observation, use):
+                    yield use
 
-    if phase in _REORDER_PHASES:
-        if phase != Phase.SHOP and len(observation.hand) > 1:
-            identity = tuple(HandSlot(index) for index in range(len(observation.hand)))
-            yield from (ReorderHand(order) for order in permutations(identity) if order != identity)
-        if len(observation.jokers) > 1:
-            identity_j = tuple(JokerSlot(index) for index in range(len(observation.jokers)))
-            yield from (ReorderJokers(order) for order in permutations(identity_j) if order != identity_j)
-        if len(observation.consumables) > 1:
-            identity_c = tuple(ConsumableSlot(index) for index in range(len(observation.consumables)))
-            yield from (ReorderConsumables(order) for order in permutations(identity_c) if order != identity_c)
+    if phase in _REORDER_PHASES or observation.pack_kind == "SMODS":
+        if _reorder_phase_legal(observation, "hand") and len(observation.hand) > 1:
+            yield from (
+                ReorderHand(order)
+                for order in _adjacent_orders(HandSlot, len(observation.hand))
+            )
+        if _reorder_phase_legal(observation, "jokers") and len(observation.jokers) > 1:
+            yield from (
+                ReorderJokers(order)
+                for order in _adjacent_orders(JokerSlot, len(observation.jokers))
+            )
+        if _reorder_phase_legal(observation, "consumables") and len(observation.consumables) > 1:
+            yield from (
+                ReorderConsumables(order)
+                for order in _adjacent_orders(ConsumableSlot, len(observation.consumables))
+            )
 
 
 def is_legal(observation: PublicObservation, action: PublicAction) -> bool:
@@ -304,10 +331,15 @@ def is_legal(observation: PublicObservation, action: PublicAction) -> bool:
     if isinstance(action, RerollShop):
         return phase == Phase.SHOP and _can_spend(observation, observation.round.reroll_cost)
     if isinstance(action, PlayCards):
-        return phase == Phase.SELECTING_HAND and _valid_hand_selection(observation, action.cards)
+        return (
+            phase == Phase.SELECTING_HAND
+            and observation.round.hands_left > 0
+            and _valid_hand_selection(observation, action.cards)
+        )
     if isinstance(action, DiscardCards):
         return (
             phase == Phase.SELECTING_HAND
+            and observation.round.hands_left > 0
             and observation.round.discards_left > 0
             and _valid_hand_selection(observation, action.cards)
         )
@@ -340,58 +372,116 @@ def is_legal(observation: PublicObservation, action: PublicAction) -> bool:
         if phase not in _SELL_USE_PHASES or action.consumable.value >= len(observation.consumables):
             return False
         item = observation.consumables[action.consumable.value]
-        # Other consumables remain fail-closed until their check_use and target
-        # rules are represented in PublicObservation.
-        return item.kind.upper() == "PLANET" and not action.targets
+        if action.targets and phase != Phase.SELECTING_HAND:
+            return False
+        if action.targets and not set(observation.required_hand_slots).issubset(
+            target.value for target in action.targets
+        ):
+            return False
+        return public_consumable_is_usable(
+            observation,
+            item,
+            tuple(target.value for target in action.targets),
+            from_pack=False,
+        )
     if isinstance(action, ChoosePackCard):
         if phase != Phase.PACK or action.card.value >= len(observation.opened_pack):
             return False
-        return not action.targets and _pack_offer_legal(observation, observation.opened_pack[action.card.value])
+        return _pack_offer_legal(
+            observation,
+            observation.opened_pack[action.card.value],
+            action.targets,
+        )
     if isinstance(action, SkipPack):
         return phase == Phase.PACK
     if isinstance(action, ReorderHand):
-        return phase in {Phase.SELECTING_HAND, Phase.PACK} and _is_permutation(action.order, len(observation.hand))
+        return _reorder_phase_legal(observation, "hand") and _is_adjacent_order(
+            action.order, len(observation.hand)
+        )
     if isinstance(action, ReorderJokers):
-        return phase in _REORDER_PHASES and _is_permutation(action.order, len(observation.jokers))
+        return _reorder_phase_legal(observation, "jokers") and _is_adjacent_order(
+            action.order, len(observation.jokers)
+        )
     if isinstance(action, ReorderConsumables):
-        return phase in _REORDER_PHASES and _is_permutation(action.order, len(observation.consumables))
+        return _reorder_phase_legal(observation, "consumables") and _is_adjacent_order(
+            action.order, len(observation.consumables)
+        )
     return False
 
 
-def _pack_offer_legal(observation: PublicObservation, item: PublicItem | VisiblePlayingCard) -> bool:
+def _pack_offer_legal(
+    observation: PublicObservation,
+    item: PublicItem | VisiblePlayingCard,
+    targets: tuple[HandSlot, ...],
+) -> bool:
     if isinstance(item, VisiblePlayingCard):
-        return True
-    if item.kind == "PLANET":
-        return True
-    if item.kind == "JOKER":
-        return len(observation.jokers) < observation.joker_limit
-    return False
+        return not targets
+    if item.kind.upper() == "JOKER":
+        return not targets and (
+            item.edition == "NEGATIVE"
+            or len(observation.jokers) < observation.joker_limit
+        )
+    return public_consumable_is_usable(
+        observation,
+        item,
+        tuple(target.value for target in targets),
+        from_pack=True,
+    )
 
 
 def _valid_hand_selection(observation: PublicObservation, cards: tuple[HandSlot, ...]) -> bool:
     return (
         1 <= len(cards) <= min(5, observation.selection_limit)
         and all(card.value < len(observation.hand) for card in cards)
+        and set(observation.required_hand_slots).issubset(card.value for card in cards)
     )
 
 
-def _is_permutation(order: tuple[object, ...], size: int) -> bool:
-    return len(order) == size and {getattr(slot, "value", -1) for slot in order} == set(range(size))
+def _reorder_phase_legal(observation: PublicObservation, area: str) -> bool:
+    if area == "hand":
+        return observation.phase == Phase.SELECTING_HAND or observation.pack_kind == "SMODS"
+    return observation.phase in _REORDER_PHASES or observation.pack_kind == "SMODS"
+
+
+def _adjacent_orders(wrapper: type, size: int) -> Iterator[tuple]:
+    identity = [wrapper(index) for index in range(size)]
+    for index in range(size - 1):
+        order = identity.copy()
+        order[index], order[index + 1] = order[index + 1], order[index]
+        yield tuple(order)
+
+
+def _is_adjacent_order(order: tuple[object, ...], size: int) -> bool:
+    values = tuple(getattr(slot, "value", -1) for slot in order)
+    if len(values) != size or set(values) != set(range(size)):
+        return False
+    displaced = [index for index, value in enumerate(values) if index != value]
+    return (
+        len(displaced) == 2
+        and displaced[1] == displaced[0] + 1
+        and values[displaced[0]] == displaced[1]
+        and values[displaced[1]] == displaced[0]
+    )
 
 
 def _can_spend(observation: PublicObservation, cost: int | None) -> bool:
     if cost is None:
         return False
-    floor = -20 if any(item.key == "j_credit_card" for item in observation.jokers) else 0
+    floor = (
+        -20
+        if any(
+            item.key == "j_credit_card" and not item.debuffed
+            for item in observation.jokers
+        )
+        else 0
+    )
     return observation.money - cost >= floor
 
 
 def _has_room(observation: PublicObservation, item: PublicItem) -> bool:
     kind = item.kind.upper()
     if kind == "JOKER":
-        # Match BalatroBot's current public buy endpoint, which rejects at the
-        # limit even for a Negative shop Joker.
-        return len(observation.jokers) < observation.joker_limit
+        return item.edition == "NEGATIVE" or len(observation.jokers) < observation.joker_limit
     if kind in {"TAROT", "PLANET", "SPECTRAL"}:
         return len(observation.consumables) < observation.consumable_limit
     return False

@@ -98,15 +98,16 @@ def verify_jackdaw_runtime() -> dict[str, object]:
             capture_output=True,
             text=True,
         ).stdout.strip()
-        dirty = bool(
-            subprocess.run(
-                ["git", "status", "--porcelain", "--untracked-files=all"],
-                cwd=root,
-                check=True,
-                capture_output=True,
-                text=True,
-            ).stdout.strip()
-        )
+        status_lines = subprocess.run(
+            ["git", "status", "--porcelain", "--untracked-files=all"],
+            cwd=root,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.splitlines()
+        # uv places an empty checkout-complete marker beside the pinned tree.
+        # It is packaging metadata, not imported Jackdaw source.
+        dirty = any(line != "?? .ok" for line in status_lines)
     except (OSError, subprocess.CalledProcessError) as exc:
         raise JackdawUnavailable("cannot verify imported Jackdaw revision") from exc
     if revision != JACKDAW_REVISION:
@@ -823,6 +824,14 @@ def _normalize_jackdaw_bridge(
 
     result = deepcopy(raw)
     private = game_state if isinstance(game_state, Mapping) else {}
+    pack_choices = private.get("pack_choices_remaining", 0)
+    if not isinstance(pack_choices, int) or isinstance(pack_choices, bool) or pack_choices < 0:
+        raise RuntimeError("Jackdaw pack choice count is unavailable")
+    result["pack_choices_remaining"] = pack_choices
+    last_tarot_planet = private.get("last_tarot_planet")
+    if last_tarot_planet is not None and not isinstance(last_tarot_planet, str):
+        raise RuntimeError("Jackdaw last Tarot/Planet state is invalid")
+    result["last_tarot_planet"] = last_tarot_planet or ""
     if poker_hand_iteration_order is None:
         poker_hand_iteration_order = _DEFAULT_POKER_HAND_ITERATION_ORDER
     result["poker_hand_iteration_order"] = list(poker_hand_iteration_order)
@@ -939,6 +948,14 @@ def _normalize_jackdaw_bridge(
                 semantic_state = {
                     str(key): value for key, value in state.items() if value is not None and value is not False
                 }
+                ability = getattr(private_card, "ability", None)
+                if (
+                    area_name == "hand"
+                    and isinstance(ability, Mapping)
+                    and ability.get("forced_selection") is True
+                ):
+                    semantic_state["highlight"] = True
+                    semantic_state["forced_selection"] = True
                 if area_name in {"cards", "discard"}:
                     semantic_state["hidden"] = True
                 card["state"] = semantic_state or []

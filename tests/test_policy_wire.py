@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import json
-from copy import deepcopy
-
 import pytest
 
 from balatro_ai_v2.actions import action_to_data, iter_legal_actions
@@ -11,6 +9,7 @@ from balatro_ai_v2.policy_wire import (
     PolicyRequest,
     PolicyResponse,
     PolicyWireError,
+    POLICY_PROTOCOL_VERSION,
     decode_request,
     decode_response,
     encode_request,
@@ -21,8 +20,7 @@ from state_factory import state
 
 def _request() -> PolicyRequest:
     observation = to_public_observation(state("SELECTING_HAND", seed="PRIVATE-SEED"))
-    legal = tuple(iter_legal_actions(observation))
-    return PolicyRequest(7, 3, observation, legal)
+    return PolicyRequest(7, 3, observation)
 
 
 def test_policy_request_round_trip_contains_only_public_information() -> None:
@@ -41,7 +39,8 @@ def test_policy_request_round_trip_contains_only_public_information() -> None:
 
 def test_policy_response_round_trip_is_canonical() -> None:
     request = _request()
-    response = PolicyResponse(request.request_id, request.observation.digest(), request.legal_actions[0])
+    action = next(iter_legal_actions(request.observation))
+    response = PolicyResponse(request.request_id, request.observation.digest(), action)
 
     assert decode_response(encode_response(response)) == response
 
@@ -55,12 +54,12 @@ def test_policy_wire_rejects_unknown_envelope_field() -> None:
         decode_request(frame)
 
 
-def test_policy_wire_rejects_noncanonical_action_field() -> None:
+def test_policy_wire_rejects_unknown_or_changed_action_contract() -> None:
     payload = json.loads(encode_request(_request()))
-    payload["legal_actions"][0]["private"] = 1
+    payload["action_contract"] = "private-clone-v1"
     frame = (json.dumps(payload) + "\n").encode()
 
-    with pytest.raises(PolicyWireError, match="canonical form"):
+    with pytest.raises(PolicyWireError, match="unsupported policy request"):
         decode_request(frame)
 
 
@@ -74,22 +73,15 @@ def test_policy_wire_rejects_digest_mismatch_and_invalid_constant() -> None:
         decode_response(b'{"value":NaN}\n')
 
 
-def test_policy_wire_rejects_duplicate_legal_actions() -> None:
-    payload = json.loads(encode_request(_request()))
-    payload["legal_actions"].append(deepcopy(payload["legal_actions"][0]))
-
-    with pytest.raises(PolicyWireError, match="duplicates"):
-        decode_request((json.dumps(payload) + "\n").encode())
-
-
 def test_policy_response_rejects_unknown_action_data() -> None:
     request = _request()
+    action = next(iter_legal_actions(request.observation))
     payload = {
-        "protocol": 1,
+        "protocol": POLICY_PROTOCOL_VERSION,
         "type": "action",
         "request_id": 7,
         "observation_digest": request.observation.digest(),
-        "action": {**action_to_data(request.legal_actions[0]), "private": 1},
+        "action": {**action_to_data(action), "private": 1},
     }
 
     with pytest.raises(PolicyWireError, match="canonical form"):

@@ -129,6 +129,8 @@ def state(
         },
         "jokers": {"cards": [], "count": 0, "highlighted_limit": 1, "limit": 5},
         "money": money,
+        "last_tarot_planet": "",
+        "pack_choices_remaining": 0,
         "round": {
             "ancient_suit": "H",
             "chips": 0,
@@ -182,6 +184,7 @@ def state(
         }
     elif phase in {"BUFFOON_PACK", "TAROT_PACK", "PLANET_PACK", "SPECTRAL_PACK", "STANDARD_PACK"}:
         raw["round_num"] = 1
+        raw["pack_choices_remaining"] = 1
         raw["pack"] = {
             "cards": [item_card("j_joker", card_id=30, kind="JOKER")],
             "count": 1,

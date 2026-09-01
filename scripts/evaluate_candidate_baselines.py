@@ -69,7 +69,7 @@ def main() -> None:
             launch_headless=False,
             profile_mode="all_unlocked",
             inference_budget=(
-                "transported_public_actions<=512;random_public_actions<=256;"
+                "policy_action_contract=public_legality_v3;random_public_actions<=256;"
                 "tactical_candidates<=2048;draw_branches<=512;"
                 f"policy_timeout_seconds={args.policy_timeout}"
             ),

@@ -9,6 +9,7 @@ from balatro_ai_v2.baselines import DeterministicRandomPolicy
 from balatro_ai_v2.balatrobot.adapter import to_public_observation
 from balatro_ai_v2.policy import PublicHistoryStep
 from balatro_ai_v2.policy_process import PolicyProcess, PolicyProcessError
+from balatro_ai_v2.policy_wire import POLICY_PROTOCOL_VERSION
 from state_factory import playing_card, state
 
 
@@ -33,6 +34,26 @@ def test_policy_transport_covers_normal_eight_card_tactical_actions() -> None:
 
     with PolicyProcess("greedy", timeout_seconds=2) as policy:
         action = policy.choose_action(observation, lambda: iter_legal_actions(observation), ())
+
+    assert action_to_data(action)["type"] == "play_cards"
+
+
+def test_policy_transport_factorizes_large_tactical_action_sets() -> None:
+    raw = state("SELECTING_HAND")
+    raw["hand"]["cards"].extend(
+        playing_card(key, card_id=index)
+        for index, key in enumerate(("S_A", "H_K", "D_Q", "C_J", "S_9", "H_8"), 40)
+    )
+    raw["hand"]["count"] = 9
+    observation = to_public_observation(raw)
+    assert len(tuple(iter_legal_actions(observation))) > 512
+
+    with PolicyProcess("greedy", timeout_seconds=2) as policy:
+        action = policy.choose_action(
+            observation,
+            lambda: iter_legal_actions(observation),
+            (),
+        )
 
     assert action_to_data(action)["type"] == "play_cards"
 
@@ -112,11 +133,11 @@ import json, sys
 request = json.loads(sys.stdin.buffer.readline())
 mutation = sys.argv[1]
 response = {
-    "protocol": 1,
+    "protocol": %d,
     "type": "action",
     "request_id": request["request_id"],
     "observation_digest": request["observation_digest"],
-    "action": request["legal_actions"][0],
+    "action": {"type": "select_blind"},
 }
 if mutation == "request_id": response["request_id"] += 1
 if mutation == "digest": response["observation_digest"] = "stale"
@@ -126,7 +147,7 @@ if mutation == "extra_stdout":
     sys.stdout.flush()
 else:
     print(json.dumps(response), flush=True)
-"""
+""" % POLICY_PROTOCOL_VERSION
     policy = PolicyProcess(
         "greedy",
         timeout_seconds=1,

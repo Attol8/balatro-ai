@@ -41,7 +41,7 @@ def test_face_down_card_identity_is_completely_anonymous() -> None:
         "D_2",
         card_id=999,
         hidden=True,
-        modifier=["GOLD"],
+        modifier=["POLYCHROME"],
         permanent_bonus=25,
     )
 
@@ -50,6 +50,24 @@ def test_face_down_card_identity_is_completely_anonymous() -> None:
 
     assert isinstance(left_public.hand[0], HiddenHandCard)
     assert left_public == right_public
+
+
+def test_face_down_edition_does_not_change_aura_observation() -> None:
+    plain = state("SELECTING_HAND")
+    edited = deepcopy(plain)
+    plain["hand"]["cards"][0] = playing_card("S_A", card_id=800, hidden=True)
+    edited["hand"]["cards"][0] = playing_card(
+        "D_2", card_id=999, hidden=True, modifier=["FOIL"]
+    )
+
+    plain_card = to_public_observation(plain).hand[0]
+    edited_card = to_public_observation(edited).hand[0]
+
+    assert isinstance(plain_card, HiddenHandCard)
+    assert isinstance(edited_card, HiddenHandCard)
+    assert plain_card == HiddenHandCard()
+    assert edited_card == HiddenHandCard()
+    assert to_public_observation(plain) == to_public_observation(edited)
 
 
 def test_draw_pile_is_public_composition_but_not_private_order() -> None:

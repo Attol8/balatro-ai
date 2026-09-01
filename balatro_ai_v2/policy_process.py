@@ -4,10 +4,9 @@ from __future__ import annotations
 
 import sys
 from collections.abc import Sequence
-from itertools import islice
 from pathlib import Path
 
-from balatro_ai_v2.actions import PublicAction, action_to_data, is_legal
+from balatro_ai_v2.actions import PublicAction, is_legal
 from balatro_ai_v2.jsonl_process import (
     JsonlChildProcess,
     JsonlProcessError,
@@ -15,7 +14,6 @@ from balatro_ai_v2.jsonl_process import (
 )
 from balatro_ai_v2.policy import ActionSource, PublicHistoryStep
 from balatro_ai_v2.policy_wire import (
-    MAX_LEGAL_ACTIONS,
     MAX_REQUEST_BYTES,
     MAX_RESPONSE_BYTES,
     PolicyRequest,
@@ -75,18 +73,15 @@ class PolicyProcess:
     ) -> PublicAction:
         if self.closed:
             raise PolicyProcessError("policy child is closed")
-        legal = tuple(islice(legal_actions(), MAX_LEGAL_ACTIONS))
+        del legal_actions
         try:
-            request = PolicyRequest(self._request_id, len(history), observation, legal)
+            request = PolicyRequest(self._request_id, len(history), observation)
             frame = encode_request(request)
             response = decode_response(self._transport.exchange(frame))
             if response.request_id != self._request_id:
                 raise PolicyProcessError("policy response request ID mismatch")
             if response.observation_digest != observation.digest():
                 raise PolicyProcessError("policy response observation digest mismatch")
-            action_data = action_to_data(response.action)
-            if action_data not in [action_to_data(action) for action in legal]:
-                raise PolicyProcessError("policy response was not in the supplied legal action set")
             if not is_legal(observation, response.action):
                 raise PolicyProcessError("policy response is not legal in the current observation")
         except (JsonlProcessError, PolicyWireError, PolicyProcessError) as exc:

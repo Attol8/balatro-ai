@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 import sys
 
-from balatro_ai_v2.actions import PublicAction, action_to_data, is_legal
+from balatro_ai_v2.actions import PublicAction, is_legal, iter_legal_actions
 from balatro_ai_v2.baselines import PUBLIC_BASELINE_NAMES, build_public_baseline
 from balatro_ai_v2.policy import PublicHistoryStep
 from balatro_ai_v2.policy_wire import (
@@ -42,12 +42,9 @@ def main() -> None:
                 history.append(PublicHistoryStep(before, action, request.observation))
             action = policy.choose_action(
                 request.observation,
-                lambda: iter(request.legal_actions),
+                lambda: iter_legal_actions(request.observation),
                 tuple(history),
             )
-            action_data = action_to_data(action)
-            if action_data not in [action_to_data(value) for value in request.legal_actions]:
-                raise ValueError("policy emitted an action outside the supplied public set")
             if not is_legal(request.observation, action):
                 raise ValueError("policy emitted an illegal public action")
             pending = (request.observation, action)

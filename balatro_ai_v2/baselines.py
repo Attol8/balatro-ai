@@ -59,7 +59,14 @@ _MAX_TACTICAL_CANDIDATES = 2048
 _MAX_PUBLIC_ACTIONS = 256
 _MAX_STRATEGIC_ACTIONS = 512
 _MAX_PUBLIC_DRAW_BRANCHES = 512
-PUBLIC_BASELINE_NAMES = ("random", "greedy", "tactical", "strategic")
+PUBLIC_BASELINE_NAMES = (
+    "random",
+    "greedy",
+    "tactical",
+    "strategic",
+    "preboss_search",
+    "red_gold_search",
+)
 
 _TYPE_MULT_JOKERS = {
     "j_jolly": ("Pair", 8),
@@ -158,6 +165,20 @@ def build_public_baseline(name: str, policy_seed: str) -> tuple[PublicPolicy, st
         return PublicBeliefTacticalPolicy(), "PublicBeliefTacticalPolicy"
     if name == "strategic":
         return PublicStrategicPolicy(), "PublicStrategicPolicy"
+    if name == "preboss_search":
+        from balatro_ai_v2.preboss_search import PublicPreBossSearchPolicy
+
+        return (
+            PublicPreBossSearchPolicy(search_nonce=policy_seed),
+            f"PublicPreBossSearchPolicy:{policy_seed}",
+        )
+    if name == "red_gold_search":
+        from balatro_ai_v2.solver_policy import PublicRedGoldSearchPolicy
+
+        return (
+            PublicRedGoldSearchPolicy(search_nonce=policy_seed),
+            f"PublicRedGoldSearchPolicy:{policy_seed}",
+        )
     raise ValueError(f"unknown public baseline {name!r}")
 
 
@@ -355,7 +376,14 @@ def _best_play_with_score(
     slots = tuple(HandSlot(index) for index in range(len(observation.hand)))
     maximum = min(5, observation.selection_limit, len(slots))
     candidate_slots = islice(
-        (selected for size in range(maximum, 0, -1) for selected in combinations(slots, size)),
+        (
+            selected
+            for size in range(maximum, 0, -1)
+            for selected in combinations(slots, size)
+            if set(observation.required_hand_slots).issubset(
+                slot.value for slot in selected
+            )
+        ),
         _MAX_TACTICAL_CANDIDATES,
     )
     stats = hand_stats if hand_stats is not None else {hand.name: hand for hand in observation.hand_stats}
@@ -431,7 +459,7 @@ def _play_score(
             multiplier *= Fraction(3, 2)
 
     for joker in observation.jokers:
-        if joker.perishable_rounds == 0:
+        if joker.debuffed:
             continue
         card_chips, card_mult = _card_joker_effect(joker.key, scoring_cards)
         chips += card_chips

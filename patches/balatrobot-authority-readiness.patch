@@ -1,3 +1,11 @@
+diff --git a/src/lua/endpoints/buy.lua b/src/lua/endpoints/buy.lua
+index 96b432c..24f0fb0 100644
+--- a/src/lua/endpoints/buy.lua
++++ b/src/lua/endpoints/buy.lua
+@@ -134 +134,2 @@ return {
+-      if gamestate.jokers.count >= gamestate.jokers.limit then
++      local is_negative = card.edition and card.edition.negative
++      if gamestate.jokers.count >= gamestate.jokers.limit and not is_negative then
 diff --git a/src/lua/endpoints/cash_out.lua b/src/lua/endpoints/cash_out.lua
 index 03e7ee6..e9c5156 100644
 --- a/src/lua/endpoints/cash_out.lua
@@ -23,6 +31,30 @@ index 03e7ee6..e9c5156 100644
 +    end
 +
 +    G.FUNCS.cash_out(cash_out_button)
+diff --git a/src/lua/endpoints/discard.lua b/src/lua/endpoints/discard.lua
+index 22d2f6e..e334b33 100644
+--- a/src/lua/endpoints/discard.lua
++++ b/src/lua/endpoints/discard.lua
+@@ -70,0 +71,19 @@ return {
++    for _, hand_card in ipairs(G.hand.cards) do
++      if hand_card.ability and hand_card.ability.forced_selection then
++        local includes_forced = false
++        for _, card_index in ipairs(args.cards) do
++          if G.hand.cards[card_index + 1] == hand_card then
++            includes_forced = true
++            break
++          end
++        end
++        if not includes_forced then
++          send_response({
++            message = "Discarded cards must include Cerulean Bell's forced card",
++            name = BB_ERROR_NAMES.NOT_ALLOWED,
++          })
++          return
++        end
++      end
++    end
++
 diff --git a/src/lua/endpoints/health.lua b/src/lua/endpoints/health.lua
 index f43b412..d551d2a 100644
 --- a/src/lua/endpoints/health.lua
@@ -44,6 +76,26 @@ diff --git a/src/lua/endpoints/play.lua b/src/lua/endpoints/play.lua
 index 2c63b56..fbb0985 100644
 --- a/src/lua/endpoints/play.lua
 +++ b/src/lua/endpoints/play.lua
+@@ -64,0 +65,19 @@ return {
++    for _, hand_card in ipairs(G.hand.cards) do
++      if hand_card.ability and hand_card.ability.forced_selection then
++        local includes_forced = false
++        for _, card_index in ipairs(args.cards) do
++          if G.hand.cards[card_index + 1] == hand_card then
++            includes_forced = true
++            break
++          end
++        end
++        if not includes_forced then
++          send_response({
++            message = "Played cards must include Cerulean Bell's forced card",
++            name = BB_ERROR_NAMES.NOT_ALLOWED,
++          })
++          return
++        end
++      end
++    end
++
 @@ -137 +137,3 @@ return {
 -            if b:get_UIE_by_ID("cash_out_button") then
 +            if b.config
@@ -62,6 +114,47 @@ index 214a0b4..330af1b 100644
 @@ -148 +148 @@ return {
 -          if pack_closed and back_to_shop then
 +          if pack_closed and back_to_decision then
+@@ -195,7 +195,8 @@ return {
+       if card.ability and card.ability.set == "Joker" then
+         local joker_count = G.jokers and G.jokers.config and G.jokers.config.card_count or 0
+         local joker_limit = G.jokers and G.jokers.config and G.jokers.config.card_limit or 0
+-        if joker_count >= joker_limit then
++        local is_negative = card.edition and card.edition.negative
++        if joker_count >= joker_limit and not is_negative then
+           send_response({
+             message = "Cannot select joker, joker slots are full. Current: "
+               .. joker_count
+@@ -255,4 +256,21 @@ return {
+-            -- Clear existing highlights using proper CardArea method
+-            for i = #G.hand.highlighted, 1, -1 do
+-              G.hand:remove_from_highlighted(G.hand.highlighted[i], true)
+-            end
++            for _, hand_card in ipairs(G.hand.cards) do
++              if hand_card.ability and hand_card.ability.forced_selection then
++                local includes_forced = false
++                for _, target_idx in ipairs(args.targets) do
++                  if G.hand.cards[target_idx + 1] == hand_card then
++                    includes_forced = true
++                    break
++                  end
++                end
++                if not includes_forced then
++                  send_response({
++                    message = "Pack targets must include Cerulean Bell's forced card",
++                    name = BB_ERROR_NAMES.NOT_ALLOWED,
++                  })
++                  return true
++                end
++              end
++            end
++
++            -- Match the UI: preserve Cerulean Bell's forced selection.
++            G.hand:unhighlight_all()
+@@ -270 +287,3 @@ return {
+-              G.hand:add_to_highlighted(G.hand.cards[hand_pos], true)
++              if not G.hand.cards[hand_pos].highlighted then
++                G.hand:add_to_highlighted(G.hand.cards[hand_pos], true)
++              end
 @@ -296,0 +297 @@ return {
 +      local pack_state_before = G.STATE
 @@ -306 +307,3 @@ return {
@@ -159,10 +252,30 @@ diff --git a/src/lua/utils/gamestate.lua b/src/lua/utils/gamestate.lua
 index 5d9d29f..171031e 100644
 --- a/src/lua/utils/gamestate.lua
 +++ b/src/lua/utils/gamestate.lua
+@@ -321,3 +321,4 @@ local function extract_card_modifier(card)
+-  -- Perishable (from perish_tally - only include if > 0)
+-  if card.ability and card.ability.perish_tally and card.ability.perish_tally > 0 then
+-    modifier.perishable = card.ability.perish_tally
++  -- Preserve sticker presence when the tally reaches zero; expired
++  -- Perishable is observably different from having no sticker.
++  if card.ability and card.ability.perishable then
++    modifier.perishable = card.ability.perish_tally or 0
 @@ -390,0 +391,3 @@ local function extract_card_value(card)
 +    -- To Do List's current target is runtime state, not the prototype's
 +    -- initial `extra.poker_hand`. It is visible in the normal card tooltip.
 +    if card.ability.to_do_poker_hand then ab.poker_hand = card.ability.to_do_poker_hand end
+@@ -420,0 +424,5 @@ local function extract_card_state(card)
++  -- Cerulean Bell marks the selected card in the normal hand UI.
++  if card.ability and card.ability.forced_selection then
++    state.forced_selection = true
++  end
++
+@@ -864,0 +868,5 @@ function gamestate.get_gamestate()
++    -- Both values are visible at a normal decision boundary: the pack UI
++    -- shows remaining choices, and The Fool exposes the last Tarot/Planet a
++    -- player could also remember from public action history.
++    state_data.pack_choices_remaining = G.GAME.pack_choices or 0
++    state_data.last_tarot_planet = G.GAME.last_tarot_planet or ""
 @@ -899,0 +903,6 @@ function gamestate.get_gamestate()
 +      -- LuaJIT's string-table iteration order varies between fresh VMs. Vanilla
 +      -- uses this order for chance pools and a boss-round tie-break bug.
@@ -176,3 +289,61 @@ index 5d9d29f..171031e 100644
 +    state_data.discard = extract_area(G.discard)
 +  end
 +
+diff --git a/src/lua/endpoints/use.lua b/src/lua/endpoints/use.lua
+index 7801ed3..4f265c6 100644
+--- a/src/lua/endpoints/use.lua
++++ b/src/lua/endpoints/use.lua
+@@ -58 +58,5 @@ return {
+-    local requires_cards = consumable_card.ability.consumeable.max_highlighted ~= nil
++    local card_key = consumable_card.config
++      and consumable_card.config.center
++      and consumable_card.config.center.key
++    local is_aura = card_key == "c_aura"
++    local requires_cards = consumable_card.ability.consumeable.max_highlighted ~= nil or is_aura
+@@ -95,2 +99,2 @@ return {
+-      local min_cards = consumable_card.ability.consumeable.min_highlighted or 1
+-      local max_cards = consumable_card.ability.consumeable.max_highlighted
++      local min_cards = is_aura and 1 or (consumable_card.ability.consumeable.min_highlighted or 1)
++      local max_cards = is_aura and 1 or consumable_card.ability.consumeable.max_highlighted
+@@ -146,9 +150,31 @@ return {
+-      -- Clear existing selection
+-      for i = #G.hand.highlighted, 1, -1 do
+-        G.hand:remove_from_highlighted(G.hand.highlighted[i], true)
+-      end
+-
+-      -- Add cards using proper method
+-      for _, card_idx in ipairs(args.cards) do
+-        local hand_card = G.hand.cards[card_idx + 1] -- Convert 0-based to 1-based
+-        G.hand:add_to_highlighted(hand_card, true) -- silent=true
++      -- Cerulean Bell's forced selection is a visible, mandatory UI choice.
++      -- Refuse requests that would silently clear it before adding targets.
++      for _, hand_card in ipairs(G.hand.cards) do
++        if hand_card.ability and hand_card.ability.forced_selection then
++          local includes_forced = false
++          for _, card_idx in ipairs(args.cards) do
++            if G.hand.cards[card_idx + 1] == hand_card then
++              includes_forced = true
++              break
++            end
++          end
++          if not includes_forced then
++            send_response({
++              message = "Consumable targets must include Cerulean Bell's forced card",
++              name = BB_ERROR_NAMES.NOT_ALLOWED,
++            })
++            return
++          end
++        end
++      end
++
++      -- Match the UI: ordinary highlights clear, while Cerulean's forced
++      -- selection remains highlighted.
++      G.hand:unhighlight_all()
++
++      -- Add cards using proper method
++      for _, card_idx in ipairs(args.cards) do
++        local hand_card = G.hand.cards[card_idx + 1] -- Convert 0-based to 1-based
++        if not hand_card.highlighted then
++          G.hand:add_to_highlighted(hand_card, true) -- silent=true
++        end
++      end

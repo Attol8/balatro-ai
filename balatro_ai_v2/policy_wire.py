@@ -8,7 +8,6 @@ from typing import Final
 from balatro_ai_v2.actions import PublicAction, action_to_data, canonical_action_from_data
 from balatro_ai_v2.jsonl import (
     JsonlProtocolError,
-    canonical_json,
     decode_frame,
     encode_frame,
     nonnegative_integer,
@@ -18,8 +17,8 @@ from balatro_ai_v2.public_codec import public_observation_from_data, public_obse
 from balatro_ai_v2.public_state import PublicObservation
 
 
-POLICY_PROTOCOL_VERSION: Final = 1
-MAX_LEGAL_ACTIONS: Final = 512
+POLICY_PROTOCOL_VERSION: Final = 2
+POLICY_ACTION_CONTRACT: Final = "public_legality_v3"
 MAX_PUBLIC_HISTORY: Final = 2048
 MAX_REQUEST_BYTES: Final = 1_000_000
 MAX_RESPONSE_BYTES: Final = 32_000
@@ -33,7 +32,6 @@ class PolicyRequest:
     request_id: int
     history_length: int
     observation: PublicObservation
-    legal_actions: tuple[PublicAction, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -48,16 +46,14 @@ def encode_request(request: PolicyRequest) -> bytes:
         raise PolicyWireError("request_id must be non-negative")
     if not 0 <= request.history_length <= MAX_PUBLIC_HISTORY:
         raise PolicyWireError("history_length exceeds the public bound")
-    if not 1 <= len(request.legal_actions) <= MAX_LEGAL_ACTIONS:
-        raise PolicyWireError("legal action count is outside the public bound")
     payload = {
         "protocol": POLICY_PROTOCOL_VERSION,
         "type": "choose_action",
+        "action_contract": POLICY_ACTION_CONTRACT,
         "request_id": request.request_id,
         "history_length": request.history_length,
         "observation_digest": request.observation.digest(),
         "observation": public_observation_to_data(request.observation),
-        "legal_actions": [action_to_data(action) for action in request.legal_actions],
     }
     return encode_frame(payload, MAX_REQUEST_BYTES)
 
@@ -67,14 +63,18 @@ def decode_request(frame: bytes) -> PolicyRequest:
     expected = {
         "protocol",
         "type",
+        "action_contract",
         "request_id",
         "history_length",
         "observation_digest",
         "observation",
-        "legal_actions",
     }
     require_fields(payload, expected, "policy request")
-    if payload["protocol"] != POLICY_PROTOCOL_VERSION or payload["type"] != "choose_action":
+    if (
+        payload["protocol"] != POLICY_PROTOCOL_VERSION
+        or payload["type"] != "choose_action"
+        or payload["action_contract"] != POLICY_ACTION_CONTRACT
+    ):
         raise PolicyWireError("unsupported policy request protocol or type")
     request_id = nonnegative_integer(payload["request_id"], "request_id")
     history_length = nonnegative_integer(payload["history_length"], "history_length")
@@ -84,14 +84,7 @@ def decode_request(frame: bytes) -> PolicyRequest:
     digest = payload["observation_digest"]
     if not isinstance(digest, str) or digest != observation.digest():
         raise PolicyWireError("policy request observation digest mismatch")
-    legal_raw = payload["legal_actions"]
-    if not isinstance(legal_raw, list) or not 1 <= len(legal_raw) <= MAX_LEGAL_ACTIONS:
-        raise PolicyWireError("legal action count is outside the public bound")
-    legal_actions = tuple(_canonical_action(value) for value in legal_raw)
-    serialized = [canonical_json(action_to_data(action)) for action in legal_actions]
-    if len(serialized) != len(set(serialized)):
-        raise PolicyWireError("legal action list contains duplicates")
-    return PolicyRequest(request_id, history_length, observation, legal_actions)
+    return PolicyRequest(request_id, history_length, observation)
 
 
 def encode_response(response: PolicyResponse) -> bytes:

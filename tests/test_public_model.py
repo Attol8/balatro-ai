@@ -124,7 +124,7 @@ def test_model_encodes_visible_permanent_card_bonus() -> None:
     assert not torch.equal(_step(model, observation).values, _step(model, changed).values)
 
 
-def test_dynamic_head_supports_every_non_reorder_action_family() -> None:
+def test_dynamic_head_supports_every_bounded_action_family() -> None:
     selecting = state("SELECTING_HAND")
     selecting["jokers"] = {
         "cards": [item_card("j_joker", card_id=40, kind="JOKER")],
@@ -159,6 +159,7 @@ def test_dynamic_head_supports_every_non_reorder_action_family() -> None:
         LeaveShop,
         SkipPack,
         ChoosePackCard,
+        ReorderHand,
         TacticalCandidate,
     }
     actions = [public_model_candidates(observation) for observation in observations]
@@ -204,7 +205,7 @@ def test_factorized_tactical_sampling_and_replay_have_identical_log_probability(
     assert torch.allclose(sample.log_probabilities, replay.log_probabilities)
 
 
-def test_reorder_actions_fail_closed_and_are_not_silently_proposed() -> None:
+def test_adjacent_reorder_actions_are_bounded_and_modelled() -> None:
     observation = to_public_observation(state("SELECTING_HAND"))
     candidates = public_model_candidates(observation)
     legal_reorder = next(
@@ -214,9 +215,9 @@ def test_reorder_actions_fail_closed_and_are_not_silently_proposed() -> None:
     )
     model = _model()
 
-    assert not any(isinstance(action, ReorderHand) for action in candidates)
-    with pytest.raises(PublicModelError, match="reorder"):
-        model.step((observation,), ((legal_reorder,),), (None,))
+    assert legal_reorder in candidates
+    output = model.step((observation,), ((legal_reorder,),), (None,))
+    assert torch.isfinite(output.logits[0, 0])
 
 
 def test_candidate_order_does_not_change_logits_or_tie_breaking() -> None:
