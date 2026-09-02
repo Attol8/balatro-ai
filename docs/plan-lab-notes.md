@@ -2483,3 +2483,65 @@ Policy outcomes reject the scaling claim. On seeds 60001-60100, the frozen strat
 Unbounded exploration also exposed a real public-contract gap before the target was narrowed. Candidate seed 50455, root 9, publicly sold Loyalty Card and later reached Cerulean Bell; the public legal-action surface allowed a five-card play that omitted the visibly forced card, and Jackdaw rejected it with `Forced card (Cerulean Bell) must be in the selection`. The forced public hand slot is currently absent from `PublicObservation`. Fix that schema/action-legality root cause before any full-horizon learner or broader exploratory campaign.
 
 - Cerulean contract repair: preserve BalatroBot's visible forced-selection marker as a typed required hand slot, reject malformed or non-visible markers at the adapter boundary, and require that slot in every public play, discard, and hand-targeting consumable action. The missing marker was a Jackdaw bridge representation bug: empty card state arrived as `[]`, so normalization never added the visible forced marker. Normalize both empty-list and object forms without exposing identity, require exactly one marker while Cerulean Bell is active, and fail closed otherwise. Codec, hidden-twin, legality, adapter, and bridge regressions pass (61 focused tests); exploration may resume only under this corrected contract.
+
+## Research survey: prior art and cheaper approaches (2026-09-02)
+
+Question: is a neural policy/value model necessary for superhuman Balatro?
+
+### Existing Balatro agents
+- `coder/balatrobot` (JSON-RPC mod, v1.5.2) and `TylerFlar/jackdaw-balatro`
+  (Python engine reimplementation, Gymnasium env, MaskablePPO script) are
+  infrastructure; neither publishes win rates beyond a random baseline.
+- `taggarttufte/balatro-rl`: PPO, eight architectures, 434-feature
+  observation. Peak 2.35% win rate. A 5.5x network scale-up did not move
+  it; the author attributes the ceiling to exploration/search, not capacity.
+- `coder/balatrollm` and balatrobench.com: LLM agents on Red Deck / White
+  Stake, five fixed seeds, three plays each. Best model reaches the final
+  round in 9/15. The benchmark states it mostly measures tool-call
+  reliability. No Gold Stake.
+- Seed-search tools (Immolate, TheSoul, Ouija, Motely) use full hidden
+  information and are irrelevant as strength baselines but relevant as a
+  firewall reminder.
+- balatrobot.com describes a deterministic oracle search plus linear shop
+  policy at 35% White Stake. An oracle uses hidden information; this is the
+  likely origin of the June 2026 figure and is not a fair baseline.
+- No published agent has any Gold Stake result.
+
+### Human benchmark
+- Steam achievement rates show about 5% of players have ever won at Gold
+  Stake or above. This is an ever-did-it rate, not per run.
+- Community self-reports for experienced players cluster at 30-40% Gold
+  Stake win rate, unaudited, no run counts.
+- The commonly repeated 70% "human level" figure traces to one README with
+  no source and is almost certainly White Stake.
+- There is no Balatro equivalent of Slay the Spire's run databases. The bar
+  must be declared and defended by this project.
+
+### Cheaper approaches in comparable games
+- Slay the Spire `bottled_ai`: hand-written priorities plus combat
+  forward-simulation over about 40 weighted features, no ML, no hidden
+  info. Wins 20-52% by character at low ascension after extended tuning;
+  below expert at Ascension 20. Hand tuning alone plateaus around
+  good-human on easy settings.
+- Dominion `Provincial`: co-evolved buy-rule weights over a fixed rule
+  skeleton, competitive with strong human theory, no network.
+- Information-set MCTS for Hearthstone and MCTS for Dominion exist without
+  superhuman claims. Surveys note network-plus-search transfers less
+  cleanly to imperfect-information games than to perfect-information ones.
+
+### Strategy structure at Gold
+Guides converge on a small encodable core: commit to one hand family early
+and level it with Planets; two or three x-mult Jokers online by ante 4-5;
+three or four synergistic Jokers rather than five; interest discipline and
+reroll budgeting. Gold pressure is mechanical (stickers, one fewer discard,
+faster scaling). Community consensus is that adapting to what the shop
+offers dominates pre-planning. No source claims deep multi-ante planning is
+required.
+
+### Conclusion
+The evidence supports neither "a neural model is necessary" nor "heuristics
+alone suffice". The measured strength lever is search over a decent
+continuation policy; the cheapest precedent for reaching human-competitive
+play is evolution-tuned weights over a rule skeleton. Treat the network as
+a later speed and generalization optimization, adopted only after tuning
+plus search plus a boosted leaf saturates below the declared bar.
