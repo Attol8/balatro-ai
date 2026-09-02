@@ -47,6 +47,7 @@ from balatro_ai_v2.public_state import (
     PublicObservation,
     VisiblePlayingCard,
 )
+from balatro_ai_v2.strategy_tuning import tuning_from_environment
 
 
 _SUPPORTED_BOSSES = frozenset({"the wall", "violet vessel", "the needle", "the water"})
@@ -94,7 +95,9 @@ class PublicPreBossSearchPolicy:
     particles: int = 16
     minimum_particle_gain: int = 2
     max_joker_candidates: int = 3
-    baseline: PublicPolicy = field(default_factory=PublicStrategicPolicy)
+    baseline: PublicPolicy = field(
+        default_factory=lambda: PublicStrategicPolicy(tuning=tuning_from_environment())
+    )
     last_decision: PreBossSearchDecision | None = field(default=None, init=False)
     decisions: list[PreBossSearchDecision] = field(default_factory=list, init=False)
     _searched_shop: tuple[int, int] | None = field(default=None, init=False, repr=False)

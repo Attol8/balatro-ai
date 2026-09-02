@@ -6,10 +6,12 @@ import pytest
 from balatro_ai_v2.actions import action_to_data, iter_legal_actions
 from balatro_ai_v2.balatrobot.adapter import to_public_observation
 from balatro_ai_v2.policy_wire import (
+    PolicyDiagnostics,
     PolicyRequest,
     PolicyResponse,
     PolicyWireError,
     POLICY_PROTOCOL_VERSION,
+    SearchDecisionDiagnostics,
     decode_request,
     decode_response,
     encode_request,
@@ -43,6 +45,39 @@ def test_policy_response_round_trip_is_canonical() -> None:
     response = PolicyResponse(request.request_id, request.observation.digest(), action)
 
     assert decode_response(encode_response(response)) == response
+
+
+def test_policy_response_diagnostics_are_typed_and_bounded() -> None:
+    request = _request()
+    action = next(iter_legal_actions(request.observation))
+    diagnostics = PolicyDiagnostics(
+        exact_blind=SearchDecisionDiagnostics(
+            attempted=True,
+            completed=False,
+            incomplete_reason="transition_budget",
+        ),
+        preboss=SearchDecisionDiagnostics(attempted=True, completed=True, changed=True),
+    )
+
+    decoded = decode_response(
+        encode_response(PolicyResponse(request.request_id, request.observation.digest(), action, diagnostics))
+    )
+
+    assert decoded.diagnostics == diagnostics
+    with pytest.raises(ValueError, match="exceeds its bound"):
+        SearchDecisionDiagnostics(attempted=True, incomplete_reason="x" * 161)
+    with pytest.raises(ValueError, match="invalid"):
+        SearchDecisionDiagnostics(attempted=True, incomplete_reason="private-seed")
+
+
+def test_policy_response_rejects_diagnostic_state_or_unknown_fields() -> None:
+    request = _request()
+    action = next(iter_legal_actions(request.observation))
+    payload = json.loads(encode_response(PolicyResponse(request.request_id, request.observation.digest(), action)))
+    payload["diagnostics"]["exact_blind"]["raw"] = {"seed": "private"}
+
+    with pytest.raises(PolicyWireError, match="diagnostics fields differ"):
+        decode_response((json.dumps(payload) + "\n").encode())
 
 
 def test_policy_wire_rejects_unknown_envelope_field() -> None:
@@ -82,6 +117,20 @@ def test_policy_response_rejects_unknown_action_data() -> None:
         "request_id": 7,
         "observation_digest": request.observation.digest(),
         "action": {**action_to_data(action), "private": 1},
+        "diagnostics": {
+            "exact_blind": {
+                "attempted": False,
+                "completed": False,
+                "changed": False,
+                "incomplete_reason": None,
+            },
+            "preboss": {
+                "attempted": False,
+                "completed": False,
+                "changed": False,
+                "incomplete_reason": None,
+            },
+        },
     }
 
     with pytest.raises(PolicyWireError, match="canonical form"):

@@ -3,16 +3,25 @@
 from __future__ import annotations
 
 import json
+from collections import Counter
 from dataclasses import dataclass
 
 from balatro_ai_v2.actions import (
+    BuyPack,
+    BuyShopCard,
+    BuyVoucher,
     CashOut,
+    ChoosePackCard,
+    DiscardCards,
     HandSlot,
     LeaveShop,
     PlayCards,
     PublicAction,
     SelectBlind,
+    SellConsumable,
+    SellJoker,
     SkipPack,
+    UseConsumable,
     action_to_data,
     is_legal,
     iter_legal_actions,
@@ -22,7 +31,13 @@ from balatro_ai_v2.balatrobot.adapter import to_public_observation
 from balatro_ai_v2.balatrobot.backend import UnsettledStateError
 from balatro_ai_v2.balatrobot.tracing import AuthorityTraceWriter
 from balatro_ai_v2.policy import ActionSource, PublicHistoryStep, PublicPolicy
-from balatro_ai_v2.public_state import Phase, PublicObservation
+from balatro_ai_v2.public_state import (
+    Phase,
+    PublicBlind,
+    PublicItem,
+    PublicObservation,
+    VisiblePlayingCard,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -35,6 +50,11 @@ class RunResult:
     rejected_decisions: int
     terminal_reason: str
     final_observation: PublicObservation | None
+    terminal_blind: PublicBlind | None
+    action_counts: tuple[tuple[str, int], ...]
+    semantic_action_counts: tuple[tuple[str, int], ...]
+    cards_played: int
+    cards_discarded: int
 
 
 @dataclass(slots=True)
@@ -46,15 +66,22 @@ class AuthorityRunner:
 
     def run(self, spec: RunSpec) -> RunResult:
         history: list[PublicHistoryStep] = []
+        action_counts: Counter[str] = Counter()
+        semantic_action_counts: Counter[str] = Counter()
+        cards_played = 0
+        cards_discarded = 0
         rejected = 0
         final: PublicObservation | None = None
+        terminal_blind: PublicBlind | None = None
         terminal_reason = "policy_error"
         try:
             authority = self.backend.reset(spec)
             public = _public(authority)
             final = public
+            terminal_blind = _current_blind(public)
             self._record("run_start", authority=_authority_data(authority), public=json.loads(public.canonical_json()))
             for _ in range(self.max_decisions):
+                terminal_blind = _current_blind(public) or terminal_blind
                 if public.terminal:
                     terminal_reason = _terminal_reason(public)
                     break
@@ -74,6 +101,7 @@ class AuthorityRunner:
                     break
 
                 result = self.backend.step(action)
+                semantic_action = _semantic_action_label(public, action)
                 transition: dict[str, object] = {
                     "before_canonical_digest": authority.observed.canonical_digest,
                     "action": action_to_data(action),
@@ -99,10 +127,19 @@ class AuthorityRunner:
                     public_after=json.loads(after_public.canonical_json()),
                 )
                 self._record("transition", **transition)
+                action_kind = str(action_to_data(action)["type"])
+                action_counts[action_kind] += 1
+                if semantic_action is not None:
+                    semantic_action_counts[semantic_action] += 1
+                if isinstance(action, PlayCards):
+                    cards_played += len(action.cards)
+                elif isinstance(action, DiscardCards):
+                    cards_discarded += len(action.cards)
                 history.append(PublicHistoryStep(before=public, action=action, after=after_public))
                 authority = result.after
                 public = after_public
                 final = public
+                terminal_blind = _current_blind(public) or terminal_blind
                 if public.terminal:
                     terminal_reason = _terminal_reason(public)
                     break
@@ -122,6 +159,11 @@ class AuthorityRunner:
             rejected_decisions=rejected,
             terminal_reason=terminal_reason,
             final_observation=final,
+            terminal_blind=terminal_blind,
+            action_counts=tuple(sorted(action_counts.items())),
+            semantic_action_counts=tuple(sorted(semantic_action_counts.items())),
+            cards_played=cards_played,
+            cards_discarded=cards_discarded,
         )
         self._record(
             "run_end",
@@ -133,6 +175,20 @@ class AuthorityRunner:
             rejected_decisions=result.rejected_decisions,
             terminal_reason=result.terminal_reason,
             final_public_digest=final.digest() if final is not None else None,
+            terminal_blind=(
+                {
+                    "kind": result.terminal_blind.kind,
+                    "name": result.terminal_blind.name,
+                    "effect": result.terminal_blind.effect,
+                    "score": result.terminal_blind.score,
+                }
+                if result.terminal_blind is not None
+                else None
+            ),
+            action_counts=dict(result.action_counts),
+            semantic_action_counts=dict(result.semantic_action_counts),
+            cards_played=result.cards_played,
+            cards_discarded=result.cards_discarded,
         )
         return result
 
@@ -174,6 +230,45 @@ def _public(authority: AuthorityObservation) -> PublicObservation:
 
 def _terminal_reason(observation: PublicObservation) -> str:
     return "game_over" if observation.phase == Phase.GAME_OVER else "won"
+
+
+def _current_blind(observation: PublicObservation) -> PublicBlind | None:
+    return next((blind for blind in observation.blinds if blind.status == "CURRENT"), None)
+
+
+def _semantic_action_label(
+    observation: PublicObservation,
+    action: PublicAction,
+) -> str | None:
+    """Describe an accepted item action using only its pre-action public key."""
+
+    item: PublicItem | VisiblePlayingCard
+    action_name: str
+    if isinstance(action, BuyShopCard):
+        item = observation.shop[action.card.value]
+        action_name = "buy_shop_card"
+    elif isinstance(action, BuyVoucher):
+        item = observation.vouchers[action.voucher.value]
+        action_name = "buy_voucher"
+    elif isinstance(action, BuyPack):
+        item = observation.packs[action.pack.value]
+        action_name = "buy_pack"
+    elif isinstance(action, ChoosePackCard):
+        item = observation.opened_pack[action.card.value]
+        action_name = "choose_pack_card"
+    elif isinstance(action, UseConsumable):
+        item = observation.consumables[action.consumable.value]
+        action_name = "use_consumable"
+    elif isinstance(action, SellJoker):
+        item = observation.jokers[action.joker.value]
+        action_name = "sell_joker"
+    elif isinstance(action, SellConsumable):
+        item = observation.consumables[action.consumable.value]
+        action_name = "sell_consumable"
+    else:
+        return None
+    key = item.key if isinstance(item, PublicItem) else f"{item.suit}_{item.rank}"
+    return f"{action_name}:{key}"
 
 
 def _authority_data(authority: AuthorityObservation) -> dict[str, object]:

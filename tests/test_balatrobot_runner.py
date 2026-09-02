@@ -16,7 +16,12 @@ from balatro_ai_v2.actions import (
 from balatro_ai_v2.backend import RunSpec
 from balatro_ai_v2.balatrobot.backend import BalatroBotBackend, UnsettledStateError
 from balatro_ai_v2.balatrobot.client import BalatroBotRpcError, BalatroBotTransportError
-from balatro_ai_v2.balatrobot.runner import AuthorityRunner, NoBuySmokePolicy
+from balatro_ai_v2.balatrobot.adapter import to_public_observation
+from balatro_ai_v2.balatrobot.runner import (
+    AuthorityRunner,
+    NoBuySmokePolicy,
+    _semantic_action_label,
+)
 from state_factory import item_card, state
 
 
@@ -244,7 +249,36 @@ def test_runner_passes_only_public_observation_and_completes_real_terminal() -> 
     assert result.complete
     assert result.won
     assert result.decisions == 1
+    assert result.action_counts == (("select_blind", 1),)
+    assert result.cards_played == 0
+    assert result.cards_discarded == 0
+    assert result.terminal_blind is not None
+    assert result.terminal_blind.name == "Small Blind"
     assert "PRIVATE-SEED" not in result.final_observation.canonical_json()  # type: ignore[union-attr]
+
+
+def test_runner_summarizes_accepted_card_actions() -> None:
+    initial = state("SELECTING_HAND")
+    terminal = state("GAME_OVER")
+    client = FakeClient(initial, polls=[initial, terminal], action_result=terminal)
+    backend = BalatroBotBackend(client, settle_poll_delay=0)  # type: ignore[arg-type]
+
+    result = AuthorityRunner(backend, NoBuySmokePolicy(), max_decisions=1).run(
+        RunSpec("RED", "WHITE", "1")
+    )
+
+    assert result.action_counts == (("play_cards", 1),)
+    assert result.cards_played == 3
+    assert result.cards_discarded == 0
+
+
+def test_runner_semantic_action_label_uses_public_item_key() -> None:
+    observation = to_public_observation(state("SHOP", money=10))
+
+    assert (
+        _semantic_action_label(observation, BuyShopCard(ShopSlot(0)))
+        == "buy_shop_card:j_joker"
+    )
 
 
 def test_runner_recognizes_terminal_on_final_allowed_decision() -> None:

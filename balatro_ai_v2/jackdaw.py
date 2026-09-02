@@ -7,9 +7,10 @@ uses Python 3.12 and the pinned optional dependency.
 
 from __future__ import annotations
 
+import importlib.metadata
 import json
 import subprocess
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from copy import deepcopy
 from dataclasses import dataclass, field
@@ -86,10 +87,57 @@ def verify_jackdaw_runtime() -> dict[str, object]:
         raise JackdawUnavailable(
             "install the pinned 'candidate' extra under Python 3.12 to use Jackdaw"
         ) from exc
-    module_path = Path(jackdaw.__file__).resolve()
+    revision, root = _jackdaw_install_provenance(jackdaw)
+    dirty = False
+    if root is not None:
+        try:
+            status_lines = subprocess.run(
+                ["git", "status", "--porcelain", "--untracked-files=all"],
+                cwd=root,
+                check=True,
+                capture_output=True,
+                text=True,
+            ).stdout.splitlines()
+            # uv places an empty checkout-complete marker beside the pinned tree.
+            # It is packaging metadata, not imported Jackdaw source.
+            dirty = any(line != "?? .ok" for line in status_lines)
+        except (OSError, subprocess.CalledProcessError) as exc:
+            raise JackdawUnavailable("cannot verify imported Jackdaw checkout") from exc
+    if revision != JACKDAW_REVISION:
+        raise JackdawUnavailable(
+            f"Jackdaw revision {revision!r} does not match pinned {JACKDAW_REVISION!r}"
+        )
+    if dirty:
+        raise JackdawUnavailable("imported Jackdaw checkout has modifications")
+    return {"revision": revision, "dirty": dirty}
+
+
+def _jackdaw_install_provenance(module: Any) -> tuple[str, Path | None]:
+    """Read package provenance without confusing a parent repository for Jackdaw."""
+
+    try:
+        distribution = importlib.metadata.distribution(module.__package__ or "jackdaw")
+        metadata_path = distribution.locate_file(
+            "jackdaw-0.1.0.dist-info/direct_url.json"
+        )
+        data = json.loads(Path(metadata_path).read_text(encoding="utf-8"))
+        vcs = data.get("vcs_info", {})
+        revision = vcs.get("commit_id")
+        url = data.get("url")
+        if (
+            isinstance(revision, str)
+            and isinstance(url, str)
+            and url.endswith("jackdaw-balatro.git")
+        ):
+            root = Path(url[7:]).resolve() if url.startswith("file://") else None
+            return revision, root
+    except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError):
+        pass
+
+    module_path = Path(module.__file__).resolve()
     root = next((parent for parent in module_path.parents if (parent / ".git").exists()), None)
     if root is None:
-        raise JackdawUnavailable("cannot verify Jackdaw: imported package is not in a git checkout")
+        raise JackdawUnavailable("cannot verify imported Jackdaw installation provenance")
     try:
         revision = subprocess.run(
             ["git", "rev-parse", "HEAD"],
@@ -98,25 +146,9 @@ def verify_jackdaw_runtime() -> dict[str, object]:
             capture_output=True,
             text=True,
         ).stdout.strip()
-        status_lines = subprocess.run(
-            ["git", "status", "--porcelain", "--untracked-files=all"],
-            cwd=root,
-            check=True,
-            capture_output=True,
-            text=True,
-        ).stdout.splitlines()
-        # uv places an empty checkout-complete marker beside the pinned tree.
-        # It is packaging metadata, not imported Jackdaw source.
-        dirty = any(line != "?? .ok" for line in status_lines)
     except (OSError, subprocess.CalledProcessError) as exc:
         raise JackdawUnavailable("cannot verify imported Jackdaw revision") from exc
-    if revision != JACKDAW_REVISION:
-        raise JackdawUnavailable(
-            f"Jackdaw revision {revision!r} does not match pinned {JACKDAW_REVISION!r}"
-        )
-    if dirty:
-        raise JackdawUnavailable("imported Jackdaw checkout has modifications")
-    return {"revision": revision, "dirty": False}
+    return revision, root
 
 
 def _vanilla_most_played_hand(
@@ -185,6 +217,30 @@ def _refresh_stencil_x_mult(game_state: Mapping[str, Any]) -> None:
             if not isinstance(ability, dict):
                 raise RuntimeError("Jackdaw Joker Stencil ability state is unavailable")
             ability["x_mult"] = runtime_x_mult
+
+
+def _clear_completed_cerulean_forced_selections(
+    game_state: Mapping[str, Any],
+) -> None:
+    """Clear Cerulean Bell's round-local card marker after cash-out."""
+
+    blind = game_state.get("blind")
+    if getattr(blind, "name", None) != "Cerulean Bell":
+        return
+    seen: set[int] = set()
+    for area_name in ("deck", "hand", "discard_pile", "play"):
+        cards = game_state.get(area_name, [])
+        if not isinstance(cards, list):
+            raise RuntimeError(f"Jackdaw {area_name} state is invalid after Cerulean Bell")
+        for card in cards:
+            identity = id(card)
+            if identity in seen:
+                continue
+            seen.add(identity)
+            ability = getattr(card, "ability", None)
+            if not isinstance(ability, dict):
+                raise RuntimeError("Jackdaw playing-card ability is invalid after Cerulean Bell")
+            ability.pop("forced_selection", None)
 
 
 @dataclass(slots=True)
@@ -274,9 +330,14 @@ class JackdawBackend:
             self._stale_shop_areas = _empty_shop_areas(raw_before)
         standard_pack_card = self._selected_standard_pack_card(method, params)
         voucher_effect = self._selected_voucher_effect(method, params)
+        boss_disabling_sale = self._selected_boss_disabling_sale(method, params)
         try:
             if method == "play":
-                with self._play_compatibility(), self._round_end_compatibility():
+                with (
+                    self._play_compatibility(),
+                    self._observatory_scoring_compatibility(),
+                    self._round_end_compatibility(),
+                ):
                     raw_after = self._handle(method, params)
             elif method == "cash_out" and self._round_targets_rolled:
                 with self._cash_out_compatibility():
@@ -298,6 +359,8 @@ class JackdawBackend:
                 after=None,
                 error=str(exc),
             )
+        if boss_disabling_sale and self._apply_boss_disable_sale_compatibility():
+            raw_after = self._handle("gamestate", {})
         if standard_pack_card is not None and self._place_standard_pack_card(standard_pack_card):
             raw_after = self._handle("gamestate", {})
         if voucher_effect is not None and self._apply_immediate_voucher_effect(voucher_effect):
@@ -305,6 +368,7 @@ class JackdawBackend:
         if method == "next_round" and raw_after.get("state") == "BLIND_SELECT":
             self._initialize_orbital_choices()
         if method == "play" and raw_after.get("state") == "ROUND_EVAL":
+            self._clear_crimson_heart_debuffs_at_round_end()
             self._roll_round_targets()
             self._round_targets_rolled = True
             raw_after = self._handle("gamestate", {})
@@ -369,6 +433,42 @@ class JackdawBackend:
             )
             rental_count += int(is_rental)
         game_state["dollars"] = dollars + rental_rate * rental_count
+
+    def _clear_crimson_heart_debuffs_at_round_end(self) -> None:
+        """Match the defeated boss clearing its transient Joker debuff."""
+
+        game_state = getattr(self._backend, "_gs", None)
+        if not isinstance(game_state, dict):
+            raise RuntimeError("Jackdaw game state is unavailable at round end")
+        blind = game_state.get("blind")
+        if getattr(blind, "name", None) != "Crimson Heart":
+            return
+        jokers = game_state.get("jokers")
+        if not isinstance(jokers, list):
+            raise RuntimeError("Jackdaw Joker state is invalid at Crimson Heart round end")
+        for joker in jokers:
+            ability = getattr(joker, "ability", None)
+            if ability is not None and not isinstance(ability, Mapping):
+                raise RuntimeError("Jackdaw Joker ability is invalid at Crimson Heart round end")
+            perishable = getattr(joker, "perishable", False) or (
+                isinstance(ability, Mapping) and ability.get("perishable") is True
+            )
+            perish_tally = (
+                ability["perish_tally"]
+                if isinstance(ability, Mapping) and "perish_tally" in ability
+                else getattr(joker, "perish_tally", 0)
+            )
+            if perishable:
+                if not isinstance(perish_tally, int) or isinstance(perish_tally, bool):
+                    raise RuntimeError(
+                        "Jackdaw Perishable tally is invalid at Crimson Heart round end"
+                    )
+                if perish_tally <= 0:
+                    continue
+            set_debuff = getattr(joker, "set_debuff", None)
+            if not callable(set_debuff):
+                raise RuntimeError("Jackdaw Joker cannot clear its Crimson Heart debuff")
+            set_debuff(False)
 
     @contextmanager
     def _shop_sticker_stake_compatibility(self) -> Iterator[None]:
@@ -633,6 +733,7 @@ class JackdawBackend:
             int(round_resets["hands"]) + int(round_bonus["next_hands"]),
         )
         game_state["chips"] = 0
+        _clear_completed_cerulean_forced_selections(game_state)
 
     def _selected_standard_pack_card(self, method: str, params: Mapping[str, Any]) -> object | None:
         """Capture a Standard-pack pick before Jackdaw removes it from the pack."""
@@ -652,6 +753,126 @@ class JackdawBackend:
         ability = getattr(card, "ability", None)
         card_set = ability.get("set") if isinstance(ability, Mapping) else None
         return card if card_set in {"Default", "Enhanced"} else None
+
+    def _selected_boss_disabling_sale(
+        self,
+        method: str,
+        params: Mapping[str, Any],
+    ) -> bool:
+        """Capture a sale that disables the live boss before card removal.
+
+        Jackdaw's generic sell path omits both Luchador's ``selling_self``
+        mutation and Verdant Leaf's "sell one Joker" callback.  Resolve the
+        sold Joker while its index is still valid, then apply the shared boss
+        transition after the normal sale has completed.
+        """
+
+        if method != "sell":
+            return False
+        index = params.get("joker")
+        if not isinstance(index, int) or isinstance(index, bool):
+            return False
+        game_state = getattr(self._backend, "_gs", None)
+        if not isinstance(game_state, Mapping):
+            raise RuntimeError("Jackdaw game state is unavailable before Joker sale")
+        jokers = game_state.get("jokers")
+        if not isinstance(jokers, list) or not 0 <= index < len(jokers):
+            raise RuntimeError("Jackdaw Joker state is invalid before Joker sale")
+        if getattr(jokers[index], "center_key", None) == "j_luchador":
+            return True
+        blind = game_state.get("blind")
+        return bool(
+            blind is not None
+            and getattr(blind, "boss", False)
+            and not getattr(blind, "disabled", False)
+            and getattr(blind, "name", None) == "Verdant Leaf"
+        )
+
+    def _apply_boss_disable_sale_compatibility(self) -> bool:
+        """Apply a vanilla sale-triggered boss disable omitted by Jackdaw."""
+
+        game_state = getattr(self._backend, "_gs", None)
+        if not isinstance(game_state, dict):
+            raise RuntimeError("Jackdaw game state is unavailable after boss-disabling sale")
+        blind = game_state.get("blind")
+        if blind is None:
+            raise RuntimeError("Jackdaw blind state is unavailable after boss-disabling sale")
+        if not getattr(blind, "boss", False) or getattr(blind, "disabled", False):
+            return False
+
+        area_names = ("deck", "hand", "discard_pile", "play")
+        areas: list[list[Any]] = []
+        for name in area_names:
+            cards = game_state.get(name, [])
+            if not isinstance(cards, list):
+                raise RuntimeError(f"Jackdaw {name} state is invalid after boss-disabling sale")
+            areas.append(cards)
+        playing_cards: list[Any] = []
+        for area in areas:
+            for card in area:
+                if not any(card is existing for existing in playing_cards):
+                    playing_cards.append(card)
+        jokers = game_state.get("jokers")
+        current_round = game_state.get("current_round")
+        if not isinstance(jokers, list) or not isinstance(current_round, dict):
+            raise RuntimeError("Jackdaw round state is invalid after boss-disabling sale")
+        disable = getattr(blind, "disable", None)
+        if not callable(disable):
+            raise RuntimeError("Jackdaw boss cannot be disabled after boss-disabling sale")
+        result = disable(playing_cards=playing_cards, joker_cards=jokers)
+        if not isinstance(result, Mapping):
+            raise RuntimeError("Jackdaw boss disable result is invalid")
+
+        for result_key, round_key in (
+            ("restore_discards", "discards_left"),
+            ("restore_hands", "hands_left"),
+        ):
+            amount = result.get(result_key, 0)
+            current = current_round.get(round_key)
+            if (
+                not isinstance(amount, int)
+                or isinstance(amount, bool)
+                or not isinstance(current, int)
+                or isinstance(current, bool)
+            ):
+                raise RuntimeError(f"Jackdaw {result_key} state is invalid")
+            current_round[round_key] = current + amount
+
+        hand_size_delta = result.get("restore_hand_size", 0)
+        hand_size = game_state.get("hand_size")
+        if (
+            not isinstance(hand_size_delta, int)
+            or isinstance(hand_size_delta, bool)
+            or not isinstance(hand_size, int)
+            or isinstance(hand_size, bool)
+        ):
+            raise RuntimeError("Jackdaw hand-size state is invalid after boss-disabling sale")
+        game_state["hand_size"] = hand_size + hand_size_delta
+
+        if result.get("clear_forced", False):
+            for card in playing_cards:
+                ability = getattr(card, "ability", None)
+                if not isinstance(ability, dict):
+                    raise RuntimeError("Jackdaw playing-card ability is invalid")
+                ability.pop("forced_selection", None)
+
+        if getattr(blind, "name", None) in {"The Wheel", "The House", "The Mark", "The Fish"}:
+            for card in game_state["hand"]:
+                card.facing = "front"
+            for card in playing_cards:
+                ability = getattr(card, "ability", None)
+                if not isinstance(ability, dict):
+                    raise RuntimeError("Jackdaw playing-card ability is invalid")
+                ability.pop("wheel_flipped", None)
+
+        for joker in jokers:
+            joker.facing = "front"
+            if getattr(blind, "name", None) == "Crimson Heart":
+                ability = getattr(joker, "ability", None)
+                if not isinstance(ability, dict):
+                    raise RuntimeError("Jackdaw Joker ability is invalid")
+                ability.pop("crimson_heart_chosen", None)
+        return True
 
     def _selected_voucher_effect(
         self,
@@ -770,6 +991,89 @@ class JackdawBackend:
                 yield
             finally:
                 game._fire_discard_effects = original_fire_discard_effects
+
+    @contextmanager
+    def _observatory_scoring_compatibility(self) -> Iterator[None]:
+        """Apply held-Planet xMult after Jokers and before the deck back."""
+
+        from jackdaw.engine import scoring
+        from jackdaw.engine.back import Back
+        from jackdaw.engine.consumables import _PLANET_HAND
+        from jackdaw.engine.hand_eval import evaluate_hand
+
+        game_state = getattr(self._backend, "_gs", None)
+        if not isinstance(game_state, Mapping):
+            raise RuntimeError("Jackdaw backend does not expose its active game state")
+        original_score_hand = scoring.score_hand
+
+        def score_with_observatory(*args: Any, **kwargs: Any) -> Any:
+            played_cards = kwargs.get("played_cards", args[0] if args else None)
+            jokers = kwargs.get("jokers", args[2] if len(args) > 2 else None)
+            if not isinstance(played_cards, list) or not isinstance(jokers, list):
+                raise RuntimeError("Jackdaw scoring inputs are unavailable")
+            used_vouchers = game_state.get("used_vouchers")
+            if not isinstance(used_vouchers, Mapping):
+                raise RuntimeError("Jackdaw used-voucher state is unavailable")
+            observatory = used_vouchers.get("v_observatory", False)
+            if not isinstance(observatory, bool):
+                raise RuntimeError("Jackdaw Observatory state is invalid")
+            if not observatory:
+                return original_score_hand(*args, **kwargs)
+
+            consumables = game_state.get("consumables")
+            if not isinstance(consumables, list):
+                raise RuntimeError("Jackdaw consumable state is unavailable")
+            hand_name = evaluate_hand(played_cards, jokers=jokers).detected_hand
+            matching_planets = 0
+            for consumable in consumables:
+                key = getattr(consumable, "center_key", None)
+                if key not in _PLANET_HAND:
+                    continue
+                debuffed = getattr(consumable, "debuff", None)
+                if not isinstance(debuffed, bool):
+                    raise RuntimeError("Jackdaw Planet debuff state is unavailable")
+                if not debuffed and _PLANET_HAND[key] == hand_name:
+                    matching_planets += 1
+            if matching_planets == 0:
+                return original_score_hand(*args, **kwargs)
+
+            factor = 1.5**matching_planets
+            original_trigger_effect = Back.trigger_effect
+
+            def trigger_with_observatory(
+                back: Any,
+                context: str,
+                **trigger_kwargs: Any,
+            ) -> dict[str, Any] | None:
+                if context != "final_scoring_step":
+                    return original_trigger_effect(back, context, **trigger_kwargs)
+                chips = trigger_kwargs.get("chips")
+                mult = trigger_kwargs.get("mult")
+                if not isinstance(chips, int | float) or isinstance(chips, bool):
+                    raise RuntimeError("Jackdaw final scoring chips are invalid")
+                if not isinstance(mult, int | float) or isinstance(mult, bool):
+                    raise RuntimeError("Jackdaw final scoring Mult is invalid")
+                multiplied = mult * factor
+                effect = original_trigger_effect(
+                    back,
+                    context,
+                    chips=chips,
+                    mult=multiplied,
+                )
+                return effect or {"chips": chips, "mult": multiplied}
+
+            Back.trigger_effect = trigger_with_observatory
+            try:
+                return original_score_hand(*args, **kwargs)
+            finally:
+                Back.trigger_effect = original_trigger_effect
+
+        with _JACKDAW_PATCH_LOCK:
+            scoring.score_hand = score_with_observatory
+            try:
+                yield
+            finally:
+                scoring.score_hand = original_score_hand
 
     @contextmanager
     def _round_end_compatibility(self) -> Iterator[None]:
@@ -1017,17 +1321,21 @@ def _normalize_jackdaw_bridge(
                 semantic_state = {
                     str(key): value for key, value in state.items() if value is not None and value is not False
                 }
-                ability = getattr(private_card, "ability", None)
-                if (
-                    area_name == "hand"
-                    and isinstance(ability, Mapping)
-                    and ability.get("forced_selection") is True
-                ):
-                    semantic_state["highlight"] = True
-                    semantic_state["forced_selection"] = True
-                if area_name in {"cards", "discard"}:
-                    semantic_state["hidden"] = True
-                card["state"] = semantic_state or []
+            elif isinstance(state, Sequence) and not isinstance(state, str) and not state:
+                semantic_state = {}
+            else:
+                raise RuntimeError(f"Jackdaw {area_name} card state is invalid")
+            ability = getattr(private_card, "ability", None)
+            if (
+                area_name == "hand"
+                and isinstance(ability, Mapping)
+                and ability.get("forced_selection") is True
+            ):
+                semantic_state["highlight"] = True
+                semantic_state["forced_selection"] = True
+            if area_name in {"cards", "discard"}:
+                semantic_state["hidden"] = True
+            card["state"] = semantic_state or []
             value = card.get("value")
             if isinstance(value, dict):
                 _apply_balatrobot_card_values(value, private_card)

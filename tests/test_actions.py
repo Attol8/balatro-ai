@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 from dataclasses import replace
+from typing import Any
 
 import pytest
 
@@ -26,7 +27,12 @@ from balatro_ai_v2.actions import (
     is_legal,
     iter_legal_actions,
 )
-from balatro_ai_v2.balatrobot.adapter import IllegalPublicAction, action_to_rpc, to_public_observation
+from balatro_ai_v2.balatrobot.adapter import (
+    IllegalPublicAction,
+    ObservationError,
+    action_to_rpc,
+    to_public_observation,
+)
 from state_factory import item_card, playing_card, state
 
 
@@ -150,7 +156,7 @@ def test_targeted_consumable_requires_and_compiles_exact_public_targets() -> Non
 
 
 def test_cerulean_forced_slot_is_required_for_play_discard_and_consumable() -> None:
-    raw = state("SELECTING_HAND")
+    raw = _cerulean_state()
     raw["hand"]["cards"][1]["state"] = {
         "highlight": True,
         "forced_selection": True,
@@ -176,6 +182,64 @@ def test_cerulean_forced_slot_is_required_for_play_discard_and_consumable() -> N
         or 1 in tuple(slot.value for slot in getattr(action, "cards", getattr(action, "targets", ())))
         for action in iter_legal_actions(observation)
     )
+
+
+@pytest.mark.parametrize(
+    ("card_state", "message"),
+    [
+        ({}, "requires one visibly forced"),
+        ({"highlight": False, "forced_selection": True}, "not visibly highlighted"),
+        ({"highlight": True, "forced_selection": "yes"}, "marker must be boolean"),
+    ],
+)
+def test_cerulean_forced_slot_fails_closed_on_missing_or_malformed_marker(
+    card_state: dict[str, object],
+    message: str,
+) -> None:
+    raw = _cerulean_state()
+    raw["hand"]["cards"][1]["state"] = card_state
+
+    with pytest.raises(ObservationError, match=message):
+        to_public_observation(raw)
+
+
+def test_forced_slot_fails_closed_without_active_cerulean_bell() -> None:
+    raw = state("SELECTING_HAND")
+    raw["hand"]["cards"][1]["state"] = {
+        "highlight": True,
+        "forced_selection": True,
+    }
+
+    with pytest.raises(ObservationError, match="inconsistent with the active blind"):
+        to_public_observation(raw)
+
+
+def test_cerulean_public_twins_have_identical_legality() -> None:
+    left = _cerulean_state()
+    left["hand"]["cards"][1]["state"] = {
+        "highlight": True,
+        "forced_selection": True,
+    }
+    right = deepcopy(left)
+    right["seed"] = "OTHER-PRIVATE-SEED"
+    right["cards"]["cards"].reverse()
+    for index, card in enumerate(right["cards"]["cards"]):
+        card["id"] = 900 + index
+
+    left_observation = to_public_observation(left)
+    right_observation = to_public_observation(right)
+
+    assert left_observation == right_observation
+    assert tuple(iter_legal_actions(left_observation)) == tuple(
+        iter_legal_actions(right_observation)
+    )
+
+
+def _cerulean_state() -> dict[str, Any]:
+    raw = state("SELECTING_HAND")
+    raw["blinds"]["small"]["status"] = "DEFEATED"
+    raw["blinds"]["boss"].update(name="Cerulean Bell", status="CURRENT")
+    return raw
 
 
 def test_negative_joker_can_enter_a_full_area_from_shop_or_pack() -> None:

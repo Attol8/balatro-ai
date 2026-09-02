@@ -13,6 +13,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from balatro_ai_v2.backend import RunSpec
+from balatro_ai_v2.baselines import PUBLIC_BASELINE_NAMES, build_public_baseline
 from balatro_ai_v2.balatrobot.backend import BalatroBotBackend
 from balatro_ai_v2.balatrobot.client import BalatroBotClient, BalatroBotError
 from balatro_ai_v2.balatrobot.process import (
@@ -25,6 +26,7 @@ from balatro_ai_v2.balatrobot.process import (
 )
 from balatro_ai_v2.balatrobot.runner import AuthorityRunner, NoBuySmokePolicy
 from balatro_ai_v2.balatrobot.tracing import AuthorityTraceWriter, build_manifest
+from balatro_ai_v2.policy_process import PolicyProcess
 
 
 def main() -> None:
@@ -32,6 +34,7 @@ def main() -> None:
     root = Path(__file__).resolve().parents[1]
     client = BalatroBotClient(host=args.host, port=args.port, timeout=args.timeout)
     process: subprocess.Popen[bytes] | None = None
+    policy_process: PolicyProcess | None = None
     try:
         if args.launch_server:
             command = build_launch_command(
@@ -83,13 +86,30 @@ def main() -> None:
             game_version=game_version,
             runtime_version=runtime_version,
         )
+        if args.policy == "smoke":
+            policy = NoBuySmokePolicy()
+            policy_name = "NoBuySmokePolicy"
+            inference_budget = "none"
+        else:
+            _, implementation_name = build_public_baseline(args.policy, args.policy_seed)
+            policy_process = PolicyProcess(
+                args.policy,
+                policy_seed=args.policy_seed,
+                timeout_seconds=args.policy_timeout,
+            )
+            policy = policy_process
+            policy_name = f"{implementation_name}:process-v1"
+            inference_budget = (
+                "policy_action_contract=public_legality_v3;"
+                f"policy_timeout_seconds={args.policy_timeout}"
+            )
         spec = RunSpec(deck=args.deck, stake=args.stake, seed=args.seed)
         trace = None
         if args.trace_jsonl is not None:
             manifest = build_manifest(
                 repository_root=root,
                 command=tuple(sys.argv),
-                policy_name="NoBuySmokePolicy",
+                policy_name=policy_name,
                 backend=backend.metadata,
                 run=spec,
                 max_decisions=args.max_decisions,
@@ -97,12 +117,13 @@ def main() -> None:
                 launch_fast=args.fast_server,
                 launch_headless=args.headless_server,
                 profile_mode=args.profile_mode,
+                inference_budget=inference_budget,
                 mods=tuple(args.mod),
             )
             trace = AuthorityTraceWriter(args.trace_jsonl, manifest)
         result = AuthorityRunner(
             backend=backend,
-            policy=NoBuySmokePolicy(),
+            policy=policy,
             max_decisions=args.max_decisions,
             trace=trace,
         ).run(spec)
@@ -124,6 +145,8 @@ def main() -> None:
     except BalatroBotError as exc:
         raise SystemExit(f"BalatroBot authority failed: {exc}") from exc
     finally:
+        if policy_process is not None:
+            policy_process.close()
         if process is not None:
             stop_balatrobot_server(process)
 
@@ -137,6 +160,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--deck", default="RED")
     parser.add_argument("--stake", default="WHITE")
     parser.add_argument("--seed")
+    parser.add_argument("--policy", choices=("smoke", *PUBLIC_BASELINE_NAMES), default="smoke")
+    parser.add_argument("--policy-seed", default="authority-v1")
+    parser.add_argument("--policy-timeout", type=float, default=5.0)
     parser.add_argument("--max-decisions", type=int, default=800)
     parser.add_argument("--max-settle-polls", type=int, default=40)
     parser.add_argument("--settle-poll-delay", type=float, default=0.02)

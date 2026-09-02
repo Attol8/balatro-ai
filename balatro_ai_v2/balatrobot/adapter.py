@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from collections import Counter
 from collections.abc import Mapping, Sequence
 from typing import Any
@@ -37,6 +38,7 @@ from balatro_ai_v2.public_state import (
     Phase,
     PublicBlind,
     PublicItem,
+    PublicJokerRuntime,
     PublicObservation,
     PublicOffer,
     RoundObservation,
@@ -65,6 +67,37 @@ _PACK_KINDS = {
 _EDITIONS = {"FOIL", "HOLO", "HOLOGRAPHIC", "POLYCHROME", "NEGATIVE"}
 _ENHANCEMENTS = {"BONUS", "MULT", "WILD", "GLASS", "STEEL", "STONE", "GOLD", "LUCKY"}
 _SEALS = {"RED", "BLUE", "GOLD", "GOLD SEAL", "PURPLE"}
+
+_CURRENT_MULT_JOKERS = frozenset(
+    {
+        "j_ceremonial",
+        "j_flash",
+        "j_green_joker",
+        "j_popcorn",
+        "j_red_card",
+        "j_ride_the_bus",
+        "j_swashbuckler",
+        "j_trousers",
+    }
+)
+_CURRENT_CHIP_JOKERS = frozenset({"j_castle", "j_ice_cream", "j_runner", "j_square", "j_wee"})
+_CURRENT_X_MULT_JOKERS = frozenset(
+    {
+        "j_campfire",
+        "j_constellation",
+        "j_glass",
+        "j_hit_the_road",
+        "j_hologram",
+        "j_lucky_cat",
+        "j_madness",
+        "j_obelisk",
+        "j_ramen",
+        "j_stencil",
+        "j_throwback",
+        "j_vampire",
+        "j_yorick",
+    }
+)
 
 
 class ObservationError(ValueError):
@@ -95,6 +128,7 @@ def to_public_observation(raw: Mapping[str, Any]) -> PublicObservation:
     hands_raw = _required_mapping(raw, "hands")
     joker_area = _area(raw, "jokers")
     consumable_area = _area(raw, "consumables")
+    raw_pack_choices = _required_int(raw, "pack_choices_remaining")
     blinds = tuple(
         sorted(
             (_blind(value) for value in blinds_raw.values()),
@@ -116,6 +150,7 @@ def to_public_observation(raw: Mapping[str, Any]) -> PublicObservation:
             hands_played=_required_int(round_raw, "hands_played"),
             discards_used=_required_int(round_raw, "discards_used"),
             reroll_cost=_required_int(round_raw, "reroll_cost"),
+            ancient_suit=_optional_key(round_raw, "ancient_suit"),
         ),
         blinds=blinds,
         hand=hand,
@@ -140,7 +175,10 @@ def to_public_observation(raw: Mapping[str, Any]) -> PublicObservation:
         packs=_items_from_optional_area(raw, "packs") if phase == Phase.SHOP else (),
         opened_pack=_offers_from_optional_area(raw, "pack") if phase == Phase.PACK else (),
         pack_kind=_PACK_KINDS[raw_phase] if phase == Phase.PACK else None,
-        pack_choices_remaining=_required_int(raw, "pack_choices_remaining"),
+        # Balatro leaves G.GAME.pack_choices at its prior positive value after
+        # a single-choice pack closes.  It is no longer pack metadata once the
+        # visible phase has returned to a normal decision boundary.
+        pack_choices_remaining=raw_pack_choices if phase == Phase.PACK else 0,
         used_vouchers=_string_tuple(raw.get("used_vouchers", ()), "used_vouchers"),
         last_tarot_planet=_optional_key(raw, "last_tarot_planet"),
         won=_required_bool(raw, "won"),
@@ -266,8 +304,9 @@ def _item(raw: Mapping[str, Any]) -> PublicItem:
     if not isinstance(debuffed, bool):
         raise ObservationError("item debuff state must be boolean")
     kind = _required_string(raw, "set").upper()
+    key = semantic_card_key(kind, _required_string(raw, "key"))
     return PublicItem(
-        key=semantic_card_key(kind, _required_string(raw, "key")),
+        key=key,
         label=_required_string(raw, "label"),
         kind=kind,
         effect_text=str(value.get("effect") or ""),
@@ -278,7 +317,59 @@ def _item(raw: Mapping[str, Any]) -> PublicItem:
         debuffed=debuffed,
         buy_cost=_optional_int(cost, "buy"),
         sell_cost=_optional_int(cost, "sell"),
+        runtime=_joker_runtime(key, kind, value),
     )
+
+
+def _joker_runtime(key: str, kind: str, value: Mapping[str, Any]) -> PublicJokerRuntime | None:
+    """Admit only named, source-audited tooltip values from a Joker ability."""
+
+    if kind != "JOKER":
+        return None
+    ability = value.get("ability")
+    if ability is None:
+        return None
+    if not isinstance(ability, Mapping):
+        raise ObservationError("joker ability must be an object")
+
+    runtime = PublicJokerRuntime(
+        current_mult=_runtime_int(ability, "mult") if key in _CURRENT_MULT_JOKERS else None,
+        current_chips=_runtime_int(ability, "chips") if key in _CURRENT_CHIP_JOKERS else None,
+        current_x_mult=_runtime_number(ability, "x_mult") if key in _CURRENT_X_MULT_JOKERS else None,
+        current_dollars=_runtime_int(ability, "dollars") if key == "j_rocket" else None,
+        remaining_hands=_runtime_int(ability, "extra") if key == "j_selzer" else None,
+        loyalty_remaining=_runtime_int(ability, "loyalty_remaining") if key == "j_loyalty_card" else None,
+        driver_tally=_runtime_int(ability, "driver_tally") if key == "j_drivers_license" else None,
+        target_hand=_runtime_string(ability, "poker_hand") if key == "j_todo_list" else None,
+    )
+    return runtime if runtime != PublicJokerRuntime() else None
+
+
+def _runtime_int(ability: Mapping[str, Any], key: str) -> int | None:
+    value = ability.get(key)
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ObservationError(f"joker ability {key} must be an integer")
+    return value
+
+
+def _runtime_number(ability: Mapping[str, Any], key: str) -> float | None:
+    value = ability.get(key)
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, int | float) or not math.isfinite(value):
+        raise ObservationError(f"joker ability {key} must be a finite number")
+    return float(value)
+
+
+def _runtime_string(ability: Mapping[str, Any], key: str) -> str | None:
+    value = ability.get(key)
+    if value is None:
+        return None
+    if not isinstance(value, str) or not value:
+        raise ObservationError(f"joker ability {key} must be a non-empty string")
+    return value
 
 
 def _blind(raw: object) -> PublicBlind:
@@ -313,13 +404,21 @@ def _required_hand_slots(
     blinds: tuple[PublicBlind, ...],
     phase: Phase,
 ) -> tuple[int, ...]:
-    del blinds
     if phase != Phase.SELECTING_HAND:
         return ()
+    cerulean_active = any(
+        blind.name == "Cerulean Bell" and blind.status == "CURRENT"
+        for blind in blinds
+    )
     forced: list[int] = []
     for index, card in enumerate(hand_area["cards"]):
         state = card.get("state")
-        if isinstance(state, Mapping) and state.get("forced_selection") is True:
+        if isinstance(state, Mapping) and "forced_selection" in state:
+            marker = state["forced_selection"]
+            if not isinstance(marker, bool):
+                raise ObservationError("forced-selection marker must be boolean")
+            if not marker:
+                continue
             if state.get("highlight") is not True:
                 raise ObservationError("forced hand card is not visibly highlighted")
             forced.append(index)
@@ -327,6 +426,10 @@ def _required_hand_slots(
         raise ObservationError(
             "multiple forced hand cards are outside the audited vanilla contract"
         )
+    if cerulean_active and len(forced) != 1:
+        raise ObservationError("active Cerulean Bell requires one visibly forced hand card")
+    if forced and not cerulean_active:
+        raise ObservationError("forced hand card is inconsistent with the active blind")
     return tuple(forced)
 
 

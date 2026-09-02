@@ -124,3 +124,20 @@ def test_lua_json_float_precision_is_canonicalized() -> None:
         BalatroBotCanonicalizer().canonicalize(authority).canonical_digest
         == BalatroBotCanonicalizer().canonicalize(candidate).canonical_digest
     )
+
+
+def test_closed_pack_choice_counter_is_not_canonical_semantic_state() -> None:
+    cleared = state("SHOP")
+    stale = deepcopy(cleared)
+    stale["pack_choices_remaining"] = 1
+
+    cleared_state = BalatroBotCanonicalizer().canonicalize(cleared)
+    stale_state = BalatroBotCanonicalizer().canonicalize(stale)
+
+    assert stale_state.raw_digest != cleared_state.raw_digest
+    assert stale_state.canonical_digest == cleared_state.canonical_digest
+    assert stale_state.canonical["pack_choices_remaining"] == 0
+
+    stale["pack_choices_remaining"] = "1"
+    with pytest.raises(CanonicalizationError, match="pack_choices_remaining must be an integer"):
+        BalatroBotCanonicalizer().canonicalize(stale)

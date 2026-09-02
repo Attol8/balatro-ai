@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import sys
 from collections.abc import Sequence
+from dataclasses import dataclass
 from pathlib import Path
 
 from balatro_ai_v2.actions import PublicAction, is_legal
@@ -18,6 +19,8 @@ from balatro_ai_v2.policy_wire import (
     MAX_RESPONSE_BYTES,
     PolicyRequest,
     PolicyWireError,
+    PolicyDiagnostics,
+    SearchDecisionDiagnostics,
     decode_response,
     encode_request,
 )
@@ -26,6 +29,41 @@ from balatro_ai_v2.public_state import PublicObservation
 
 class PolicyProcessError(RuntimeError):
     pass
+
+
+@dataclass(frozen=True, slots=True)
+class SearchDiagnosticCounters:
+    attempted: int = 0
+    completed: int = 0
+    incomplete: int = 0
+    changed: int = 0
+    incomplete_reasons: tuple[tuple[str, int], ...] = ()
+
+    def add(self, diagnostics: SearchDecisionDiagnostics) -> SearchDiagnosticCounters:
+        reasons = dict(self.incomplete_reasons)
+        incomplete = diagnostics.attempted and not diagnostics.completed
+        if incomplete:
+            reason = diagnostics.incomplete_reason or "unspecified"
+            reasons[reason] = reasons.get(reason, 0) + 1
+        return SearchDiagnosticCounters(
+            attempted=self.attempted + int(diagnostics.attempted),
+            completed=self.completed + int(diagnostics.completed),
+            incomplete=self.incomplete + int(incomplete),
+            changed=self.changed + int(diagnostics.changed),
+            incomplete_reasons=tuple(sorted(reasons.items())),
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class PolicyDiagnosticCounters:
+    exact_blind: SearchDiagnosticCounters = SearchDiagnosticCounters()
+    preboss: SearchDiagnosticCounters = SearchDiagnosticCounters()
+
+    def add(self, diagnostics: PolicyDiagnostics) -> PolicyDiagnosticCounters:
+        return PolicyDiagnosticCounters(
+            exact_blind=self.exact_blind.add(diagnostics.exact_blind),
+            preboss=self.preboss.add(diagnostics.preboss),
+        )
 
 
 class PolicyProcess:
@@ -52,6 +90,8 @@ class PolicyProcess:
         )
         if not child_command:
             raise ValueError("policy child command cannot be empty")
+        self._last_response_diagnostics = PolicyDiagnostics()
+        self._run_diagnostic_counters = PolicyDiagnosticCounters()
         self._transport = JsonlChildProcess(
             child_command,
             cwd=root,
@@ -65,6 +105,14 @@ class PolicyProcess:
     def closed(self) -> bool:
         return self._transport.closed
 
+    @property
+    def last_response_diagnostics(self) -> PolicyDiagnostics:
+        return self._last_response_diagnostics
+
+    @property
+    def run_diagnostic_counters(self) -> PolicyDiagnosticCounters:
+        return self._run_diagnostic_counters
+
     def choose_action(
         self,
         observation: PublicObservation,
@@ -74,6 +122,9 @@ class PolicyProcess:
         if self.closed:
             raise PolicyProcessError("policy child is closed")
         del legal_actions
+        if not history:
+            self._last_response_diagnostics = PolicyDiagnostics()
+            self._run_diagnostic_counters = PolicyDiagnosticCounters()
         try:
             request = PolicyRequest(self._request_id, len(history), observation)
             frame = encode_request(request)
@@ -89,6 +140,8 @@ class PolicyProcess:
             if isinstance(exc, PolicyProcessError):
                 raise
             raise PolicyProcessError(f"policy child protocol failed: {exc}") from exc
+        self._last_response_diagnostics = response.diagnostics
+        self._run_diagnostic_counters = self._run_diagnostic_counters.add(response.diagnostics)
         self._request_id += 1
         return response.action
 

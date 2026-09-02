@@ -20,6 +20,7 @@ from balatro_ai_v2.actions import (
     action_from_data,
 )
 from balatro_ai_v2.backend import RunSpec
+from balatro_ai_v2.balatrobot.adapter import to_public_observation
 from state_factory import state
 
 
@@ -41,6 +42,243 @@ def test_candidate_pack_capacity_survives_selections_and_resets() -> None:
     assert backend._track_pack_card_limit({"pack_cards": queued_pack}) == 3
     assert backend._track_pack_card_limit({"pack_cards": []}) is None
     assert backend._track_pack_card_limit({}) is None
+
+
+@pytest.mark.parametrize(
+    ("blind_name", "marker_remains"),
+    [("Cerulean Bell", False), ("The Head", True)],
+)
+def test_cash_out_clears_only_completed_cerulean_forced_markers(
+    blind_name: str,
+    marker_remains: bool,
+) -> None:
+    shared = SimpleNamespace(ability={"x_mult": 1, "forced_selection": True})
+    other = SimpleNamespace(ability={"x_mult": 1, "forced_selection": True})
+    game_state = {
+        "blind": SimpleNamespace(name=blind_name),
+        "current_round": {"jokers_purchased": 2, "discards_left": 0, "hands_left": 0},
+        "round_resets": {"discards": 4, "hands": 4},
+        "round_bonus": {"discards": 0, "next_hands": 0},
+        "deck": [shared],
+        "hand": [shared, other],
+        "discard_pile": [],
+        "play": [],
+        "chips": 600,
+    }
+    backend = object.__new__(jackdaw.JackdawBackend)
+    backend._backend = SimpleNamespace(_gs=game_state)
+
+    backend._finish_cash_out_compatibility()
+
+    assert ("forced_selection" in shared.ability) is marker_remains
+    assert ("forced_selection" in other.ability) is marker_remains
+
+
+def test_crimson_heart_round_end_clears_only_transient_joker_debuffs() -> None:
+    class Joker:
+        def __init__(
+            self,
+            *,
+            debuff: bool,
+            perishable: bool = False,
+            perish_tally: int = 5,
+            ability: dict[str, object] | None = None,
+        ) -> None:
+            self.debuff = debuff
+            self.perishable = perishable
+            self.perish_tally = perish_tally
+            self.ability = {} if ability is None else ability
+
+        def set_debuff(self, value: bool) -> None:
+            self.debuff = value
+
+    transient = Joker(debuff=True)
+    active_perishable = Joker(debuff=True, perishable=True, perish_tally=2)
+    expired_perishable = Joker(debuff=True, perishable=True, perish_tally=0)
+    nested_expired = Joker(
+        debuff=True,
+        ability={"perishable": True, "perish_tally": 0},
+    )
+    backend = object.__new__(jackdaw.JackdawBackend)
+    backend._backend = SimpleNamespace(
+        _gs={
+            "blind": SimpleNamespace(name="Crimson Heart"),
+            "jokers": [transient, active_perishable, expired_perishable, nested_expired],
+        }
+    )
+
+    backend._clear_crimson_heart_debuffs_at_round_end()
+
+    assert transient.debuff is False
+    assert active_perishable.debuff is False
+    assert expired_perishable.debuff is True
+    assert nested_expired.debuff is True
+
+
+def test_non_crimson_round_end_does_not_clear_joker_debuffs() -> None:
+    joker = SimpleNamespace(debuff=True)
+    backend = object.__new__(jackdaw.JackdawBackend)
+    backend._backend = SimpleNamespace(
+        _gs={"blind": SimpleNamespace(name="The Wall"), "jokers": [joker]}
+    )
+
+    backend._clear_crimson_heart_debuffs_at_round_end()
+
+    assert joker.debuff is True
+
+
+def test_candidate_captures_boss_disabling_sale_before_handler_removes_joker() -> None:
+    backend = object.__new__(jackdaw.JackdawBackend)
+    blind = SimpleNamespace(name="The Wall", boss=True, disabled=False)
+    backend._backend = SimpleNamespace(
+        _gs={
+            "blind": blind,
+            "jokers": [
+                SimpleNamespace(center_key="j_joker"),
+                SimpleNamespace(center_key="j_luchador"),
+            ]
+        }
+    )
+
+    assert backend._selected_boss_disabling_sale("sell", {"joker": 1})
+    assert not backend._selected_boss_disabling_sale("sell", {"joker": 0})
+
+    blind.name = "Verdant Leaf"
+    assert backend._selected_boss_disabling_sale("sell", {"joker": 0})
+    blind.disabled = True
+    assert not backend._selected_boss_disabling_sale("sell", {"joker": 0})
+    assert not backend._selected_boss_disabling_sale("buy", {"card": 1})
+
+
+@pytest.mark.parametrize(
+    ("name", "blind_chips", "discards_sub", "hands_sub", "expected"),
+    [
+        ("The Water", 100, 3, None, {"discards_left": 3, "hands_left": 1, "chips": 100}),
+        ("The Needle", 100, None, 3, {"discards_left": 0, "hands_left": 4, "chips": 100}),
+        ("The Manacle", 100, None, None, {"discards_left": 0, "hands_left": 1, "chips": 100}),
+        ("The Wall", 100, None, None, {"discards_left": 0, "hands_left": 1, "chips": 50}),
+        (
+            "Violet Vessel",
+            300,
+            None,
+            None,
+            {"discards_left": 0, "hands_left": 1, "chips": 100},
+        ),
+        (
+            "Cerulean Bell",
+            100,
+            None,
+            None,
+            {"discards_left": 0, "hands_left": 1, "chips": 100},
+        ),
+    ],
+)
+def test_boss_disable_sale_compatibility_applies_special_boss_state(
+    name: str,
+    blind_chips: int,
+    discards_sub: int | None,
+    hands_sub: int | None,
+    expected: dict[str, int],
+) -> None:
+    pytest.importorskip("jackdaw")
+    from jackdaw.engine.blind import Blind
+
+    class Card:
+        def __init__(self) -> None:
+            self.ability = {"forced_selection": True}
+            self.debuff = True
+            self.facing = "front"
+
+        def set_debuff(self, value: bool) -> None:
+            self.debuff = value
+
+    blind = Blind(
+        key="test",
+        name=name,
+        chips=blind_chips,
+        mult=2,
+        dollars=5,
+        boss=True,
+        discards_sub=discards_sub,
+        hands_sub=hands_sub,
+    )
+    playing_card = Card()
+    joker = Card()
+    game_state = {
+        "blind": blind,
+        "current_round": {"discards_left": 0, "hands_left": 1},
+        "deck": [playing_card],
+        "hand": [playing_card],
+        "discard_pile": [],
+        "play": [],
+        "jokers": [joker],
+        "hand_size": 7,
+    }
+    backend = object.__new__(jackdaw.JackdawBackend)
+    backend._backend = SimpleNamespace(_gs=game_state)
+
+    assert backend._apply_boss_disable_sale_compatibility()
+
+    assert blind.disabled
+    assert blind.chips == expected["chips"]
+    assert game_state["current_round"] == {
+        "discards_left": expected["discards_left"],
+        "hands_left": expected["hands_left"],
+    }
+    assert game_state["hand_size"] == (8 if name == "The Manacle" else 7)
+    assert playing_card.debuff is False
+    assert joker.debuff is False
+    if name == "Cerulean Bell":
+        assert "forced_selection" not in playing_card.ability
+
+
+def test_boss_disable_sale_compatibility_reveals_face_down_state_and_crimson_marker() -> None:
+    pytest.importorskip("jackdaw")
+    from jackdaw.engine.blind import Blind
+
+    class Card:
+        def __init__(self, ability: dict[str, object]) -> None:
+            self.ability = ability
+            self.debuff = True
+            self.facing = "back"
+
+        def set_debuff(self, value: bool) -> None:
+            self.debuff = value
+
+    hand_card = Card({"wheel_flipped": True})
+    joker = Card({"crimson_heart_chosen": True})
+    backend = object.__new__(jackdaw.JackdawBackend)
+    game_state = {
+        "blind": Blind("test", "The Wheel", 100, 2, 5, True),
+        "current_round": {"discards_left": 1, "hands_left": 4},
+        "deck": [hand_card],
+        "hand": [hand_card],
+        "discard_pile": [],
+        "play": [],
+        "jokers": [joker],
+        "hand_size": 8,
+    }
+    backend._backend = SimpleNamespace(_gs=game_state)
+
+    assert backend._apply_boss_disable_sale_compatibility()
+    assert hand_card.facing == "front"
+    assert "wheel_flipped" not in hand_card.ability
+    assert joker.facing == "front"
+
+    game_state["blind"] = Blind("test", "Crimson Heart", 100, 2, 5, True)
+    game_state["blind"].disabled = False
+    joker.ability["crimson_heart_chosen"] = True
+    assert backend._apply_boss_disable_sale_compatibility()
+    assert "crimson_heart_chosen" not in joker.ability
+
+
+def test_boss_disable_sale_compatibility_is_inert_outside_an_active_boss() -> None:
+    blind = SimpleNamespace(boss=False, disabled=False)
+    backend = object.__new__(jackdaw.JackdawBackend)
+    backend._backend = SimpleNamespace(_gs={"blind": blind})
+
+    assert not backend._apply_boss_disable_sale_compatibility()
+    assert blind.disabled is False
 
 
 def test_bridge_normalization_preserves_candidate_round_timing() -> None:
@@ -92,6 +330,38 @@ def test_bridge_normalization_preserves_candidate_round_timing() -> None:
     assert normalized["round"]["hands_left"] == 0
     assert normalized["used_vouchers"] == {"v_grabber": ""}
     assert "Flush Five" in normalized["hands"]
+
+
+def test_bridge_normalization_exposes_cerulean_forced_slot_from_empty_card_state() -> None:
+    raw = state("SELECTING_HAND")
+    raw["blinds"]["small"]["status"] = "DEFEATED"
+    raw["blinds"]["boss"].update(name="Cerulean Bell", status="CURRENT")
+    private_hand = [
+        SimpleNamespace(ability={"x_mult": 1}),
+        SimpleNamespace(ability={"x_mult": 1, "forced_selection": True}),
+        SimpleNamespace(ability={"x_mult": 1}),
+    ]
+    private = {
+        "deck": [SimpleNamespace(ability={"x_mult": 1}) for _ in raw["cards"]["cards"]],
+        "discard_pile": [],
+        "hand": private_hand,
+        "jokers": [],
+        "consumables": [],
+        "current_round": {
+            "ancient_card": {"suit": "Hearts"},
+            "most_played_poker_hand": "High Card",
+        },
+        "round": 1,
+    }
+
+    normalized = jackdaw._normalize_jackdaw_bridge(raw, private)
+    observation = to_public_observation(normalized)
+
+    assert normalized["hand"]["cards"][1]["state"] == {
+        "highlight": True,
+        "forced_selection": True,
+    }
+    assert observation.required_hand_slots == (1,)
 
 
 def test_card_ability_normalization_matches_balatrobot_extractor() -> None:
@@ -595,6 +865,71 @@ def test_hook_discards_follow_hand_position_not_random_selection_order(
         game._fire_discard_effects({}, [right, left], hook=False)
 
     assert calls == [([left, right], True), ([right, left], False)]
+
+
+@pytest.mark.parametrize(
+    ("planet_keys", "debuff_first", "red_mult", "plasma_value"),
+    [
+        (("c_mercury",), False, 15.0, 57),
+        (("c_mercury", "c_mercury"), False, 22.5, 61),
+        (("c_uranus",), False, 10.0, 55),
+        (("c_mercury",), True, 10.0, 55),
+    ],
+)
+def test_observatory_compatibility_scores_before_deck_back(
+    monkeypatch: pytest.MonkeyPatch,
+    planet_keys: tuple[str, ...],
+    debuff_first: bool,
+    red_mult: float,
+    plasma_value: int,
+) -> None:
+    pytest.importorskip("jackdaw")
+    from jackdaw.engine import scoring
+    from jackdaw.engine.back import Back
+    from jackdaw.engine.card_factory import create_consumable, create_playing_card
+    from jackdaw.engine.data.enums import Rank, Suit
+
+    played = [
+        create_playing_card(Suit.SPADES, Rank.ACE),
+        create_playing_card(Suit.HEARTS, Rank.ACE),
+    ]
+    consumables = [create_consumable(key) for key in planet_keys]
+    if debuff_first:
+        consumables[0].set_debuff(True)
+    game_state = {
+        "used_vouchers": {"v_observatory": True},
+        "consumables": consumables,
+    }
+    backend = object.__new__(jackdaw.JackdawBackend)
+    backend._backend = SimpleNamespace(_gs=game_state)
+
+    def score_through_back(**kwargs: object) -> dict[str, float]:
+        effect = Back(str(kwargs["back_key"])).trigger_effect(
+            "final_scoring_step",
+            chips=100.0,
+            mult=10.0,
+        )
+        return effect or {"chips": 100.0, "mult": 10.0}
+
+    monkeypatch.setattr(scoring, "score_hand", score_through_back)
+    with backend._observatory_scoring_compatibility():
+        red = scoring.score_hand(
+            played_cards=played,
+            held_cards=[],
+            jokers=[],
+            game_state=game_state,
+            back_key="b_red",
+        )
+        plasma = scoring.score_hand(
+            played_cards=played,
+            held_cards=[],
+            jokers=[],
+            game_state=game_state,
+            back_key="b_plasma",
+        )
+
+    assert red == {"chips": 100.0, "mult": red_mult}
+    assert plasma == {"chips": plasma_value, "mult": plasma_value}
 
 
 def test_standard_pack_edition_reprices_playing_card(monkeypatch: pytest.MonkeyPatch) -> None:

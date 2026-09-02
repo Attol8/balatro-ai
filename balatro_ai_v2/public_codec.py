@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 from collections.abc import Mapping
 from dataclasses import fields
 
@@ -14,6 +15,7 @@ from balatro_ai_v2.public_state import (
     Phase,
     PublicBlind,
     PublicItem,
+    PublicJokerRuntime,
     PublicObservation,
     PublicOffer,
     RoundObservation,
@@ -27,6 +29,7 @@ class PublicCodecError(ValueError):
 
 _VISIBLE_CARD_FIELDS = {field.name for field in fields(VisiblePlayingCard)}
 _ITEM_FIELDS = {field.name for field in fields(PublicItem)}
+_JOKER_RUNTIME_FIELDS = {field.name for field in fields(PublicJokerRuntime)}
 _OBSERVATION_FIELDS = {field.name for field in fields(PublicObservation)}
 
 
@@ -100,7 +103,15 @@ def _round(value: object) -> RoundObservation:
     raw = _object(value, "round")
     names = {field.name for field in fields(RoundObservation)}
     _require_fields(raw, names, "round")
-    return RoundObservation(**{name: _integer(raw[name], f"round.{name}") for name in names})
+    return RoundObservation(
+        chips=_integer(raw["chips"], "round.chips"),
+        hands_left=_integer(raw["hands_left"], "round.hands_left"),
+        discards_left=_integer(raw["discards_left"], "round.discards_left"),
+        hands_played=_integer(raw["hands_played"], "round.hands_played"),
+        discards_used=_integer(raw["discards_used"], "round.discards_used"),
+        reroll_cost=_integer(raw["reroll_cost"], "round.reroll_cost"),
+        ancient_suit=_optional_string(raw["ancient_suit"], "round.ancient_suit"),
+    )
 
 
 def _blind(value: object) -> PublicBlind:
@@ -175,6 +186,26 @@ def _item(value: object) -> PublicItem:
         debuffed=_boolean(raw["debuffed"], "item.debuffed"),
         buy_cost=_optional_integer(raw["buy_cost"], "item.buy_cost"),
         sell_cost=_optional_integer(raw["sell_cost"], "item.sell_cost"),
+        runtime=_joker_runtime(raw["runtime"]),
+    )
+
+
+def _joker_runtime(value: object) -> PublicJokerRuntime | None:
+    if value is None:
+        return None
+    raw = _object(value, "joker runtime")
+    _require_fields(raw, _JOKER_RUNTIME_FIELDS, "joker runtime")
+    return PublicJokerRuntime(
+        current_mult=_optional_integer(raw["current_mult"], "runtime.current_mult"),
+        current_chips=_optional_integer(raw["current_chips"], "runtime.current_chips"),
+        current_x_mult=_optional_number(raw["current_x_mult"], "runtime.current_x_mult"),
+        current_dollars=_optional_integer(raw["current_dollars"], "runtime.current_dollars"),
+        remaining_hands=_optional_integer(raw["remaining_hands"], "runtime.remaining_hands"),
+        loyalty_remaining=_optional_integer(
+            raw["loyalty_remaining"], "runtime.loyalty_remaining"
+        ),
+        driver_tally=_optional_integer(raw["driver_tally"], "runtime.driver_tally"),
+        target_hand=_optional_string(raw["target_hand"], "runtime.target_hand"),
     )
 
 
@@ -231,6 +262,17 @@ def _optional_integer(value: object, name: str) -> int | None:
     if value is None:
         return None
     return _integer(value, name)
+
+
+def _optional_number(value: object, name: str) -> float | None:
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        raise PublicCodecError(f"{name} must be a finite number")
+    result = float(value)
+    if not math.isfinite(result):
+        raise PublicCodecError(f"{name} must be a finite number")
+    return result
 
 
 def _boolean(value: object, name: str) -> bool:

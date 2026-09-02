@@ -74,6 +74,92 @@ def test_isolated_random_policy_preserves_full_public_history_length() -> None:
     assert action_to_data(actual_second) == action_to_data(expected_second)
 
 
+def test_policy_process_retains_and_resets_typed_diagnostic_counters() -> None:
+    observation = to_public_observation(state())
+    program = """
+import json, sys
+for line in sys.stdin:
+    request = json.loads(line)
+    root = request["history_length"] == 0
+    response = {
+        "protocol": %d,
+        "type": "action",
+        "request_id": request["request_id"],
+        "observation_digest": request["observation_digest"],
+        "action": {"type": "select_blind"},
+        "diagnostics": {
+            "exact_blind": {
+                "attempted": root,
+                "completed": root,
+                "changed": root,
+                "incomplete_reason": None,
+            },
+            "preboss": {
+                "attempted": not root,
+                "completed": not root,
+                "changed": False,
+                "incomplete_reason": None,
+            },
+        },
+    }
+    print(json.dumps(response), flush=True)
+""" % POLICY_PROTOCOL_VERSION
+    step = PublicHistoryStep(observation, next(iter_legal_actions(observation)), observation)
+
+    with PolicyProcess("greedy", timeout_seconds=2, command=(sys.executable, "-c", program)) as policy:
+        policy.choose_action(observation, lambda: iter_legal_actions(observation), ())
+        assert policy.last_response_diagnostics.exact_blind.changed
+        assert policy.run_diagnostic_counters.exact_blind.changed == 1
+        policy.choose_action(observation, lambda: iter_legal_actions(observation), (step,))
+        assert policy.run_diagnostic_counters.preboss.attempted == 1
+        policy.choose_action(observation, lambda: iter_legal_actions(observation), ())
+        assert policy.run_diagnostic_counters.exact_blind == policy.run_diagnostic_counters.preboss.__class__(
+            attempted=1,
+            completed=1,
+            changed=1,
+        )
+        assert policy.run_diagnostic_counters.preboss == policy.run_diagnostic_counters.preboss.__class__()
+
+
+def test_policy_process_counts_incomplete_reasons() -> None:
+    observation = to_public_observation(state())
+    program = """
+import json, sys
+for line in sys.stdin:
+    request = json.loads(line)
+    response = {
+        "protocol": %d,
+        "type": "action",
+        "request_id": request["request_id"],
+        "observation_digest": request["observation_digest"],
+        "action": {"type": "select_blind"},
+        "diagnostics": {
+            "exact_blind": {
+                "attempted": True,
+                "completed": False,
+                "changed": False,
+                "incomplete_reason": "decision_horizon",
+            },
+            "preboss": {
+                "attempted": False,
+                "completed": False,
+                "changed": False,
+                "incomplete_reason": None,
+            },
+        },
+    }
+    print(json.dumps(response), flush=True)
+""" % POLICY_PROTOCOL_VERSION
+
+    with PolicyProcess("greedy", timeout_seconds=2, command=(sys.executable, "-c", program)) as policy:
+        policy.choose_action(observation, lambda: iter_legal_actions(observation), ())
+
+        assert policy.run_diagnostic_counters.exact_blind.incomplete == 1
+        assert policy.run_diagnostic_counters.exact_blind.incomplete_reasons == (
+            ("decision_horizon", 1),
+        )
+
+
 def test_policy_child_timeout_fails_closed_and_stops_process() -> None:
     observation = to_public_observation(state())
     policy = PolicyProcess(

@@ -51,6 +51,20 @@ class DeckCardCount:
 
 
 @dataclass(frozen=True, slots=True)
+class PublicJokerRuntime:
+    """Fixed, tooltip-visible mutable values for an admitted Joker mechanic."""
+
+    current_mult: int | None = None
+    current_chips: int | None = None
+    current_x_mult: float | None = None
+    current_dollars: int | None = None
+    remaining_hands: int | None = None
+    loyalty_remaining: int | None = None
+    driver_tally: int | None = None
+    target_hand: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class PublicItem:
     key: str
     label: str
@@ -63,6 +77,11 @@ class PublicItem:
     debuffed: bool = False
     buy_cost: int | None = None
     sell_cost: int | None = None
+    runtime: PublicJokerRuntime | None = None
+
+    def __post_init__(self) -> None:
+        if self.runtime is not None and self.kind != "JOKER":
+            raise ValueError("only Jokers may carry Joker runtime")
 
 
 PublicOffer: TypeAlias = PublicItem | VisiblePlayingCard
@@ -97,6 +116,7 @@ class RoundObservation:
     hands_played: int
     discards_used: int
     reroll_cost: int
+    ancient_suit: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

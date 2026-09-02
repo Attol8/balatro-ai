@@ -11,3 +11,4 @@ runs/*
 !runs/evidence/
 !runs/evidence/**
 logs/
+.DS_Store

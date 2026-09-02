@@ -101,6 +101,14 @@ _VANILLA_BOOSTER_ARTWORK_KEYS = {
     for (kind, size), count in _VANILLA_BOOSTER_VARIANT_COUNTS.items()
     for variant in range(1, count + 1)
 }
+_OPEN_PACK_STATES = {
+    "TAROT_PACK",
+    "PLANET_PACK",
+    "SPECTRAL_PACK",
+    "STANDARD_PACK",
+    "BUFFOON_PACK",
+    "SMODS_BOOSTER_OPENED",
+}
 
 
 def semantic_card_key(kind: str, key: str) -> str:
@@ -197,6 +205,15 @@ class BalatroBotCanonicalizer:
                         str(value.get("set") or "UNKNOWN"),
                         str(child),
                     )
+                elif (
+                    not path
+                    and key_string == "pack_choices_remaining"
+                    and value.get("state") not in _OPEN_PACK_STATES
+                ):
+                    # G.GAME.pack_choices is not cleared after a single-choice
+                    # pack closes.  Outside the pack UI it is stale internal
+                    # state, not a remaining public decision.
+                    normalized[key_string] = 0
                 else:
                     normalized[key_string] = self._normalize(child, path=(*path, key_string))
             return normalized
@@ -230,6 +247,10 @@ def _validate_state(raw: Mapping[str, Any]) -> None:
         raise CanonicalizationError(f"unknown top-level fields: {sorted(unknown)}")
     if missing:
         raise CanonicalizationError(f"missing top-level fields: {sorted(missing)}")
+    if isinstance(raw["pack_choices_remaining"], bool) or not isinstance(
+        raw["pack_choices_remaining"], int
+    ):
+        raise CanonicalizationError("pack_choices_remaining must be an integer")
 
     for area_name in (
         "cards",

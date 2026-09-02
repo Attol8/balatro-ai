@@ -10,13 +10,16 @@ from balatro_ai_v2.blind_search import PublicBlindBeliefSearch
 from balatro_ai_v2.policy import ActionSource, PublicHistoryStep
 from balatro_ai_v2.preboss_search import PublicPreBossSearchPolicy
 from balatro_ai_v2.public_state import Phase, PublicObservation
+from balatro_ai_v2.strategy_tuning import tuning_from_environment
 
 
 @dataclass(slots=True)
 class PublicRedGoldSearchPolicy:
     search_nonce: str = "red-gold-search-v1"
     strategic: PublicPreBossSearchPolicy = field(init=False)
-    tactical_baseline: PublicStrategicPolicy = field(default_factory=PublicStrategicPolicy)
+    tactical_baseline: PublicStrategicPolicy = field(
+        default_factory=lambda: PublicStrategicPolicy(tuning=tuning_from_environment())
+    )
     tactical: PublicBlindBeliefSearch = field(init=False)
 
     def __post_init__(self) -> None:

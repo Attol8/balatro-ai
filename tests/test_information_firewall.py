@@ -8,7 +8,7 @@ import pytest
 from balatro_ai_v2.actions import action_to_data, iter_legal_actions
 from balatro_ai_v2.balatrobot.adapter import ObservationError, to_public_observation
 from balatro_ai_v2.public_state import HiddenHandCard, PublicObservation
-from state_factory import playing_card, state
+from state_factory import item_card, playing_card, state
 
 
 def test_hidden_state_twins_produce_identical_policy_input_and_actions() -> None:
@@ -125,6 +125,48 @@ def test_public_serialization_contains_no_private_seed_ids_or_ability_tree() -> 
     assert "Visible effect" in serialized
 
 
+def test_admitted_joker_runtime_is_fixed_and_tooltip_visible() -> None:
+    raw = state("SELECTING_HAND")
+    raw["jokers"]["cards"] = [
+        item_card("j_green_joker", card_id=100, kind="JOKER", ability={"mult": 17}),
+        item_card("j_runner", card_id=101, kind="JOKER", ability={"chips": 75}),
+        item_card("j_constellation", card_id=102, kind="JOKER", ability={"x_mult": 1.7}),
+        item_card("j_rocket", card_id=103, kind="JOKER", ability={"dollars": 6}),
+        item_card("j_selzer", card_id=104, kind="JOKER", ability={"extra": 5}),
+        item_card("j_loyalty_card", card_id=105, kind="JOKER", ability={"loyalty_remaining": 0}),
+        item_card("j_drivers_license", card_id=106, kind="JOKER", ability={"driver_tally": 16}),
+        item_card("j_todo_list", card_id=107, kind="JOKER", ability={"poker_hand": "Flush"}),
+    ]
+    raw["jokers"]["count"] = len(raw["jokers"]["cards"])
+
+    runtimes = [joker.runtime for joker in to_public_observation(raw).jokers]
+
+    assert runtimes[0] is not None and runtimes[0].current_mult == 17
+    assert runtimes[1] is not None and runtimes[1].current_chips == 75
+    assert runtimes[2] is not None and runtimes[2].current_x_mult == 1.7
+    assert runtimes[3] is not None and runtimes[3].current_dollars == 6
+    assert runtimes[4] is not None and runtimes[4].remaining_hands == 5
+    assert runtimes[5] is not None and runtimes[5].loyalty_remaining == 0
+    assert runtimes[6] is not None and runtimes[6].driver_tally == 16
+    assert runtimes[7] is not None and runtimes[7].target_hand == "Flush"
+
+
+def test_unlisted_or_malformed_joker_ability_never_crosses_the_firewall() -> None:
+    raw = state("SELECTING_HAND")
+    raw["jokers"]["cards"] = [
+        item_card("j_joker", card_id=100, kind="JOKER", ability={"future_rng": "NOPE"})
+    ]
+    raw["jokers"]["count"] = 1
+
+    assert to_public_observation(raw).jokers[0].runtime is None
+
+    raw["jokers"]["cards"][0] = item_card(
+        "j_green_joker", card_id=100, kind="JOKER", ability={"mult": "not-a-number"}
+    )
+    with pytest.raises(ObservationError, match="joker ability mult must be an integer"):
+        to_public_observation(raw)
+
+
 def test_unsettled_area_fails_closed() -> None:
     raw = state("SELECTING_HAND")
     raw["hand"]["count"] = 8
@@ -165,6 +207,7 @@ def test_live_lua_table_shapes_are_normalized_at_the_firewall() -> None:
     assert observation.shop[0].perishable_rounds == 3
     assert observation.shop[0].rental
     assert observation.used_vouchers == ("v_seed_money",)
+    assert observation.round.ancient_suit == "H"
 
 
 def test_transient_animation_state_is_not_a_policy_decision() -> None:
@@ -172,4 +215,18 @@ def test_transient_animation_state_is_not_a_policy_decision() -> None:
     raw["state"] = "DRAW_TO_HAND"
 
     with pytest.raises(ObservationError, match="unsupported Balatro state"):
+        to_public_observation(raw)
+
+
+def test_closed_pack_stale_choice_counter_is_not_public_pack_metadata() -> None:
+    raw = state("SHOP")
+    raw["pack_choices_remaining"] = 1
+
+    observation = to_public_observation(raw)
+
+    assert observation.pack_kind is None
+    assert observation.pack_choices_remaining == 0
+
+    raw["pack_choices_remaining"] = "1"
+    with pytest.raises(ObservationError, match="pack_choices_remaining must be an integer"):
         to_public_observation(raw)

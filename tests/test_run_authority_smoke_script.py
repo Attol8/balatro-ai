@@ -48,5 +48,18 @@ def test_smoke_cli_has_no_model_or_legacy_policy_flags() -> None:
     args = parser.parse_args(["--seed", "17", "--trace-jsonl", "evidence/seed17.jsonl"])
 
     assert args.seed == "17"
+    assert args.policy == "smoke"
     assert not hasattr(args, "imitation_model")
     assert not hasattr(args, "planner")
+
+
+def test_smoke_cli_accepts_isolated_public_baseline() -> None:
+    script = _load_script()
+    parser = script.build_parser()
+
+    args = parser.parse_args(
+        ["--seed", "44", "--policy", "strategic", "--policy-timeout", "8"]
+    )
+
+    assert args.policy == "strategic"
+    assert args.policy_timeout == 8
