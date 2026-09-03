@@ -224,7 +224,7 @@ def _validate_protocol(report: dict[str, Any], expected_seeds: tuple[int, ...]) 
     ):
         raise ValidationError("report does not match the Red White capacity panel protocol")
     if protocol != {
-        "model_version": 1,
+        "model_version": 2,
         "samples": 32,
         "sample_method": "public-digest-monte-carlo-without-replacement-v1",
         "phases": ["BLIND_SELECT", "PACK", "SHOP"],

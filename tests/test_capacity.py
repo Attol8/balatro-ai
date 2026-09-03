@@ -96,7 +96,7 @@ def test_hidden_and_unsupported_mechanics_fail_closed() -> None:
     assert hidden_result.unavailable_reason == "hidden hand cards are unsupported"
     assert hidden_result.mean_best_score is None
     assert not unsupported_result.available
-    assert unsupported_result.unavailable_reason == "unsupported Joker j_square"
+    assert unsupported_result.unavailable_reason == "unsupported Joker state for j_square"
 
 
 def test_unknown_boss_and_preblind_riff_raff_fail_closed() -> None:
@@ -157,6 +157,29 @@ def test_unknown_voucher_fails_closed() -> None:
 
     assert not estimate.available
     assert estimate.unavailable_reason == "unsupported voucher v_future_unknown"
+
+
+def test_future_capacity_resets_round_local_state() -> None:
+    raw = state("SHOP")
+    raw["hand"]["limit"] = 2
+    raw["round"].update(hands_left=1, discards_left=0)
+    raw["hands"]["High Card"]["played_this_round"] = 3
+    raw["jokers"]["cards"] = [
+        item_card("j_banner", card_id=20, kind="JOKER")
+    ]
+    raw["jokers"]["count"] = 1
+    observation = to_public_observation(raw)
+
+    estimate = estimate_capacity(
+        observation,
+        PublicDrawBelief.from_observation(observation),
+        samples=3,
+    )
+
+    # Red Deck starts the next round with four discards, so Banner adds 120
+    # chips even though the previous round ended with none.
+    assert estimate.available
+    assert estimate.mean_best_score == 133
 
 
 def test_margin_and_flat_projection_use_only_visible_requirement() -> None:

@@ -14,8 +14,8 @@ from balatro_ai_v2.belief import PublicDrawBelief, canonical_remaining_deck
 from balatro_ai_v2.joker_catalog import get_joker_profile
 from balatro_ai_v2.boss_rules import BossConstraint, BossRule, boss_rule
 from balatro_ai_v2.joker_rules import (
-    PREBLIND_EXACT_JOKERS,
-    TACTICAL_EXACT_JOKERS,
+    ONE_PLAY_CAPACITY_EXACT_JOKERS,
+    ONE_PLAY_CAPACITY_RUNTIME_FIELD,
     exact_joker_multiplicity,
 )
 from balatro_ai_v2.public_scoring import score_play
@@ -28,7 +28,7 @@ from balatro_ai_v2.public_state import (
 )
 
 
-CAPACITY_MODEL_VERSION = 1
+CAPACITY_MODEL_VERSION = 2
 CAPACITY_SAMPLE_METHOD = "public-digest-monte-carlo-without-replacement-v1"
 _SAMPLED_PHASES = frozenset({Phase.BLIND_SELECT, Phase.ROUND_EVAL, Phase.SHOP, Phase.PACK})
 _UNSUPPORTED_CAPACITY_BOSS_CONSTRAINTS = frozenset(
@@ -306,21 +306,17 @@ def _unsupported_reason(
         return "future public hand size is unavailable"
     if not exact_joker_multiplicity(observation.jokers):
         return "unsupported duplicate Joker mechanics"
-    exact_jokers = (
-        PREBLIND_EXACT_JOKERS
-        if observation.phase in _SAMPLED_PHASES
-        else TACTICAL_EXACT_JOKERS
-    )
     for joker in observation.jokers:
-        if joker.key not in exact_jokers:
+        if joker.key not in ONE_PLAY_CAPACITY_EXACT_JOKERS:
             return f"unsupported Joker {joker.key}"
         if (
-            joker.edition not in {None, "FOIL"}
+            joker.edition
+            not in {None, "FOIL", "HOLO", "HOLOGRAPHIC", "POLYCHROME", "NEGATIVE"}
             or joker.eternal
             or joker.perishable_rounds is not None
             or joker.rental
             or joker.debuffed
-            or joker.runtime is not None
+            or not _supported_runtime(joker)
         ):
             return f"unsupported Joker state for {joker.key}"
     cards = tuple(
@@ -352,6 +348,26 @@ def _unsupported_reason(
             names = ", ".join(sorted(constraint.value for constraint in unsupported))
             return f"unsupported next-boss mechanics for {boss.name}: {names}"
     return None
+
+
+def _supported_runtime(joker: object) -> bool:
+    runtime = getattr(joker, "runtime", None)
+    expected = ONE_PLAY_CAPACITY_RUNTIME_FIELD.get(getattr(joker, "key", ""))
+    if runtime is None:
+        return expected is None
+    if expected is None or getattr(runtime, expected) is None:
+        return False
+    fields = (
+        "current_mult",
+        "current_chips",
+        "current_x_mult",
+        "current_dollars",
+        "remaining_hands",
+        "loyalty_remaining",
+        "driver_tally",
+        "target_hand",
+    )
+    return all(field == expected or getattr(runtime, field) is None for field in fields)
 
 
 def _sample_hands(
@@ -423,10 +439,12 @@ def _with_hand(
         pack_kind=None,
         pack_choices_remaining=0,
         blinds=blinds,
+        hand_stats=tuple(replace(stat, played_this_round=0) for stat in observation.hand_stats),
         round=replace(
             observation.round,
             chips=0,
-            hands_left=max(1, observation.round.hands_left),
+            hands_left=_future_hands(observation, boss),
+            discards_left=_future_discards(observation, boss),
             hands_played=0,
             discards_used=0,
         ),
@@ -453,6 +471,36 @@ def _future_hand_size(observation: PublicObservation) -> int:
     rule, _ = _future_boss_rule(observation)
     delta = rule.hand_size_delta if rule is not None else 0
     return observation.hand_limit + delta
+
+
+def _future_hands(observation: PublicObservation, rule: BossRule) -> int:
+    if rule.hands_forced is not None:
+        return rule.hands_forced
+    return max(
+        1,
+        4
+        + sum(
+            voucher in {"v_grabber", "v_nacho_tong"}
+            for voucher in observation.used_vouchers
+        )
+        - sum(voucher == "v_hieroglyph" for voucher in observation.used_vouchers),
+    )
+
+
+def _future_discards(observation: PublicObservation, rule: BossRule) -> int:
+    if rule.discards_forced is not None:
+        return rule.discards_forced
+    return max(
+        0,
+        3
+        + int(observation.deck == "RED")
+        + sum(
+            voucher in {"v_wasteful", "v_recyclomancy"}
+            for voucher in observation.used_vouchers
+        )
+        - sum(voucher == "v_petroglyph" for voucher in observation.used_vouchers)
+        + sum(joker.key == "j_drunkard" for joker in observation.jokers),
+    )
 
 
 def _apply_boss_debuff(card: VisiblePlayingCard, rule: BossRule) -> VisiblePlayingCard:

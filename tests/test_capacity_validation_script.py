@@ -42,7 +42,7 @@ def test_validation_reports_coverage_and_clustered_interval(tmp_path: Path) -> N
                 "log_margin": margin,
                 "ante": ante,
                 "cleared_next_boss": label,
-                "model_version": 1,
+                "model_version": 2,
                 "sample_method": "test",
             }
             for margin, ante, label in diagnostics
@@ -69,7 +69,7 @@ def test_validation_reports_coverage_and_clustered_interval(tmp_path: Path) -> N
                     "backend": {"backend_name": "Jackdaw"},
                 },
                 "capacity_protocol": {
-                    "model_version": 1,
+                    "model_version": 2,
                     "samples": 32,
                     "sample_method": "public-digest-monte-carlo-without-replacement-v1",
                     "phases": ["BLIND_SELECT", "PACK", "SHOP"],

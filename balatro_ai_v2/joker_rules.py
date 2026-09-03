@@ -37,6 +37,51 @@ TACTICAL_EXACT_JOKERS = frozenset(
 # not omit that setup transition.
 PREBLIND_EXACT_JOKERS = TACTICAL_EXACT_JOKERS - {"j_riff_raff"}
 
+# Exact for the immediate score of one fully visible sampled hand.  This is a
+# narrower contract than PREBLIND_EXACT_JOKERS: membership does not claim that
+# a whole blind's mutations or economy are modeled.
+ONE_PLAY_CAPACITY_EXACT_JOKERS = PREBLIND_EXACT_JOKERS | {
+    "j_blue_joker",
+    "j_clever",
+    "j_even_steven",
+    "j_flash",
+    "j_green_joker",
+    "j_half",
+    "j_hanging_chad",
+    "j_ice_cream",
+    "j_jolly",
+    "j_juggler",
+    "j_mad",
+    "j_odd_todd",
+    "j_photograph",
+    "j_popcorn",
+    "j_raised_fist",
+    "j_red_card",
+    "j_ride_the_bus",
+    "j_scholar",
+    "j_seeing_double",
+    "j_shoot_the_moon",
+    "j_stuntman",
+    "j_supernova",
+    "j_swashbuckler",
+    "j_square",
+    "j_trousers",
+    "j_walkie_talkie",
+    "j_wrathful_joker",
+}
+
+ONE_PLAY_CAPACITY_RUNTIME_FIELD = {
+    "j_flash": "current_mult",
+    "j_green_joker": "current_mult",
+    "j_ice_cream": "current_chips",
+    "j_popcorn": "current_mult",
+    "j_red_card": "current_mult",
+    "j_ride_the_bus": "current_mult",
+    "j_square": "current_chips",
+    "j_swashbuckler": "current_mult",
+    "j_trousers": "current_mult",
+}
+
 _FACE_RANKS = frozenset({"J", "Q", "K"})
 
 
