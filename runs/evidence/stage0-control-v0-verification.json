@@ -1,0 +1,34 @@
+{
+  "authority": {
+    "antes_cleared": 9,
+    "checked_transitions": 258,
+    "complete": true,
+    "differential_mismatch": null,
+    "observed_lockstep": true,
+    "seed": "44",
+    "trace": "runs/evidence/stage0-endless-red-white-seed44-authority-20260903/red-white-seed44.jsonl",
+    "trace_repository_revision": "1586c72360d1187ddbaf53b2ad3035968f642006",
+    "trace_sha256": "c453013c1d67b39a97bd41e7697c55ce30a34aa43b6e243fcce294267b085fa1",
+    "won": true
+  },
+  "control": {
+    "repository_revision": "30e93ebb46e1661a6b1069864cbea57aa1fa07d9",
+    "tag": "control-v0"
+  },
+  "gate_panel": {
+    "complete": 200,
+    "mean_antes_cleared": 3.855,
+    "normalized_outcome_sha256": "cada33aaab9e4296de1bd7ea43f3bf44a6d58f10938650f0fe2dd15607c1e07e",
+    "runs": 200,
+    "survived_to_ante_6": 52,
+    "wins": 6
+  },
+  "tuning_panel": {
+    "complete": 200,
+    "mean_antes_cleared": 3.575,
+    "normalized_outcome_sha256": "11057af3e0521913c13dd765a551014e2fc5121ce55ed5ce0cfa425f936970eb",
+    "runs": 200,
+    "survived_to_ante_6": 47,
+    "wins": 8
+  }
+}

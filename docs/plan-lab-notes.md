@@ -2545,3 +2545,24 @@ continuation policy; the cheapest precedent for reaching human-competitive
 play is evolution-tuned weights over a rule skeleton. Treat the network as
 a later speed and generalization optimization, adopted only after tuning
 plus search plus a boosted leaf saturates below the declared bar.
+
+## Stage 0 Endless metric evidence (2026-09-03)
+
+- `control-v0` is commit `30e93ebb46e1661a6b1069864cbea57aa1fa07d9`.
+  The full suite passes 560 tests.
+- The clean tagged tuning panel (seeds 1--200) completes 200/200 runs with
+  mean 3.575 antes cleared, 8/200 wins, and 47/200 reaching displayed Ante 6.
+  Its deterministic outcome projection reproduces byte-identically with
+  SHA-256 `11057af3e0521913c13dd765a551014e2fc5121ce55ed5ce0cfa425f936970eb`.
+- The clean tagged gate panel (seeds 501--700) completes 200/200 runs with
+  mean 3.855 antes cleared, 6/200 wins, and 52/200 reaching displayed Ante 6.
+  Its reproduced deterministic projection has SHA-256
+  `cada33aaab9e4296de1bd7ea43f3bf44a6d58f10938650f0fe2dd15607c1e07e`.
+- A non-fast, non-headless BalatroBot seed-44 authority run crossed the win
+  boundary, entered displayed Ante 9, and died organically in Ante 10 after
+  clearing 9 antes. It completed 258 accepted decisions with no rejection.
+  The hash-verified trace replays 258/258 transitions through pinned Jackdaw
+  with zero mismatch under `control-v0`.
+- That replay exposed and fixed two root-cause fidelity defects: Crimson Heart
+  selects reordered Jokers by creation `sort_id`, and Economy Tag exposes its
+  queued dollar reward on the following action. No mismatch was waived.
