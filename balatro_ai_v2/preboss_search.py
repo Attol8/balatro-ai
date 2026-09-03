@@ -30,7 +30,6 @@ from balatro_ai_v2.baselines import (
     _best_available_play,
     _coverage_discard,
     _joker_value,
-    _play_score,
 )
 from balatro_ai_v2.joker_rules import (
     PREBLIND_EXACT_JOKERS,
@@ -39,6 +38,7 @@ from balatro_ai_v2.joker_rules import (
     purchased_discard_bonus,
 )
 from balatro_ai_v2.policy import ActionSource, PublicHistoryStep, PublicPolicy
+from balatro_ai_v2.public_scoring import score_play
 from balatro_ai_v2.public_state import (
     HandStat,
     Phase,
@@ -345,7 +345,7 @@ def _simulate_boss(
             discards_left -= 1
             discards_used += 1
         else:
-            score, _ = _play_score(
+            score, _ = score_play(
                 tactical,
                 play.cards,
                 {stat.name: stat for stat in stats},

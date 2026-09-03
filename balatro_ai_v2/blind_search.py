@@ -15,7 +15,7 @@ from balatro_ai_v2.actions import (
     is_legal,
     iter_legal_actions,
 )
-from balatro_ai_v2.baselines import PublicStrategicPolicy, _play_score
+from balatro_ai_v2.baselines import PublicStrategicPolicy
 from balatro_ai_v2.belief import (
     DrawOutcomeLimitExceeded,
     PublicDrawBelief,
@@ -30,6 +30,7 @@ from balatro_ai_v2.joker_rules import (
     faceless_discard_reward,
 )
 from balatro_ai_v2.policy import PublicHistoryStep
+from balatro_ai_v2.public_scoring import score_play
 from balatro_ai_v2.public_state import (
     DeckCardCount,
     HandStat,
@@ -588,7 +589,7 @@ def _apply_without_refill(
             if context.score_evaluations >= context.max_score_evaluations:
                 raise _ExactIncomplete("exact score budget exhausted")
             observation = _observation_for_exact_state(context.root, state)
-            score, hand_name = _play_score(
+            score, hand_name = score_play(
                 observation,
                 action.cards,
                 {stat.name: stat for stat in stats},
@@ -716,7 +717,7 @@ def _transition(
     stats = state.hand_stats
     if isinstance(action, PlayCards):
         observation = _observation_for_state(root, state, len(tape))
-        score, hand_name = _play_score(
+        score, hand_name = score_play(
             observation,
             action.cards,
             {stat.name: stat for stat in stats},

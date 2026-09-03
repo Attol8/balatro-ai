@@ -30,6 +30,8 @@ from balatro_ai_v2.backend import AuthorityObservation, GameBackend, RunSpec
 from balatro_ai_v2.balatrobot.adapter import to_public_observation
 from balatro_ai_v2.balatrobot.backend import UnsettledStateError
 from balatro_ai_v2.balatrobot.tracing import AuthorityTraceWriter
+from balatro_ai_v2.belief import PublicDrawBelief
+from balatro_ai_v2.capacity import estimate_capacity, log_margin, project_capacity
 from balatro_ai_v2.policy import ActionSource, PublicHistoryStep, PublicPolicy
 from balatro_ai_v2.public_state import (
     Phase,
@@ -38,6 +40,9 @@ from balatro_ai_v2.public_state import (
     PublicObservation,
     VisiblePlayingCard,
 )
+
+
+CAPACITY_DIAGNOSTIC_SAMPLES = 32
 
 
 @dataclass(frozen=True, slots=True)
@@ -56,6 +61,7 @@ class RunResult:
     semantic_action_counts: tuple[tuple[str, int], ...]
     cards_played: int
     cards_discarded: int
+    capacity_decisions: tuple[dict[str, object], ...]
 
 
 @dataclass(slots=True)
@@ -77,6 +83,7 @@ class AuthorityRunner:
         cards_played = 0
         cards_discarded = 0
         rejected = 0
+        capacity_decisions: list[dict[str, object]] = []
         final: PublicObservation | None = None
         terminal_blind: PublicBlind | None = None
         terminal_reason = "policy_error"
@@ -94,6 +101,9 @@ class AuthorityRunner:
                 if public.antes_cleared >= self.max_antes_cleared:
                     terminal_reason = "ante_cap"
                     break
+                capacity_diagnostic = _capacity_diagnostic(public, len(history))
+                if capacity_diagnostic is not None:
+                    capacity_decisions.append(capacity_diagnostic)
                 try:
                     action = self.policy.choose_action(
                         public,
@@ -120,6 +130,8 @@ class AuthorityRunner:
                     "rpc_observations": [json.loads(value) for value in result.rpc_observations],
                     "error": result.error,
                 }
+                if capacity_diagnostic is not None:
+                    transition["capacity"] = capacity_diagnostic
                 if result.status == "rejected":
                     rejected += 1
                     terminal_reason = "rejected_action"
@@ -181,6 +193,7 @@ class AuthorityRunner:
             semantic_action_counts=tuple(sorted(semantic_action_counts.items())),
             cards_played=cards_played,
             cards_discarded=cards_discarded,
+            capacity_decisions=tuple(capacity_decisions),
         )
         self._record(
             "run_end",
@@ -248,6 +261,57 @@ def _public(authority: AuthorityObservation) -> PublicObservation:
 
 def _current_blind(observation: PublicObservation) -> PublicBlind | None:
     return next((blind for blind in observation.blinds if blind.status == "CURRENT"), None)
+
+
+def _capacity_diagnostic(
+    observation: PublicObservation,
+    decision: int,
+) -> dict[str, object] | None:
+    if observation.phase not in {Phase.BLIND_SELECT, Phase.SHOP, Phase.PACK}:
+        return None
+    belief = PublicDrawBelief.from_observation(observation)
+    estimate = estimate_capacity(
+        observation,
+        belief,
+        samples=CAPACITY_DIAGNOSTIC_SAMPLES,
+    )
+    margin = log_margin(observation, estimate)
+    projection = project_capacity(
+        observation,
+        belief,
+        samples=CAPACITY_DIAGNOSTIC_SAMPLES,
+        rounds=1,
+        current=estimate,
+    )
+    score = estimate.mean_best_score
+    return {
+        "decision": decision,
+        "phase": observation.phase.value,
+        "ante": observation.ante,
+        "antes_cleared": observation.antes_cleared,
+        "available": estimate.available,
+        "unavailable_reason": estimate.unavailable_reason,
+        "mean_best_score": float(score) if score is not None else None,
+        "mean_best_score_fraction": (
+            [score.numerator, score.denominator] if score is not None else None
+        ),
+        "boss_requirement": margin.boss_requirement,
+        "log_margin": margin.log_margin,
+        "margin_available": margin.available,
+        "margin_unavailable_reason": margin.unavailable_reason,
+        "projected_mean_best_score": (
+            float(projection.projected_mean_best_score)
+            if projection.projected_mean_best_score is not None
+            else None
+        ),
+        "growth_rate": projection.growth_rate,
+        "projection_available": projection.available,
+        "projection_unavailable_reason": projection.unavailable_reason,
+        "samples": estimate.samples,
+        "sample_method": estimate.sample_method,
+        "model_version": estimate.model_version,
+        "public_root_digest": estimate.public_root_digest,
+    }
 
 
 def _semantic_action_label(

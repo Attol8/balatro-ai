@@ -13,10 +13,11 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from balatro_ai_v2.backend import RunSpec
-from balatro_ai_v2.balatrobot.runner import AuthorityRunner
+from balatro_ai_v2.balatrobot.runner import CAPACITY_DIAGNOSTIC_SAMPLES, AuthorityRunner
 from balatro_ai_v2.balatrobot.tracing import build_manifest
 from balatro_ai_v2.baselines import PUBLIC_BASELINE_NAMES, build_public_baseline
 from balatro_ai_v2.blind_search import exact_blind_inference_budget
+from balatro_ai_v2.capacity import CAPACITY_MODEL_VERSION, CAPACITY_SAMPLE_METHOD
 from balatro_ai_v2.jackdaw import JackdawBackend, JackdawUnavailable, verify_jackdaw_runtime
 from balatro_ai_v2.policy_process import PolicyProcess
 from balatro_ai_v2.public_state import PublicBlind, PublicObservation
@@ -97,6 +98,17 @@ def main() -> None:
                         "cards_discarded": result.cards_discarded,
                     },
                     "policy_diagnostics": asdict(policy.run_diagnostic_counters),
+                    "capacity_decisions": [
+                        {
+                            **diagnostic,
+                            "cleared_next_boss": (
+                                result.complete
+                                and result.antes_cleared
+                                >= int(diagnostic["ante"])
+                            ),
+                        }
+                        for diagnostic in result.capacity_decisions
+                    ],
                 }
             )
         elapsed = time.perf_counter() - started
@@ -127,6 +139,14 @@ def main() -> None:
             "candidate_only": True,
             "candidate_runtime": candidate_runtime,
             "manifest": asdict(manifest),
+            "capacity_protocol": {
+                "model_version": CAPACITY_MODEL_VERSION,
+                "samples": CAPACITY_DIAGNOSTIC_SAMPLES,
+                "sample_method": CAPACITY_SAMPLE_METHOD,
+                "phases": ["BLIND_SELECT", "PACK", "SHOP"],
+                "validation_phase": "SHOP",
+                "label": "cleared_next_boss",
+            },
             "strategy_tuning": json.loads(tuning.canonical_json()),
             "results": results,
             "summary": summary,

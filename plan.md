@@ -164,35 +164,51 @@ the candidate and the authority.
 Gate: `control-v0` re-evaluated on both panels with antes cleared as the
 headline number. This is the baseline for everything below.
 
-## Stage 1: Capacity evaluator
+## Stage 1: Capacity evaluator and minimum exact coverage
 
 Build the quantity the thesis depends on, then check it predicts anything.
 
-- **Module.** New `balatro_ai_v2/capacity.py` with one public function:
-  `estimate_capacity(observation, belief, samples) -> CapacityEstimate`
-  containing mean best-play score, the hand that produced it, and per-hand
-  breakdown. Reuse `_play_score` from `baselines.py` by moving it and its
-  helpers into a shared module; do not duplicate the scorer. Unsupported
-  Joker or card mechanics make the estimate explicitly unavailable; they
-  must never silently contribute zero.
+- **Contract first.** New `balatro_ai_v2/capacity.py` with a tagged,
+  fail-closed `CapacityEstimate` containing mean best-play score, the hand
+  that produced it, per-hand aggregate breakdown, sample method/count, and
+  an explicit unavailable reason. Reuse `_play_score` from `baselines.py`
+  by moving it and its helpers into a shared public-only module; do not
+  duplicate the scorer. Generate Monte Carlo hands without replacement
+  from `PublicDrawBelief`, seeded only by the public observation digest.
+  A visible current hand is scored directly. Hidden cards, unsupported
+  Joker/card/boss/voucher mechanics, and invalid contexts are unavailable;
+  they never silently contribute zero. Legal plays come only from
+  `iter_legal_actions`.
 - **Projection.** `project_capacity(observation, rounds) -> ...` for
   scaling Jokers whose public runtime state is known (current x-mult,
   accumulated chips). Only Jokers with catalogued scaling rules project;
   others project flat.
 - **Log-margin.** `log_margin(observation) -> float` against the next
   boss requirement from the public blind schedule.
-- **Trace.** Every strategic decision writes capacity, projected
-  capacity, log-margin, and growth rate into the decision trace so a
-  reader can see what the agent believed.
-- **Validation.** On 200 control runs, log-margin at each shop must
+- **Trace.** Every strategic decision writes aggregate capacity, projected
+  capacity, log-margin, growth rate, model version, sample method/count,
+  and an unavailable reason into the decision trace. Never write sampled
+  hands or tapes into the live trace.
+- **Coverage before validation.** The 16-Joker tactical exact set cannot
+  honestly score most control shops. Instrument the 200-run tuning panel,
+  list unsupported mechanics by affected shop rows, and implement exact
+  scorer rules in descending frequency until at least 95% of shop rows are
+  available. This is the minimum Stage-4 coverage work pulled forward; do
+  not substitute the broader heuristic scorer or filter unsupported rows
+  after seeing outcomes.
+- **Validation.** Once coverage reaches 95%, on the fixed 200 control runs,
+  log-margin at each eligible shop must
   predict clearing the next boss better than the ante alone (compare AUC).
-  If it does not, the scorer or the belief is wrong; fix that before
-  using capacity in any decision. Add a checked-in validation script that
-  reads evaluator traces and emits both AUCs and their paired bootstrap
-  interval; this script is the executable gate.
+  Bootstrap paired AUC deltas by seed, not shop row. Undefined per-seed
+  AUCs remain explicit. If coverage is below 95% or the interval does not
+  clear zero, capacity remains diagnostic and Stage 2 is blocked. Add a
+  checked-in validation script that emits both AUCs, coverage/failure
+  counts, and their paired seed-bootstrap interval; this is the executable
+  gate.
 
-Gate: capacity module tested against constructed states with known exact
-scores, and the predictive check passes.
+Gate: capacity module passes constructed exact-score and non-oracle tests,
+at least 95% of preregistered shop rows are available, and the predictive
+check passes. Until all three hold, no capacity number has purchase authority.
 
 ## Stage 2: Marginal valuation replaces role constants
 

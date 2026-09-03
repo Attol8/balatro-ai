@@ -14,7 +14,7 @@ from balatro_ai_v2.jsonl import (
     require_fields,
 )
 from balatro_ai_v2.public_codec import public_observation_from_data, public_observation_to_data
-from balatro_ai_v2.public_state import Phase, PublicObservation
+from balatro_ai_v2.public_state import PublicObservation
 
 
 ENV_PROTOCOL_VERSION: Final = 2
