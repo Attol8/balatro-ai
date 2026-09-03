@@ -1,0 +1,25 @@
+{
+  "ante_auc": 0.7230578143497584,
+  "auc_delta": -0.01976633609563916,
+  "available_shop_rows": 1418,
+  "capacity_auc": 0.7032914782541192,
+  "capacity_model_version": 2,
+  "coverage": 0.238279280793144,
+  "margin_available_shop_rows": 1418,
+  "margin_coverage": 0.238279280793144,
+  "minimum_coverage": 0.95,
+  "paired_seed_bootstrap_95": {
+    "lower": -0.17788058170970444,
+    "requested_samples": 10000,
+    "seed": 0,
+    "upper": 0.14329837603433782,
+    "valid_samples": 10000
+  },
+  "passed": false,
+  "report": "runs/evidence/stage1-capacity-v2-red-white-tuning-seeds1-200.json",
+  "report_sha256": "66f7581bfebc703f965ac0252761f4ef0ca5f21560394017bc3a3b4a93fdfce0",
+  "runs": 200,
+  "shop_rows": 5951,
+  "source_digest": "7534ccf0e48e5e00346e1f54a8dd56b825cfe40ab076b93afdcd46d134a43ca3",
+  "undefined_per_seed_auc": 170
+}

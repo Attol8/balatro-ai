@@ -2551,7 +2551,7 @@ plus search plus a boosted leaf saturates below the declared bar.
 - `control-v0` is commit `30e93ebb46e1661a6b1069864cbea57aa1fa07d9`.
   The full suite passes 560 tests.
 - The clean tagged tuning panel (seeds 1--200) completes 200/200 runs with
-  mean 3.575 antes cleared, 8/200 wins, and 47/200 reaching displayed Ante 6.
+  mean 3.575 antes cleared, 7/200 wins, and 47/200 reaching displayed Ante 6.
   Its deterministic outcome projection reproduces byte-identically with
   SHA-256 `11057af3e0521913c13dd765a551014e2fc5121ce55ed5ce0cfa425f936970eb`.
 - The clean tagged gate panel (seeds 501--700) completes 200/200 runs with
@@ -2566,3 +2566,41 @@ plus search plus a boosted leaf saturates below the declared bar.
 - That replay exposed and fixed two root-cause fidelity defects: Crimson Heart
   selects reordered Jokers by creation `sort_id`, and Economy Tag exposes its
   queued dollar reward on the following action. No mismatch was waived.
+
+## Stage 1 capacity gate (2026-09-03)
+
+- Commit `11ba1cea93851e0fc373db35220a9391cede5776` introduced the
+  fail-closed public capacity contract, extracted the shared public scorer,
+  added aggregate strategic-decision diagnostics, and froze the Red/White
+  validation protocol. Adversarial review caught and reproduced a PACK-state
+  crash, a reversed ante comparator, and missing next-boss capability checks;
+  all were fixed before evidence was retained.
+- Commit `ac3ea6317f73c0d70769795e490eead232cb0a97` is capacity model
+  version 2. It constructs the first playable hand against the visible next
+  boss, resets round-local resources and hand statistics, and separates
+  one-play capacity exactness from whole-blind rollout exactness. The suite
+  passes 600 tests, including constructed exact scores and firewall checks.
+- The clean fixed tuning panel is
+  `runs/evidence/stage1-capacity-v2-red-white-tuning-seeds1-200.json`
+  (SHA-256 `66f7581bfebc703f965ac0252761f4ef0ca5f21560394017bc3a3b4a93fdfce0`,
+  source digest
+  `7534ccf0e48e5e00346e1f54a8dd56b825cfe40ab076b93afdcd46d134a43ca3`).
+  It completed 200/200 runs with the unchanged control mean of 3.575 antes,
+  7 wins, and 47 runs reaching displayed Ante 6. Diagnostics reduced
+  throughput from the control's 72.31 to 27.32 decisions/second.
+- The Stage 1 gate fails. Capacity and margin are available for 1,418 of
+  5,951 shop rows (23.8279%, below 95%). On those rows, capacity AUC is
+  0.70329 versus 0.72306 for the correctly oriented `-ante` baseline. The
+  paired seed-bootstrap AUC delta is -0.01977 with 95% interval
+  [-0.17788, 0.14330]; 170/200 per-seed AUCs are undefined.
+- The leading first blockers are Misprint (462 rows), Abstract Joker (303),
+  Acrobat (257), Golden Joker (226), Blackboard (203), Hiker (166), Card
+  Sharp (165), Chaos the Clown (158), Zany Joker (155), Mime (134), Gros
+  Michel (128), Smiley Face (120), and The Duo (119). Unsupported face-down
+  and played-card boss information blocks another 380 rows. Misprint needs an
+  audited stochastic expectation contract; Hiker needs persistent card
+  mutation; The Pillar needs public played-card belief state; face-down bosses
+  need information-set action evaluation.
+- Per the plan's gate and kill criterion, capacity remains diagnostic and
+  Stage 2 has not started. Expanding purchase authority before both 95%
+  coverage and a positive lower confidence bound would be an invalid result.
