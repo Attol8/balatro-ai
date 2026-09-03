@@ -218,18 +218,78 @@ def replay_authority_trace(path: Path, candidate: GameBackend) -> DifferentialRe
         current = result.after
         checked += 1
 
-    final_phase = current.observed.canonical.get("state")
-    final_won = current.observed.canonical.get("won")
-    if final_phase != "GAME_OVER" and final_won is not True:
+    run_end = ends[0]
+    terminal_reason = run_end.get("terminal_reason")
+    final_canonical = current.observed.canonical
+    final_phase = final_canonical.get("state")
+    final_antes_cleared = _canonical_antes_cleared(final_canonical)
+    if terminal_reason == "game_over":
+        if final_phase != "GAME_OVER":
+            return _failure(
+                checked,
+                "/state",
+                "GAME_OVER",
+                final_phase,
+                "game-over trace did not reach GAME_OVER",
+                checked,
+            )
+    elif terminal_reason == "ante_cap":
+        cap = manifest_row.get("max_antes_cleared")
+        if isinstance(cap, bool) or not isinstance(cap, int) or cap < 1:
+            return _failure(
+                checked,
+                "/manifest/max_antes_cleared",
+                "positive integer",
+                cap,
+                "invalid ante cap",
+                checked,
+            )
+        if final_antes_cleared != cap:
+            return _failure(
+                checked,
+                "/antes_cleared",
+                cap,
+                final_antes_cleared,
+                "ante-cap trace did not reach its declared cap",
+                checked,
+            )
+    else:
         return _failure(
             checked,
-            "/state",
-            "GAME_OVER or won=true",
-            final_phase,
-            "candidate did not terminate",
+            "/run_end/terminal_reason",
+            "game_over or ante_cap",
+            terminal_reason,
+            "complete trace has an invalid terminal reason",
+            checked,
+        )
+    recorded_antes = run_end.get("antes_cleared")
+    if recorded_antes is not None and recorded_antes != final_antes_cleared:
+        return _failure(
+            checked,
+            "/run_end/antes_cleared",
+            final_antes_cleared,
+            recorded_antes,
+            "recorded and canonical ante metrics differ",
             checked,
         )
     return DifferentialReport(True, checked)
+
+
+def _canonical_antes_cleared(canonical: dict[str, Any]) -> int:
+    ante = canonical.get("ante_num")
+    vouchers = canonical.get("used_vouchers")
+    if isinstance(ante, bool) or not isinstance(ante, int) or ante < 1:
+        return -1
+    if isinstance(vouchers, dict) and all(isinstance(value, str) for value in vouchers):
+        voucher_keys = vouchers.keys()
+    elif isinstance(vouchers, list) and all(isinstance(value, str) for value in vouchers):
+        voucher_keys = vouchers
+    else:
+        return -1
+    reductions = sum(
+        voucher in {"v_hieroglyph", "v_petroglyph"} for voucher in voucher_keys
+    )
+    return max(0, ante - 1 + reductions)
 
 
 def _compare(authority: object, candidate: object, *, transition: int) -> DifferentialMismatch | None:

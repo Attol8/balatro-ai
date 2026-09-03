@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -21,11 +23,80 @@ from balatro_ai_v2.actions import (
 )
 from balatro_ai_v2.backend import RunSpec
 from balatro_ai_v2.balatrobot.adapter import to_public_observation
+from balatro_ai_v2.balatrobot.tracing import read_verified_trace
 from state_factory import state
 
 
 def test_candidate_module_is_lazy_and_revision_is_pinned() -> None:
     assert jackdaw.JACKDAW_REVISION == "dbedc66255fe594cce7b7cccc188c8a11649d9ec"
+
+
+def test_candidate_continues_winning_authority_trace_into_endless() -> None:
+    pytest.importorskip("jackdaw")
+    trace = (
+        Path(__file__).resolve().parents[1]
+        / "runs/evidence/phase1-voucher-affordance-v1-red-white-seed44-authority-20260902-attempt3.jsonl"
+    )
+    rows = read_verified_trace(trace)
+    manifest = rows[0]["manifest"]
+    run = manifest["run"]
+    start = next(row for row in rows if row["event"] == "run_start")
+    backend = jackdaw.JackdawBackend()
+    try:
+        backend.configure_replay(start["authority"]["canonical"])
+        backend.reset(RunSpec(run["deck"], run["stake"], run["seed"]))
+        observation = None
+        for row in rows:
+            if row["event"] != "transition":
+                continue
+            result = backend.step(action_from_data(row["action"]))
+            assert result.status == "accepted"
+            assert result.after is not None
+            observation = result.after
+
+        assert observation is not None
+        public = to_public_observation(json.loads(observation.observed.raw_json))
+        assert public.won
+        assert public.antes_cleared == 8
+        assert not public.terminal
+
+        for action in (CashOut(), LeaveShop(), SelectBlind()):
+            result = backend.step(action)
+            assert result.status == "accepted"
+            assert result.after is not None
+
+        endless = to_public_observation(json.loads(result.after.observed.raw_json))
+        assert endless.phase.value == "SELECTING_HAND"
+        assert endless.ante == 9
+        assert endless.antes_cleared == 8
+        assert endless.won
+        assert next(blind for blind in endless.blinds if blind.kind == "SMALL").score == 110_000
+    finally:
+        backend.close()
+
+
+def test_candidate_data_bootstrap_copies_missing_pinned_files(tmp_path) -> None:
+    package = tmp_path / "jackdaw"
+    package.mkdir()
+    module = SimpleNamespace(__file__=str(package / "__init__.py"))
+
+    copied = jackdaw._ensure_jackdaw_data(module)
+
+    installed = package / "engine" / "data"
+    assert {path.name for path in installed.glob("*.json")} == set(jackdaw._JACKDAW_DATA_HASHES)
+    assert set(copied) == set(jackdaw._JACKDAW_DATA_HASHES)
+    assert jackdaw._ensure_jackdaw_data(module) == ()
+
+
+def test_candidate_data_bootstrap_rejects_existing_mismatch(tmp_path) -> None:
+    package = tmp_path / "jackdaw"
+    data = package / "engine" / "data"
+    data.mkdir(parents=True)
+    (data / "centers.json").write_text("{}", encoding="utf-8")
+    module = SimpleNamespace(__file__=str(package / "__init__.py"))
+
+    with pytest.raises(jackdaw.JackdawUnavailable, match="installed Jackdaw data hash mismatch"):
+        jackdaw._ensure_jackdaw_data(module)
 
 
 def test_candidate_pack_capacity_survives_selections_and_resets() -> None:

@@ -78,12 +78,12 @@ def test_environment_step_response_enforces_sparse_public_reward() -> None:
     win_boundary = to_public_observation(state("ROUND_EVAL", won=True))
     ongoing = EnvStepResult(2, 1, playing, 0, False, False, None, None)
     won = EnvStepResult(3, 2, terminal, 1, True, False, "game_over", True)
-    won_before_endless = EnvStepResult(4, 2, win_boundary, 1, True, False, "won", True)
+    continuing_endless = EnvStepResult(4, 2, win_boundary, 0, False, False, None, None)
     truncated = EnvStepResult(5, 3, playing, 0, False, True, "step_limit", None)
 
     assert decode_env_response(encode_env_response(ongoing)) == ongoing
     assert decode_env_response(encode_env_response(won)) == won
-    assert decode_env_response(encode_env_response(won_before_endless)) == won_before_endless
+    assert decode_env_response(encode_env_response(continuing_endless)) == continuing_endless
     assert decode_env_response(encode_env_response(truncated)) == truncated
     assert decode_env_response(encode_env_response(EnvClosed(6))) == EnvClosed(6)
 
@@ -99,7 +99,7 @@ def test_environment_wire_rejects_inconsistent_terminal_data() -> None:
 
 def test_environment_wire_rejects_noncanonical_action() -> None:
     payload = {
-        "protocol": 1,
+        "protocol": 2,
         "type": "step",
         "request_id": 1,
         "step_index": 0,

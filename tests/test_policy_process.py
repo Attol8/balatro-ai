@@ -10,7 +10,8 @@ from balatro_ai_v2.balatrobot.adapter import to_public_observation
 from balatro_ai_v2.policy import PublicHistoryStep
 from balatro_ai_v2.policy_process import PolicyProcess, PolicyProcessError
 from balatro_ai_v2.policy_wire import POLICY_PROTOCOL_VERSION
-from state_factory import playing_card, state
+from balatro_ai_v2.strategy_tuning import StrategyTuning
+from state_factory import item_card, playing_card, state
 
 
 def test_actual_policy_child_returns_a_legal_public_action() -> None:
@@ -21,6 +22,39 @@ def test_actual_policy_child_returns_a_legal_public_action() -> None:
 
     assert action_to_data(action) == {"type": "select_blind"}
     assert policy.closed
+
+
+def test_explicit_tuning_reaches_isolated_policy_and_changes_decision() -> None:
+    raw = state("SHOP", money=8)
+    raw["ante_num"] = 1
+    raw["shop"]["cards"] = [item_card("j_green_joker", card_id=20, kind="JOKER", buy=4)]
+    raw["shop"]["count"] = 1
+    raw["jokers"]["cards"] = [
+        item_card("j_joker", card_id=40, kind="JOKER"),
+        item_card("j_sly", card_id=41, kind="JOKER"),
+    ]
+    raw["jokers"]["count"] = 2
+    raw["vouchers"]["cards"] = []
+    raw["vouchers"]["count"] = 0
+    raw["packs"]["cards"] = []
+    raw["packs"]["count"] = 0
+    observation = to_public_observation(raw)
+
+    with PolicyProcess("strategic", timeout_seconds=2) as default_policy:
+        default_action = default_policy.choose_action(
+            observation, lambda: iter_legal_actions(observation), ()
+        )
+    with PolicyProcess(
+        "strategic",
+        timeout_seconds=2,
+        tuning=StrategyTuning(reserve_ante_1=100),
+    ) as tuned_policy:
+        tuned_action = tuned_policy.choose_action(
+            observation, lambda: iter_legal_actions(observation), ()
+        )
+
+    assert action_to_data(default_action)["type"] == "buy_shop_card"
+    assert action_to_data(tuned_action) == {"type": "leave_shop"}
 
 
 def test_policy_transport_covers_normal_eight_card_tactical_actions() -> None:
@@ -172,6 +206,15 @@ def test_policy_child_timeout_fails_closed_and_stops_process() -> None:
         policy.choose_action(observation, lambda: iter_legal_actions(observation), ())
 
     assert policy.closed
+
+
+def test_custom_policy_command_rejects_nondefault_tuning() -> None:
+    with pytest.raises(ValueError, match="custom policy commands"):
+        PolicyProcess(
+            "strategic",
+            command=(sys.executable, "-c", "pass"),
+            tuning=StrategyTuning(reserve_ante_1=100),
+        )
 
 
 @pytest.mark.parametrize(

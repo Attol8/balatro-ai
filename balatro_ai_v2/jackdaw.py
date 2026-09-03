@@ -8,8 +8,11 @@ uses Python 3.12 and the pinned optional dependency.
 from __future__ import annotations
 
 import importlib.metadata
+import hashlib
 import json
+import os
 import subprocess
+import tempfile
 from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from copy import deepcopy
@@ -32,6 +35,14 @@ from balatro_ai_v2.canonical import BalatroBotCanonicalizer
 
 JACKDAW_REVISION = "dbedc66255fe594cce7b7cccc188c8a11649d9ec"
 _JACKDAW_PATCH_LOCK = RLock()
+_JACKDAW_DATA_HASHES = {
+    "blinds.json": "21df32cbd4b67e641ed991028ec0d2dc36ff69051d28460e45d26ae3ede385ad",
+    "cards.json": "4bbd866f53531d954fed146060cea06a84c7c6bcdd4f5306d0ba7b0be5fddd61",
+    "centers.json": "6de51cf3751ad957baf50fbe2ac632644b4f0178e82674e7f2e818e1befb5d71",
+    "seals.json": "405f43b9f465f053a0a2f5e753840b52235e5cdd794177176ac4e1de9a783bae",
+    "stakes.json": "6d1c74e7615b8becdec4755d5020c1286d77c504c4dbee5062568298023706d5",
+    "tags.json": "7301c0f25f902385ed8e0d00d87ac4638a0c6783af590d58a2c80038a70923b5",
+}
 
 _SECRET_HANDS = {
     "Flush Five": {"order": 1, "level": 1, "chips": 160, "mult": 16, "played": 0, "played_this_round": 0},
@@ -109,7 +120,67 @@ def verify_jackdaw_runtime() -> dict[str, object]:
         )
     if dirty:
         raise JackdawUnavailable("imported Jackdaw checkout has modifications")
-    return {"revision": revision, "dirty": dirty}
+    _ensure_jackdaw_data(jackdaw)
+    try:
+        from jackdaw.bridge import backend as _bridge_backend  # noqa: F401
+    except (ImportError, OSError, ValueError) as exc:
+        raise JackdawUnavailable("pinned Jackdaw data failed to initialize") from exc
+    return {
+        "revision": revision,
+        "dirty": dirty,
+        "data_hashes": dict(sorted(_JACKDAW_DATA_HASHES.items())),
+    }
+
+
+def _ensure_jackdaw_data(module: Any) -> tuple[str, ...]:
+    """Restore wheel-omitted pinned data, rejecting every unexpected byte."""
+
+    target = Path(module.__file__).resolve().parent / "engine" / "data"
+    source = Path(__file__).resolve().parent / "candidate_data" / "jackdaw"
+    copied: list[str] = []
+    with _JACKDAW_PATCH_LOCK:
+        for name, expected_digest in _JACKDAW_DATA_HASHES.items():
+            source_path = source / name
+            try:
+                payload = source_path.read_bytes()
+            except OSError as exc:
+                raise JackdawUnavailable(f"bundled Jackdaw data is missing: {name}") from exc
+            # Text patches retain a trailing newline; upstream's tracked JSON
+            # does not. Normalize the bundled copy back to the pinned bytes.
+            if payload.endswith(b"\n"):
+                payload = payload[:-1]
+            if hashlib.sha256(payload).hexdigest() != expected_digest:
+                raise JackdawUnavailable(f"bundled Jackdaw data hash mismatch: {name}")
+
+            target_path = target / name
+            if target_path.exists():
+                try:
+                    installed_digest = hashlib.sha256(target_path.read_bytes()).hexdigest()
+                except OSError as exc:
+                    raise JackdawUnavailable(f"cannot verify installed Jackdaw data: {name}") from exc
+                if installed_digest != expected_digest:
+                    raise JackdawUnavailable(f"installed Jackdaw data hash mismatch: {name}")
+                continue
+
+            try:
+                target.mkdir(parents=True, exist_ok=True)
+                descriptor, temporary_name = tempfile.mkstemp(
+                    dir=target,
+                    prefix=f".{name}.",
+                )
+                try:
+                    with os.fdopen(descriptor, "wb") as handle:
+                        handle.write(payload)
+                        handle.flush()
+                        os.fsync(handle.fileno())
+                    os.replace(temporary_name, target_path)
+                    copied.append(name)
+                except BaseException:
+                    Path(temporary_name).unlink(missing_ok=True)
+                    raise
+            except OSError as exc:
+                raise JackdawUnavailable(f"cannot install pinned Jackdaw data: {name}") from exc
+    return tuple(copied)
 
 
 def _jackdaw_install_provenance(module: Any) -> tuple[str, Path | None]:
@@ -257,6 +328,7 @@ class JackdawBackend:
     _poker_hand_iteration_order: tuple[str, ...] | None = field(default=None, init=False, repr=False)
     _active_pack_cards: list[Any] | None = field(default=None, init=False, repr=False)
     _pack_card_limit: int | None = field(default=None, init=False, repr=False)
+    _won: bool = field(default=False, init=False, repr=False)
 
     def __post_init__(self) -> None:
         try:
@@ -270,7 +342,7 @@ class JackdawBackend:
         self.metadata = BackendMetadata(
             backend_name="Jackdaw",
             backend_version=f"0.1.0+{JACKDAW_REVISION}",
-            adapter_version="1",
+            adapter_version="2",
             game_version="Balatro-1.0.1o-model",
             runtime_version="Python",
             capabilities=BackendCapabilities(
@@ -289,6 +361,7 @@ class JackdawBackend:
         self._pending_ante_setup = None
         self._active_pack_cards = None
         self._pack_card_limit = None
+        self._won = False
         self._handle("menu", {})
         raw = self._handle(
             "start",
@@ -372,6 +445,13 @@ class JackdawBackend:
             self._roll_round_targets()
             self._round_targets_rolled = True
             raw_after = self._handle("gamestate", {})
+        self._won = self._won or raw_after.get("won") is True
+        if self._won and raw_after.get("won") is not True:
+            game_state = getattr(self._backend, "_gs", None)
+            if not isinstance(game_state, dict):
+                raise RuntimeError("Jackdaw game state is unavailable after an Endless loss")
+            game_state["won"] = True
+            raw_after = self._handle("gamestate", {})
         after = self._observation(raw_after)
         self._current = after
         return StepResult(
@@ -393,6 +473,7 @@ class JackdawBackend:
         self._poker_hand_iteration_order = None
         self._active_pack_cards = None
         self._pack_card_limit = None
+        self._won = False
 
     def _handle(self, method: str, params: dict[str, Any]) -> dict[str, Any]:
         with (

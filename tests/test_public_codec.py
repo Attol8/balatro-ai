@@ -46,6 +46,56 @@ def test_public_observation_codec_rejects_boolean_integer() -> None:
         public_observation_from_data(data)
 
 
+@pytest.mark.parametrize(
+    ("ante", "used_vouchers", "expected"),
+    [
+        (6, [], 5),
+        (6, ["v_hieroglyph"], 6),
+        (6, ["v_hieroglyph", "v_petroglyph"], 7),
+    ],
+)
+def test_antes_cleared_accounts_for_public_ante_reduction_vouchers(
+    ante: int, used_vouchers: list[str], expected: int
+) -> None:
+    raw = state("SHOP")
+    raw["ante_num"] = ante
+    raw["used_vouchers"] = used_vouchers
+
+    observation = to_public_observation(raw)
+
+    assert observation.antes_cleared == expected
+    assert not observation.won
+
+
+@pytest.mark.parametrize(
+    ("ante", "used_vouchers", "expected"),
+    [
+        (9, [], 8),
+        (9, ["v_hieroglyph"], 9),
+        (9, ["v_hieroglyph", "v_petroglyph"], 10),
+    ],
+)
+def test_victory_metric_supports_eight_to_ten_completed_bosses(
+    ante: int, used_vouchers: list[str], expected: int
+) -> None:
+    raw = state("ROUND_EVAL", won=True)
+    raw["ante_num"] = ante
+    raw["used_vouchers"] = used_vouchers
+
+    observation = to_public_observation(raw)
+
+    assert observation.won
+    assert observation.antes_cleared == expected
+
+
+def test_public_observation_rejects_win_before_eight_cleared_antes() -> None:
+    raw = state("ROUND_EVAL")
+    raw["won"] = True
+
+    with pytest.raises(ValueError, match="at least eight"):
+        to_public_observation(raw)
+
+
 def test_public_observation_codec_round_trips_and_validates_forced_hand_slot() -> None:
     raw = state("SELECTING_HAND")
     raw["blinds"]["small"]["status"] = "DEFEATED"

@@ -25,6 +25,7 @@ from balatro_ai_v2.policy_wire import (
     encode_request,
 )
 from balatro_ai_v2.public_state import PublicObservation
+from balatro_ai_v2.strategy_tuning import StrategyTuning
 
 
 class PolicyProcessError(RuntimeError):
@@ -74,9 +75,12 @@ class PolicyProcess:
         policy_seed: str = "isolated-v1",
         timeout_seconds: float = 5.0,
         command: Sequence[str] | None = None,
+        tuning: StrategyTuning = StrategyTuning(),
     ) -> None:
         if timeout_seconds <= 0:
             raise ValueError("timeout_seconds must be positive")
+        if command is not None and tuning != StrategyTuning():
+            raise ValueError("custom policy commands cannot accept non-default tuning")
         self._request_id = 0
         root = Path(__file__).resolve().parents[1]
         child_command = tuple(command) if command is not None else (
@@ -87,6 +91,8 @@ class PolicyProcess:
             policy_name,
             "--policy-seed",
             policy_seed,
+            "--tuning-json",
+            tuning.canonical_json(),
         )
         if not child_command:
             raise ValueError("policy child command cannot be empty")

@@ -26,10 +26,18 @@ from state_factory import item_card, state
 
 
 class FakeClient:
-    def __init__(self, initial, polls=(), action_result=None, action_error=None) -> None:
+    def __init__(
+        self,
+        initial,
+        polls=(),
+        action_result=None,
+        action_error=None,
+        action_results=(),
+    ) -> None:
         self.initial = deepcopy(initial)
         self.polls = deque(deepcopy(tuple(polls)))
         self.action_result = deepcopy(action_result)
+        self.action_results = deque(deepcopy(tuple(action_results)))
         self.action_error = action_error
         self.calls: list[tuple[str, object]] = []
 
@@ -51,6 +59,8 @@ class FakeClient:
         self.calls.append((method, params))
         if self.action_error is not None:
             raise self.action_error
+        if self.action_results:
+            return self.action_results.popleft()
         return deepcopy(self.action_result)
 
     def save(self, *, path):
@@ -296,10 +306,18 @@ def test_runner_recognizes_terminal_on_final_allowed_decision() -> None:
     assert result.decisions == 1
 
 
-def test_runner_stops_at_win_before_optional_endless_cash_out() -> None:
-    initial = state()
+def test_runner_continues_from_win_into_endless() -> None:
     won_round_eval = state("ROUND_EVAL", won=True)
-    client = FakeClient(initial, polls=[initial, won_round_eval], action_result=won_round_eval)
+    won_round_eval["ante_num"] = 9
+    endless_shop = state("SHOP", won=True)
+    endless_shop["ante_num"] = 9
+    endless_game_over = state("GAME_OVER", won=True)
+    endless_game_over["ante_num"] = 9
+    client = FakeClient(
+        won_round_eval,
+        polls=[won_round_eval, endless_shop, endless_game_over],
+        action_results=[endless_shop, endless_game_over],
+    )
     backend = BalatroBotBackend(client, settle_poll_delay=0)  # type: ignore[arg-type]
 
     result = AuthorityRunner(backend, NoBuySmokePolicy(), max_decisions=2).run(
@@ -308,10 +326,30 @@ def test_runner_stops_at_win_before_optional_endless_cash_out() -> None:
 
     assert result.complete
     assert result.won
-    assert result.terminal_reason == "won"
-    assert result.decisions == 1
+    assert result.antes_cleared == 8
+    assert result.terminal_reason == "game_over"
+    assert result.decisions == 2
     assert result.final_observation is not None
-    assert result.final_observation.phase.value == "ROUND_EVAL"
+    assert result.final_observation.phase.value == "GAME_OVER"
+    assert ("cash_out", {}) in client.calls
+    assert ("next_round", {}) in client.calls
+
+
+def test_runner_completes_at_development_ante_cap() -> None:
+    capped = state("ROUND_EVAL", won=True)
+    capped["ante_num"] = 19
+    capped["used_vouchers"] = ["v_hieroglyph", "v_petroglyph"]
+    client = FakeClient(capped, polls=[capped])
+    backend = BalatroBotBackend(client, settle_poll_delay=0)  # type: ignore[arg-type]
+
+    result = AuthorityRunner(backend, NoBuySmokePolicy(), max_antes_cleared=20).run(
+        RunSpec("RED", "WHITE", "1")
+    )
+
+    assert result.complete
+    assert result.terminal_reason == "ante_cap"
+    assert result.antes_cleared == 20
+    assert result.decisions == 0
 
 
 def test_decision_limit_is_never_complete() -> None:

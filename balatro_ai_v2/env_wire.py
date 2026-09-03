@@ -17,7 +17,7 @@ from balatro_ai_v2.public_codec import public_observation_from_data, public_obse
 from balatro_ai_v2.public_state import Phase, PublicObservation
 
 
-ENV_PROTOCOL_VERSION: Final = 1
+ENV_PROTOCOL_VERSION: Final = 2
 ENV_REWARD_SCHEMA: Final = "sparse_terminal_v1"
 ENV_CANONICAL_SCHEMA_VERSION: Final = 6
 MAX_ENV_REQUEST_BYTES: Final = 64_000
@@ -334,7 +334,7 @@ def _validate_step_result(result: EnvStepResult) -> None:
         raise EnvWireError("an environment result cannot terminate and truncate")
     if result.terminated:
         expected_reward = 1 if result.observation.won else -1
-        expected_reason = "game_over" if result.observation.phase == Phase.GAME_OVER else "won"
+        expected_reason = "game_over"
         if (
             result.terminal_reason != expected_reason
             or result.won != result.observation.won

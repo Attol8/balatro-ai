@@ -117,6 +117,8 @@ def to_public_observation(raw: Mapping[str, Any]) -> PublicObservation:
     except ValueError as exc:
         raise ObservationError(f"unsupported Balatro state {raw_phase!r}") from exc
 
+    ante = _required_int(raw, "ante_num")
+    won = _required_bool(raw, "won")
     hand_area = _area(raw, "hand")
     deck_area = _area(raw, "cards")
     hand = tuple(_hand_card(card) for card in hand_area["cards"])
@@ -136,11 +138,16 @@ def to_public_observation(raw: Mapping[str, Any]) -> PublicObservation:
         )
     )
 
+    used_vouchers = _string_tuple(raw.get("used_vouchers", ()), "used_vouchers")
+    ante_reductions = sum(
+        voucher in {"v_hieroglyph", "v_petroglyph"} for voucher in used_vouchers
+    )
+
     return PublicObservation(
         phase=phase,
         deck=_required_string(raw, "deck"),
         stake=_required_string(raw, "stake"),
-        ante=_required_int(raw, "ante_num"),
+        ante=ante,
         round_no=_required_int(raw, "round_num"),
         money=_required_int(raw, "money"),
         round=RoundObservation(
@@ -179,9 +186,13 @@ def to_public_observation(raw: Mapping[str, Any]) -> PublicObservation:
         # a single-choice pack closes.  It is no longer pack metadata once the
         # visible phase has returned to a normal decision boundary.
         pack_choices_remaining=raw_pack_choices if phase == Phase.PACK else 0,
-        used_vouchers=_string_tuple(raw.get("used_vouchers", ()), "used_vouchers"),
+        used_vouchers=used_vouchers,
         last_tarot_planet=_optional_key(raw, "last_tarot_planet"),
-        won=_required_bool(raw, "won"),
+        # Boss wins advance the displayed ante immediately. Hieroglyph and
+        # Petroglyph each move it back once, so their visible ownership is the
+        # exact correction from displayed ante to bosses cleared.
+        antes_cleared=max(0, ante - 1 + ante_reductions),
+        won=won,
     )
 
 

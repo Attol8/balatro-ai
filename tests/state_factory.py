@@ -149,6 +149,8 @@ def state(
         "poker_hand_iteration_order": ["High Card"],
         "won": won,
     }
+    if won:
+        raw["ante_num"] = 9
     if phase == "SELECTING_HAND":
         hand_cards = [
             playing_card("S_Q", card_id=4),
@@ -192,6 +194,6 @@ def state(
             "limit": 2,
         }
     elif phase == "GAME_OVER":
-        raw["ante_num"] = 8 if won else 2
+        raw["ante_num"] = 9 if won else 2
         raw["round_num"] = 24 if won else 4
     return deepcopy(raw)

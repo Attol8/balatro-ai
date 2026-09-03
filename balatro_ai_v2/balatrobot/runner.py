@@ -44,6 +44,7 @@ from balatro_ai_v2.public_state import (
 class RunResult:
     complete: bool
     won: bool
+    antes_cleared: int
     ante: int
     round_no: int
     decisions: int
@@ -62,7 +63,12 @@ class AuthorityRunner:
     backend: GameBackend
     policy: PublicPolicy
     max_decisions: int = 800
+    max_antes_cleared: int = 20
     trace: AuthorityTraceWriter | None = None
+
+    def __post_init__(self) -> None:
+        if self.max_decisions < 1 or self.max_antes_cleared < 1:
+            raise ValueError("runner decision and ante caps must be positive")
 
     def run(self, spec: RunSpec) -> RunResult:
         history: list[PublicHistoryStep] = []
@@ -83,7 +89,10 @@ class AuthorityRunner:
             for _ in range(self.max_decisions):
                 terminal_blind = _current_blind(public) or terminal_blind
                 if public.terminal:
-                    terminal_reason = _terminal_reason(public)
+                    terminal_reason = "game_over"
+                    break
+                if public.antes_cleared >= self.max_antes_cleared:
+                    terminal_reason = "ante_cap"
                     break
                 try:
                     action = self.policy.choose_action(
@@ -141,7 +150,10 @@ class AuthorityRunner:
                 final = public
                 terminal_blind = _current_blind(public) or terminal_blind
                 if public.terminal:
-                    terminal_reason = _terminal_reason(public)
+                    terminal_reason = "game_over"
+                    break
+                if public.antes_cleared >= self.max_antes_cleared:
+                    terminal_reason = "ante_cap"
                     break
             else:
                 terminal_reason = "decision_limit"
@@ -149,10 +161,15 @@ class AuthorityRunner:
             terminal_reason = "unsettled"
             self._record("authority_error", error=str(exc))
 
-        complete = terminal_reason in {"game_over", "won"} and final is not None
+        complete = terminal_reason in {"game_over", "ante_cap"} and final is not None
         result = RunResult(
             complete=complete,
             won=bool(final.won) if complete else False,
+            antes_cleared=(
+                min(final.antes_cleared, self.max_antes_cleared)
+                if complete
+                else 0
+            ),
             ante=final.ante if final is not None else 0,
             round_no=final.round_no if final is not None else 0,
             decisions=len(history),
@@ -169,6 +186,7 @@ class AuthorityRunner:
             "run_end",
             complete=result.complete,
             won=result.won,
+            antes_cleared=result.antes_cleared,
             ante=result.ante,
             round_no=result.round_no,
             accepted_decisions=result.decisions,
@@ -226,10 +244,6 @@ def _public(authority: AuthorityObservation) -> PublicObservation:
     if not isinstance(raw, dict):
         raise AssertionError("authority state root is not an object")
     return to_public_observation(raw)
-
-
-def _terminal_reason(observation: PublicObservation) -> str:
-    return "game_over" if observation.phase == Phase.GAME_OVER else "won"
 
 
 def _current_blind(observation: PublicObservation) -> PublicBlind | None:

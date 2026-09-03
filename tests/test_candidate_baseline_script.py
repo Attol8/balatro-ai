@@ -4,7 +4,10 @@ from collections import Counter
 import importlib.util
 from pathlib import Path
 
+import pytest
+
 from balatro_ai_v2.balatrobot.adapter import to_public_observation
+from balatro_ai_v2.strategy_tuning import StrategyTuning
 from state_factory import state
 
 
@@ -20,9 +23,9 @@ def _load_script():
 def test_candidate_baseline_reports_ante_six_survival_metric() -> None:
     module = _load_script()
     results = [
-        {"complete": True, "won": False, "survived_to_ante_6": True, "ante": 6, "round": 17, "decisions": 10},
-        {"complete": True, "won": True, "survived_to_ante_6": True, "ante": 9, "round": 24, "decisions": 20},
-        {"complete": True, "won": False, "survived_to_ante_6": False, "ante": 4, "round": 12, "decisions": 8},
+        {"complete": True, "won": False, "antes_cleared": 5, "survived_to_ante_6": True, "ante": 6, "round": 17, "decisions": 10},
+        {"complete": True, "won": True, "antes_cleared": 8, "survived_to_ante_6": True, "ante": 9, "round": 24, "decisions": 20},
+        {"complete": True, "won": False, "antes_cleared": 3, "survived_to_ante_6": False, "ante": 4, "round": 12, "decisions": 8},
     ]
 
     summary = module.summarize_results(
@@ -30,7 +33,10 @@ def test_candidate_baseline_reports_ante_six_survival_metric() -> None:
     )
 
     assert summary["survived_to_ante_6"] == 2
+    assert summary["win_rate"] == pytest.approx(1 / 3)
     assert summary["survival_to_ante_6_rate"] == 2 / 3
+    assert summary["mean_antes_cleared"] == 16 / 3
+    assert summary["antes_cleared_deciles"]["p50"] == 5
 
 
 def test_candidate_baseline_cli_has_only_public_control_policies() -> None:
@@ -40,6 +46,7 @@ def test_candidate_baseline_cli_has_only_public_control_policies() -> None:
 
     assert args.policy == "greedy"
     assert args.policy_timeout == 5.0
+    assert args.tuning_json == StrategyTuning().canonical_json()
     assert not hasattr(args, "model")
     assert not hasattr(args, "search")
 
@@ -78,9 +85,10 @@ def test_terminal_projection_persists_public_loss_context() -> None:
     projection = module.terminal_projection(to_public_observation(raw))
 
     assert projection == {
-        "schema_version": 1,
+        "schema_version": 2,
         "phase": "GAME_OVER",
         "won": False,
+        "antes_cleared": 2,
         "ante": 3,
         "round": 8,
         "money": 7,

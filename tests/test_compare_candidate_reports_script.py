@@ -16,7 +16,7 @@ def _load_script():
     return module
 
 
-def _report(path: Path, *, seeds=(1, 2), wins=()) -> None:
+def _report(path: Path, *, seeds=(1, 2), wins=(), survivals=()) -> None:
     payload = {
         "candidate_only": True,
         "candidate_runtime": {"dirty": False, "revision": "candidate"},
@@ -33,6 +33,7 @@ def _report(path: Path, *, seeds=(1, 2), wins=()) -> None:
             "trace_schema_version": 1,
             "source_digest": "source",
             "max_decisions": 800,
+            "max_antes_cleared": 20,
             "max_settle_polls": 0,
             "wall_clock_limit_seconds": None,
             "profile_mode": "all_unlocked",
@@ -46,7 +47,10 @@ def _report(path: Path, *, seeds=(1, 2), wins=()) -> None:
                 "seed": seed,
                 "complete": True,
                 "won": seed in wins,
-                "terminal_reason": "won" if seed in wins else "game_over",
+                "antes_cleared": 8 if seed in wins else 5 if seed in survivals else 3,
+                "survived_to_ante_6": seed in survivals,
+                "ante": 9 if seed in wins else 6 if seed in survivals else 4,
+                "terminal_reason": "game_over",
             }
             for seed in seeds
         ],
@@ -58,10 +62,11 @@ def test_compare_counts_paired_outcomes_and_incomplete_as_loss(tmp_path: Path) -
     module = _load_script()
     baseline = tmp_path / "baseline.json"
     candidate = tmp_path / "candidate.json"
-    _report(baseline, wins=(1,))
-    _report(candidate, wins=(2,))
+    _report(baseline, wins=(1,), survivals=(1,))
+    _report(candidate, wins=(2,), survivals=(1, 2))
     value = json.loads(candidate.read_text(encoding="utf-8"))
     value["manifest"]["inference_budget"] = "different-policy-budget"
+    value["manifest"]["source_digest"] = "candidate-source"
     candidate.write_text(json.dumps(value), encoding="utf-8")
     payload = json.loads(module_path_output(module, baseline, candidate))
 
@@ -70,7 +75,32 @@ def test_compare_counts_paired_outcomes_and_incomplete_as_loss(tmp_path: Path) -
     assert payload["both_wins"] == 0
     assert payload["both_losses"] == 0
     assert payload["raw_win_delta"] == 0
+    assert payload["baseline_win_rate"] == 0.5
+    assert payload["candidate_win_rate"] == 0.5
+    assert payload["paired_win_rate_delta"] == 0.0
     assert payload["candidate_inference_budget"] == "different-policy-budget"
+    assert payload["baseline_source_digest"] == "source"
+    assert payload["candidate_source_digest"] == "candidate-source"
+    assert payload["baseline_mean_antes_cleared"] == 5.5
+    assert payload["candidate_mean_antes_cleared"] == 6.5
+    assert payload["paired_mean_antes_cleared_delta"] == 1.0
+    assert payload["paired_antes_cleared_delta_bootstrap_95"] == {
+        "lower": -3.0,
+        "upper": 5.0,
+        "samples": 10_000,
+        "seed": 0,
+    }
+    assert payload["baseline_survived_to_ante_6"] == 1
+    assert payload["candidate_survived_to_ante_6"] == 2
+    assert payload["paired_survival_rate_delta"] == 0.5
+    assert payload["baseline_survival_to_ante_6_rate"] == 0.5
+    assert payload["candidate_survival_to_ante_6_rate"] == 1.0
+    assert payload["paired_survival_delta_bootstrap_95"] == {
+        "lower": 0.0,
+        "upper": 1.0,
+        "samples": 10_000,
+        "seed": 0,
+    }
     assert [row["outcome"] for row in payload["paired"]] == [
         "baseline_only_win",
         "candidate_only_win",
@@ -108,4 +138,50 @@ def test_compare_rejects_incomplete_marked_as_won(tmp_path: Path) -> None:
     value["results"][0]["won"] = True
     candidate.write_text(json.dumps(value), encoding="utf-8")
     with pytest.raises(module.ReportError, match="incomplete run won"):
+        module.compare_reports(baseline, candidate)
+
+
+def test_compare_rejects_incomplete_marked_as_survived(tmp_path: Path) -> None:
+    module = _load_script()
+    baseline = tmp_path / "baseline.json"
+    candidate = tmp_path / "candidate.json"
+    _report(baseline)
+    _report(candidate, survivals=(1,))
+    value = json.loads(candidate.read_text(encoding="utf-8"))
+    value["results"][0]["complete"] = False
+    candidate.write_text(json.dumps(value), encoding="utf-8")
+    with pytest.raises(module.ReportError, match="incomplete run survived"):
+        module.compare_reports(baseline, candidate)
+
+
+def test_compare_rejects_survival_inconsistent_with_ante(tmp_path: Path) -> None:
+    module = _load_script()
+    baseline = tmp_path / "baseline.json"
+    candidate = tmp_path / "candidate.json"
+    _report(baseline)
+    _report(candidate)
+    value = json.loads(candidate.read_text(encoding="utf-8"))
+    value["results"][0]["survived_to_ante_6"] = True
+    candidate.write_text(json.dumps(value), encoding="utf-8")
+    with pytest.raises(module.ReportError, match="inconsistent survival metric"):
+        module.compare_reports(baseline, candidate)
+
+
+def test_compare_rejects_invalid_completion_reason_and_cap(tmp_path: Path) -> None:
+    module = _load_script()
+    baseline = tmp_path / "baseline.json"
+    candidate = tmp_path / "candidate.json"
+    _report(baseline)
+    _report(candidate)
+    value = json.loads(candidate.read_text(encoding="utf-8"))
+    value["results"][0]["terminal_reason"] = "decision_limit"
+    candidate.write_text(json.dumps(value), encoding="utf-8")
+    with pytest.raises(module.ReportError, match="inconsistent completion reason"):
+        module.compare_reports(baseline, candidate)
+
+    _report(candidate)
+    value = json.loads(candidate.read_text(encoding="utf-8"))
+    value["results"][0]["terminal_reason"] = "ante_cap"
+    candidate.write_text(json.dumps(value), encoding="utf-8")
+    with pytest.raises(module.ReportError, match="did not reach the ante cap"):
         module.compare_reports(baseline, candidate)

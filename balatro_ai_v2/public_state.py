@@ -149,6 +149,7 @@ class PublicObservation:
     pack_choices_remaining: int
     used_vouchers: tuple[str, ...]
     last_tarot_planet: str | None
+    antes_cleared: int
     won: bool
 
     def __post_init__(self) -> None:
@@ -164,12 +165,16 @@ class PublicObservation:
                 raise ValueError("pack observations require a kind and remaining choice")
         elif self.pack_kind is not None or self.pack_choices_remaining != 0:
             raise ValueError("pack metadata is valid only while a pack is open")
+        if self.antes_cleared < 0:
+            raise ValueError("antes cleared must be non-negative")
+        if self.won and self.antes_cleared < 8:
+            raise ValueError("a won run must have cleared at least eight antes")
 
     @property
     def terminal(self) -> bool:
-        """An evaluated run ends at a win or a loss, before optional Endless play."""
+        """A run ends only on game over; wins continue into Endless."""
 
-        return self.won or self.phase == Phase.GAME_OVER
+        return self.phase == Phase.GAME_OVER
 
     def canonical_json(self) -> str:
         return json.dumps(_json_value(self), sort_keys=True, separators=(",", ":"), ensure_ascii=False)

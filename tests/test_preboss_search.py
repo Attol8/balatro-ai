@@ -3,7 +3,7 @@ from __future__ import annotations
 from copy import deepcopy
 from dataclasses import replace
 
-from balatro_ai_v2.actions import BuyShopCard, LeaveShop, iter_legal_actions
+from balatro_ai_v2.actions import BuyShopCard, LeaveShop, ShopSlot, iter_legal_actions
 from balatro_ai_v2.balatrobot.adapter import to_public_observation
 from balatro_ai_v2.preboss_search import (
     PublicPreBossSearchPolicy,
@@ -17,6 +17,12 @@ class _LeaveShopPolicy:
     def choose_action(self, observation, legal_actions, history):
         del observation, legal_actions, history
         return LeaveShop()
+
+
+class _BuyFirstPolicy:
+    def choose_action(self, observation, legal_actions, history):
+        del observation, legal_actions, history
+        return BuyShopCard(ShopSlot(0))
 
 
 def _search_policy(**kwargs):
@@ -189,7 +195,7 @@ def test_preboss_search_does_not_override_a_baseline_purchase() -> None:
         item_card("j_blue_joker", card_id=20, kind="JOKER", buy=2)
     ]
     observation = to_public_observation(raw)
-    policy = PublicPreBossSearchPolicy(particles=4)
+    policy = PublicPreBossSearchPolicy(particles=4, baseline=_BuyFirstPolicy())
 
     action = policy.choose_action(
         observation,
@@ -197,7 +203,7 @@ def test_preboss_search_does_not_override_a_baseline_purchase() -> None:
         (),
     )
 
-    assert isinstance(action, BuyShopCard)
+    assert action == BuyShopCard(ShopSlot(0))
     assert policy.last_decision is None
 
 

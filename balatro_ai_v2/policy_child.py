@@ -20,6 +20,7 @@ from balatro_ai_v2.blind_search import BlindSearchDecision
 from balatro_ai_v2.preboss_search import PreBossSearchDecision, PublicPreBossSearchPolicy
 from balatro_ai_v2.public_state import PublicObservation
 from balatro_ai_v2.solver_policy import PublicRedGoldSearchPolicy
+from balatro_ai_v2.strategy_tuning import StrategyTuning
 
 
 _FORBIDDEN_MODULE_PREFIXES = ("balatro_ai_v2.balatrobot", "balatro_ai_v2.jackdaw", "jackdaw")
@@ -28,7 +29,11 @@ _FORBIDDEN_MODULE_PREFIXES = ("balatro_ai_v2.balatrobot", "balatro_ai_v2.jackdaw
 def main() -> None:
     args = build_parser().parse_args()
     _require_public_imports_only()
-    policy, _ = build_public_baseline(args.policy, args.policy_seed)
+    try:
+        tuning = StrategyTuning.from_json(args.tuning_json)
+    except ValueError as exc:
+        raise SystemExit(f"invalid --tuning-json: {exc}") from exc
+    policy, _ = build_public_baseline(args.policy, args.policy_seed, tuning)
     history: list[PublicHistoryStep] = []
     pending: tuple[PublicObservation, PublicAction] | None = None
     while True:
@@ -70,6 +75,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run a public-only policy JSONL child")
     parser.add_argument("--policy", choices=PUBLIC_BASELINE_NAMES, required=True)
     parser.add_argument("--policy-seed", default="isolated-v1")
+    parser.add_argument("--tuning-json", default=StrategyTuning().canonical_json())
     return parser
 
 

@@ -55,7 +55,7 @@ from balatro_ai_v2.public_state import (
     PublicObservation,
     VisiblePlayingCard,
 )
-from balatro_ai_v2.strategy_tuning import StrategyTuning, tuning_from_environment
+from balatro_ai_v2.strategy_tuning import StrategyTuning
 
 
 _RANK_CHIPS = {
@@ -396,7 +396,11 @@ _TARGETED_CONSUMABLE_VALUES = {
 _REPLACEMENT_MARGIN = 20
 
 
-def build_public_baseline(name: str, policy_seed: str) -> tuple[PublicPolicy, str]:
+def build_public_baseline(
+    name: str,
+    policy_seed: str,
+    tuning: StrategyTuning = StrategyTuning(),
+) -> tuple[PublicPolicy, str]:
     if name == "random":
         return DeterministicRandomPolicy(
             policy_seed
@@ -406,20 +410,22 @@ def build_public_baseline(name: str, policy_seed: str) -> tuple[PublicPolicy, st
     if name == "tactical":
         return PublicBeliefTacticalPolicy(), "PublicBeliefTacticalPolicy"
     if name == "strategic":
-        tuning = tuning_from_environment()
         return PublicStrategicPolicy(tuning=tuning), "PublicStrategicPolicy"
     if name == "preboss_search":
         from balatro_ai_v2.preboss_search import PublicPreBossSearchPolicy
 
         return (
-            PublicPreBossSearchPolicy(search_nonce=policy_seed),
+            PublicPreBossSearchPolicy(
+                search_nonce=policy_seed,
+                baseline=PublicStrategicPolicy(tuning=tuning),
+            ),
             f"PublicPreBossSearchPolicy:{policy_seed}",
         )
     if name == "red_gold_search":
         from balatro_ai_v2.solver_policy import PublicRedGoldSearchPolicy
 
         return (
-            PublicRedGoldSearchPolicy(search_nonce=policy_seed),
+            PublicRedGoldSearchPolicy(search_nonce=policy_seed, tuning=tuning),
             f"PublicRedGoldSearchPolicy:{policy_seed}",
         )
     raise ValueError(f"unknown public baseline {name!r}")

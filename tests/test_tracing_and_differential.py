@@ -146,10 +146,17 @@ def test_trace_rejects_changed_run_id_even_with_valid_hash_chain(tmp_path: Path)
 class ReplayBackend:
     metadata = _metadata()
 
-    def __init__(self, *, changed_money: bool = False, terminal_phase: str = "GAME_OVER") -> None:
+    def __init__(
+        self,
+        *,
+        changed_money: bool = False,
+        terminal_phase: str = "GAME_OVER",
+        terminal_ante: int = 9,
+    ) -> None:
         self.canonicalizer = BalatroBotCanonicalizer()
         self.changed_money = changed_money
         self.terminal_phase = terminal_phase
+        self.terminal_ante = terminal_ante
         self.current = None
 
     def reset(self, spec: RunSpec) -> AuthorityObservation:
@@ -159,6 +166,7 @@ class ReplayBackend:
 
     def step(self, action) -> StepResult:
         terminal = state(self.terminal_phase, won=True, money=5 if self.changed_money else 4)
+        terminal["ante_num"] = self.terminal_ante
         after = AuthorityObservation(self.canonicalizer.canonicalize(terminal), True)
         before = self.current
         self.current = after
@@ -172,11 +180,18 @@ class ReplayBackend:
 
 
 def _write_complete_trace(
-    path: Path, *, terminal_money: int = 4, terminal_phase: str = "GAME_OVER"
+    path: Path,
+    *,
+    terminal_money: int = 4,
+    terminal_phase: str = "GAME_OVER",
+    terminal_ante: int = 9,
+    terminal_reason: str = "game_over",
 ) -> None:
     canonicalizer = BalatroBotCanonicalizer()
     initial = canonicalizer.canonicalize(state())
-    terminal = canonicalizer.canonicalize(state(terminal_phase, won=True, money=terminal_money))
+    terminal_state = state(terminal_phase, won=True, money=terminal_money)
+    terminal_state["ante_num"] = terminal_ante
+    terminal = canonicalizer.canonicalize(terminal_state)
     writer = AuthorityTraceWriter(path, _manifest())
     writer.record("run_start", authority={"canonical": initial.canonical})
     writer.record(
@@ -185,7 +200,13 @@ def _write_complete_trace(
         action=action_to_data(SelectBlind()),
         after={"canonical": terminal.canonical},
     )
-    writer.record("run_end", complete=True, won=True)
+    writer.record(
+        "run_end",
+        complete=True,
+        won=True,
+        antes_cleared=terminal_ante - 1,
+        terminal_reason=terminal_reason,
+    )
 
 
 def test_identical_backend_passes_observed_lockstep(tmp_path: Path) -> None:
@@ -198,11 +219,30 @@ def test_identical_backend_passes_observed_lockstep(tmp_path: Path) -> None:
     assert report.checked_transitions == 1
 
 
-def test_win_boundary_passes_before_optional_endless_mode(tmp_path: Path) -> None:
+def test_win_boundary_is_not_a_complete_endless_trace(tmp_path: Path) -> None:
     path = tmp_path / "trace.jsonl"
     _write_complete_trace(path, terminal_phase="ROUND_EVAL")
 
     report = replay_authority_trace(path, ReplayBackend(terminal_phase="ROUND_EVAL"))
+
+    assert not report.observed_lockstep
+    assert report.checked_transitions == 1
+    assert report.mismatch is not None
+    assert report.mismatch.path == "/state"
+
+
+def test_ante_cap_is_a_valid_explicit_terminal(tmp_path: Path) -> None:
+    path = tmp_path / "trace.jsonl"
+    _write_complete_trace(
+        path,
+        terminal_phase="ROUND_EVAL",
+        terminal_ante=21,
+        terminal_reason="ante_cap",
+    )
+
+    report = replay_authority_trace(
+        path, ReplayBackend(terminal_phase="ROUND_EVAL", terminal_ante=21)
+    )
 
     assert report.observed_lockstep
     assert report.checked_transitions == 1

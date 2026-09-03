@@ -47,9 +47,15 @@ from balatro_ai_v2.policy_process import PolicyProcess
 def main() -> None:
     args = build_parser().parse_args()
     profile_mode = "all_unlocked"
-    if args.seeds < 1 or args.max_shop_actions < 0 or args.policy_timeout <= 0:
+    if (
+        args.seeds < 1
+        or args.max_shop_actions < 0
+        or args.ante_cap < 1
+        or args.policy_timeout <= 0
+    ):
         raise SystemExit(
-            "--seeds and --policy-timeout must be positive; --max-shop-actions must be non-negative"
+            "--seeds, --ante-cap, and --policy-timeout must be positive; "
+            "--max-shop-actions must be non-negative"
         )
     root = Path(__file__).resolve().parents[1]
     exact_budget = (
@@ -120,6 +126,7 @@ def main() -> None:
                 backend=authority.metadata,
                 run=spec,
                 max_decisions=args.max_decisions,
+                max_antes_cleared=args.ante_cap,
                 max_settle_polls=args.max_settle_polls,
                 launch_fast=args.fast_server,
                 launch_headless=args.headless_server,
@@ -129,6 +136,7 @@ def main() -> None:
                     "random_public_actions<=256;draw_branches<=512;"
                     f"{exact_budget}"
                     f"shop_actions<={args.max_shop_actions};policy_timeout_seconds={args.policy_timeout}"
+                    f";ante_cap={args.ante_cap}"
                 ),
                 mods=tuple(args.mod),
             )
@@ -136,6 +144,7 @@ def main() -> None:
                 backend=authority,
                 policy=policy,
                 max_decisions=args.max_decisions,
+                max_antes_cleared=args.ante_cap,
                 trace=AuthorityTraceWriter(trace_path, manifest),
             ).run(spec)
             if not result.complete:
@@ -164,6 +173,7 @@ def main() -> None:
             )
             payload = {
                 "ante": result.ante,
+                "antes_cleared": result.antes_cleared,
                 "authority_complete": True,
                 "candidate_revision": JACKDAW_REVISION,
                 "coverage": coverage,
@@ -208,6 +218,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--deck", default="RED")
     parser.add_argument("--stake", default="WHITE")
     parser.add_argument("--max-decisions", type=int, default=800)
+    parser.add_argument("--ante-cap", type=int, default=20)
     parser.add_argument("--max-settle-polls", type=int, default=40)
     parser.add_argument("--settle-poll-delay", type=float, default=0.02)
     parser.add_argument("--timeout", type=float, default=30.0)

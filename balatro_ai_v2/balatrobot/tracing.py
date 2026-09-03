@@ -40,6 +40,7 @@ class TraceManifest:
     launch_fast: bool
     launch_headless: bool
     profile_mode: str
+    max_antes_cleared: int = 20
     mods: tuple[str, ...] = ()
     trace_schema_version: int = TRACE_SCHEMA_VERSION
     canonical_schema_version: int = CANONICAL_SCHEMA_VERSION
@@ -57,6 +58,7 @@ def build_manifest(
     launch_fast: bool,
     launch_headless: bool,
     profile_mode: str,
+    max_antes_cleared: int = 20,
     model_path: Path | None = None,
     inference_budget: str = "none",
     sealed_seed_manifest_digest: str | None = None,
@@ -71,6 +73,7 @@ def build_manifest(
             "run": asdict(run),
             "max_decisions": max_decisions,
             "max_settle_polls": max_settle_polls,
+            "max_antes_cleared": max_antes_cleared,
             "wall_clock_limit_seconds": wall_clock_limit_seconds,
             "inference_budget": inference_budget,
             "launch_fast": launch_fast,
@@ -98,6 +101,7 @@ def build_manifest(
         launch_fast=launch_fast,
         launch_headless=launch_headless,
         profile_mode=profile_mode,
+        max_antes_cleared=max_antes_cleared,
         mods=mods,
     )
 

@@ -1,11 +1,10 @@
-"""Small, deterministic CMA-ES tuner for public heuristic parameters."""
+"""Typed configuration and CMA-ES optimization for the public heuristic."""
 
 from __future__ import annotations
 
 import json
-import os
-import random
-from dataclasses import dataclass, replace
+import warnings
+from dataclasses import dataclass
 from typing import Callable
 
 
@@ -29,6 +28,28 @@ class StrategyTuning:
     def vector(self) -> tuple[float, ...]:
         return tuple(float(getattr(self, name)) for name in self.names())
 
+    def canonical_json(self) -> str:
+        return json.dumps(
+            {name: getattr(self, name) for name in self.names()},
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+
+    @classmethod
+    def from_json(cls, encoded: str) -> "StrategyTuning":
+        try:
+            payload = json.loads(encoded)
+        except json.JSONDecodeError as exc:
+            raise ValueError("strategy tuning JSON is invalid") from exc
+        if not isinstance(payload, dict) or set(payload) != set(cls.names()):
+            raise ValueError("strategy tuning JSON must contain exactly the known parameters")
+        if any(isinstance(value, bool) or not isinstance(value, int) for value in payload.values()):
+            raise ValueError("strategy tuning parameters must be integers")
+        try:
+            return cls(**payload)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("strategy tuning JSON is invalid") from exc
+
     @classmethod
     def from_vector(cls, values: tuple[float, ...]) -> "StrategyTuning":
         if len(values) != len(cls.names()):
@@ -41,46 +62,55 @@ def cma_es(
     objective: Callable[[StrategyTuning], float],
     *,
     initial: StrategyTuning = StrategyTuning(),
-    sigma: float = 8.0,
+    sigma: float = 1.0,
     generations: int = 10,
     population: int = 8,
     seed: int = 1,
 ) -> tuple[StrategyTuning, float]:
-    """Optimize a scalar fitness; callers supply paired-seed evaluation."""
+    """Maximize paired-seed fitness with real covariance-matrix adaptation."""
 
     if sigma <= 0 or generations <= 0 or population < 2:
         raise ValueError("invalid CMA-ES bounds")
-    rng = random.Random(seed)
-    mean = list(initial.vector())
+    try:
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                "ignore",
+                message="Could not import matplotlib.pyplot",
+                category=UserWarning,
+            )
+            import cma
+    except ImportError as exc:  # pragma: no cover - exercised by packaging smoke tests
+        raise RuntimeError("CMA-ES tuning requires the declared 'cma' dependency") from exc
+
+    center = initial.vector()
+    scales = tuple(max(1.0, value * 0.25) for value in center)
+    lower_bounds = [-value / scale for value, scale in zip(center, scales)]
+    optimizer = cma.CMAEvolutionStrategy(
+        [0.0] * len(center),
+        sigma,
+        {
+            "bounds": [lower_bounds, [None] * len(center)],
+            "popsize": population,
+            "seed": seed,
+            "verbose": -9,
+            "verb_disp": 0,
+            "verb_log": 0,
+        },
+    )
     best = initial
     best_score = objective(best)
     for _ in range(generations):
-        candidates = []
-        for _ in range(population):
-            values = tuple(mean[index] + rng.gauss(0.0, sigma) for index in range(len(mean)))
+        points = optimizer.ask()
+        scores: list[float] = []
+        for point in points:
+            values = tuple(
+                center[index] + scales[index] * float(point[index])
+                for index in range(len(center))
+            )
             candidate = StrategyTuning.from_vector(values)
             score = objective(candidate)
-            candidates.append((score, candidate))
+            scores.append(score)
             if score > best_score:
                 best, best_score = candidate, score
-        candidates.sort(key=lambda item: item[0], reverse=True)
-        elite = candidates[: max(1, population // 2)]
-        mean = [sum(candidate.vector()[index] for _, candidate in elite) / len(elite)
-                for index in range(len(mean))]
-        sigma *= 0.9
+        optimizer.tell(points, [-score for score in scores])
     return best, best_score
-
-
-def tuning_from_environment() -> StrategyTuning:
-    """Load an explicit tuner candidate, otherwise return the frozen default."""
-
-    encoded = os.environ.get("BALATRO_TUNING_JSON")
-    if encoded is None:
-        return StrategyTuning()
-    try:
-        payload = json.loads(encoded)
-        if not isinstance(payload, dict):
-            raise ValueError("tuning payload must be an object")
-        return StrategyTuning(**payload)
-    except (TypeError, ValueError, json.JSONDecodeError) as exc:
-        raise ValueError("BALATRO_TUNING_JSON is invalid") from exc

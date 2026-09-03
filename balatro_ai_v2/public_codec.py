@@ -88,6 +88,7 @@ def public_observation_from_data(data: object) -> PublicObservation:
             for value in _array(raw["used_vouchers"], "used_vouchers", 128)
         ),
         last_tarot_planet=_optional_string(raw["last_tarot_planet"], "last_tarot_planet"),
+        antes_cleared=_integer(raw["antes_cleared"], "antes_cleared"),
         won=_boolean(raw["won"], "won"),
     )
 

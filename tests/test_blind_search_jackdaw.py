@@ -8,9 +8,13 @@ import pytest
 
 from balatro_ai_v2.actions import (
     BuyShopCard,
+    CashOut,
     DiscardCards,
+    HandSlot,
+    LeaveShop,
     PlayCards,
     SelectBlind,
+    ShopSlot,
     iter_legal_actions,
 )
 from balatro_ai_v2.backend import AuthorityObservation, RunSpec
@@ -26,8 +30,6 @@ from balatro_ai_v2.blind_search import (
     _transition,
 )
 from balatro_ai_v2.jackdaw import JackdawBackend
-from balatro_ai_v2.policy import PublicHistoryStep
-from balatro_ai_v2.preboss_search import _next_blind_discards, _next_blind_hands
 from balatro_ai_v2.public_state import Phase, VisiblePlayingCard
 
 
@@ -58,70 +60,40 @@ def test_base_card_transition_matches_every_candidate_action() -> None:
 
 
 @pytest.mark.parametrize(
-    ("seed", "blind_name", "joker_keys"),
+    "joker_keys",
     [
-        ("1", "Big Blind", ("j_bull",)),
-        ("9", "Small Blind", ("j_gluttenous_joker", "j_credit_card")),
-        ("11", "Big Blind", ("j_mystic_summit",)),
-        ("19", "Big Blind", ("j_drunkard",)),
-        ("20", "Big Blind", ("j_faceless",)),
-        ("22", "Big Blind", ("j_joker",)),
-        ("29", "Big Blind", ("j_sly",)),
-        ("32", "Big Blind", ("j_droll",)),
-        ("61", "Big Blind", ("j_scary_face",)),
-        ("171", "Big Blind", ("j_banner",)),
-        ("452", "Big Blind", ("j_wily",)),
-        ("491", "Big Blind", ("j_lusty_joker",)),
-        ("901", "Big Blind", ("j_riff_raff", "j_crafty", "j_greedy_joker")),
+        ("j_bull",),
+        ("j_gluttenous_joker", "j_credit_card"),
+        ("j_mystic_summit",),
+        ("j_drunkard",),
+        ("j_faceless",),
+        ("j_joker",),
+        ("j_sly",),
+        ("j_droll",),
+        ("j_scary_face",),
+        ("j_banner",),
+        ("j_wily",),
+        ("j_lusty_joker",),
+        ("j_riff_raff", "j_crafty", "j_greedy_joker"),
     ],
 )
-def test_organic_supported_joker_matches_every_candidate_action(
-    seed: str,
-    blind_name: str,
+def test_constructed_supported_joker_matches_every_candidate_action(
     joker_keys: tuple[str, ...],
 ) -> None:
+    """Keep engine-parity fixtures independent from the changing control policy."""
+
     pytest.importorskip("jackdaw")
+    from jackdaw.engine.card_factory import create_joker
+
     backend = JackdawBackend()
-    before = backend.reset(RunSpec("RED", "GOLD", seed))
+    backend.reset(RunSpec("RED", "GOLD", "4" if "j_faceless" in joker_keys else "1"))
+    selected = backend.step(SelectBlind())
+    assert selected.after is not None
+    backend._backend._gs["jokers"] = [create_joker(key) for key in joker_keys]
+    before = backend.observe()
     observation = to_public_observation(json.loads(before.observed.raw_json))
-    history: list[PublicHistoryStep] = []
-    policy = PublicStrategicPolicy()
 
-    for _ in range(100):
-        current = next(
-            (blind for blind in observation.blinds if blind.status == "CURRENT"),
-            None,
-        )
-        if (
-            observation.phase == Phase.SELECTING_HAND
-            and current is not None
-            and current.name == blind_name
-            and tuple(joker.key for joker in observation.jokers) == joker_keys
-            and (
-                "j_faceless" not in joker_keys
-                or sum(
-                    isinstance(card, VisiblePlayingCard)
-                    and card.rank in {"J", "Q", "K"}
-                    for card in observation.hand
-                )
-                >= 3
-            )
-        ):
-            break
-        action = policy.choose_action(
-            observation,
-            lambda: iter_legal_actions(observation),
-            tuple(history),
-        )
-        result = backend.step(action)
-        assert result.after is not None
-        after = to_public_observation(json.loads(result.after.observed.raw_json))
-        history.append(PublicHistoryStep(observation, action, after))
-        before = result.after
-        observation = after
-    else:
-        raise AssertionError(f"seed {seed} did not organically reach {joker_keys}")
-
+    assert tuple(joker.key for joker in observation.jokers) == joker_keys
     assert _supports_rollout(observation)
     assert _assert_all_tactical_transitions(
         backend,
@@ -131,55 +103,39 @@ def test_organic_supported_joker_matches_every_candidate_action(
     backend.close()
 
 
-def test_organic_drunkard_purchase_adds_the_next_blind_discard() -> None:
+def test_constructed_drunkard_purchase_adds_the_next_blind_discard() -> None:
     pytest.importorskip("jackdaw")
+    from jackdaw.engine.card_factory import create_joker
+
     backend = JackdawBackend()
-    before = backend.reset(RunSpec("RED", "GOLD", "2"))
-    observation = to_public_observation(json.loads(before.observed.raw_json))
-    history: list[PublicHistoryStep] = []
-    policy = PublicStrategicPolicy()
-    expected_discards: int | None = None
-    expected_hands: int | None = None
+    backend.reset(RunSpec("RED", "GOLD", "5"))
+    prefix = (
+        SelectBlind(),
+        DiscardCards(tuple(HandSlot(index) for index in (3, 4, 5, 7))),
+        PlayCards(tuple(HandSlot(index) for index in (1, 3, 4, 5, 7))),
+        DiscardCards(tuple(HandSlot(index) for index in (1, 3, 5, 6))),
+        PlayCards(tuple(HandSlot(index) for index in (0, 1, 5, 6, 7))),
+        CashOut(),
+    )
+    for action in prefix:
+        reached_shop = backend.step(action)
+        assert reached_shop.after is not None
 
-    for _ in range(100):
-        action = policy.choose_action(
-            observation,
-            lambda: iter_legal_actions(observation),
-            tuple(history),
-        )
-        if isinstance(action, BuyShopCard):
-            offer = observation.shop[action.card.value]
-            if offer.key == "j_drunkard":
-                next_blind = next(
-                    blind
-                    for blind in observation.blinds
-                    if blind.kind == "BIG" and blind.status == "UPCOMING"
-                )
-                expected_discards = _next_blind_discards(
-                    observation,
-                    next_blind,
-                    offer,
-                )
-                expected_hands = _next_blind_hands(observation, next_blind)
-        result = backend.step(action)
-        assert result.after is not None
-        after = to_public_observation(json.loads(result.after.observed.raw_json))
-        history.append(PublicHistoryStep(observation, action, after))
-        observation = after
-        if (
-            expected_discards is not None
-            and observation.phase == Phase.SELECTING_HAND
-            and any(
-                blind.name == "Big Blind" and blind.status == "CURRENT"
-                for blind in observation.blinds
-            )
-        ):
-            break
-    else:
-        raise AssertionError("seed 2 did not organically buy Drunkard before Big Blind")
+    drunkard = create_joker("j_drunkard")
+    drunkard.set_cost()
+    backend._backend._gs["shop_cards"] = [drunkard]
+    backend.observe()
+    bought = backend.step(BuyShopCard(ShopSlot(0)))
+    assert bought.after is not None
+    left = backend.step(LeaveShop())
+    assert left.after is not None
+    result = backend.step(SelectBlind())
+    assert result.after is not None
+    observation = to_public_observation(json.loads(result.after.observed.raw_json))
 
-    assert observation.round.discards_left == expected_discards
-    assert observation.round.hands_left == expected_hands
+    assert tuple(joker.key for joker in observation.jokers) == ("j_drunkard",)
+    assert observation.round.discards_left == 4
+    assert observation.round.hands_left == 4
     backend.close()
 
 
