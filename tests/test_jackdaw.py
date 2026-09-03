@@ -198,6 +198,68 @@ def test_non_crimson_round_end_does_not_clear_joker_debuffs() -> None:
     assert joker.debuff is True
 
 
+def test_crimson_heart_selects_reordered_joker_by_creation_order() -> None:
+    pytest.importorskip("jackdaw")
+    from jackdaw.engine.blind import Blind
+
+    class Joker:
+        def __init__(self, sort_id: int) -> None:
+            self.sort_id = sort_id
+            self.debuff = False
+
+        def set_debuff(self, value: bool) -> None:
+            self.debuff = value
+
+    class Rng:
+        def seed(self, key: str) -> float:
+            assert key == "crimson_heart"
+            return 0.5
+
+        def element(self, cards: list[Joker], seed: float) -> tuple[Joker, int]:
+            assert seed == 0.5
+            assert isinstance(cards, list)
+            chosen = min(cards, key=lambda card: card.sort_id)
+            return chosen, cards.index(chosen) + 1
+
+    newest = Joker(30)
+    oldest = Joker(10)
+    middle = Joker(20)
+    jokers = [newest, oldest, middle]
+    backend = object.__new__(jackdaw.JackdawBackend)
+    blind = Blind("test", "Crimson Heart", 100, 2, 5, True)
+
+    with backend._crimson_heart_order_compatibility("select"):
+        result = blind.drawn_to_hand([], jokers, Rng())
+
+    assert result["debuffed_joker_index"] == 1
+    assert [joker.debuff for joker in jokers] == [False, True, False]
+
+    with backend._crimson_heart_order_compatibility("discard"):
+        assert blind.drawn_to_hand([], jokers, Rng()) == {}
+    assert [joker.debuff for joker in jokers] == [False, True, False]
+
+
+def test_economy_tag_money_is_deferred_until_the_next_action() -> None:
+    backend = object.__new__(jackdaw.JackdawBackend)
+    backend._pending_skip_dollars = 0
+    backend._backend = SimpleNamespace(_gs={"dollars": 126})
+    before = {
+        "money": 86,
+        "blinds": {
+            "small": {"status": "SELECT", "tag_name": "Economy Tag"},
+            "big": {"status": "UPCOMING", "tag_name": "Double Tag"},
+        },
+    }
+
+    assert backend._defer_economy_tag_dollars(before)
+    assert backend._backend._gs["dollars"] == 86
+    assert backend._pending_skip_dollars == 40
+
+    backend._apply_pending_skip_dollars()
+
+    assert backend._backend._gs["dollars"] == 126
+    assert backend._pending_skip_dollars == 0
+
 def test_candidate_captures_boss_disabling_sale_before_handler_removes_joker() -> None:
     backend = object.__new__(jackdaw.JackdawBackend)
     blind = SimpleNamespace(name="The Wall", boss=True, disabled=False)

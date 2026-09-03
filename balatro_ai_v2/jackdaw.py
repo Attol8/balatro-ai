@@ -329,6 +329,7 @@ class JackdawBackend:
     _active_pack_cards: list[Any] | None = field(default=None, init=False, repr=False)
     _pack_card_limit: int | None = field(default=None, init=False, repr=False)
     _won: bool = field(default=False, init=False, repr=False)
+    _pending_skip_dollars: int = field(default=0, init=False, repr=False)
 
     def __post_init__(self) -> None:
         try:
@@ -362,6 +363,7 @@ class JackdawBackend:
         self._active_pack_cards = None
         self._pack_card_limit = None
         self._won = False
+        self._pending_skip_dollars = 0
         self._handle("menu", {})
         raw = self._handle(
             "start",
@@ -404,6 +406,7 @@ class JackdawBackend:
         standard_pack_card = self._selected_standard_pack_card(method, params)
         voucher_effect = self._selected_voucher_effect(method, params)
         boss_disabling_sale = self._selected_boss_disabling_sale(method, params)
+        self._apply_pending_skip_dollars()
         try:
             if method == "play":
                 with (
@@ -437,6 +440,8 @@ class JackdawBackend:
         if standard_pack_card is not None and self._place_standard_pack_card(standard_pack_card):
             raw_after = self._handle("gamestate", {})
         if voucher_effect is not None and self._apply_immediate_voucher_effect(voucher_effect):
+            raw_after = self._handle("gamestate", {})
+        if method == "skip" and self._defer_economy_tag_dollars(raw_before):
             raw_after = self._handle("gamestate", {})
         if method == "next_round" and raw_after.get("state") == "BLIND_SELECT":
             self._initialize_orbital_choices()
@@ -474,12 +479,14 @@ class JackdawBackend:
         self._active_pack_cards = None
         self._pack_card_limit = None
         self._won = False
+        self._pending_skip_dollars = 0
 
     def _handle(self, method: str, params: dict[str, Any]) -> dict[str, Any]:
         with (
             self._poker_hand_order_compatibility(),
             self._shop_sticker_stake_compatibility(),
             self._standard_pack_cost_compatibility(),
+            self._crimson_heart_order_compatibility(method),
         ):
             with self._credit_compatibility(method, params) as used_credit:
                 raw = self._backend.handle(method, params)
@@ -487,6 +494,56 @@ class JackdawBackend:
                     self._defer_terminal_rental_charge()
                     raw = self._backend.handle("gamestate", {})
             return self._backend.handle("gamestate", {}) if used_credit else raw
+
+    @contextmanager
+    def _crimson_heart_order_compatibility(self, method: str) -> Iterator[None]:
+        """Select Crimson Heart's Joker by creation order, as vanilla does."""
+
+        from jackdaw.engine.blind import Blind
+
+        original_drawn_to_hand = Blind.drawn_to_hand
+
+        def vanilla_drawn_to_hand(
+            blind: Any,
+            hand_cards: list[Any],
+            joker_cards: list[Any] | None = None,
+            rng: Any | None = None,
+        ) -> dict[str, Any]:
+            if getattr(blind, "name", None) != "Crimson Heart":
+                return original_drawn_to_hand(blind, hand_cards, joker_cards, rng)
+            if getattr(blind, "disabled", False):
+                blind.prepped = False
+                return {}
+            if method != "select" and not getattr(blind, "prepped", False):
+                return {}
+
+            result: dict[str, Any] = {}
+            if rng is not None and joker_cards:
+                eligible = [
+                    joker
+                    for joker in joker_cards
+                    if not getattr(joker, "debuff", False) or len(joker_cards) < 2
+                ]
+                for joker in joker_cards:
+                    set_debuff = getattr(joker, "set_debuff", None)
+                    if not callable(set_debuff):
+                        raise RuntimeError("Jackdaw Crimson Heart Joker cannot be debuffed")
+                    set_debuff(False)
+                if eligible:
+                    chosen, _ = rng.element(eligible, rng.seed("crimson_heart"))
+                    chosen.set_debuff(True)
+                    result["debuffed_joker_index"] = next(
+                        index for index, joker in enumerate(joker_cards) if joker is chosen
+                    )
+            blind.prepped = False
+            return result
+
+        with _JACKDAW_PATCH_LOCK:
+            Blind.drawn_to_hand = vanilla_drawn_to_hand
+            try:
+                yield
+            finally:
+                Blind.drawn_to_hand = original_drawn_to_hand
 
     def _defer_terminal_rental_charge(self) -> None:
         """Match the authority snapshot before queued Rental dollar events run."""
@@ -514,6 +571,47 @@ class JackdawBackend:
             )
             rental_count += int(is_rental)
         game_state["dollars"] = dollars + rental_rate * rental_count
+
+    def _apply_pending_skip_dollars(self) -> None:
+        if not self._pending_skip_dollars:
+            return
+        game_state = getattr(self._backend, "_gs", None)
+        if not isinstance(game_state, dict) or not isinstance(game_state.get("dollars"), int):
+            raise RuntimeError("Jackdaw delayed skip-tag money state is invalid")
+        game_state["dollars"] += self._pending_skip_dollars
+        self._pending_skip_dollars = 0
+
+    def _defer_economy_tag_dollars(self, raw_before: Mapping[str, Any]) -> bool:
+        """Match Economy Tag's queued payout appearing on the next action."""
+
+        blinds = raw_before.get("blinds")
+        if not isinstance(blinds, Mapping):
+            raise RuntimeError("Jackdaw blind state is unavailable before skip")
+        selected = next(
+            (
+                blind
+                for blind in blinds.values()
+                if isinstance(blind, Mapping) and blind.get("status") == "SELECT"
+            ),
+            None,
+        )
+        if not isinstance(selected, Mapping) or selected.get("tag_name") != "Economy Tag":
+            return False
+        game_state = getattr(self._backend, "_gs", None)
+        before_dollars = raw_before.get("money")
+        if (
+            not isinstance(game_state, dict)
+            or not isinstance(before_dollars, int)
+            or isinstance(before_dollars, bool)
+            or not isinstance(game_state.get("dollars"), int)
+        ):
+            raise RuntimeError("Jackdaw Economy Tag money state is invalid")
+        delta = game_state["dollars"] - before_dollars
+        if delta <= 0:
+            raise RuntimeError("Jackdaw Economy Tag did not award positive dollars")
+        game_state["dollars"] = before_dollars
+        self._pending_skip_dollars = delta
+        return True
 
     def _clear_crimson_heart_debuffs_at_round_end(self) -> None:
         """Match the defeated boss clearing its transient Joker debuff."""
