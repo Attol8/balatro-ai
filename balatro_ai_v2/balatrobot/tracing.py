@@ -211,14 +211,19 @@ def _git_state(root: Path) -> tuple[str, bool]:
             capture_output=True,
             text=True,
         ).stdout.strip()
-        dirty = bool(
-            subprocess.run(
-                ["git", "status", "--porcelain", "--untracked-files=no"],
-                cwd=root,
-                check=True,
-                capture_output=True,
-                text=True,
-            ).stdout.strip()
+        status_lines = subprocess.run(
+            ["git", "status", "--porcelain", "--untracked-files=all"],
+            cwd=root,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.splitlines()
+        source_prefixes = ("balatro_ai_v2/", "scripts/", "tests/", "experiments/")
+        dirty = any(
+            not line.startswith("?? ")
+            or line[3:] in {"plan.md", "pyproject.toml"}
+            or line[3:].startswith(source_prefixes)
+            for line in status_lines
         )
         return revision, dirty
     except (OSError, subprocess.CalledProcessError):

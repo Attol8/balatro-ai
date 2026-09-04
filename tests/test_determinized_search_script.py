@@ -13,6 +13,7 @@ from balatro_ai_v2.strategy_teacher import (
     StrategyTeacherCandidate,
     StrategyTeacherDraft,
 )
+from balatro_ai_v2.strategy_tuning import StrategyTuning
 from state_factory import state
 
 
@@ -62,6 +63,72 @@ def test_search_evaluator_keeps_strategy_mode_disabled_by_default() -> None:
     assert not args.include_reorders
     assert args.seed_provenance == "development"
     assert args.seed_start == 901
+
+
+def test_search_evaluator_exposes_terminal_action_protocol() -> None:
+    args = (
+        _load_script()
+        .build_parser()
+        .parse_args(
+            [
+                "--success-terminal-actions",
+                "--success-terminal-max-samples",
+                "10",
+                "--success-terminal-family-alpha",
+                "0.025",
+                "--success-terminal-max-roots",
+                "48",
+            ]
+        )
+    )
+
+    assert args.success_terminal_actions
+    assert args.success_terminal_max_samples == 10
+    assert args.success_terminal_family_alpha == 0.025
+    assert args.success_terminal_max_roots == 48
+
+
+@pytest.mark.parametrize(
+    ("extra", "message"),
+    [
+        (
+            ["--success-teacher", "--teacher-jsonl", "teacher.jsonl"],
+            "mutually exclusive",
+        ),
+        (["--teacher-jsonl", "teacher.jsonl"], "cannot emit teacher JSONL"),
+        (["--strategy-shadow-model", "model.pt"], "cannot load a shadow model"),
+        (
+            [
+                "--seed-start",
+                "701",
+                "--seeds",
+                "200",
+                "--seed-provenance",
+                "gate",
+            ],
+            "development-only",
+        ),
+    ],
+)
+def test_terminal_action_cli_rejects_unsafe_combinations_before_backend_work(
+    monkeypatch: pytest.MonkeyPatch,
+    extra: list[str],
+    message: str,
+) -> None:
+    module = _load_script()
+    monkeypatch.setattr(
+        module.sys,
+        "argv",
+        ["evaluate_determinized_search.py", "--success-terminal-actions", *extra],
+    )
+    monkeypatch.setattr(
+        module,
+        "verify_jackdaw_runtime",
+        lambda: pytest.fail("backend verification must not run"),
+    )
+
+    with pytest.raises(SystemExit, match=message):
+        module.main()
 
 
 def test_search_evaluator_exposes_public_teacher_output() -> None:
@@ -241,3 +308,137 @@ def test_search_evaluator_rejects_panel_before_backend_work(
 
     with pytest.raises(SystemExit, match="gate panel must be exactly seeds 701-900"):
         module.main()
+
+
+def test_reserved_terminal_seeds_require_preregistration_before_backend_work(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    module = _load_script()
+    monkeypatch.setattr(
+        module.sys,
+        "argv",
+        [
+            "evaluate_determinized_search.py",
+            "--seed-start",
+            "1055",
+            "--seeds",
+            "20",
+            "--report-json",
+            str(tmp_path / "report.json"),
+        ],
+    )
+    monkeypatch.setattr(
+        module,
+        "verify_jackdaw_runtime",
+        lambda: pytest.fail("backend verification must not run"),
+    )
+
+    with pytest.raises(SystemExit, match="require --terminal-preregistration-json"):
+        module.main()
+
+
+def test_terminal_preregistration_binds_exact_budget_and_output() -> None:
+    module = _load_script()
+    root = Path(__file__).resolve().parents[1]
+    preregistration = root / "experiments/terminal-actions-v6-preregistration.json"
+    args = module.build_parser().parse_args(
+        [
+            "--seed-start",
+            "1055",
+            "--seeds",
+            "20",
+            "--samples",
+            "6",
+            "--horizon-antes",
+            "1",
+            "--max-steps",
+            "200",
+            "--override-z",
+            "1",
+            "--max-decisions",
+            "1200",
+            "--ante-cap",
+            "12",
+            "--workers",
+            "9",
+            "--terminal-preregistration-json",
+            str(preregistration),
+            "--report-json",
+            str(
+                root
+                / "runs/experiments/terminal-actions-v6/"
+                "seeds1055-1074.baseline.json"
+            ),
+        ]
+    )
+
+    bound = module._validate_terminal_preregistration(  # noqa: SLF001
+        args, StrategyTuning(), repository_root=root
+    )
+
+    assert bound is not None
+    assert bound["mode"] == "baseline"
+    args.samples = 7
+    with pytest.raises(SystemExit, match="search budget mismatch"):
+        module._validate_terminal_preregistration(  # noqa: SLF001
+            args, StrategyTuning(), repository_root=root
+        )
+
+
+def test_success_teacher_profile_links_slowest_anchor_and_reconciles() -> None:
+    module = _load_script()
+    results = [
+        {
+            "seed": 207,
+            "search": {
+                "success_teacher_steps": 30,
+                "success_teacher_seconds": 3.0,
+            },
+            "success_teacher_decisions": [
+                {
+                    "phase": "SHOP",
+                    "ante": 4,
+                    "roots": 2,
+                    "sample_evaluations": 4,
+                    "steps": 10,
+                    "max_root_cumulative_steps": 5,
+                    "seconds": 1.0,
+                    "endpoint_counts": {"death": 4},
+                    "fallback_reason": None,
+                },
+                {
+                    "phase": "PACK",
+                    "ante": 5,
+                    "roots": 3,
+                    "sample_evaluations": 6,
+                    "steps": 20,
+                    "max_root_cumulative_steps": 8,
+                    "seconds": 2.0,
+                    "endpoint_counts": {"victory": 6},
+                    "fallback_reason": "insufficient_terminal_dominance",
+                },
+            ],
+        }
+    ]
+
+    profile = module._success_teacher_profile(results, mode="actions")  # noqa: SLF001
+
+    assert profile["slowest"]["seed"] == 207
+    assert profile["slowest"]["decision_index"] == 1
+    assert profile["sample_evaluations"]["max"] == 6
+    assert profile["counter_reconciliation"]["steps_match"]
+    assert profile["counter_reconciliation"]["seconds_match"]
+
+
+def test_report_publication_is_atomic_and_exclusive(tmp_path: Path) -> None:
+    module = _load_script()
+    path = tmp_path / "report.json"
+
+    module._publish_json_exclusive(path, '{"complete":true}\n')  # noqa: SLF001
+
+    assert path.read_text(encoding="utf-8") == '{"complete":true}\n'
+    with pytest.raises(SystemExit, match="refusing to overwrite"):
+        module._publish_json_exclusive(path, '{"complete":false}\n')  # noqa: SLF001
+    assert path.read_text(encoding="utf-8") == '{"complete":true}\n'
+    assert list(tmp_path.iterdir()) == [path]

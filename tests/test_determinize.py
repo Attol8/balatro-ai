@@ -1,21 +1,26 @@
 from __future__ import annotations
 
 import json
+import pickle
 import random
 import subprocess
 import sys
 from copy import deepcopy
+from dataclasses import FrozenInstanceError
 
 import pytest
 
-from balatro_ai_v2.actions import RerollShop, iter_legal_actions
+import balatro_ai_v2.determinize as determinize_module
+from balatro_ai_v2.actions import RerollShop, action_to_data, iter_legal_actions
 from balatro_ai_v2.backend import RunSpec
 from balatro_ai_v2.balatrobot.adapter import to_public_observation
 from balatro_ai_v2.baselines import PublicStrategicPolicy
 from balatro_ai_v2.determinize import (
     DeterminizationUnavailable,
+    FrozenJackdawBackend,
     canonical_private_state,
     clone_backend,
+    freeze_backend,
     sample_candidate,
     sample_seed,
     scrub_game_state,
@@ -28,6 +33,7 @@ from balatro_ai_v2.determinized_search import (
 from balatro_ai_v2.jackdaw import JackdawBackend
 from balatro_ai_v2.policy import PublicHistoryStep
 from balatro_ai_v2.public_state import Phase
+from state_factory import state
 
 
 def _organic_states(seed: str, *, phases: set[Phase], limit: int = 6):
@@ -39,19 +45,135 @@ def _organic_states(seed: str, *, phases: set[Phase], limit: int = 6):
     observation = to_public_observation(json.loads(authority.observed.raw_json))
     history: list[PublicHistoryStep] = []
     produced = 0
-    while not observation.terminal and len(history) < 400 and produced < limit:
-        if observation.phase in phases:
-            produced += 1
-            yield backend, observation, tuple(history)
-        action = policy.choose_action(
-            observation, lambda: iter_legal_actions(observation), tuple(history)
+    try:
+        while not observation.terminal and len(history) < 400 and produced < limit:
+            if observation.phase in phases:
+                produced += 1
+                yield backend, observation, tuple(history)
+            action = policy.choose_action(
+                observation, lambda: iter_legal_actions(observation), tuple(history)
+            )
+            result = backend.step(action)
+            assert result.status == "accepted", result.error
+            after = to_public_observation(json.loads(result.after.observed.raw_json))
+            history.append(PublicHistoryStep(observation, action, after))
+            observation = after
+    finally:
+        backend.close()
+
+
+def _legacy_clone_backend(backend: JackdawBackend) -> JackdawBackend:
+    """Previous clone implementation, retained here as an equivalence oracle."""
+
+    clone = JackdawBackend(lightweight=True)
+    clone._backend._gs, clone._active_pack_cards, clone._stale_shop_areas = (
+        pickle.loads(
+            pickle.dumps(
+                (
+                    backend._backend._gs,
+                    backend._active_pack_cards,
+                    backend._stale_shop_areas,
+                ),
+                protocol=pickle.HIGHEST_PROTOCOL,
+            )
         )
-        result = backend.step(action)
-        assert result.status == "accepted", result.error
-        after = to_public_observation(json.loads(result.after.observed.raw_json))
-        history.append(PublicHistoryStep(observation, action, after))
-        observation = after
-    backend.close()
+    )
+    for name in (
+        "_round_targets_rolled",
+        "_pending_ante_setup",
+        "_poker_hand_iteration_order",
+        "_pack_card_limit",
+        "_won",
+        "_pending_skip_dollars",
+    ):
+        setattr(clone, name, getattr(backend, name))
+    clone._current = backend._current
+    clone.current_public = backend.current_public
+    return clone
+
+
+def _action_key(action) -> str:
+    return json.dumps(action_to_data(action), sort_keys=True, separators=(",", ":"))
+
+
+def _bounded_legal_roots(observation, *, limit: int = 5):
+    """Retain a small, deterministic cross-section of one organic root set."""
+
+    legal = tuple(iter_legal_actions(observation))
+    assert legal
+    if len(legal) <= limit:
+        return legal
+    return legal[: limit - 1] + legal[-1:]
+
+
+def _step_projection(result, backend: JackdawBackend):
+    """Behavior visible at the bridge plus the resulting engine state."""
+
+    assert result.status == "accepted", result.error
+    assert result.after is not None
+    assert backend.current_public is not None
+    return (
+        result.status,
+        result.action,
+        result.rpc_method,
+        result.rpc_params,
+        len(result.rpc_observations),
+        result.after.settled,
+        len(result.after.polls),
+        result.error,
+        backend.current_public,
+        canonical_private_state(backend._backend._gs),
+    )
+
+
+def _run_bounded_branch(
+    clone_factory,
+    observation,
+    history: tuple[PublicHistoryStep, ...],
+    root,
+    *,
+    max_steps: int,
+):
+    """Run one root and a deterministic public-policy continuation."""
+
+    backend = clone_factory()
+    policy = PublicStrategicPolicy()
+    current = observation
+    branch_history = list(history)
+    action = root
+    trajectory = []
+    try:
+        for _ in range(max_steps):
+            result = backend.step(action)
+            trajectory.append(_step_projection(result, backend))
+            after = backend.current_public
+            assert after is not None
+            branch_history.append(PublicHistoryStep(current, action, after))
+            current = after
+            if current.terminal:
+                break
+            action = policy.choose_action(
+                current,
+                lambda: iter_legal_actions(current),
+                tuple(branch_history),
+            )
+        return tuple(trajectory)
+    finally:
+        backend.close()
+
+
+def _evaluate_roots(
+    clone_factory,
+    observation,
+    history: tuple[PublicHistoryStep, ...],
+    roots,
+):
+    return {
+        _action_key(root): _run_bounded_branch(
+            clone_factory, observation, history, root, max_steps=1
+        )
+        for root in roots
+    }
 
 
 def test_sample_seed_depends_only_on_public_digest_nonce_and_index() -> None:
@@ -62,6 +184,200 @@ def test_sample_seed_depends_only_on_public_digest_nonce_and_index() -> None:
         assert sample_seed(observation, "n", 0) != sample_seed(observation, "m", 0)
         with pytest.raises(ValueError):
             sample_seed(observation, "n", -1)
+
+
+def test_frozen_backend_matches_legacy_clone_and_preserves_bridge_fields() -> None:
+    for backend, observation, _ in _organic_states(
+        "3", phases={Phase.SHOP}, limit=1
+    ):
+        game_state = backend._backend._gs
+        pack_cards = game_state.setdefault("pack_cards", [])
+        backend._active_pack_cards = pack_cards
+        backend._stale_shop_areas = {"test": {"cards": pack_cards}}
+        backend._round_targets_rolled = True
+        backend._pending_ante_setup = 7
+        backend._poker_hand_iteration_order = ("Pair", "High Card")
+        backend._pack_card_limit = len(pack_cards)
+        backend._won = True
+        backend._pending_skip_dollars = 4
+        frozen = freeze_backend(backend)
+        legacy = _legacy_clone_backend(backend)
+        loaded = frozen.clone()
+        try:
+            assert isinstance(frozen, FrozenJackdawBackend)
+            assert canonical_private_state(
+                loaded._backend._gs
+            ) == canonical_private_state(legacy._backend._gs)
+            assert loaded.current_public == legacy.current_public == observation
+            assert loaded._current == legacy._current
+            assert loaded._current is backend._current
+            assert loaded.current_public is backend.current_public
+            for name in (
+                "_round_targets_rolled",
+                "_pending_ante_setup",
+                "_poker_hand_iteration_order",
+                "_pack_card_limit",
+                "_won",
+                "_pending_skip_dollars",
+            ):
+                assert getattr(loaded, name) == getattr(legacy, name)
+            assert loaded._active_pack_cards is loaded._backend._gs["pack_cards"]
+            assert (
+                loaded._stale_shop_areas["test"]["cards"]
+                is loaded._active_pack_cards
+            )
+        finally:
+            loaded.close()
+            legacy.close()
+        return
+    pytest.skip("no shop reached in the fixture run")
+
+
+def test_frozen_backend_loads_repeated_independent_clones() -> None:
+    for backend, _, _ in _organic_states("3", phases={Phase.SHOP}, limit=1):
+        backend._active_pack_cards = backend._backend._gs.setdefault("pack_cards", [])
+        backend._stale_shop_areas = {"test": {"cards": backend._active_pack_cards}}
+        frozen = freeze_backend(backend)
+        expected = frozen.clone()
+        expected_state = canonical_private_state(expected._backend._gs)
+        expected.close()
+
+        backend._backend._gs["dollars"] += 1_000
+        left = frozen.clone()
+        right = frozen.clone()
+        try:
+            assert left._backend._gs is not right._backend._gs
+            assert left._active_pack_cards is not right._active_pack_cards
+            assert left._stale_shop_areas is not right._stale_shop_areas
+            left._backend._gs["dollars"] += 99
+            left._stale_shop_areas["test"]["mutated"] = True
+            left._round_targets_rolled = not left._round_targets_rolled
+
+            assert canonical_private_state(right._backend._gs) == expected_state
+            assert "mutated" not in right._stale_shop_areas["test"]
+            assert right._round_targets_rolled == backend._round_targets_rolled
+            with pytest.raises(FrozenInstanceError):
+                frozen._payload = b"changed"  # type: ignore[misc]
+        finally:
+            left.close()
+            right.close()
+        return
+    pytest.skip("no shop reached in the fixture run")
+
+
+def test_frozen_backend_repr_never_contains_private_payload() -> None:
+    for backend, _, _ in _organic_states("11", phases={Phase.SHOP}, limit=1):
+        frozen = freeze_backend(backend)
+
+        rendered = repr(frozen)
+
+        assert "_payload" not in rendered
+        assert "_current" not in rendered
+        assert repr(frozen._payload) not in rendered
+        return
+    pytest.skip("no organic shop reached")
+
+
+def test_sample_candidate_closes_clone_when_validation_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class Clone:
+        def __init__(self) -> None:
+            self._backend = type("Backend", (), {"_gs": {}})()
+            self.closed = False
+
+        def close(self) -> None:
+            self.closed = True
+
+    def reject(_game_state) -> None:
+        raise DeterminizationUnavailable("injected validation failure")
+
+    clone = Clone()
+    monkeypatch.setattr(determinize_module, "clone_backend", lambda backend: clone)
+    monkeypatch.setattr(determinize_module, "_require_visible_private_state", reject)
+    observation = to_public_observation(state("SHOP"))
+
+    with pytest.raises(DeterminizationUnavailable, match="injected"):
+        sample_candidate(None, observation, (), "PUBLICSEED")  # type: ignore[arg-type]
+
+    assert clone.closed
+
+
+def test_clone_backend_remains_a_one_shot_frozen_clone() -> None:
+    for backend, observation, _ in _organic_states(
+        "3", phases={Phase.SHOP}, limit=1
+    ):
+        clone = clone_backend(backend)
+        try:
+            assert clone.current_public == observation
+            assert canonical_private_state(
+                clone._backend._gs
+            ) == canonical_private_state(backend._backend._gs)
+        finally:
+            clone.close()
+        return
+    pytest.skip("no shop reached in the fixture run")
+
+
+def test_frozen_clone_behavior_matches_legacy_on_organic_strategic_states() -> None:
+    wanted = {Phase.BLIND_SELECT, Phase.SHOP, Phase.PACK}
+    checked: set[Phase] = set()
+    states = _organic_states("11", phases=wanted, limit=40)
+    try:
+        for backend, observation, history in states:
+            if observation.phase in checked:
+                continue
+
+            roots = _bounded_legal_roots(observation)
+            assert len(roots) >= 2
+            frozen = freeze_backend(backend)
+
+            def legacy_factory():
+                return _legacy_clone_backend(backend)
+
+            legacy_results = _evaluate_roots(
+                legacy_factory, observation, history, roots
+            )
+            frozen_forward = _evaluate_roots(
+                frozen.clone, observation, history, roots
+            )
+            frozen_reverse = _evaluate_roots(
+                frozen.clone, observation, history, tuple(reversed(roots))
+            )
+
+            # Every selected legal sibling has exactly the legacy transition,
+            # regardless of which other frozen sibling is evaluated first.
+            assert frozen_forward == legacy_results
+            assert frozen_reverse == legacy_results
+
+            continuation_root = PublicStrategicPolicy().choose_action(
+                observation,
+                lambda: iter_legal_actions(observation),
+                history,
+            )
+            legacy_trajectory = _run_bounded_branch(
+                legacy_factory,
+                observation,
+                history,
+                continuation_root,
+                max_steps=6,
+            )
+            frozen_trajectory = _run_bounded_branch(
+                frozen.clone,
+                observation,
+                history,
+                continuation_root,
+                max_steps=6,
+            )
+            assert frozen_trajectory == legacy_trajectory
+
+            checked.add(observation.phase)
+            if checked == wanted:
+                break
+    finally:
+        states.close()
+
+    assert checked == wanted
 
 
 def test_scrubbed_states_round_trip_to_the_public_observation() -> None:

@@ -3544,3 +3544,65 @@ Do not insert this model into search leaves or option selection. The next data
 design must deliberately obtain actual Ante-8 wins and post-win trajectories;
 repeating another small ordinary White-stake panel cannot calibrate the missing
 heads.
+
+### Success-horizon collection result (2026-09-04)
+
+The reused seed-207 implementation diagnostic first established that the
+action-inert terminal teacher can follow the retained scalar search through a
+real win and produce resolved post-win labels with zero rejected roots. Its
+rows are diagnostic only and were never joined to a training cohort.
+
+The subsequently frozen Red/White development cohort on seeds `1005-1054`
+completed all 50 runs at repository revision `f180090`. Live behavior remained
+the retained scalar search; the success teacher never affected an action. The
+source policy won 5/50, cleared a mean 4.54 antes, reached at least Ante 6 on
+17/50 runs, and reached a maximum of Ante 10. Search executed 2,728,754 rollout
+steps at 68.09 steps/second, including 287,422 success-teacher steps, with zero
+unavailable decisions and zero rejected rollouts.
+
+The atomic dataset
+`runs/experiments/success-teacher-v5/seeds1005-1054.teacher.jsonl` has SHA-256
+`3c5268a6f4f8ec589f5abb225cea2b832fcb492f8c4ad97c9958f6b20e612357`.
+It contains 369 decisions across all 50 opaque complete-run groups under teacher
+digest `058eb3daf7f70a3184a324f4f8c5ba02c65eae19512b55b7db15c73808b03884`.
+Strict schema reload, report-hash reconciliation, a single configuration
+digest, and recursive forbidden-key inspection all pass. Across 4,953 candidate
+roots and 9,906 paired samples, endpoints are 7,075 deaths, 318 victories, and
+2,513 finite horizons; no sample is censored.
+
+The frozen coverage gate fails without adjustment. It has five winning and 45
+losing source groups, five groups with resolved Endless labels, and 45 late
+action-sensitive Ante-8 rows, but only 14 resolved Endless rows versus the
+required 25. Do not train this cohort, add seeds to cross the threshold, or
+reinterpret it as calibration evidence.
+
+The panel also localizes the throughput tail. Seed 1037 won and reached Ante 10
+but took 4,416 seconds. Its late PACK anchors contained 176, 207, and finally
+318 action/intent roots. Suit-target Tarot combinations cause the explosion;
+the largest anchor is not a deadlock or memory leak. The next increment adds
+per-anchor diagnostics and exact-behavior serialization/prefix-score reuse
+before testing a separately guarded terminal action selector on fresh
+development seeds. The report SHA-256 is
+`a76cd6044d3b201fdca77e916080fd287cc24c736fb211250e33c4d8b71a3c6f` and
+source digest is
+`c07c350f1d6e914d115720f7941b2b67c8779b4c84e5db05a87d47b03f5d8643`.
+
+### Terminal-action implementation diagnostic (2026-09-04)
+
+The reused Red/White seed-207 diagnostic exercised the opt-in terminal-action
+path before the fresh pair was frozen. It completed and won at Ante 8 after 225
+decisions. Ordinary search evaluated 101 decisions and 101,423 total rollout
+steps with zero unavailable or rejected work. The terminal selector attempted
+14 anchors, evaluated 9,554 steps across 230 root samples, and observed 44 exact
+victory endpoints and 186 deaths with no censored or rejected roots. Three
+early anchors remained action-inert; all eleven late anchors fell back for
+insufficient terminal dominance. It executed zero action or intent overrides.
+
+This is implementation evidence only: it proves legal, bounded, fail-closed
+execution through a win, not strength or intervention coverage. The diagnostic
+used no report path and ran from the in-progress tree, so it cannot enter a
+paired comparison. The fresh `1055-1074` pair remains untouched. Before that
+pair, the selector gained a separate 64-root fail-closed compute bound, exact
+unavailable/unsupported accounting, atomic report publication, committed
+single-use preregistration, and a comparator that freezes tuning and all scalar
+and terminal protocol constants rather than trusting pair equality.

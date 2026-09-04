@@ -3,6 +3,9 @@ from __future__ import annotations
 from copy import deepcopy
 from dataclasses import replace
 
+import pytest
+
+import balatro_ai_v2.strategy_options as strategy_options_module
 from balatro_ai_v2.actions import (
     BuyPack,
     BuyShopCard,
@@ -220,3 +223,20 @@ def test_candidate_contract_preserves_active_intent_and_reorder_scope() -> None:
     assert not any(isinstance(root.action, ReorderJokers) for root in without[1:])
     assert any(isinstance(root.action, ReorderJokers) for root in with_reorders)
     assert len({root.identity for root in with_reorders}) == len(with_reorders)
+
+
+def test_candidate_contract_reuses_the_captured_legal_action_tuple(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    observation = to_public_observation(state("SHOP", money=10))
+    legal = tuple(iter_legal_actions(observation))
+    expected = iter_strategy_options(observation)
+    monkeypatch.setattr(
+        strategy_options_module,
+        "iter_legal_actions",
+        lambda observation: pytest.fail("legal actions were enumerated twice"),
+    )
+
+    actual = iter_strategy_options(observation, legal_actions=legal)
+
+    assert actual == expected

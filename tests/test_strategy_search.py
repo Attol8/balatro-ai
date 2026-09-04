@@ -3,19 +3,39 @@ from __future__ import annotations
 from dataclasses import replace
 from types import SimpleNamespace
 
-from balatro_ai_v2.actions import PlayCards, SelectBlind, iter_legal_actions
+import pytest
+
+import balatro_ai_v2.determinized_search as search_module
+from balatro_ai_v2.actions import (
+    LeaveShop,
+    PlayCards,
+    RerollShop,
+    SelectBlind,
+    iter_legal_actions,
+)
 from balatro_ai_v2.balatrobot.adapter import to_public_observation
 from balatro_ai_v2.baselines import PublicStrategicPolicy
 from balatro_ai_v2.determinized_search import (
     DeterminizedSearchPolicy,
+    RolloutBudget,
+    RolloutOutcome,
     SuccessTeacherBudget,
+    SuccessTerminalActionBudget,
     _public_best_hand_score,
+    _required_positive_discordances,
     _select_goal_root,
+    _terminal_action_relation,
 )
 from balatro_ai_v2.public_state import PublicItem
 from balatro_ai_v2.policy import NoPublicProgressAction, PublicHistoryStep
 from balatro_ai_v2.strategy_engine import GoalUtility, RunGoal
-from balatro_ai_v2.strategy_options import PersistentIntent, StrategyIntent
+from balatro_ai_v2.strategy_options import (
+    PersistentIntent,
+    StrategicOption,
+    StrategyCandidateRoot,
+    StrategyIntent,
+)
+from balatro_ai_v2.strategy_teacher import StrategyTargetEndpoint
 from state_factory import state
 
 
@@ -248,6 +268,7 @@ def test_public_dead_end_is_a_losing_rollout_not_a_rejected_root() -> None:
 
     assert not outcome.rejected
     assert outcome.rejection_reason is None
+    assert not outcome.terminal_action_admissible
     assert outcome.goal_utility is not None
     assert outcome.goal_utility.alive_probability == 0
 
@@ -278,3 +299,616 @@ def test_teacher_score_target_includes_typed_public_prefix() -> None:
     history = (PublicHistoryStep(before, action, after),)
 
     assert _public_best_hand_score(history) == 12_345
+
+
+def _terminal_outcome(*, won: bool, admissible: bool = True) -> RolloutOutcome:
+    return RolloutOutcome(
+        value=float(won),
+        steps=1,
+        rejected=False,
+        goal_utility=_utility(win=float(won), ante=8 if won else 4, score=5),
+        endpoint=(
+            StrategyTargetEndpoint.VICTORY if won else StrategyTargetEndpoint.DEATH
+        ),
+        terminal_action_admissible=admissible,
+    )
+
+
+def _install_terminal_rollout_stub(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    candidate_wins: bool = True,
+    candidate_admissible: bool = True,
+) -> None:
+    class Sample:
+        def __init__(self, index: int) -> None:
+            self.index = index
+
+        def close(self) -> None:
+            pass
+
+    class Frozen:
+        def __init__(self, sample: Sample) -> None:
+            self.sample = sample
+
+        def clone(self):
+            return SimpleNamespace(
+                sample_index=self.sample.index,
+                close=lambda: None,
+            )
+
+    monkeypatch.setattr(
+        search_module,
+        "sample_candidate",
+        lambda backend, observation, history, seed: Sample(int(seed[-1], 16)),
+    )
+    monkeypatch.setattr(search_module, "freeze_backend", Frozen)
+
+    def rollout(self, clone, observation, history, root, **kwargs):
+        intent = kwargs.get("intent")
+        del self, clone, observation, history, kwargs
+        if isinstance(root, RerollShop) or intent == StrategyIntent.ECONOMY:
+            return _terminal_outcome(
+                won=candidate_wins,
+                admissible=candidate_admissible,
+            )
+        return _terminal_outcome(won=False)
+
+    monkeypatch.setattr(DeterminizedSearchPolicy, "_rollout", rollout)
+
+
+class _IntentTrackingContinuation:
+    def __init__(self) -> None:
+        self.intent_calls: list[StrategyIntent] = []
+
+    def choose_action(self, observation, legal_actions, history):
+        del observation, history
+        actions = tuple(legal_actions())
+        return next(
+            (action for action in actions if isinstance(action, LeaveShop)),
+            actions[0],
+        )
+
+    def choose_action_for_intent(
+        self, observation, legal_actions, history, intent
+    ):
+        del observation, history
+        self.intent_calls.append(intent)
+        return tuple(legal_actions())[-1]
+
+    def fork_for_rollout(self, intent=None):
+        del intent
+        return _IntentTrackingContinuation()
+
+
+def _install_integrated_terminal_harness(
+    monkeypatch: pytest.MonkeyPatch,
+    roots: tuple[StrategyCandidateRoot, ...],
+    *,
+    candidate_result: str = "win",
+) -> None:
+    class Sample:
+        def close(self) -> None:
+            pass
+
+    class Frozen:
+        def __init__(self, sample: Sample) -> None:
+            del sample
+
+        def clone(self):
+            return SimpleNamespace(close=lambda: None)
+
+    monkeypatch.setattr(
+        search_module,
+        "sample_candidate",
+        lambda backend, observation, history, seed: Sample(),
+    )
+    monkeypatch.setattr(search_module, "freeze_backend", Frozen)
+    monkeypatch.setattr(
+        search_module,
+        "build_strategy_candidates",
+        lambda *args, **kwargs: roots,
+    )
+
+    def rollout(self, clone, observation, history, root, **kwargs):
+        del self, clone, observation, history
+        intent = kwargs.get("intent")
+        if kwargs.get("success_goal") is None:
+            return _terminal_outcome(won=False)
+        is_candidate = root == roots[1].action and intent == roots[1].intent
+        if not is_candidate:
+            return _terminal_outcome(won=False)
+        if candidate_result == "win":
+            return _terminal_outcome(won=True)
+        if candidate_result == "dead_end":
+            return _terminal_outcome(won=True, admissible=False)
+        if candidate_result == "rejected":
+            return RolloutOutcome(
+                value=1.0,
+                steps=1,
+                rejected=True,
+                goal_utility=_utility(win=1, ante=8, score=5),
+                rejection_reason="synthetic_rejection",
+                endpoint=StrategyTargetEndpoint.VICTORY,
+            )
+        if candidate_result == "tie":
+            return _terminal_outcome(won=False)
+        raise AssertionError(f"unknown candidate result {candidate_result!r}")
+
+    monkeypatch.setattr(DeterminizedSearchPolicy, "_rollout", rollout)
+
+
+def _integrated_terminal_policy(
+    continuation: _IntentTrackingContinuation,
+) -> DeterminizedSearchPolicy:
+    return DeterminizedSearchPolicy(
+        backend=None,  # type: ignore[arg-type]
+        continuation=continuation,  # type: ignore[arg-type]
+        nonce="integrated-terminal",
+        budget=RolloutBudget(samples=1, horizon_antes=1, max_steps=20),
+        success_teacher=SuccessTeacherBudget(samples=2, max_steps=20),
+        success_terminal_actions=SuccessTerminalActionBudget(max_samples=5),
+    )
+
+
+def test_terminal_action_override_executes_legal_root_and_commits_its_intent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    behavior = StrategyCandidateRoot(LeaveShop(), None)
+    option = StrategicOption(
+        StrategyIntent.STABILIZE,
+        RerollShop(),
+        ("synthetic_terminal_override",),
+    )
+    candidate = StrategyCandidateRoot(option.first_action, option.intent, option)
+    roots = (behavior, candidate)
+    _install_integrated_terminal_harness(monkeypatch, roots)
+    observation = replace(
+        to_public_observation(state("SHOP", money=10)),
+        ante=4,
+        antes_cleared=3,
+    )
+    legal = tuple(iter_legal_actions(observation))
+    continuation = _IntentTrackingContinuation()
+    policy = _integrated_terminal_policy(continuation)
+
+    selected = policy.choose_action(observation, lambda: iter(legal), ())
+
+    assert selected == candidate.action
+    assert selected in legal
+    assert policy.active_intent is not None
+    assert policy.active_intent.intent == StrategyIntent.STABILIZE
+    assert policy.active_intent.decisions == 1
+    assert policy.last_success_decision is not None
+    assert policy.last_success_decision.behavior_index == 0
+    assert policy.last_success_decision.executed_index == 1
+    assert policy.last_success_decision.executed_action == candidate.action
+    assert policy.last_success_decision.executed_intent == candidate.intent
+    assert policy.counters.success_action_overrides == 1
+
+    next_observation = to_public_observation(state("SELECTING_HAND"))
+    next_legal = tuple(iter_legal_actions(next_observation))
+    next_action = policy.choose_action(
+        next_observation,
+        lambda: iter(next_legal),
+        (),
+    )
+
+    assert next_action == next_legal[-1]
+    assert next_action in next_legal
+    assert continuation.intent_calls == [StrategyIntent.STABILIZE]
+
+
+def test_terminal_same_action_override_commits_distinct_intent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    behavior = StrategyCandidateRoot(LeaveShop(), None)
+    option = StrategicOption(
+        StrategyIntent.ECONOMY,
+        LeaveShop(),
+        ("synthetic_intent_override",),
+    )
+    candidate = StrategyCandidateRoot(option.first_action, option.intent, option)
+    roots = (behavior, candidate)
+    _install_integrated_terminal_harness(monkeypatch, roots)
+    observation = replace(
+        to_public_observation(state("SHOP", money=10)),
+        ante=4,
+        antes_cleared=3,
+    )
+    legal = tuple(iter_legal_actions(observation))
+    continuation = _IntentTrackingContinuation()
+    policy = _integrated_terminal_policy(continuation)
+
+    selected = policy.choose_action(observation, lambda: iter(legal), ())
+
+    assert selected == behavior.action == candidate.action
+    assert selected in legal
+    assert policy.active_intent is not None
+    assert policy.active_intent.intent == StrategyIntent.ECONOMY
+    assert policy.active_intent.decisions == 1
+    assert policy.last_success_decision is not None
+    assert policy.last_success_decision.identity_override
+    assert policy.last_success_decision.behavior_action == selected
+    assert policy.last_success_decision.behavior_intent is None
+    assert policy.last_success_decision.executed_action == selected
+    assert policy.last_success_decision.executed_intent == StrategyIntent.ECONOMY
+    assert policy.counters.success_action_overrides == 0
+    assert policy.counters.success_intent_only_overrides == 1
+
+
+@pytest.mark.parametrize(
+    ("candidate_result", "fallback_reason"),
+    [
+        ("tie", "insufficient_terminal_dominance"),
+        ("dead_end", "nonterminal_public_dead_end"),
+        ("rejected", "rejected_root"),
+    ],
+)
+def test_terminal_action_failures_execute_exact_behavior_identity(
+    monkeypatch: pytest.MonkeyPatch,
+    candidate_result: str,
+    fallback_reason: str,
+) -> None:
+    behavior = StrategyCandidateRoot(LeaveShop(), None)
+    option = StrategicOption(
+        StrategyIntent.STABILIZE,
+        RerollShop(),
+        ("synthetic_rejected_override",),
+    )
+    candidate = StrategyCandidateRoot(option.first_action, option.intent, option)
+    roots = (behavior, candidate)
+    _install_integrated_terminal_harness(
+        monkeypatch,
+        roots,
+        candidate_result=candidate_result,
+    )
+    observation = replace(
+        to_public_observation(state("SHOP", money=10)),
+        ante=4,
+        antes_cleared=3,
+    )
+    legal = tuple(iter_legal_actions(observation))
+    policy = _integrated_terminal_policy(_IntentTrackingContinuation())
+
+    selected = policy.choose_action(observation, lambda: iter(legal), ())
+
+    assert selected == behavior.action
+    assert selected in legal
+    assert policy.active_intent is None
+    assert policy.last_strategy_selected_index == 0
+    assert policy.last_success_decision is not None
+    assert policy.last_success_decision.fallback_reason == fallback_reason
+    assert policy.last_success_decision.behavior_index == 0
+    assert policy.last_success_decision.teacher_selected_index == 0
+    assert policy.last_success_decision.executed_index == 0
+    assert policy.last_success_decision.behavior_action == selected
+    assert policy.last_success_decision.behavior_intent is None
+    assert policy.last_success_decision.executed_action == selected
+    assert policy.last_success_decision.executed_intent is None
+    assert not policy.last_success_decision.identity_override
+    assert policy.counters.success_anchor_fallbacks == 1
+    assert policy.counters.success_action_overrides == 0
+    assert policy.counters.success_intent_only_overrides == 0
+
+
+def test_terminal_action_selector_requires_root_adjusted_paired_dominance(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _install_terminal_rollout_stub(monkeypatch)
+    observation = replace(
+        to_public_observation(state("SHOP", money=10)),
+        ante=4,
+        antes_cleared=3,
+    )
+    roots = (
+        StrategyCandidateRoot(LeaveShop(), None),
+        StrategyCandidateRoot(RerollShop(), StrategyIntent.ECONOMY),
+    )
+    policy = DeterminizedSearchPolicy(
+        backend=None,  # type: ignore[arg-type]
+        continuation=PublicStrategicPolicy(),
+        success_teacher=SuccessTeacherBudget(samples=2),
+        success_terminal_actions=SuccessTerminalActionBudget(max_samples=12),
+    )
+
+    selected = policy._collect_success_teacher(  # noqa: SLF001
+        observation,
+        (),
+        roots,
+        behavior_index=0,
+        intent_aware=False,
+        engine_goal=RunGoal.VICTORY,
+    )
+
+    assert _required_positive_discordances(2, 0.05) == 5
+    assert selected == 1
+    assert not policy.teacher_drafts
+    assert policy.last_success_decision is not None
+    assert policy.last_success_decision.max_samples_used == 5
+    assert policy.last_success_decision.positive_discordances == 5
+    assert policy.last_success_decision.executed_intent == StrategyIntent.ECONOMY
+    assert policy.counters.success_action_overrides == 1
+
+
+def test_terminal_action_selector_counts_same_action_intent_override(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _install_terminal_rollout_stub(monkeypatch)
+    observation = replace(
+        to_public_observation(state("SHOP", money=10)),
+        ante=4,
+        antes_cleared=3,
+    )
+    roots = (
+        StrategyCandidateRoot(LeaveShop(), None),
+        StrategyCandidateRoot(LeaveShop(), StrategyIntent.ECONOMY),
+    )
+    policy = DeterminizedSearchPolicy(
+        backend=None,  # type: ignore[arg-type]
+        continuation=PublicStrategicPolicy(),
+        success_teacher=SuccessTeacherBudget(samples=2),
+        success_terminal_actions=SuccessTerminalActionBudget(max_samples=12),
+    )
+
+    selected = policy._collect_success_teacher(  # noqa: SLF001
+        observation,
+        (),
+        roots,
+        behavior_index=0,
+        intent_aware=True,
+        engine_goal=RunGoal.VICTORY,
+    )
+
+    assert selected == 1
+    assert policy.counters.success_action_overrides == 0
+    assert policy.counters.success_intent_only_overrides == 1
+
+
+def test_terminal_action_selector_falls_back_on_nonterminal_dead_end(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _install_terminal_rollout_stub(monkeypatch, candidate_admissible=False)
+    observation = replace(
+        to_public_observation(state("SHOP", money=10)),
+        ante=4,
+        antes_cleared=3,
+    )
+    roots = (
+        StrategyCandidateRoot(LeaveShop(), None),
+        StrategyCandidateRoot(RerollShop(), StrategyIntent.ECONOMY),
+    )
+    policy = DeterminizedSearchPolicy(
+        backend=None,  # type: ignore[arg-type]
+        continuation=PublicStrategicPolicy(),
+        success_teacher=SuccessTeacherBudget(samples=2),
+        success_terminal_actions=SuccessTerminalActionBudget(max_samples=12),
+    )
+
+    selected = policy._collect_success_teacher(  # noqa: SLF001
+        observation,
+        (),
+        roots,
+        behavior_index=0,
+        intent_aware=False,
+        engine_goal=RunGoal.VICTORY,
+    )
+
+    assert selected == 0
+    assert policy.last_success_decision is not None
+    assert (
+        policy.last_success_decision.fallback_reason
+        == "nonterminal_public_dead_end"
+    )
+    assert policy.counters.success_anchor_fallbacks == 1
+
+
+def test_terminal_action_selector_keeps_early_anchor_inert(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls = 0
+
+    def forbidden_sample(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        raise AssertionError("early action anchor must not sample")
+
+    monkeypatch.setattr(search_module, "sample_candidate", forbidden_sample)
+    observation = replace(to_public_observation(state("SHOP", money=10)), ante=1)
+    roots = (
+        StrategyCandidateRoot(LeaveShop(), None),
+        StrategyCandidateRoot(RerollShop(), StrategyIntent.ECONOMY),
+    )
+    policy = DeterminizedSearchPolicy(
+        backend=None,  # type: ignore[arg-type]
+        continuation=PublicStrategicPolicy(),
+        success_teacher=SuccessTeacherBudget(samples=2),
+        success_terminal_actions=SuccessTerminalActionBudget(max_samples=12),
+    )
+
+    assert (
+        policy._collect_success_teacher(  # noqa: SLF001
+            observation,
+            (),
+            roots,
+            behavior_index=0,
+            intent_aware=False,
+            engine_goal=RunGoal.VICTORY,
+        )
+        == 0
+    )
+    assert calls == 0
+    assert policy.last_success_decision is not None
+    assert policy.last_success_decision.fallback_reason == "early_anchor_inert"
+
+
+def test_terminal_action_selector_enforces_compute_root_bound_without_sampling(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        search_module,
+        "sample_candidate",
+        lambda *args, **kwargs: pytest.fail("unattainable bound must not sample"),
+    )
+    observation = replace(
+        to_public_observation(state("SHOP", money=10)),
+        ante=4,
+        antes_cleared=3,
+    )
+    roots = tuple(
+        StrategyCandidateRoot(LeaveShop(), StrategyIntent.ECONOMY)
+        for _ in range(65)
+    )
+    policy = DeterminizedSearchPolicy(
+        backend=None,  # type: ignore[arg-type]
+        continuation=PublicStrategicPolicy(),
+        success_teacher=SuccessTeacherBudget(samples=2),
+        success_terminal_actions=SuccessTerminalActionBudget(max_samples=12),
+    )
+
+    selected = policy._collect_success_teacher(  # noqa: SLF001
+        observation,
+        (),
+        roots,
+        behavior_index=0,
+        intent_aware=True,
+        engine_goal=RunGoal.VICTORY,
+    )
+
+    assert selected == 0
+    assert policy.last_success_decision is not None
+    assert (
+        policy.last_success_decision.fallback_reason
+        == "root_compute_bound_exceeded"
+    )
+    assert policy.last_success_decision.sample_evaluations == 0
+
+
+def test_terminal_action_selector_skips_unattainable_statistical_bound(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        search_module,
+        "sample_candidate",
+        lambda *args, **kwargs: pytest.fail("unattainable bound must not sample"),
+    )
+    observation = replace(
+        to_public_observation(state("SHOP", money=10)),
+        ante=4,
+        antes_cleared=3,
+    )
+    roots = (
+        StrategyCandidateRoot(LeaveShop(), None),
+        StrategyCandidateRoot(RerollShop(), StrategyIntent.ECONOMY),
+    )
+    policy = DeterminizedSearchPolicy(
+        backend=None,  # type: ignore[arg-type]
+        continuation=PublicStrategicPolicy(),
+        success_teacher=SuccessTeacherBudget(samples=2),
+        success_terminal_actions=SuccessTerminalActionBudget(
+            max_samples=12, family_alpha=1e-6
+        ),
+    )
+
+    selected = policy._collect_success_teacher(  # noqa: SLF001
+        observation,
+        (),
+        roots,
+        behavior_index=0,
+        intent_aware=True,
+        engine_goal=RunGoal.VICTORY,
+    )
+
+    assert selected == 0
+    assert _required_positive_discordances(2, 1e-6) == 20
+    assert policy.last_success_decision is not None
+    assert (
+        policy.last_success_decision.fallback_reason
+        == "root_count_bound_unattainable"
+    )
+    assert policy.last_success_decision.sample_evaluations == 0
+
+
+def test_terminal_determinization_unavailable_is_not_a_rejected_rollout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        search_module,
+        "sample_candidate",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            search_module.DeterminizationUnavailable("injected")
+        ),
+    )
+    observation = replace(
+        to_public_observation(state("SHOP", money=10)),
+        ante=4,
+        antes_cleared=3,
+    )
+    roots = (
+        StrategyCandidateRoot(LeaveShop(), None),
+        StrategyCandidateRoot(RerollShop(), StrategyIntent.ECONOMY),
+    )
+    policy = DeterminizedSearchPolicy(
+        backend=None,  # type: ignore[arg-type]
+        continuation=PublicStrategicPolicy(),
+        success_teacher=SuccessTeacherBudget(samples=2),
+        success_terminal_actions=SuccessTerminalActionBudget(),
+    )
+
+    selected = policy._collect_success_teacher(  # noqa: SLF001
+        observation,
+        (),
+        roots,
+        behavior_index=0,
+        intent_aware=True,
+        engine_goal=RunGoal.VICTORY,
+    )
+
+    assert selected == 0
+    assert policy.last_success_decision is not None
+    assert policy.last_success_decision.unavailable
+    assert policy.last_success_decision.rejected_rollouts == 0
+    assert policy.counters.success_anchor_unavailable == 1
+    assert policy.counters.success_teacher_rejected_rollouts == 0
+
+
+def test_terminal_relation_ignores_nonterminal_progress_and_economy() -> None:
+    baseline = RolloutOutcome(
+        0,
+        1,
+        False,
+        _utility(progress=1, ante=4, score=1),
+        endpoint=StrategyTargetEndpoint.DEATH,
+    )
+    richer_loss = RolloutOutcome(
+        100,
+        1,
+        False,
+        GoalUtility(0, 1, 99, endless_ante=7, log_score=20, economy_reserve=99),
+        endpoint=StrategyTargetEndpoint.DEATH,
+    )
+    win = _terminal_outcome(won=True)
+
+    assert _terminal_action_relation(richer_loss, baseline, RunGoal.VICTORY) == 0
+    assert _terminal_action_relation(win, baseline, RunGoal.VICTORY) == 1
+
+
+def test_terminal_intent_is_committed_exactly_once() -> None:
+    observation = to_public_observation(state("SHOP", money=10))
+    engine = search_module.derive_engine_state(observation)
+    option = StrategicOption(
+        StrategyIntent.ECONOMY,
+        LeaveShop(),
+        ("synthetic",),
+    )
+    root = StrategyCandidateRoot(LeaveShop(), StrategyIntent.ECONOMY, option)
+    policy = DeterminizedSearchPolicy(
+        backend=None,  # type: ignore[arg-type]
+        continuation=PublicStrategicPolicy(),
+    )
+
+    policy._commit_strategy_root(root, engine)  # noqa: SLF001
+
+    assert policy.active_intent is not None
+    assert policy.active_intent.intent == StrategyIntent.ECONOMY
+    assert policy.active_intent.decisions == 1

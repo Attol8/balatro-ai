@@ -28,10 +28,10 @@ import hashlib
 import json
 import pickle
 from collections.abc import Mapping, Sequence
-from dataclasses import fields, is_dataclass
+from dataclasses import dataclass, field, fields, is_dataclass
 from typing import Any
 
-from balatro_ai_v2.balatrobot.adapter import to_public_observation
+from balatro_ai_v2.backend import AuthorityObservation
 from balatro_ai_v2.jackdaw import JackdawBackend
 from balatro_ai_v2.policy import PublicHistoryStep
 from balatro_ai_v2.public_state import HiddenHandCard, Phase, PublicObservation
@@ -55,6 +55,47 @@ _SCALAR_BRIDGE_FIELDS = (
 )
 
 
+@dataclass(frozen=True, slots=True)
+class FrozenJackdawBackend:
+    """One immutable serialization that can load independent backend clones."""
+
+    _payload: bytes = field(repr=False)
+    _current: AuthorityObservation | None = field(repr=False)
+    current_public: PublicObservation | None
+
+    def clone(self) -> JackdawBackend:
+        """Load a fresh backend with the exact state captured by this snapshot."""
+
+        clone: JackdawBackend | None = None
+        try:
+            (
+                game_state,
+                active_pack_cards,
+                stale_shop_areas,
+                scalar_bridge_values,
+            ) = pickle.loads(self._payload)
+            clone = JackdawBackend(lightweight=True)
+            clone._backend._gs = game_state
+            clone._active_pack_cards = active_pack_cards
+            clone._stale_shop_areas = stale_shop_areas
+            for name, value in zip(
+                _SCALAR_BRIDGE_FIELDS, scalar_bridge_values, strict=True
+            ):
+                setattr(clone, name, value)
+        except Exception as exc:
+            if clone is not None:
+                clone.close()
+            raise DeterminizationUnavailable(
+                f"frozen backend clone failed: {type(exc).__name__}"
+            ) from exc
+        # These observations are frozen values. Sharing them matches the legacy
+        # clone contract while every mutable simulator object is deserialized.
+        assert clone is not None
+        clone._current = self._current
+        clone.current_public = self.current_public
+        return clone
+
+
 def sample_seed(observation: PublicObservation, nonce: str, index: int) -> str:
     """Policy-owned sample seed: a function of public digest, nonce, and index only."""
 
@@ -64,26 +105,38 @@ def sample_seed(observation: PublicObservation, nonce: str, index: int) -> str:
     return hashlib.sha256(material).hexdigest()[:16].upper()
 
 
-def clone_backend(backend: JackdawBackend) -> JackdawBackend:
-    """Deep-copy the candidate and its bridge compatibility state into a fresh backend."""
+def freeze_backend(backend: JackdawBackend) -> FrozenJackdawBackend:
+    """Serialize a candidate and its compatibility bridge exactly once."""
 
     source_state = getattr(backend._backend, "_gs", None)
     if not isinstance(source_state, dict):
-        raise RuntimeError("Jackdaw backend has no active game state to clone")
-    clone = JackdawBackend(lightweight=True)
-    # One pickle round trip preserves shared references across the three
-    # structures and is several times faster than deepcopy on plain objects.
-    clone._backend._gs, clone._active_pack_cards, clone._stale_shop_areas = pickle.loads(
-        pickle.dumps(
-            (source_state, backend._active_pack_cards, backend._stale_shop_areas),
+        raise DeterminizationUnavailable(
+            "Jackdaw backend has no active game state to clone"
+        )
+    # Keep one object graph so references shared by the game state and bridge
+    # areas survive each load. Bytes plus the frozen wrapper cannot be mutated
+    # by a rollout before another independent clone is requested.
+    try:
+        payload = pickle.dumps(
+            (
+                source_state,
+                backend._active_pack_cards,
+                backend._stale_shop_areas,
+                tuple(getattr(backend, name) for name in _SCALAR_BRIDGE_FIELDS),
+            ),
             protocol=pickle.HIGHEST_PROTOCOL,
         )
-    )
-    for name in _SCALAR_BRIDGE_FIELDS:
-        setattr(clone, name, getattr(backend, name))
-    clone._current = backend._current
-    clone.current_public = backend.current_public
-    return clone
+    except Exception as exc:
+        raise DeterminizationUnavailable(
+            f"freezing backend failed: {type(exc).__name__}"
+        ) from exc
+    return FrozenJackdawBackend(payload, backend._current, backend.current_public)
+
+
+def clone_backend(backend: JackdawBackend) -> JackdawBackend:
+    """Deep-copy the candidate and its bridge compatibility state into a fresh backend."""
+
+    return freeze_backend(backend).clone()
 
 
 def sample_candidate(
@@ -96,20 +149,26 @@ def sample_candidate(
 
     _require_supported(observation)
     clone = clone_backend(backend)
-    game_state = clone._backend._gs
-    if not isinstance(game_state, dict):
-        raise RuntimeError("cloned Jackdaw backend lost its game state")
-    _require_visible_private_state(game_state)
-    scrub_game_state(
-        game_state,
-        seed,
-        voucher_public=_voucher_is_public(observation, history),
-    )
-    clone._current = clone.observe()
-    projected = clone.current_public
-    if projected != observation:
-        raise DeterminizationUnavailable("scrubbed state does not round-trip to the public observation")
-    return clone
+    try:
+        game_state = clone._backend._gs
+        if not isinstance(game_state, dict):
+            raise RuntimeError("cloned Jackdaw backend lost its game state")
+        _require_visible_private_state(game_state)
+        scrub_game_state(
+            game_state,
+            seed,
+            voucher_public=_voucher_is_public(observation, history),
+        )
+        clone._current = clone.observe()
+        projected = clone.current_public
+        if projected != observation:
+            raise DeterminizationUnavailable(
+                "scrubbed state does not round-trip to the public observation"
+            )
+        return clone
+    except Exception:
+        clone.close()
+        raise
 
 
 def scrub_game_state(game_state: dict[str, Any], seed: str, *, voucher_public: bool) -> None:

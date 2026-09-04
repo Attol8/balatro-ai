@@ -428,6 +428,85 @@ Bounded execution order:
   coverage failure and improve the organic behavior source rather than buying
   a larger horizon.
 
+Result: the fixed `1005-1054` cohort completed all 50 runs at commit `f180090`
+with zero rejected roots, five wins, mean 4.54 antes, and maximum Ante 10. The
+atomic public-only dataset contains 369 rows across all 50 opaque run groups;
+strict deserialization, the report hash, the single teacher digest, and a
+recursive forbidden-key audit pass. It has 45 late action-sensitive Ante-8
+rows and resolved Endless targets from all five winning groups, but only 14
+resolved Endless rows versus the frozen requirement of 25. The coverage gate
+therefore fails. Preserve this as diagnostic data; do not train it, weaken the
+threshold, or add seeds after observing the outcome.
+
+Performance continuation after the fixed cohort:
+
+1. Instrument before optimizing. Per terminal anchor record public phase/ante,
+   action-kind and intent counts, roots, endpoint histogram, total/max rollout
+   steps, wall time, and fallback reason. Report distribution tails separately
+   for ordinary and terminal search. Seed `1037` took 4,416 wall seconds and
+   exposed 176, 207, then 318 roots at late packs; candidate combinatorics are a
+   first-class budget constraint.
+2. Apply exact-behavior speedups first: freeze each sampled backend
+   serialization once for all sibling clones, compute the public prefix
+   best-hand score once per decision, reuse one captured legal-action tuple in
+   option construction, and avoid repeated action serialization in the rollout
+   loop. Preserve canonical private state, public projection, selected actions,
+   and complete trajectories in equivalence tests. Never truncate the first N
+   targeted card combinations, which would introduce positional bias.
+3. Add an opt-in sparse terminal selector that can replace the retained scalar
+   search choice only at exact late success anchors. It computes a pure public
+   `(action, intent)` result and commits action plus persistent intent exactly
+   once. Fallback is the exact scalar-selected root. Any rejected/censored
+   sibling falls back atomically. Early cheap-label anchors never affect play.
+   A simulator state with no public progress action remains a conservative
+   losing shadow label but is selection-inadmissible until authority establishes
+   an exact death.
+4. Keep terminal action mode isolated: development provenance only, no teacher
+   JSONL, no learned shadow model, and a fully digest-bound selection protocol.
+   The selector does not reuse the two-sample collection heuristic. It screens
+   every sibling on two paired samples, then races only roots never worse and
+   strictly better on the declared terminal component, up to 12 samples. An
+   anchor with more than 64 roots fails closed before sampling; this is a
+   separate compute bound, not statistical pruning, and the selector never
+   truncates or positionally samples the candidate set. An
+   override requires zero adverse discordances and the root-count-adjusted
+   one-sided sign bound `2^-positive_discordances * (roots - 1) <= 0.05`; ties
+   are not evidence and an unattainable bound stops without more samples.
+   Victory compares exact win endpoints only. Endless compares the frozen tuple
+   of horizon survival, achieved ante, then public log best-hand score. Money
+   and short-horizon progress cannot justify an override.
+5. Report attempted, completed, unsupported, rejected, censored, action-
+   override, and intent-only-override counts. Prove collection action inertness,
+   conservative terminal selection, same-action intent selection, hidden-twin
+   identity, legal execution, early-anchor non-influence, nonterminal-death
+   fallback, and exact fallback identity. Reuse seed `207` only as an
+   implementation diagnostic. The fresh screen is interpretable only with at
+   least 20 attempted anchors, ten anchors that actually evaluate terminal
+   samples, and one executed action-or-intent override; lower coverage fails the
+   capability screen regardless of game outcomes.
+6. After that diagnostic passes, compare scalar search and terminal action mode
+   on the fixed fresh development block `1055-1074`. Freeze exact code,
+   source/config digests, selector, budgets, and nonce before seed `1055`.
+   Commit a machine-readable single-use preregistration before either report,
+   bind both reports to its digest, and publish each report exclusively at its
+   declared path. The strict comparator accepts only the exact retained scalar
+   budget, default continuation tuning, terminal protocol, and preregistration
+   digest; pair equality alone is insufficient.
+   Require all 20 paired runs complete, zero rejected roots, at least as many
+   wins, a positive paired mean-ante delta, and a run-cluster bootstrap 95%
+   lower bound at or above zero. Also require one additional win or at least
+   +0.25 paired mean antes. This is capability evidence only and cannot
+   authorize tuning, replacement-gate, authority, or model promotion. Failure
+   redirects work to a faster leaf value and stronger continuation, not another
+   action-mode block.
+7. Validate the pair strictly rather than relying only on the generic report
+   comparator: identical ordered seeds, all runs complete, the same frozen
+   repository/source digest, backend/runtime, scalar budget, root contract,
+   nonce, and continuation; only declared terminal-mode fields may differ. Bind
+   anchors, samples, endpoint/censor rules, root builder, selection statistic,
+   fallback semantics, and nonce into one terminal protocol digest. Mark
+   `1055-1074` exposed after this single frozen pair.
+
 No tuning `1-200`, quarantined `501-700`, replacement gate `701-900`, or
 authority-secret seed may be used by this increment.
 

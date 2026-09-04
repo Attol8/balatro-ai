@@ -136,7 +136,11 @@ def build_strategy_candidates(
     legal_set = set(legal_actions)
     if control_action not in legal_set:
         raise ValueError("control action is absent from the supplied legal actions")
-    all_options = iter_strategy_options(observation, engine)
+    all_options = iter_strategy_options(
+        observation,
+        engine,
+        legal_actions=legal_actions,
+    )
     options = tuple(
         option
         for option in all_options
@@ -256,6 +260,8 @@ _BUFFOON_PACKS = frozenset({"p_buffoon_normal", "p_buffoon_jumbo", "p_buffoon_me
 def iter_strategy_options(
     observation: PublicObservation,
     engine: PublicEngineState | None = None,
+    *,
+    legal_actions: tuple[PublicAction, ...] | None = None,
 ) -> tuple[StrategicOption, ...]:
     """Return intent-tagged, legal first actions using public mechanics only.
 
@@ -265,10 +271,14 @@ def iter_strategy_options(
     """
 
     public_engine = engine or derive_engine_state(observation)
-    legal_actions = tuple(iter_legal_actions(observation))
+    captured_actions = (
+        tuple(iter_legal_actions(observation))
+        if legal_actions is None
+        else legal_actions
+    )
     options: list[StrategicOption] = []
     seen: set[tuple[StrategyIntent, PublicAction]] = set()
-    for action in legal_actions:
+    for action in captured_actions:
         for intent, evidence in _classify_action(observation, public_engine, action):
             key = (intent, action)
             if key not in seen:

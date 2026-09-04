@@ -22,6 +22,7 @@ from collections.abc import Sequence
 from dataclasses import asdict, dataclass, field, is_dataclass
 
 from balatro_ai_v2.actions import (
+    PlayCards,
     PublicAction,
     ReorderConsumables,
     ReorderHand,
@@ -33,7 +34,8 @@ from balatro_ai_v2.balatrobot.adapter import to_public_observation
 from balatro_ai_v2.determinize import (
     STRATEGIC_PHASES,
     DeterminizationUnavailable,
-    clone_backend,
+    FrozenJackdawBackend,
+    freeze_backend,
     sample_candidate,
     sample_seed,
 )
@@ -45,7 +47,12 @@ from balatro_ai_v2.policy import (
     PublicPolicy,
 )
 from balatro_ai_v2.public_state import Phase, PublicObservation
-from balatro_ai_v2.strategy_engine import GoalUtility, RunGoal, derive_engine_state
+from balatro_ai_v2.strategy_engine import (
+    GoalUtility,
+    PublicEngineState,
+    RunGoal,
+    derive_engine_state,
+)
 from balatro_ai_v2.strategy_options import (
     PersistentIntent,
     StrategyCandidateRoot,
@@ -60,7 +67,7 @@ from balatro_ai_v2.strategy_teacher import (
 )
 
 
-SEARCH_VERSION = "determinized-search-v5"
+SEARCH_VERSION = "determinized-search-v6"
 _REORDER_TYPES = (ReorderHand, ReorderJokers, ReorderConsumables)
 
 
@@ -113,6 +120,32 @@ class SuccessTeacherBudget:
 
 
 @dataclass(frozen=True, slots=True)
+class SuccessTerminalActionBudget:
+    """Conservative paired racing rule for terminal action influence."""
+
+    max_samples: int = 12
+    max_roots: int = 64
+    family_alpha: float = 0.05
+
+    def __post_init__(self) -> None:
+        if min(self.max_samples, self.max_roots) < 1:
+            raise ValueError("terminal action budgets must be positive")
+        if not 0.0 < self.family_alpha < 1.0:
+            raise ValueError("terminal action family alpha must be in (0, 1)")
+
+    def canonical(self) -> str:
+        return (
+            f"max_samples={self.max_samples};max_roots={self.max_roots};"
+            f"family_alpha={self.family_alpha};"
+            "selector=root_adjusted_one_sided_sign;adverse_discordances=0;"
+            "victory_component=exact_win;"
+            "endless_components=alive_at_horizon,endless_ante,log_best_hand_score;"
+            "ties_are_not_evidence;early_anchors_inert;root_overflow=fail_closed;"
+            "no_public_progress=censored_for_actions"
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class RolloutOutcome:
     value: float
     steps: int
@@ -120,6 +153,7 @@ class RolloutOutcome:
     goal_utility: GoalUtility | None = None
     rejection_reason: str | None = None
     endpoint: StrategyTargetEndpoint = StrategyTargetEndpoint.HORIZON
+    terminal_action_admissible: bool = True
 
 
 _SearchRoot = StrategyCandidateRoot
@@ -168,6 +202,95 @@ class SearchDecision:
         }
 
 
+@dataclass(frozen=True, slots=True)
+class SuccessTeacherDecision:
+    """Public aggregate diagnostics for one sparse success anchor."""
+
+    phase: str
+    ante: int
+    goal: str
+    roots: int
+    initial_samples: int
+    max_samples_used: int
+    sample_evaluations: int
+    steps: int
+    max_root_cumulative_steps: int
+    seconds: float
+    rejected_rollouts: int
+    censored_rollouts: int
+    endpoint_counts: tuple[tuple[str, int], ...]
+    action_kind_counts: tuple[tuple[str, int], ...]
+    intent_counts: tuple[tuple[str, int], ...]
+    behavior_index: int
+    teacher_selected_index: int
+    executed_index: int
+    behavior_action: PublicAction
+    behavior_intent: StrategyIntent | None
+    teacher_action: PublicAction
+    teacher_intent: StrategyIntent | None
+    executed_action: PublicAction
+    executed_intent: StrategyIntent | None
+    fallback_reason: str | None
+    affects_actions: bool
+    unavailable: bool = False
+    unsupported: bool = False
+    positive_discordances: int = 0
+    adverse_discordances: int = 0
+    required_positive_discordances: int = 0
+
+    @property
+    def identity_override(self) -> bool:
+        return self.executed_index != self.behavior_index
+
+    def as_dict(self) -> dict[str, object]:
+        return {
+            "phase": self.phase,
+            "ante": self.ante,
+            "goal": self.goal,
+            "roots": self.roots,
+            "initial_samples": self.initial_samples,
+            "max_samples_used": self.max_samples_used,
+            "sample_evaluations": self.sample_evaluations,
+            "steps": self.steps,
+            "max_root_cumulative_steps": self.max_root_cumulative_steps,
+            "seconds": self.seconds,
+            "rejected_rollouts": self.rejected_rollouts,
+            "censored_rollouts": self.censored_rollouts,
+            "endpoint_counts": dict(self.endpoint_counts),
+            "action_kind_counts": dict(self.action_kind_counts),
+            "intent_counts": dict(self.intent_counts),
+            "behavior_index": self.behavior_index,
+            "teacher_selected_index": self.teacher_selected_index,
+            "executed_index": self.executed_index,
+            "behavior": {
+                "action": action_to_data(self.behavior_action),
+                "intent": self.behavior_intent.value
+                if self.behavior_intent is not None
+                else None,
+            },
+            "teacher_selected": {
+                "action": action_to_data(self.teacher_action),
+                "intent": self.teacher_intent.value
+                if self.teacher_intent is not None
+                else None,
+            },
+            "executed": {
+                "action": action_to_data(self.executed_action),
+                "intent": self.executed_intent.value
+                if self.executed_intent is not None
+                else None,
+            },
+            "fallback_reason": self.fallback_reason,
+            "affects_actions": self.affects_actions,
+            "unavailable": self.unavailable,
+            "unsupported": self.unsupported,
+            "identity_override": self.identity_override,
+            "positive_discordances": self.positive_discordances,
+            "adverse_discordances": self.adverse_discordances,
+            "required_positive_discordances": self.required_positive_discordances,
+        }
+
+
 @dataclass(slots=True)
 class SearchCounters:
     strategic_decisions: int = 0
@@ -179,6 +302,15 @@ class SearchCounters:
     seconds: float = 0.0
     success_teacher_steps: int = 0
     success_teacher_rejected_rollouts: int = 0
+    success_teacher_seconds: float = 0.0
+    success_anchors_attempted: int = 0
+    success_anchors_completed: int = 0
+    success_anchor_fallbacks: int = 0
+    success_anchor_unavailable: int = 0
+    success_anchor_unsupported: int = 0
+    success_teacher_censored_rollouts: int = 0
+    success_action_overrides: int = 0
+    success_intent_only_overrides: int = 0
 
     def as_dict(self) -> dict[str, object]:
         return {
@@ -191,6 +323,15 @@ class SearchCounters:
             "seconds": self.seconds,
             "success_teacher_steps": self.success_teacher_steps,
             "success_teacher_rejected_rollouts": self.success_teacher_rejected_rollouts,
+            "success_teacher_seconds": self.success_teacher_seconds,
+            "success_anchors_attempted": self.success_anchors_attempted,
+            "success_anchors_completed": self.success_anchors_completed,
+            "success_anchor_fallbacks": self.success_anchor_fallbacks,
+            "success_anchor_unavailable": self.success_anchor_unavailable,
+            "success_anchor_unsupported": self.success_anchor_unsupported,
+            "success_teacher_censored_rollouts": self.success_teacher_censored_rollouts,
+            "success_action_overrides": self.success_action_overrides,
+            "success_intent_only_overrides": self.success_intent_only_overrides,
             "steps_per_second": (self.rollout_steps / self.seconds)
             if self.seconds > 0
             else 0.0,
@@ -208,21 +349,34 @@ class DeterminizedSearchPolicy:
     enable_strategy_options: bool = False
     include_reorders: bool = False
     success_teacher: SuccessTeacherBudget | None = None
+    success_terminal_actions: SuccessTerminalActionBudget | None = None
     last_decision: SearchDecision | None = None
     counters: SearchCounters = field(default_factory=SearchCounters)
     decisions: list[SearchDecision] = field(default_factory=list)
     teacher_drafts: list[StrategyTeacherDraft] = field(default_factory=list)
+    success_decisions: list[SuccessTeacherDecision] = field(default_factory=list)
+    last_success_decision: SuccessTeacherDecision | None = None
     active_intent: PersistentIntent | None = None
     last_strategy_candidates: tuple[StrategyCandidateRoot, ...] = ()
     last_strategy_selected_index: int | None = None
     _success_shop_antes: set[int] = field(default_factory=set)
     _success_pack_antes: set[int] = field(default_factory=set)
 
+    def __post_init__(self) -> None:
+        if self.success_terminal_actions is None:
+            return
+        if self.success_teacher is None:
+            raise ValueError("terminal actions require a success teacher budget")
+        if self.success_teacher.samples > self.success_terminal_actions.max_samples:
+            raise ValueError("initial terminal samples exceed the action sample cap")
+
     def reset_run(self) -> None:
         self.last_decision = None
         self.counters = SearchCounters()
         self.decisions = []
         self.teacher_drafts = []
+        self.success_decisions = []
+        self.last_success_decision = None
         self.active_intent = None
         self.last_strategy_candidates = ()
         self.last_strategy_selected_index = None
@@ -256,56 +410,115 @@ class DeterminizedSearchPolicy:
                 observation, legal_actions, history
             )
         self.last_decision = None
+        self.last_success_decision = None
         self.last_strategy_candidates = ()
         self.last_strategy_selected_index = None
         if observation.phase not in STRATEGIC_PHASES:
             return baseline
         self.counters.strategic_decisions += 1
+        success_anchor = self.success_teacher is not None and self._is_success_anchor(
+            observation
+        )
         if self.enable_strategy_options:
-            return self._choose_strategy_option(observation, baseline, history)
+            return self._choose_strategy_option(
+                observation,
+                baseline,
+                history,
+                success_anchor=success_anchor,
+            )
+        captured_legal_actions = tuple(legal_actions())
         roots = [
             action
-            for action in legal_actions()
+            for action in captured_legal_actions
             if not isinstance(action, _REORDER_TYPES)
         ]
         if baseline not in roots:
             roots.append(baseline)
         if len(roots) <= 1:
+            if success_anchor:
+                engine = derive_engine_state(observation)
+                self._record_unavailable_success_anchor(
+                    observation,
+                    StrategyCandidateRoot(baseline, None),
+                    engine.goal,
+                    "single_root",
+                )
             return baseline
 
         started = time.perf_counter()
-        samples: list[JackdawBackend] = []
+        frozen_samples: list[FrozenJackdawBackend] = []
         try:
             for index in range(self.budget.samples):
-                samples.append(
-                    sample_candidate(
-                        self.backend,
-                        observation,
-                        history,
-                        sample_seed(observation, self.nonce, index),
-                    )
+                sample = sample_candidate(
+                    self.backend,
+                    observation,
+                    history,
+                    sample_seed(observation, self.nonce, index),
                 )
+                try:
+                    frozen_samples.append(freeze_backend(sample))
+                finally:
+                    sample.close()
         except DeterminizationUnavailable as exc:
             self.counters.unavailable += 1
             self._record(
                 observation, roots, baseline, baseline, {}, 0, 0, started, str(exc)
             )
+            if success_anchor:
+                engine = derive_engine_state(observation)
+                self._record_unavailable_success_anchor(
+                    observation,
+                    StrategyCandidateRoot(baseline, None),
+                    engine.goal,
+                    "determinization_unavailable",
+                )
             return baseline
 
         values: list[list[float]] = [[] for _ in roots]
         steps = 0
         rejected = 0
-        for sample in samples:
-            for index, root in enumerate(roots):
-                clone = clone_backend(sample)
-                outcome = self._rollout(clone, observation, history, root)
-                clone.close()
-                values[index].append(outcome.value)
-                steps += outcome.steps
-                rejected += int(outcome.rejected)
-            sample.close()
+        prefix_best_hand_score = _public_best_hand_score(history)
+        try:
+            for frozen_sample in frozen_samples:
+                for index, root in enumerate(roots):
+                    clone = frozen_sample.clone()
+                    try:
+                        outcome = self._rollout(
+                            clone,
+                            observation,
+                            history,
+                            root,
+                            prefix_best_hand_score=prefix_best_hand_score,
+                        )
+                    finally:
+                        clone.close()
+                    values[index].append(outcome.value)
+                    steps += outcome.steps
+                    rejected += int(outcome.rejected)
+        except DeterminizationUnavailable as exc:
+            self.counters.unavailable += 1
+            self._record(
+                observation,
+                roots,
+                baseline,
+                baseline,
+                {},
+                steps,
+                rejected,
+                started,
+                str(exc),
+            )
+            if success_anchor:
+                engine = derive_engine_state(observation)
+                self._record_unavailable_success_anchor(
+                    observation,
+                    StrategyCandidateRoot(baseline, None),
+                    engine.goal,
+                    "determinization_unavailable",
+                )
+            return baseline
 
-        count = len(samples)
+        count = len(frozen_samples)
         means = {index: sum(values[index]) / count for index in range(len(roots))}
         baseline_index = roots.index(baseline)
         selected_index = _select_root(values, baseline_index, self.budget.override_z)
@@ -323,20 +536,26 @@ class DeterminizedSearchPolicy:
             started,
             None,
         )
-        if self.success_teacher is not None and self._is_success_anchor(observation):
+        if success_anchor:
             engine = derive_engine_state(observation)
             unsupported = _strategy_unsupported(engine)
             if unsupported:
-                self.counters.success_teacher_rejected_rollouts += 1
-                self.counters.rejected_rollouts += 1
+                self._record_unavailable_success_anchor(
+                    observation,
+                    StrategyCandidateRoot(selected, None),
+                    engine.goal,
+                    f"unsupported_public_state:{','.join(unsupported)}",
+                    unsupported=True,
+                )
             else:
                 intent_aware = callable(
                     getattr(self.continuation, "choose_action_for_intent", None)
                 ) and callable(getattr(self.continuation, "fork_for_rollout", None))
                 candidates = build_strategy_candidates(
                     observation,
-                    tuple(iter_legal_actions(observation)),
+                    captured_legal_actions,
                     selected,
+                    active_intent=self.active_intent,
                     include_reorders=self.include_reorders,
                     intent_aware=intent_aware,
                     engine=engine,
@@ -344,7 +563,7 @@ class DeterminizedSearchPolicy:
                 self.last_strategy_candidates = candidates
                 self.last_strategy_selected_index = 0
                 if len(candidates) > 1:
-                    self._collect_success_teacher(
+                    effective_index = self._collect_success_teacher(
                         observation,
                         history,
                         candidates,
@@ -352,6 +571,24 @@ class DeterminizedSearchPolicy:
                         intent_aware=intent_aware,
                         engine_goal=engine.goal,
                     )
+                    self.last_strategy_selected_index = effective_index
+                    if self.success_terminal_actions is not None:
+                        effective_root = candidates[effective_index]
+                        self._commit_strategy_root(effective_root, engine)
+                        selected = effective_root.action
+                else:
+                    self._record_unavailable_success_anchor(
+                        observation,
+                        candidates[0],
+                        engine.goal,
+                        "single_root",
+                    )
+        if (
+            self.success_terminal_actions is not None
+            and self.last_success_decision is None
+            and selected != baseline
+        ):
+            self.active_intent = None
         return selected
 
     def _choose_strategy_option(
@@ -359,6 +596,8 @@ class DeterminizedSearchPolicy:
         observation: PublicObservation,
         baseline: PublicAction,
         history: tuple[PublicHistoryStep, ...],
+        *,
+        success_anchor: bool,
     ) -> PublicAction:
         """Search legal option first-actions while retaining paired samples."""
 
@@ -379,6 +618,14 @@ class DeterminizedSearchPolicy:
                 started,
                 ",".join(unsupported),
             )
+            if success_anchor:
+                self._record_unavailable_success_anchor(
+                    observation,
+                    root,
+                    engine.goal,
+                    f"unsupported_public_state:{','.join(unsupported)}",
+                    unsupported=True,
+                )
             return baseline
         has_intent_chooser = callable(
             getattr(self.continuation, "choose_action_for_intent", None)
@@ -401,6 +648,14 @@ class DeterminizedSearchPolicy:
                 started,
                 "intent_continuation_missing_rollout_fork",
             )
+            if success_anchor:
+                self._record_unavailable_success_anchor(
+                    observation,
+                    root,
+                    engine.goal,
+                    "intent_continuation_missing_rollout_fork",
+                    unsupported=True,
+                )
             return baseline
         intent_aware = has_intent_chooser and has_rollout_fork
         legal_actions = tuple(iter_legal_actions(observation))
@@ -416,27 +671,41 @@ class DeterminizedSearchPolicy:
         self.last_strategy_candidates = roots
         if len(roots) <= 1:
             self.last_strategy_selected_index = 0
+            if success_anchor:
+                self._record_unavailable_success_anchor(
+                    observation,
+                    roots[0],
+                    engine.goal,
+                    "single_root",
+                )
             return baseline
 
         started = time.perf_counter()
-        samples: list[JackdawBackend] = []
+        frozen_samples: list[FrozenJackdawBackend] = []
         try:
             for index in range(self.budget.samples):
-                samples.append(
-                    sample_candidate(
-                        self.backend,
-                        observation,
-                        history,
-                        sample_seed(observation, self.nonce, index),
-                    )
+                sample = sample_candidate(
+                    self.backend,
+                    observation,
+                    history,
+                    sample_seed(observation, self.nonce, index),
                 )
+                try:
+                    frozen_samples.append(freeze_backend(sample))
+                finally:
+                    sample.close()
         except DeterminizationUnavailable as exc:
-            for sample in samples:
-                sample.close()
             self.counters.unavailable += 1
             self._record_strategy(
                 observation, roots, baseline, roots[0], (), 0, 0, started, str(exc)
             )
+            if success_anchor:
+                self._record_unavailable_success_anchor(
+                    observation,
+                    roots[0],
+                    engine.goal,
+                    "determinization_unavailable",
+                )
             return baseline
 
         utilities: list[list[GoalUtility]] = [[] for _ in roots]
@@ -446,36 +715,63 @@ class DeterminizedSearchPolicy:
         rejected = 0
         root_rejected = [False for _ in roots]
         rejection_reasons: Counter[str] = Counter()
-        for sample in samples:
-            for index, root in enumerate(roots):
-                clone = clone_backend(sample)
-                intent = (
-                    root.option.intent
-                    if intent_aware and root.option is not None
-                    else None
-                )
-                outcome = self._rollout(
-                    clone,
+        prefix_best_hand_score = _public_best_hand_score(history)
+        try:
+            for frozen_sample in frozen_samples:
+                for index, root in enumerate(roots):
+                    clone = frozen_sample.clone()
+                    intent = (
+                        root.option.intent
+                        if intent_aware and root.option is not None
+                        else None
+                    )
+                    try:
+                        outcome = self._rollout(
+                            clone,
+                            observation,
+                            history,
+                            root.action,
+                            intent=intent,
+                            isolate_continuation=True,
+                            prefix_best_hand_score=prefix_best_hand_score,
+                        )
+                    finally:
+                        clone.close()
+                    if outcome.goal_utility is None:
+                        raise AssertionError(
+                            "strategy rollout produced no goal utility"
+                        )
+                    utilities[index].append(outcome.goal_utility)
+                    outcomes[index].append(outcome)
+                    scalar_values[index].append(outcome.value)
+                    steps += outcome.steps
+                    rejected += int(outcome.rejected)
+                    root_rejected[index] = root_rejected[index] or outcome.rejected
+                    if outcome.rejection_reason is not None:
+                        rejection_reasons[
+                            f"{_root_label(root)}|{outcome.rejection_reason}"
+                        ] += 1
+        except DeterminizationUnavailable as exc:
+            self.counters.unavailable += 1
+            self._record_strategy(
+                observation,
+                roots,
+                baseline,
+                roots[0],
+                (),
+                steps,
+                rejected,
+                started,
+                str(exc),
+            )
+            if success_anchor:
+                self._record_unavailable_success_anchor(
                     observation,
-                    history,
-                    root.action,
-                    intent=intent,
-                    isolate_continuation=True,
+                    roots[0],
+                    engine.goal,
+                    "determinization_unavailable",
                 )
-                clone.close()
-                if outcome.goal_utility is None:
-                    raise AssertionError("strategy rollout produced no goal utility")
-                utilities[index].append(outcome.goal_utility)
-                outcomes[index].append(outcome)
-                scalar_values[index].append(outcome.value)
-                steps += outcome.steps
-                rejected += int(outcome.rejected)
-                root_rejected[index] = root_rejected[index] or outcome.rejected
-                if outcome.rejection_reason is not None:
-                    rejection_reasons[
-                        f"{_root_label(root)}|{outcome.rejection_reason}"
-                    ] += 1
-            sample.close()
+            return baseline
 
         selected_index = _select_goal_root(
             utilities,
@@ -512,29 +808,9 @@ class DeterminizedSearchPolicy:
                     teacher_config_digest=_teacher_config_digest(self),
                 )
             )
-        if self.success_teacher is not None and self._is_success_anchor(observation):
-            self._collect_success_teacher(
-                observation,
-                history,
-                roots,
-                behavior_index=selected_index,
-                intent_aware=intent_aware,
-                engine_goal=engine.goal,
-            )
-        if intent_aware and selected_root.option is not None:
-            if self.active_intent is None:
-                self.active_intent = PersistentIntent.start(
-                    selected_root.option, engine
-                )
-            else:
-                self.active_intent = self.active_intent.advance(
-                    selected_root.option, engine
-                )
-        else:
-            self.active_intent = None
         self.counters.searched += 1
         self.counters.changed += int(selected != baseline)
-        count = len(samples)
+        count = len(frozen_samples)
         goal_means = tuple(
             (
                 _root_label(root),
@@ -567,7 +843,84 @@ class DeterminizedSearchPolicy:
             },
             rejection_reasons=tuple(sorted(rejection_reasons.items())),
         )
-        return selected
+        effective_index = selected_index
+        if success_anchor:
+            effective_index = self._collect_success_teacher(
+                observation,
+                history,
+                roots,
+                behavior_index=selected_index,
+                intent_aware=intent_aware,
+                engine_goal=engine.goal,
+            )
+        effective_root = roots[effective_index]
+        self.last_strategy_selected_index = effective_index
+        self._commit_strategy_root(effective_root, engine)
+        return effective_root.action
+
+    def _commit_strategy_root(
+        self,
+        root: StrategyCandidateRoot,
+        engine: PublicEngineState,
+    ) -> None:
+        if root.option is None:
+            self.active_intent = None
+        elif self.active_intent is None:
+            self.active_intent = PersistentIntent.start(root.option, engine)
+        else:
+            self.active_intent = self.active_intent.advance(root.option, engine)
+
+    def _record_unavailable_success_anchor(
+        self,
+        observation: PublicObservation,
+        root: StrategyCandidateRoot,
+        goal: RunGoal,
+        reason: str,
+        *,
+        unsupported: bool = False,
+    ) -> None:
+        """Record a scheduled anchor that cannot admit terminal evaluation."""
+
+        self.counters.success_anchors_attempted += 1
+        self.counters.success_anchor_unavailable += 1
+        self.counters.success_anchor_unsupported += int(unsupported)
+        if self.success_terminal_actions is not None:
+            self.counters.success_anchor_fallbacks += 1
+        action_kind = str(action_to_data(root.action)["type"])
+        decision = SuccessTeacherDecision(
+            phase=observation.phase.value,
+            ante=observation.ante,
+            goal=goal.value,
+            roots=1,
+            initial_samples=self.success_teacher.samples
+            if self.success_teacher is not None
+            else 0,
+            max_samples_used=0,
+            sample_evaluations=0,
+            steps=0,
+            max_root_cumulative_steps=0,
+            seconds=0.0,
+            rejected_rollouts=0,
+            censored_rollouts=0,
+            endpoint_counts=(),
+            action_kind_counts=((action_kind, 1),),
+            intent_counts=((root.intent.value if root.intent else "none", 1),),
+            behavior_index=0,
+            teacher_selected_index=0,
+            executed_index=0,
+            behavior_action=root.action,
+            behavior_intent=root.intent,
+            teacher_action=root.action,
+            teacher_intent=root.intent,
+            executed_action=root.action,
+            executed_intent=root.intent,
+            fallback_reason=reason,
+            affects_actions=self.success_terminal_actions is not None,
+            unavailable=True,
+            unsupported=unsupported,
+        )
+        self.last_success_decision = decision
+        self.success_decisions.append(decision)
 
     def _is_success_anchor(self, observation: PublicObservation) -> bool:
         budget = self.success_teacher
@@ -599,67 +952,203 @@ class DeterminizedSearchPolicy:
         behavior_index: int,
         intent_aware: bool,
         engine_goal: RunGoal,
-    ) -> None:
-        """Evaluate terminal objectives while leaving the behavior choice intact."""
+    ) -> int:
+        """Evaluate a sparse terminal anchor and return the public root to execute."""
 
         budget = self.success_teacher
         if budget is None:  # pragma: no cover - caller guard
-            return
+            return behavior_index
         teacher_started = time.perf_counter()
-        samples: list[JackdawBackend] = []
         outcomes: list[list[RolloutOutcome]] = [[] for _ in roots]
-        terminal_objective = observation.won or observation.ante >= budget.prewin_start_ante
-        try:
-            for sample_index in range(budget.samples):
-                samples.append(
-                    sample_candidate(
-                        self.backend,
+        root_steps = [0 for _ in roots]
+        endpoint_counts: Counter[str] = Counter()
+        action_kind_counts = Counter(
+            str(action_to_data(root.action)["type"]) for root in roots
+        )
+        intent_counts = Counter(
+            root.intent.value if root.intent is not None else "none" for root in roots
+        )
+        self.counters.success_anchors_attempted += 1
+        terminal_objective = (
+            observation.won or observation.ante >= budget.prewin_start_ante
+        )
+        prefix_best_hand_score = _public_best_hand_score(history)
+        action_budget = self.success_terminal_actions
+        required_positive = (
+            _required_positive_discordances(
+                len(roots), action_budget.family_alpha
+            )
+            if action_budget is not None
+            else 0
+        )
+
+        def finish(
+            *,
+            teacher_index: int,
+            executed_index: int,
+            fallback_reason: str | None,
+            positive_discordances: int = 0,
+            adverse_discordances: int = 0,
+            unavailable: bool = False,
+        ) -> int:
+            seconds = time.perf_counter() - teacher_started
+            self.counters.seconds += seconds
+            self.counters.success_teacher_seconds += seconds
+            if unavailable:
+                self.counters.success_anchor_unavailable += 1
+            elif fallback_reason is None:
+                self.counters.success_anchors_completed += 1
+            if action_budget is not None and fallback_reason is not None:
+                self.counters.success_anchor_fallbacks += 1
+            behavior_root = roots[behavior_index]
+            teacher_root = roots[teacher_index]
+            executed_root = roots[executed_index]
+            if action_budget is not None and executed_index != behavior_index:
+                if executed_root.action != behavior_root.action:
+                    self.counters.success_action_overrides += 1
+                else:
+                    self.counters.success_intent_only_overrides += 1
+            decision = SuccessTeacherDecision(
+                phase=observation.phase.value,
+                ante=observation.ante,
+                goal=engine_goal.value,
+                roots=len(roots),
+                initial_samples=budget.samples,
+                max_samples_used=max((len(row) for row in outcomes), default=0),
+                sample_evaluations=sum(len(row) for row in outcomes),
+                steps=sum(root_steps),
+                max_root_cumulative_steps=max(root_steps, default=0),
+                seconds=seconds,
+                rejected_rollouts=sum(
+                    outcome.rejected for row in outcomes for outcome in row
+                ),
+                censored_rollouts=sum(
+                    outcome.endpoint == StrategyTargetEndpoint.CENSORED
+                    for row in outcomes
+                    for outcome in row
+                ),
+                endpoint_counts=tuple(sorted(endpoint_counts.items())),
+                action_kind_counts=tuple(sorted(action_kind_counts.items())),
+                intent_counts=tuple(sorted(intent_counts.items())),
+                behavior_index=behavior_index,
+                teacher_selected_index=teacher_index,
+                executed_index=executed_index,
+                behavior_action=behavior_root.action,
+                behavior_intent=behavior_root.intent,
+                teacher_action=teacher_root.action,
+                teacher_intent=teacher_root.intent,
+                executed_action=executed_root.action,
+                executed_intent=executed_root.intent,
+                fallback_reason=fallback_reason,
+                affects_actions=action_budget is not None,
+                unavailable=unavailable,
+                positive_discordances=positive_discordances,
+                adverse_discordances=adverse_discordances,
+                required_positive_discordances=required_positive,
+            )
+            self.last_success_decision = decision
+            self.success_decisions.append(decision)
+            return executed_index
+
+        if action_budget is not None and not terminal_objective:
+            return finish(
+                teacher_index=behavior_index,
+                executed_index=behavior_index,
+                fallback_reason="early_anchor_inert",
+            )
+        if action_budget is not None and len(roots) > action_budget.max_roots:
+            return finish(
+                teacher_index=behavior_index,
+                executed_index=behavior_index,
+                fallback_reason="root_compute_bound_exceeded",
+                unavailable=True,
+            )
+        if (
+            action_budget is not None
+            and required_positive > action_budget.max_samples
+        ):
+            return finish(
+                teacher_index=behavior_index,
+                executed_index=behavior_index,
+                fallback_reason="root_count_bound_unattainable",
+                unavailable=True,
+            )
+
+        def evaluate_sample(sample_index: int, root_indexes: Sequence[int]) -> None:
+            sample = sample_candidate(
+                self.backend,
+                observation,
+                history,
+                sample_seed(
+                    observation,
+                    f"{self.nonce}:success-terminal-v1",
+                    sample_index,
+                ),
+            )
+            try:
+                frozen_sample = freeze_backend(sample)
+            finally:
+                sample.close()
+            for root_index in root_indexes:
+                root = roots[root_index]
+                clone = frozen_sample.clone()
+                try:
+                    outcome = self._rollout(
+                        clone,
                         observation,
                         history,
-                        sample_seed(
-                            observation,
-                            f"{self.nonce}:success-terminal-v1",
-                            sample_index,
+                        root.action,
+                        intent=root.intent if intent_aware else None,
+                        isolate_continuation=True,
+                        success_goal=engine_goal if terminal_objective else None,
+                        max_steps=(
+                            budget.max_steps
+                            if terminal_objective
+                            else self.budget.max_steps
                         ),
+                        endless_horizon_antes=budget.endless_horizon_antes,
+                        prefix_best_hand_score=prefix_best_hand_score,
                     )
-                )
-            for sample in samples:
-                for root_index, root in enumerate(roots):
-                    clone = clone_backend(sample)
-                    try:
-                        outcome = self._rollout(
-                            clone,
-                            observation,
-                            history,
-                            root.action,
-                            intent=root.intent if intent_aware else None,
-                            isolate_continuation=True,
-                            success_goal=engine_goal if terminal_objective else None,
-                            max_steps=(
-                                budget.max_steps
-                                if terminal_objective
-                                else self.budget.max_steps
-                            ),
-                            endless_horizon_antes=budget.endless_horizon_antes,
-                        )
-                    finally:
-                        clone.close()
-                    outcomes[root_index].append(outcome)
-                    self.counters.success_teacher_steps += outcome.steps
-                    self.counters.rollout_steps += outcome.steps
-                    if outcome.rejected:
-                        self.counters.success_teacher_rejected_rollouts += 1
-                        self.counters.rejected_rollouts += 1
+                finally:
+                    clone.close()
+                outcomes[root_index].append(outcome)
+                root_steps[root_index] += outcome.steps
+                endpoint_counts[outcome.endpoint.value] += 1
+                self.counters.success_teacher_steps += outcome.steps
+                self.counters.rollout_steps += outcome.steps
+                if outcome.rejected:
+                    self.counters.success_teacher_rejected_rollouts += 1
+                    self.counters.rejected_rollouts += 1
+                if outcome.endpoint == StrategyTargetEndpoint.CENSORED:
+                    self.counters.success_teacher_censored_rollouts += 1
+
+        try:
+            for sample_index in range(budget.samples):
+                evaluate_sample(sample_index, tuple(range(len(roots))))
         except DeterminizationUnavailable:
-            self.counters.success_teacher_rejected_rollouts += len(roots)
-            self.counters.rejected_rollouts += len(roots)
-            return
-        finally:
-            for sample in samples:
-                sample.close()
-            self.counters.seconds += time.perf_counter() - teacher_started
-        if any(outcome.rejected for row in outcomes for outcome in row):
-            return
+            return finish(
+                teacher_index=behavior_index,
+                executed_index=behavior_index,
+                fallback_reason="determinization_unavailable",
+                unavailable=True,
+            )
+
+        flat_outcomes = tuple(outcome for row in outcomes for outcome in row)
+        if any(outcome.rejected for outcome in flat_outcomes):
+            return finish(
+                teacher_index=behavior_index,
+                executed_index=behavior_index,
+                fallback_reason="rejected_root",
+            )
+        if any(
+            outcome.endpoint == StrategyTargetEndpoint.CENSORED
+            for outcome in flat_outcomes
+        ):
+            return finish(
+                teacher_index=behavior_index,
+                executed_index=behavior_index,
+                fallback_reason="censored_root",
+            )
         utilities = tuple(
             tuple(outcome.goal_utility for outcome in row) for row in outcomes
         )
@@ -668,35 +1157,145 @@ class DeterminizedSearchPolicy:
         typed_utilities = tuple(
             tuple(utility for utility in row if utility is not None) for row in utilities
         )
-        selected_index = _select_goal_root(
-            typed_utilities,
-            baseline_index=behavior_index,
-            goal=engine_goal,
-            override_z=self.budget.override_z,
-        )
-        self.teacher_drafts.append(
-            StrategyTeacherDraft(
-                observation=observation,
-                candidates=tuple(
-                    StrategyTeacherCandidate(
-                        action=root.action,
-                        intent=root.intent,
-                        samples=tuple(
-                            _teacher_target(
-                                outcome,
-                                observation.antes_cleared,
-                                engine_goal,
-                            )
-                            for outcome in row
-                        ),
-                    )
-                    for root, row in zip(roots, outcomes, strict=True)
-                ),
-                selected_index=selected_index,
+        if action_budget is None:
+            selected_index = _select_goal_root(
+                typed_utilities,
                 baseline_index=behavior_index,
                 goal=engine_goal,
-                teacher_config_digest=_teacher_config_digest(self),
+                override_z=self.budget.override_z,
             )
+            self.teacher_drafts.append(
+                StrategyTeacherDraft(
+                    observation=observation,
+                    candidates=tuple(
+                        StrategyTeacherCandidate(
+                            action=root.action,
+                            intent=root.intent,
+                            samples=tuple(
+                                _teacher_target(
+                                    outcome,
+                                    observation.antes_cleared,
+                                    engine_goal,
+                                )
+                                for outcome in row
+                            ),
+                        )
+                        for root, row in zip(roots, outcomes, strict=True)
+                    ),
+                    selected_index=selected_index,
+                    baseline_index=behavior_index,
+                    goal=engine_goal,
+                    teacher_config_digest=_teacher_config_digest(self),
+                )
+            )
+            return finish(
+                teacher_index=selected_index,
+                executed_index=behavior_index,
+                fallback_reason=None,
+            )
+
+        if any(not outcome.terminal_action_admissible for outcome in flat_outcomes):
+            return finish(
+                teacher_index=behavior_index,
+                executed_index=behavior_index,
+                fallback_reason="nonterminal_public_dead_end",
+            )
+
+        positive = Counter[int]()
+        adverse = Counter[int]()
+        survivors: set[int] = set()
+        for root_index in range(len(roots)):
+            if root_index == behavior_index:
+                continue
+            for outcome, baseline_outcome in zip(
+                outcomes[root_index], outcomes[behavior_index], strict=True
+            ):
+                relation = _terminal_action_relation(
+                    outcome, baseline_outcome, engine_goal
+                )
+                positive[root_index] += int(relation > 0)
+                adverse[root_index] += int(relation < 0)
+            if adverse[root_index] == 0 and positive[root_index] > 0:
+                survivors.add(root_index)
+
+        def qualified_indexes() -> tuple[int, ...]:
+            return tuple(
+                index
+                for index in survivors
+                if adverse[index] == 0 and positive[index] >= required_positive
+            )
+
+        sample_index = budget.samples
+        qualified = qualified_indexes()
+        try:
+            while (
+                not qualified
+                and survivors
+                and sample_index < action_budget.max_samples
+            ):
+                evaluated = (behavior_index, *sorted(survivors))
+                evaluate_sample(sample_index, evaluated)
+                baseline_outcome = outcomes[behavior_index][-1]
+                if (
+                    baseline_outcome.rejected
+                    or baseline_outcome.endpoint == StrategyTargetEndpoint.CENSORED
+                    or not baseline_outcome.terminal_action_admissible
+                ):
+                    return finish(
+                        teacher_index=behavior_index,
+                        executed_index=behavior_index,
+                        fallback_reason="inadmissible_additional_sample",
+                    )
+                for root_index in tuple(survivors):
+                    outcome = outcomes[root_index][-1]
+                    if (
+                        outcome.rejected
+                        or outcome.endpoint == StrategyTargetEndpoint.CENSORED
+                        or not outcome.terminal_action_admissible
+                    ):
+                        return finish(
+                            teacher_index=behavior_index,
+                            executed_index=behavior_index,
+                            fallback_reason="inadmissible_additional_sample",
+                        )
+                    relation = _terminal_action_relation(
+                        outcome, baseline_outcome, engine_goal
+                    )
+                    positive[root_index] += int(relation > 0)
+                    adverse[root_index] += int(relation < 0)
+                    if adverse[root_index] > 0:
+                        survivors.remove(root_index)
+                sample_index += 1
+                qualified = qualified_indexes()
+        except DeterminizationUnavailable:
+            return finish(
+                teacher_index=behavior_index,
+                executed_index=behavior_index,
+                fallback_reason="determinization_unavailable",
+                unavailable=True,
+            )
+
+        if not qualified:
+            return finish(
+                teacher_index=behavior_index,
+                executed_index=behavior_index,
+                fallback_reason="insufficient_terminal_dominance",
+            )
+
+        selected_index = max(
+            qualified,
+            key=lambda index: (
+                positive[index],
+                _mean_terminal_action_key(outcomes[index], engine_goal),
+                -index,
+            ),
+        )
+        return finish(
+            teacher_index=selected_index,
+            executed_index=selected_index,
+            fallback_reason=None,
+            positive_discordances=positive[selected_index],
+            adverse_discordances=adverse[selected_index],
         )
 
     def _rollout(
@@ -711,6 +1310,7 @@ class DeterminizedSearchPolicy:
         success_goal: RunGoal | None = None,
         max_steps: int | None = None,
         endless_horizon_antes: int = 2,
+        prefix_best_hand_score: int | None = None,
     ) -> RolloutOutcome:
         start_rounds = observation.round_no
         start_antes = observation.antes_cleared
@@ -726,7 +1326,11 @@ class DeterminizedSearchPolicy:
         current = observation
         action = root
         steps = 0
-        best_hand_score = _public_best_hand_score(history)
+        best_hand_score = (
+            _public_best_hand_score(history)
+            if prefix_best_hand_score is None
+            else prefix_best_hand_score
+        )
         continuation = self.continuation
         if isolate_continuation:
             fork = getattr(self.continuation, "fork_for_rollout", None)
@@ -791,7 +1395,7 @@ class DeterminizedSearchPolicy:
                     json.loads(result.after.observed.raw_json)
                 )
             trajectory.append(PublicHistoryStep(current, action, after))
-            if action_to_data(action)["type"] == "play_cards":
+            if isinstance(action, PlayCards):
                 best_hand_score = max(
                     best_hand_score,
                     max(0, after.round.chips - current.round.chips),
@@ -866,6 +1470,7 @@ class DeterminizedSearchPolicy:
                     False,
                     _goal_utility(current, value, best_hand_score, alive=False),
                     endpoint=StrategyTargetEndpoint.DEATH,
+                    terminal_action_admissible=False,
                 )
             except Exception as exc:  # all other continuation failures reject the root
                 value = _progress_value(current, start_rounds)
@@ -1045,6 +1650,50 @@ def _select_goal_root(
     return max(eligible, key=mean_key)
 
 
+def _required_positive_discordances(root_count: int, family_alpha: float) -> int:
+    """Return the zero-adverse sign count needed after searching sibling roots."""
+
+    comparisons = max(1, root_count - 1)
+    return max(1, math.ceil(math.log2(comparisons / family_alpha)))
+
+
+def _terminal_action_key(
+    outcome: RolloutOutcome,
+    goal: RunGoal,
+) -> tuple[float, ...]:
+    utility = outcome.goal_utility
+    if utility is None:
+        raise ValueError("terminal action rollout omitted goal utility")
+    if goal == RunGoal.VICTORY:
+        return (float(outcome.endpoint == StrategyTargetEndpoint.VICTORY),)
+    return (
+        utility.alive_probability,
+        utility.endless_ante,
+        utility.log_score,
+    )
+
+
+def _terminal_action_relation(
+    outcome: RolloutOutcome,
+    baseline: RolloutOutcome,
+    goal: RunGoal,
+) -> int:
+    candidate_key = _terminal_action_key(outcome, goal)
+    baseline_key = _terminal_action_key(baseline, goal)
+    return (candidate_key > baseline_key) - (candidate_key < baseline_key)
+
+
+def _mean_terminal_action_key(
+    outcomes: Sequence[RolloutOutcome],
+    goal: RunGoal,
+) -> tuple[float, ...]:
+    keys = tuple(_terminal_action_key(outcome, goal) for outcome in outcomes)
+    return tuple(
+        sum(key[index] for key in keys) / len(keys)
+        for index in range(len(keys[0]))
+    )
+
+
 def _progress_value(
     last_alive: PublicObservation,
     start_rounds: int,
@@ -1130,7 +1779,7 @@ def _public_best_hand_score(history: Sequence[PublicHistoryStep]) -> int:
         (
             max(0, step.after.round.chips - step.before.round.chips)
             for step in history
-            if action_to_data(step.action)["type"] == "play_cards"
+            if isinstance(step.action, PlayCards)
         ),
         default=0,
     )
@@ -1149,6 +1798,11 @@ def _teacher_config_digest(policy: DeterminizedSearchPolicy) -> str:
         "success_teacher": (
             policy.success_teacher.canonical()
             if policy.success_teacher is not None
+            else None
+        ),
+        "success_terminal_actions": (
+            policy.success_terminal_actions.canonical()
+            if policy.success_terminal_actions is not None
             else None
         ),
         "continuation_type": (

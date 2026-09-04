@@ -107,7 +107,9 @@ def test_trace_rejects_missing_profile_mode(tmp_path: Path) -> None:
         read_verified_trace(path)
 
 
-def test_git_state_ignores_untracked_files_but_detects_tracked_edits(tmp_path: Path) -> None:
+def test_git_state_ignores_untracked_evidence_but_detects_source_edits(
+    tmp_path: Path,
+) -> None:
     subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
     subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=tmp_path, check=True)
     subprocess.run(["git", "config", "user.name", "Test"], cwd=tmp_path, check=True)
@@ -119,6 +121,13 @@ def test_git_state_ignores_untracked_files_but_detects_tracked_edits(tmp_path: P
     (tmp_path / "notes.md").write_text("untracked\n")
     _, dirty = _git_state(tmp_path)
     assert not dirty
+
+    scripts = tmp_path / "scripts"
+    scripts.mkdir()
+    (scripts / "untracked.py").write_text("value = 2\n")
+    _, dirty = _git_state(tmp_path)
+    assert dirty
+    (scripts / "untracked.py").unlink()
 
     tracked.write_text("value = 2\n")
     _, dirty = _git_state(tmp_path)

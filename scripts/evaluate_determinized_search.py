@@ -11,7 +11,11 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
+import os
+import subprocess
 import sys
+import tempfile
 import time
 from collections import Counter
 from concurrent.futures import ProcessPoolExecutor
@@ -29,7 +33,9 @@ from balatro_ai_v2.determinized_search import (
     SEARCH_VERSION,
     DeterminizedSearchPolicy,
     RolloutBudget,
+    SearchDecision,
     SuccessTeacherBudget,
+    SuccessTerminalActionBudget,
 )
 from balatro_ai_v2.evaluation_protocol import (
     SEED_PROVENANCES,
@@ -91,6 +97,16 @@ def _init_worker(args_dict: dict[str, object]) -> None:
                 max_steps=int(args_dict["success_teacher_max_steps"]),
             )
             if bool(args_dict["success_teacher"])
+            or bool(args_dict["success_terminal_actions"])
+            else None
+        ),
+        success_terminal_actions=(
+            SuccessTerminalActionBudget(
+                max_samples=int(args_dict["success_terminal_max_samples"]),
+                max_roots=int(args_dict["success_terminal_max_roots"]),
+                family_alpha=float(args_dict["success_terminal_family_alpha"]),
+            )
+            if bool(args_dict["success_terminal_actions"])
             else None
         ),
     )
@@ -176,9 +192,13 @@ def _run_seed(seed_number: int) -> dict[str, object]:
             **policy.counters.as_dict(),
             "run_seconds": time.perf_counter() - started,
         },
+        "search_decision_profile": _search_decision_profile(policy.decisions),
         "search_decisions": [decision.as_dict() for decision in policy.decisions]
         if bool(args_dict["record_decisions"])
         else [],
+        "success_teacher_decisions": [
+            decision.as_dict() for decision in policy.success_decisions
+        ],
         "strategy_shadow": _shadow_run_diagnostics(
             shadow,
             record_decisions=bool(args_dict["record_shadow_decisions"]),
@@ -188,6 +208,147 @@ def _run_seed(seed_number: int) -> dict[str, object]:
     if bool(args_dict["collect_teacher"]):
         row["_teacher_drafts"] = tuple(policy.teacher_drafts)
     return row
+
+
+def _validate_terminal_preregistration(
+    args: argparse.Namespace,
+    tuning: StrategyTuning,
+    *,
+    repository_root: Path,
+) -> dict[str, object] | None:
+    reserved = range(1055, 1075)
+    requested = range(args.seed_start, args.seed_start + args.seeds)
+    overlaps_reserved = requested.start < reserved.stop and reserved.start < requested.stop
+    path = args.terminal_preregistration_json
+    if path is None:
+        if overlaps_reserved:
+            raise SystemExit(
+                "seeds 1055-1074 require --terminal-preregistration-json"
+            )
+        return None
+    try:
+        raw = path.read_bytes()
+        spec = json.loads(raw)
+    except (OSError, json.JSONDecodeError) as exc:
+        raise SystemExit(f"invalid terminal preregistration: {exc}") from exc
+    if not isinstance(spec, dict):
+        raise SystemExit("terminal preregistration root must be an object")
+    if (
+        spec.get("protocol_id") != "terminal-actions-development-v1"
+        or spec.get("status") != "reserved"
+        or spec.get("single_use") is not True
+    ):
+        raise SystemExit("terminal preregistration is not the reserved protocol")
+    expected_top = {
+        "seed_start": args.seed_start,
+        "seeds": args.seeds,
+        "seed_provenance": args.seed_provenance,
+        "deck": args.deck,
+        "stake": args.stake,
+    }
+    for key, actual in expected_top.items():
+        if spec.get(key) != actual:
+            raise SystemExit(f"terminal preregistration mismatch: {key}")
+    base = spec.get("base_search")
+    terminal = spec.get("terminal_actions")
+    if not isinstance(base, dict) or not isinstance(terminal, dict):
+        raise SystemExit("terminal preregistration omitted search budgets")
+    expected_base = {
+        "samples": args.samples,
+        "horizon_antes": args.horizon_antes,
+        "max_steps": args.max_steps,
+        "override_z": args.override_z,
+        "max_decisions": args.max_decisions,
+        "ante_cap": args.ante_cap,
+        "workers": args.workers,
+        "nonce": args.nonce,
+        "continuation": args.continuation,
+        "policy_seed": args.policy_seed,
+        "strategy_options": args.strategy_options,
+        "include_reorders": args.include_reorders,
+    }
+    expected_terminal = {
+        "success_teacher_samples": args.success_teacher_samples,
+        "success_teacher_start_ante": args.success_teacher_start_ante,
+        "success_teacher_endless_antes": args.success_teacher_endless_antes,
+        "success_teacher_max_steps": args.success_teacher_max_steps,
+        "success_terminal_max_samples": args.success_terminal_max_samples,
+        "success_terminal_max_roots": args.success_terminal_max_roots,
+        "success_terminal_family_alpha": args.success_terminal_family_alpha,
+    }
+    if base != expected_base or terminal != expected_terminal:
+        raise SystemExit("terminal preregistration search budget mismatch")
+    if spec.get("strategy_tuning") != json.loads(tuning.canonical_json()):
+        raise SystemExit("terminal preregistration strategy tuning mismatch")
+    if args.success_teacher or args.strategy_shadow_model is not None:
+        raise SystemExit("terminal preregistration forbids teacher and shadow modes")
+    mode = "candidate" if args.success_terminal_actions else "baseline"
+    report_field = f"{mode}_report"
+    declared_report = spec.get(report_field)
+    if not isinstance(declared_report, str) or args.report_json is None:
+        raise SystemExit("terminal preregistration requires its declared report path")
+    if args.report_json.resolve() != (repository_root / declared_report).resolve():
+        raise SystemExit(f"terminal preregistration mismatch: {report_field}")
+    return {
+        "protocol_id": spec["protocol_id"],
+        "sha256": hashlib.sha256(raw).hexdigest(),
+        "mode": mode,
+        "single_use": True,
+        "declared_report": declared_report,
+        "implementation_revision": spec.get("implementation_revision"),
+        "expected_source_digest": spec.get("expected_source_digest"),
+        "candidate_runtime": spec.get("candidate_runtime"),
+        "backend": spec.get("backend"),
+    }
+
+
+def _verify_terminal_freeze(
+    binding: dict[str, object] | None,
+    *,
+    repository_revision: str,
+    source_digest: str,
+    repository_dirty: bool,
+    candidate_runtime: dict[str, object],
+    backend: dict[str, object],
+    repository_root: Path,
+) -> None:
+    if binding is None:
+        return
+    implementation_revision = binding.get("implementation_revision")
+    expected_source_digest = binding.get("expected_source_digest")
+    if (
+        not isinstance(implementation_revision, str)
+        or len(implementation_revision) != 40
+        or not isinstance(expected_source_digest, str)
+        or len(expected_source_digest) != 64
+    ):
+        raise SystemExit("terminal preregistration source freeze is incomplete")
+    if repository_dirty or source_digest != expected_source_digest:
+        raise SystemExit("terminal run does not match preregistered clean source")
+    if candidate_runtime != binding.get("candidate_runtime"):
+        raise SystemExit("terminal run changed preregistered candidate runtime")
+    if backend != binding.get("backend"):
+        raise SystemExit("terminal run changed preregistered backend")
+    if repository_revision == implementation_revision:
+        raise SystemExit("terminal preregistration was not committed after implementation")
+    try:
+        subprocess.run(
+            ["git", "merge-base", "--is-ancestor", implementation_revision, repository_revision],
+            cwd=repository_root,
+            check=True,
+            capture_output=True,
+        )
+        changed = subprocess.run(
+            ["git", "diff", "--name-only", implementation_revision, repository_revision],
+            cwd=repository_root,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.splitlines()
+    except (OSError, subprocess.CalledProcessError) as exc:
+        raise SystemExit("cannot verify terminal implementation ancestry") from exc
+    if set(changed) != {"experiments/terminal-actions-v6-preregistration.json"}:
+        raise SystemExit("terminal preregistration commit changed implementation source")
 
 
 def main() -> None:
@@ -206,16 +367,35 @@ def main() -> None:
         args.success_teacher_start_ante,
         args.success_teacher_endless_antes,
         args.success_teacher_max_steps,
+        args.success_terminal_max_samples,
+        args.success_terminal_max_roots,
     ) < 1:
         raise SystemExit("decision, worker, and teacher budgets must be positive")
-    if args.include_reorders and not (args.strategy_options or args.success_teacher):
+    if args.include_reorders and not (
+        args.strategy_options or args.success_teacher or args.success_terminal_actions
+    ):
         raise SystemExit("--include-reorders requires a strategy root consumer")
+    if args.success_teacher and args.success_terminal_actions:
+        raise SystemExit(
+            "--success-teacher and --success-terminal-actions are mutually exclusive"
+        )
     if args.teacher_jsonl is not None and not (
-        args.strategy_options or args.success_teacher
+        args.strategy_options or args.success_teacher or args.success_terminal_actions
     ):
         raise SystemExit("--teacher-jsonl requires strategy options or success teacher")
     if args.success_teacher and args.teacher_jsonl is None:
         raise SystemExit("--success-teacher requires --teacher-jsonl")
+    if args.success_terminal_actions:
+        if args.teacher_jsonl is not None:
+            raise SystemExit("terminal action mode cannot emit teacher JSONL")
+        if args.strategy_shadow_model is not None:
+            raise SystemExit("terminal action mode cannot load a shadow model")
+        if args.seed_provenance != "development":
+            raise SystemExit("terminal action mode is development-only")
+        if not 0.0 < args.success_terminal_family_alpha < 1.0:
+            raise SystemExit("terminal action family alpha must be in (0, 1)")
+        if args.success_teacher_samples > args.success_terminal_max_samples:
+            raise SystemExit("initial terminal samples exceed the action sample cap")
     if args.teacher_jsonl is not None and args.report_json is None:
         raise SystemExit("--teacher-jsonl requires --report-json for provenance")
     if args.teacher_jsonl is not None and args.strategy_shadow_model is not None:
@@ -264,6 +444,9 @@ def main() -> None:
         tuning = StrategyTuning.from_json(args.tuning_json)
     except ValueError as exc:
         raise SystemExit(f"invalid --tuning-json: {exc}") from exc
+    terminal_preregistration = _validate_terminal_preregistration(
+        args, tuning, repository_root=root
+    )
     _, continuation_name = build_public_baseline(
         args.continuation, args.policy_seed, tuning
     )
@@ -273,20 +456,33 @@ def main() -> None:
         max_steps=args.max_steps,
         override_z=args.override_z,
     )
-    success_teacher_mode = (
+    success_budget = (
         SuccessTeacherBudget(
             samples=args.success_teacher_samples,
             prewin_start_ante=args.success_teacher_start_ante,
             endless_horizon_antes=args.success_teacher_endless_antes,
             max_steps=args.success_teacher_max_steps,
+        )
+        if args.success_teacher or args.success_terminal_actions
+        else None
+    )
+    success_teacher_mode = (
+        success_budget.canonical() if success_budget is not None else "disabled"
+    )
+    success_action_mode = (
+        SuccessTerminalActionBudget(
+            max_samples=args.success_terminal_max_samples,
+            max_roots=args.success_terminal_max_roots,
+            family_alpha=args.success_terminal_family_alpha,
         ).canonical()
-        if args.success_teacher
+        if args.success_terminal_actions
         else "disabled"
     )
     strategy_mode = (
         f"strategy_options={args.strategy_options};"
         f"include_reorders={args.include_reorders};"
-        f"success_teacher={success_teacher_mode}"
+        f"success_teacher={success_teacher_mode};"
+        f"success_terminal_actions={success_action_mode}"
     )
     shadow_mode = f"strategy_shadow={shadow_digest or 'disabled'}"
     policy_name = (
@@ -317,10 +513,14 @@ def main() -> None:
         "record_shadow_decisions": args.record_shadow_decisions,
         "collect_teacher": args.teacher_jsonl is not None,
         "success_teacher": args.success_teacher,
+        "success_terminal_actions": args.success_terminal_actions,
         "success_teacher_samples": args.success_teacher_samples,
         "success_teacher_start_ante": args.success_teacher_start_ante,
         "success_teacher_endless_antes": args.success_teacher_endless_antes,
         "success_teacher_max_steps": args.success_teacher_max_steps,
+        "success_terminal_max_samples": args.success_terminal_max_samples,
+        "success_terminal_max_roots": args.success_terminal_max_roots,
+        "success_terminal_family_alpha": args.success_terminal_family_alpha,
     }
     seeds = list(range(args.seed_start, args.seed_start + args.seeds))
     started = time.perf_counter()
@@ -354,6 +554,16 @@ def main() -> None:
             results, elapsed=elapsed, terminal_reasons=terminal_reasons
         )
         summary["search"] = _search_summary(results)
+        summary["success_teacher_profile"] = _success_teacher_profile(
+            results,
+            mode=(
+                "actions"
+                if args.success_terminal_actions
+                else "collect"
+                if args.success_teacher
+                else "disabled"
+            ),
+        )
         summary["strategy"] = summarize_strategy_results(results)
         summary["strategy_shadow"] = _shadow_summary(results)
         manifest = build_manifest(
@@ -374,6 +584,72 @@ def main() -> None:
                 f"workers={args.workers};ante_cap={args.ante_cap}"
             ),
         )
+        _verify_terminal_freeze(
+            terminal_preregistration,
+            repository_revision=manifest.repository_revision,
+            source_digest=manifest.source_digest,
+            repository_dirty=manifest.repository_dirty,
+            candidate_runtime=candidate_runtime,
+            backend=asdict(metadata_backend.metadata),
+            repository_root=root,
+        )
+        success_protocol = {
+            "enabled": args.success_teacher or args.success_terminal_actions,
+            "mode": (
+                "actions"
+                if args.success_terminal_actions
+                else "collect"
+                if args.success_teacher
+                else "disabled"
+            ),
+            "affects_actions": args.success_terminal_actions,
+            "emits_teacher_rows": args.success_teacher,
+            "samples": args.success_teacher_samples,
+            "prewin_start_ante": args.success_teacher_start_ante,
+            "endless_horizon_antes": args.success_teacher_endless_antes,
+            "max_steps": args.success_teacher_max_steps,
+            "anchor_schedule": (
+                "first_shop_each_ante;first_pack_each_ante_from_ante4;"
+                "boss_select_ante5_plus;postwin_first_shop_and_pack_each_ante"
+            ),
+            "endpoint_semantics": (
+                "victory_or_death_exact;endless_fixed_horizon;"
+                "censored_never_exact;no_public_progress_inadmissible_for_actions"
+            ),
+            "terminal_action_budget": (
+                json.loads(json.dumps(asdict(
+                    SuccessTerminalActionBudget(
+                        max_samples=args.success_terminal_max_samples,
+                        max_roots=args.success_terminal_max_roots,
+                        family_alpha=args.success_terminal_family_alpha,
+                    )
+                )))
+                if args.success_terminal_actions
+                else None
+            ),
+            "terminal_action_selector": (
+                "root_adjusted_one_sided_sign;zero_adverse_discordances;"
+                "victory=exact_win;endless=alive,ante,log_score;"
+                "ties_inert;root_overflow=fail_closed_without_truncation;"
+                "fallback=exact_behavior_identity"
+                if args.success_terminal_actions
+                else None
+            ),
+            "sample_nonce_stream": f"{args.nonce}:success-terminal-v1",
+            "root_builder": SEARCH_VERSION,
+            "counter_semantics": (
+                "attempted=all_scheduled_anchors;completed=no_fallback;"
+                "fallback=action_mode_exact_behavior_fallback;"
+                "unavailable=subset_of_fallback_without_valid_evaluation"
+            ),
+        }
+        success_protocol["protocol_digest"] = hashlib.sha256(
+            json.dumps(
+                success_protocol,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode()
+        ).hexdigest()
         payload = {
             "candidate_only": True,
             "candidate_runtime": candidate_runtime,
@@ -381,6 +657,7 @@ def main() -> None:
             "search_protocol": {
                 "version": SEARCH_VERSION,
                 "continuation": continuation_name,
+                "policy_seed": args.policy_seed,
                 "budget": json.loads(json.dumps(asdict(budget))),
                 "nonce": args.nonce,
                 "phases": ["BLIND_SELECT", "PACK", "SHOP"],
@@ -398,21 +675,10 @@ def main() -> None:
                     if args.strategy_options
                     else "legacy_scalar_progress"
                 ),
-                "success_teacher": {
-                    "enabled": args.success_teacher,
-                    "affects_actions": False,
-                    "samples": args.success_teacher_samples,
-                    "prewin_start_ante": args.success_teacher_start_ante,
-                    "endless_horizon_antes": args.success_teacher_endless_antes,
-                    "max_steps": args.success_teacher_max_steps,
-                    "anchor_schedule": (
-                        "first_shop_each_ante;first_pack_each_ante_from_ante4;"
-                        "boss_select_ante5_plus;postwin_first_shop_and_pack_each_ante"
-                    ),
-                    "endpoint_semantics": "victory_or_death_exact;endless_fixed_horizon;censored_never_exact",
-                },
+                "success_teacher": success_protocol,
             },
             "strategy_tuning": json.loads(tuning.canonical_json()),
+            "terminal_action_preregistration": terminal_preregistration,
             "strategy_model_shadow": {
                 "enabled": shadow_digest is not None,
                 "artifact_digest": shadow_digest,
@@ -453,12 +719,176 @@ def main() -> None:
         print(json.dumps({"summary": summary}, sort_keys=True))
         if args.report_json is not None:
             args.report_json.parent.mkdir(parents=True, exist_ok=True)
-            with args.report_json.open("x", encoding="utf-8") as handle:
-                handle.write(encoded + "\n")
+            _publish_json_exclusive(args.report_json, encoded + "\n")
         if sum(bool(row["complete"]) for row in results) != len(results):
             raise SystemExit(2)
     except JackdawUnavailable as exc:
         raise SystemExit(f"Jackdaw candidate unavailable: {exc}") from exc
+
+
+def _publish_json_exclusive(path: Path, encoded: str) -> None:
+    """Atomically publish a complete report without replacing any prior evidence."""
+
+    descriptor, temporary_name = tempfile.mkstemp(
+        dir=path.parent, prefix=f".{path.name}.", suffix=".tmp"
+    )
+    temporary = Path(temporary_name)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            handle.write(encoded)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.link(temporary, path)
+    except FileExistsError as exc:
+        raise SystemExit(f"refusing to overwrite existing output: {path}") from exc
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def _distribution(values: list[float]) -> dict[str, float]:
+    if not values:
+        return {"p50": 0.0, "p90": 0.0, "p99": 0.0, "max": 0.0}
+    ordered = sorted(values)
+
+    def percentile(fraction: float) -> float:
+        return ordered[max(0, math.ceil(fraction * len(ordered)) - 1)]
+
+    return {
+        "p50": percentile(0.50),
+        "p90": percentile(0.90),
+        "p99": percentile(0.99),
+        "max": ordered[-1],
+    }
+
+
+def _search_decision_profile(decisions: list[SearchDecision]) -> dict[str, object]:
+    if not decisions:
+        return {
+            "decisions": 0,
+            "seconds": _distribution([]),
+            "roots": _distribution([]),
+            "steps": _distribution([]),
+            "slowest": None,
+        }
+    slowest = max(decisions, key=lambda decision: decision.seconds)
+    return {
+        "decisions": len(decisions),
+        "seconds": _distribution([decision.seconds for decision in decisions]),
+        "roots": _distribution([float(decision.roots) for decision in decisions]),
+        "steps": _distribution([float(decision.steps) for decision in decisions]),
+        "slowest": {
+            "phase": slowest.phase,
+            "ante": slowest.ante,
+            "roots": slowest.roots,
+            "steps": slowest.steps,
+            "seconds": slowest.seconds,
+        },
+    }
+
+
+def _success_teacher_profile(
+    results: list[dict[str, object]], *, mode: str
+) -> dict[str, object]:
+    records: list[tuple[int, int, dict[str, object]]] = []
+    for row in results:
+        raw_decisions = row.get("success_teacher_decisions", [])
+        if isinstance(raw_decisions, list):
+            records.extend(
+                (int(row["seed"]), index, decision)
+                for index, decision in enumerate(raw_decisions)
+                if isinstance(decision, dict)
+            )
+    decisions = [record[2] for record in records]
+    endpoints: Counter[str] = Counter()
+    fallback_reasons: Counter[str] = Counter()
+    for decision in decisions:
+        raw_endpoints = decision.get("endpoint_counts")
+        if isinstance(raw_endpoints, dict):
+            endpoints.update(
+                {
+                    str(key): int(value)
+                    for key, value in raw_endpoints.items()
+                    if isinstance(value, int | float)
+                }
+            )
+        reason = decision.get("fallback_reason")
+        if isinstance(reason, str):
+            fallback_reasons[reason] += 1
+    slowest = (
+        max(records, key=lambda record: float(record[2].get("seconds", 0.0)))
+        if records
+        else None
+    )
+    total_steps = sum(int(decision.get("steps", 0)) for decision in decisions)
+    total_seconds = sum(
+        float(decision.get("seconds", 0.0)) for decision in decisions
+    )
+    counter_steps = sum(
+        int(search.get("success_teacher_steps", 0))
+        for row in results
+        if isinstance((search := row.get("search")), dict)
+    )
+    counter_seconds = sum(
+        float(search.get("success_teacher_seconds", 0.0))
+        for row in results
+        if isinstance((search := row.get("search")), dict)
+    )
+    return {
+        "mode": mode,
+        "decisions": len(decisions),
+        "roots": _distribution(
+            [float(decision.get("roots", 0)) for decision in decisions]
+        ),
+        "steps": _distribution(
+            [float(decision.get("steps", 0)) for decision in decisions]
+        ),
+        "seconds": _distribution(
+            [float(decision.get("seconds", 0.0)) for decision in decisions]
+        ),
+        "sample_evaluations": _distribution(
+            [float(decision.get("sample_evaluations", 0)) for decision in decisions]
+        ),
+        "max_root_cumulative_steps": _distribution(
+            [
+                float(decision.get("max_root_cumulative_steps", 0))
+                for decision in decisions
+            ]
+        ),
+        "steps_per_second": _distribution(
+            [
+                float(decision.get("steps", 0)) / seconds
+                for decision in decisions
+                if (seconds := float(decision.get("seconds", 0.0))) > 0.0
+            ]
+        ),
+        "endpoint_counts": dict(endpoints),
+        "fallback_reasons": dict(fallback_reasons),
+        "slowest": (
+            {
+                "seed": slowest[0],
+                "decision_index": slowest[1],
+                "phase": slowest[2].get("phase"),
+                "ante": slowest[2].get("ante"),
+                "roots": slowest[2].get("roots"),
+                "sample_evaluations": slowest[2].get("sample_evaluations"),
+                "steps": slowest[2].get("steps"),
+                "seconds": slowest[2].get("seconds"),
+                "fallback_reason": slowest[2].get("fallback_reason"),
+            }
+            if slowest is not None
+            else None
+        ),
+        "counter_reconciliation": {
+            "decision_steps": total_steps,
+            "counter_steps": counter_steps,
+            "steps_match": total_steps == counter_steps,
+            "decision_seconds": total_seconds,
+            "counter_seconds": counter_seconds,
+            "seconds_match": math.isclose(
+                total_seconds, counter_seconds, rel_tol=1e-12, abs_tol=1e-9
+            ),
+        },
+    }
 
 
 def _search_summary(results: list[dict[str, object]]) -> dict[str, float]:
@@ -477,6 +907,15 @@ def _search_summary(results: list[dict[str, object]]) -> dict[str, float]:
             "run_seconds",
             "success_teacher_steps",
             "success_teacher_rejected_rollouts",
+            "success_teacher_seconds",
+            "success_anchors_attempted",
+            "success_anchors_completed",
+            "success_anchor_fallbacks",
+            "success_anchor_unavailable",
+            "success_anchor_unsupported",
+            "success_teacher_censored_rollouts",
+            "success_action_overrides",
+            "success_intent_only_overrides",
         ):
             totals[key] += float(search[key])
     runs = max(1, len(results))
@@ -676,10 +1115,15 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--record-shadow-decisions", action="store_true")
     parser.add_argument("--teacher-jsonl", type=Path)
     parser.add_argument("--success-teacher", action="store_true")
+    parser.add_argument("--success-terminal-actions", action="store_true")
     parser.add_argument("--success-teacher-samples", type=int, default=2)
     parser.add_argument("--success-teacher-start-ante", type=int, default=4)
     parser.add_argument("--success-teacher-endless-antes", type=int, default=2)
     parser.add_argument("--success-teacher-max-steps", type=int, default=600)
+    parser.add_argument("--success-terminal-max-samples", type=int, default=12)
+    parser.add_argument("--success-terminal-max-roots", type=int, default=64)
+    parser.add_argument("--success-terminal-family-alpha", type=float, default=0.05)
+    parser.add_argument("--terminal-preregistration-json", type=Path)
     parser.add_argument("--strategy-options", action="store_true")
     parser.add_argument("--include-reorders", action="store_true")
     parser.add_argument(
