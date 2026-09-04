@@ -23,9 +23,9 @@ def _load_script():
 def test_candidate_baseline_reports_ante_six_survival_metric() -> None:
     module = _load_script()
     results = [
-        {"complete": True, "won": False, "antes_cleared": 5, "survived_to_ante_6": True, "ante": 6, "round": 17, "decisions": 10},
-        {"complete": True, "won": True, "antes_cleared": 8, "survived_to_ante_6": True, "ante": 9, "round": 24, "decisions": 20},
-        {"complete": True, "won": False, "antes_cleared": 3, "survived_to_ante_6": False, "ante": 4, "round": 12, "decisions": 8},
+        {"complete": True, "won": False, "antes_cleared": 5, "survived_to_ante_6": True, "ante": 6, "round": 17, "decisions": 10, "best_hand_score": 100},
+        {"complete": True, "won": True, "antes_cleared": 8, "survived_to_ante_6": True, "ante": 9, "round": 24, "decisions": 20, "best_hand_score": 1000},
+        {"complete": True, "won": False, "antes_cleared": 3, "survived_to_ante_6": False, "ante": 4, "round": 12, "decisions": 8, "best_hand_score": 10},
     ]
 
     summary = module.summarize_results(
@@ -37,6 +37,10 @@ def test_candidate_baseline_reports_ante_six_survival_metric() -> None:
     assert summary["survival_to_ante_6_rate"] == 2 / 3
     assert summary["mean_antes_cleared"] == 16 / 3
     assert summary["antes_cleared_deciles"]["p50"] == 5
+    assert summary["maximum_ante"] == 9
+    assert summary["best_hand_score"] == 1000
+    assert summary["max_log10_best_hand_score"] == 3
+    assert summary["mean_log10_best_hand_score"] == 2
 
 
 def test_candidate_baseline_cli_has_only_public_control_policies() -> None:
@@ -47,6 +51,8 @@ def test_candidate_baseline_cli_has_only_public_control_policies() -> None:
     assert args.policy == "greedy"
     assert args.policy_timeout == 5.0
     assert args.tuning_json == StrategyTuning().canonical_json()
+    assert args.seed_provenance == "development"
+    assert args.seed_start == 901
     assert not hasattr(args, "model")
     assert not hasattr(args, "search")
 
@@ -65,6 +71,35 @@ def test_candidate_baseline_cli_supports_tuning_fitness_output() -> None:
     args = parser.parse_args(["--policy", "strategic", "--fitness-only"])
 
     assert args.fitness_only is True
+
+
+def test_candidate_baseline_rejects_panel_before_backend_work(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_script()
+    monkeypatch.setattr(
+        module.sys,
+        "argv",
+        [
+            "evaluate_candidate_baselines.py",
+            "--policy",
+            "greedy",
+            "--seed-start",
+            "1",
+            "--seeds",
+            "20",
+            "--seed-provenance",
+            "development",
+        ],
+    )
+    monkeypatch.setattr(
+        module,
+        "verify_jackdaw_runtime",
+        lambda: pytest.fail("backend verification must not run"),
+    )
+
+    with pytest.raises(SystemExit, match="overlaps protected tuning"):
+        module.main()
 
 
 def test_terminal_projection_persists_public_loss_context() -> None:

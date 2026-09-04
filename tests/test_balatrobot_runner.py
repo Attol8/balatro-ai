@@ -52,7 +52,9 @@ class FakeClient:
     def gamestate(self):
         self.calls.append(("gamestate", None))
         if not self.polls:
-            return deepcopy(self.action_result if self.action_result is not None else self.initial)
+            return deepcopy(
+                self.action_result if self.action_result is not None else self.initial
+            )
         return self.polls.popleft()
 
     def call_action(self, method, params):
@@ -180,7 +182,9 @@ def test_backend_keeps_settling_an_established_empty_shop() -> None:
     for name in ("packs", "vouchers"):
         initial[name]["cards"] = []
         initial[name]["count"] = 0
-    initial["consumables"]["cards"] = [item_card("c_mercury", card_id=30, kind="PLANET")]
+    initial["consumables"]["cards"] = [
+        item_card("c_mercury", card_id=30, kind="PLANET")
+    ]
     initial["consumables"]["count"] = 1
     empty = deepcopy(initial)
     empty["shop"]["cards"] = []
@@ -270,6 +274,7 @@ def test_runner_passes_only_public_observation_and_completes_real_terminal() -> 
 def test_runner_summarizes_accepted_card_actions() -> None:
     initial = state("SELECTING_HAND")
     terminal = state("GAME_OVER")
+    terminal["round"]["chips"] = 777
     client = FakeClient(initial, polls=[initial, terminal], action_result=terminal)
     backend = BalatroBotBackend(client, settle_poll_delay=0)  # type: ignore[arg-type]
 
@@ -278,6 +283,7 @@ def test_runner_summarizes_accepted_card_actions() -> None:
     )
 
     assert result.action_counts == (("play_cards", 1),)
+    assert result.best_hand_score == 777
     assert result.cards_played == 3
     assert result.cards_discarded == 0
 
@@ -304,6 +310,24 @@ def test_runner_recognizes_terminal_on_final_allowed_decision() -> None:
     assert result.complete
     assert result.terminal_reason == "game_over"
     assert result.decisions == 1
+
+
+def test_runner_surfaces_bounded_policy_error_diagnostics() -> None:
+    class FailingPolicy:
+        def choose_action(self, observation, legal_actions, history):
+            raise RuntimeError("public policy failure")
+
+    initial = state()
+    client = FakeClient(initial, polls=[initial])
+    backend = BalatroBotBackend(client, settle_poll_delay=0)  # type: ignore[arg-type]
+
+    result = AuthorityRunner(backend, FailingPolicy(), max_decisions=1).run(  # type: ignore[arg-type]
+        RunSpec("RED", "WHITE", "1")
+    )
+
+    assert not result.complete
+    assert result.terminal_reason == "policy_error"
+    assert result.terminal_error == "RuntimeError: public policy failure"
 
 
 def test_runner_continues_from_win_into_endless() -> None:
@@ -358,7 +382,9 @@ def test_decision_limit_is_never_complete() -> None:
     client = FakeClient(initial, polls=[initial, selecting], action_result=selecting)
     backend = BalatroBotBackend(client, settle_poll_delay=0)  # type: ignore[arg-type]
 
-    result = AuthorityRunner(backend, NoBuySmokePolicy(), max_decisions=1).run(RunSpec("RED", "WHITE", "1"))
+    result = AuthorityRunner(backend, NoBuySmokePolicy(), max_decisions=1).run(
+        RunSpec("RED", "WHITE", "1")
+    )
 
     assert not result.complete
     assert result.terminal_reason == "decision_limit"

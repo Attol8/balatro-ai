@@ -46,6 +46,31 @@ def test_public_observation_codec_rejects_boolean_integer() -> None:
         public_observation_from_data(data)
 
 
+def test_finite_scientific_scores_canonicalize_to_unbounded_public_integers() -> None:
+    raw = state("ROUND_EVAL")
+    raw["round"]["chips"] = 1e200
+    raw["blinds"]["small"]["score"] = 1e199
+    raw["hands"]["High Card"]["chips"] = 1e180
+
+    observation = to_public_observation(raw)
+
+    assert isinstance(observation.round.chips, int)
+    assert observation.round.chips > 10**199
+    assert public_observation_from_data(public_observation_to_data(observation)) == observation
+
+
+def test_non_integral_or_non_finite_scientific_scores_fail_closed() -> None:
+    non_integral = state("ROUND_EVAL")
+    non_integral["round"]["chips"] = 1.5
+    non_finite = state("ROUND_EVAL")
+    non_finite["blinds"]["small"]["score"] = float("inf")
+
+    with pytest.raises(Exception, match="finite integer"):
+        to_public_observation(non_integral)
+    with pytest.raises(Exception, match="finite integer"):
+        to_public_observation(non_finite)
+
+
 @pytest.mark.parametrize(
     ("ante", "used_vouchers", "expected"),
     [

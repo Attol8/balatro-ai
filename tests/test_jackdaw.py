@@ -70,7 +70,10 @@ def test_candidate_continues_winning_authority_trace_into_endless() -> None:
         assert endless.ante == 9
         assert endless.antes_cleared == 8
         assert endless.won
-        assert next(blind for blind in endless.blinds if blind.kind == "SMALL").score == 110_000
+        assert (
+            next(blind for blind in endless.blinds if blind.kind == "SMALL").score
+            == 110_000
+        )
     finally:
         backend.close()
 
@@ -83,7 +86,9 @@ def test_candidate_data_bootstrap_copies_missing_pinned_files(tmp_path) -> None:
     copied = jackdaw._ensure_jackdaw_data(module)
 
     installed = package / "engine" / "data"
-    assert {path.name for path in installed.glob("*.json")} == set(jackdaw._JACKDAW_DATA_HASHES)
+    assert {path.name for path in installed.glob("*.json")} == set(
+        jackdaw._JACKDAW_DATA_HASHES
+    )
     assert set(copied) == set(jackdaw._JACKDAW_DATA_HASHES)
     assert jackdaw._ensure_jackdaw_data(module) == ()
 
@@ -95,7 +100,9 @@ def test_candidate_data_bootstrap_rejects_existing_mismatch(tmp_path) -> None:
     (data / "centers.json").write_text("{}", encoding="utf-8")
     module = SimpleNamespace(__file__=str(package / "__init__.py"))
 
-    with pytest.raises(jackdaw.JackdawUnavailable, match="installed Jackdaw data hash mismatch"):
+    with pytest.raises(
+        jackdaw.JackdawUnavailable, match="installed Jackdaw data hash mismatch"
+    ):
         jackdaw._ensure_jackdaw_data(module)
 
 
@@ -174,7 +181,12 @@ def test_crimson_heart_round_end_clears_only_transient_joker_debuffs() -> None:
     backend._backend = SimpleNamespace(
         _gs={
             "blind": SimpleNamespace(name="Crimson Heart"),
-            "jokers": [transient, active_perishable, expired_perishable, nested_expired],
+            "jokers": [
+                transient,
+                active_perishable,
+                expired_perishable,
+                nested_expired,
+            ],
         }
     )
 
@@ -260,6 +272,24 @@ def test_economy_tag_money_is_deferred_until_the_next_action() -> None:
     assert backend._backend._gs["dollars"] == 126
     assert backend._pending_skip_dollars == 0
 
+
+def test_zero_dollar_economy_tag_is_a_valid_zero_payout() -> None:
+    backend = object.__new__(jackdaw.JackdawBackend)
+    backend._pending_skip_dollars = 0
+    backend._backend = SimpleNamespace(_gs={"dollars": 0})
+    before = {
+        "money": 0,
+        "blinds": {
+            "small": {"status": "DEFEATED", "tag_name": "Skip Tag"},
+            "big": {"status": "SELECT", "tag_name": "Economy Tag"},
+        },
+    }
+
+    assert backend._defer_economy_tag_dollars(before)
+    assert backend._backend._gs["dollars"] == 0
+    assert backend._pending_skip_dollars == 0
+
+
 def test_candidate_captures_boss_disabling_sale_before_handler_removes_joker() -> None:
     backend = object.__new__(jackdaw.JackdawBackend)
     blind = SimpleNamespace(name="The Wall", boss=True, disabled=False)
@@ -269,7 +299,7 @@ def test_candidate_captures_boss_disabling_sale_before_handler_removes_joker() -
             "jokers": [
                 SimpleNamespace(center_key="j_joker"),
                 SimpleNamespace(center_key="j_luchador"),
-            ]
+            ],
         }
     )
 
@@ -286,10 +316,34 @@ def test_candidate_captures_boss_disabling_sale_before_handler_removes_joker() -
 @pytest.mark.parametrize(
     ("name", "blind_chips", "discards_sub", "hands_sub", "expected"),
     [
-        ("The Water", 100, 3, None, {"discards_left": 3, "hands_left": 1, "chips": 100}),
-        ("The Needle", 100, None, 3, {"discards_left": 0, "hands_left": 4, "chips": 100}),
-        ("The Manacle", 100, None, None, {"discards_left": 0, "hands_left": 1, "chips": 100}),
-        ("The Wall", 100, None, None, {"discards_left": 0, "hands_left": 1, "chips": 50}),
+        (
+            "The Water",
+            100,
+            3,
+            None,
+            {"discards_left": 3, "hands_left": 1, "chips": 100},
+        ),
+        (
+            "The Needle",
+            100,
+            None,
+            3,
+            {"discards_left": 0, "hands_left": 4, "chips": 100},
+        ),
+        (
+            "The Manacle",
+            100,
+            None,
+            None,
+            {"discards_left": 0, "hands_left": 1, "chips": 100},
+        ),
+        (
+            "The Wall",
+            100,
+            None,
+            None,
+            {"discards_left": 0, "hands_left": 1, "chips": 50},
+        ),
         (
             "Violet Vessel",
             300,
@@ -365,7 +419,9 @@ def test_boss_disable_sale_compatibility_applies_special_boss_state(
         assert "forced_selection" not in playing_card.ability
 
 
-def test_boss_disable_sale_compatibility_reveals_face_down_state_and_crimson_marker() -> None:
+def test_boss_disable_sale_compatibility_reveals_face_down_state_and_crimson_marker() -> (
+    None
+):
     pytest.importorskip("jackdaw")
     from jackdaw.engine.blind import Blind
 
@@ -420,7 +476,11 @@ def test_bridge_normalization_preserves_candidate_round_timing() -> None:
     raw["cards"]["highlighted_limit"] = 0
     raw["cards"]["cards"][0]["set"] = "ENHANCED"
     raw["cards"]["cards"][0]["cost"] = {"buy": 0, "sell": 0}
-    raw["cards"]["cards"][0]["state"] = {"hidden": False, "debuff": False, "highlight": False}
+    raw["cards"]["cards"][0]["state"] = {
+        "hidden": False,
+        "debuff": False,
+        "highlight": False,
+    }
     raw["cards"]["cards"][0]["modifier"] = {"edition": None, "eternal": False}
     raw["cards"]["cards"][0]["value"].pop("ability")
     raw["shop"] = {"cards": [], "count": 0, "highlighted_limit": 0, "limit": 0}
@@ -450,8 +510,18 @@ def test_bridge_normalization_preserves_candidate_round_timing() -> None:
         "round_resets": {"hands": 4, "discards": 4},
     }
 
+    original_raw = json.loads(json.dumps(raw))
     normalized = jackdaw._normalize_jackdaw_bridge(raw, private)
+    owned_raw = json.loads(json.dumps(raw))
+    owned_normalized = jackdaw._normalize_jackdaw_bridge(
+        owned_raw,
+        private,
+        copy_raw=False,
+    )
 
+    assert raw == original_raw
+    assert owned_normalized is owned_raw
+    assert owned_normalized == normalized
     assert normalized["shop"]["cards"] == []
     assert normalized["vouchers"]["limit"] == 2
     assert normalized["cards"]["highlighted_limit"] == 5
@@ -465,7 +535,9 @@ def test_bridge_normalization_preserves_candidate_round_timing() -> None:
     assert "Flush Five" in normalized["hands"]
 
 
-def test_bridge_normalization_exposes_cerulean_forced_slot_from_empty_card_state() -> None:
+def test_bridge_normalization_exposes_cerulean_forced_slot_from_empty_card_state() -> (
+    None
+):
     raw = state("SELECTING_HAND")
     raw["blinds"]["small"]["status"] = "DEFEATED"
     raw["blinds"]["boss"].update(name="Cerulean Bell", status="CURRENT")
@@ -541,8 +613,12 @@ def test_card_value_normalization_drops_null_optional_fields() -> None:
 
 def test_swashbuckler_display_mult_tracks_other_owned_sell_values() -> None:
     owned = SimpleNamespace(center_key="j_joker", sell_cost=3, ability={})
-    owned_swash = SimpleNamespace(center_key="j_swashbuckler", sell_cost=2, ability={"mult": 1})
-    pack_swash = SimpleNamespace(center_key="j_swashbuckler", sell_cost=2, ability={"mult": 1})
+    owned_swash = SimpleNamespace(
+        center_key="j_swashbuckler", sell_cost=2, ability={"mult": 1}
+    )
+    pack_swash = SimpleNamespace(
+        center_key="j_swashbuckler", sell_cost=2, ability={"mult": 1}
+    )
     state = {
         "jokers": [owned, owned_swash],
         "shop_cards": [],
@@ -558,7 +634,9 @@ def test_swashbuckler_display_mult_tracks_other_owned_sell_values() -> None:
 def test_stencil_display_xmult_tracks_visible_joker_slots(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(jackdaw, "_jackdaw_center", lambda card: {"effect": "Hand Size Mult"})
+    monkeypatch.setattr(
+        jackdaw, "_jackdaw_center", lambda card: {"effect": "Hand Size Mult"}
+    )
     owned = [SimpleNamespace(center_key="j_joker", ability={}) for _ in range(5)]
     shop_stencil = SimpleNamespace(
         center_key="j_stencil", ability={"effect": "Hand Size Mult"}, edition=None
@@ -590,7 +668,9 @@ def test_stencil_display_xmult_tracks_visible_joker_slots(
     assert pack_stencil.ability["x_mult"] == 1
 
 
-def test_card_modifier_normalization_preserves_explicit_empty_effect(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_card_modifier_normalization_preserves_explicit_empty_effect(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setattr(
         jackdaw,
         "_jackdaw_center",
@@ -601,11 +681,15 @@ def test_card_modifier_normalization_preserves_explicit_empty_effect(monkeypatch
 
     jackdaw._apply_balatrobot_card_modifiers(
         explicit,
-        SimpleNamespace(center_key="j_throwback", ability={"effect": "", "x_mult": 1}, edition=None),
+        SimpleNamespace(
+            center_key="j_throwback", ability={"effect": "", "x_mult": 1}, edition=None
+        ),
     )
     jackdaw._apply_balatrobot_card_modifiers(
         absent,
-        SimpleNamespace(center_key="j_bull", ability={"effect": "", "x_mult": 1}, edition=None),
+        SimpleNamespace(
+            center_key="j_bull", ability={"effect": "", "x_mult": 1}, edition=None
+        ),
     )
 
     assert explicit == {"enhancement": ""}
@@ -620,7 +704,9 @@ def test_candidate_seed_one_shop_and_pack_compatibility() -> None:
     backend.step(DiscardCards(tuple(HandSlot(index) for index in (6, 7, 5, 3, 2))))
     backend.step(DiscardCards(tuple(HandSlot(index) for index in (5, 4, 3, 2))))
 
-    round_end = backend.step(PlayCards(tuple(HandSlot(index) for index in (0, 2, 3, 4, 6))))
+    round_end = backend.step(
+        PlayCards(tuple(HandSlot(index) for index in (0, 2, 3, 4, 6)))
+    )
     assert round_end.after is not None
     rolled_suit = round_end.after.observed.canonical["round"]["ancient_suit"]
     shop = backend.step(CashOut())
@@ -628,7 +714,9 @@ def test_candidate_seed_one_shop_and_pack_compatibility() -> None:
 
     assert rolled_suit == "S"
     assert shop.after.observed.canonical["round"]["ancient_suit"] == rolled_suit
-    assert shop.after.observed.canonical["packs"]["cards"][0]["key"] == "p_buffoon_normal"
+    assert (
+        shop.after.observed.canonical["packs"]["cards"][0]["key"] == "p_buffoon_normal"
+    )
 
     opened = backend.step(BuyPack(PackOfferSlot(1)))
     assert opened.after is not None
@@ -673,7 +761,10 @@ def test_candidate_seed_five_gold_shop_stickers_use_stake_modifiers() -> None:
             "Flush House",
         ]
         backend.configure_replay(
-            {"poker_hand_iteration_order": poker_hand_order, "hands": dict.fromkeys(poker_hand_order)}
+            {
+                "poker_hand_iteration_order": poker_hand_order,
+                "hands": dict.fromkeys(poker_hand_order),
+            }
         )
         backend.reset(RunSpec("RED", "GOLD", "5"))
         result = None
@@ -732,7 +823,8 @@ def test_candidate_hiker_permanent_bonus_survives_discard_serialization() -> Non
             assert result.after is not None
         assert result is not None and result.after is not None
         discard_values = [
-            card["value"] for card in result.after.observed.canonical["discard"]["cards"]
+            card["value"]
+            for card in result.after.observed.canonical["discard"]["cards"]
         ]
         assert any(value.get("perma_bonus") == 5 for value in discard_values)
     finally:
@@ -785,7 +877,9 @@ def test_candidate_seed_two_ante_pack_and_voucher_regression() -> None:
     boss_eval = states[16]
     assert boss_eval["ante_num"] == 2
     assert boss_eval["round"]["most_played_poker_hand"] == "Flush"
-    assert {key: boss_eval["blinds"][key]["status"] for key in ("small", "big", "boss")} == {
+    assert {
+        key: boss_eval["blinds"][key]["status"] for key in ("small", "big", "boss")
+    } == {
         "small": "DEFEATED",
         "big": "SKIPPED",
         "boss": "DEFEATED",
@@ -893,9 +987,12 @@ def test_replay_uses_authority_vm_order_for_to_do_list() -> None:
         assert result.after is not None
         observation = result.after
 
-    assert observation.observed.canonical["shop"]["cards"][1]["value"]["ability"][
-        "poker_hand"
-    ] == "Full House"
+    assert (
+        observation.observed.canonical["shop"]["cards"][1]["value"]["ability"][
+            "poker_hand"
+        ]
+        == "Full House"
+    )
 
 
 def test_boss_most_played_tie_uses_last_runtime_table_entry() -> None:
@@ -1065,7 +1162,9 @@ def test_observatory_compatibility_scores_before_deck_back(
     assert plasma == {"chips": plasma_value, "mult": plasma_value}
 
 
-def test_standard_pack_edition_reprices_playing_card(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_standard_pack_edition_reprices_playing_card(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     pytest.importorskip("jackdaw")
     from jackdaw.engine import packs
     from jackdaw.engine.card_factory import create_playing_card

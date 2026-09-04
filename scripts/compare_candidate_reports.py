@@ -5,9 +5,19 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import random
+import sys
 from pathlib import Path
 from typing import Any
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from balatro_ai_v2.evaluation_protocol import (
+    PanelValidationError,
+    SeedPanelValidation,
+    validate_seed_panel,
+)
 
 
 class ReportError(ValueError):
@@ -38,6 +48,10 @@ def compare_reports(baseline_path: Path, candidate_path: Path) -> dict[str, Any]
     candidate_seeds = [row["seed"] for row in candidate_results]
     if baseline_seeds != candidate_seeds:
         raise ReportError("reports do not have identical ordered seed panels")
+    baseline_panel = _validate_report_seed_panel(
+        baseline, baseline_results, baseline_path
+    )
+    _validate_report_seed_panel(candidate, candidate_results, candidate_path)
 
     rows: list[dict[str, Any]] = []
     counts = {
@@ -48,6 +62,11 @@ def compare_reports(baseline_path: Path, candidate_path: Path) -> dict[str, Any]
     }
     survival_deltas: list[int] = []
     ante_deltas: list[int] = []
+    log_score_deltas: list[float] = []
+    score_metrics_available = all(
+        "best_hand_score" in left and "best_hand_score" in right
+        for left, right in zip(baseline_results, candidate_results)
+    )
     for left, right in zip(baseline_results, candidate_results):
         baseline_win = _win(left)
         candidate_win = _win(right)
@@ -57,6 +76,16 @@ def compare_reports(baseline_path: Path, candidate_path: Path) -> dict[str, Any]
         baseline_antes = _antes_cleared(left)
         candidate_antes = _antes_cleared(right)
         ante_deltas.append(candidate_antes - baseline_antes)
+        baseline_score = _best_hand_score(left) if score_metrics_available else None
+        candidate_score = _best_hand_score(right) if score_metrics_available else None
+        baseline_log_score = (
+            math.log10(max(1, baseline_score)) if baseline_score is not None else None
+        )
+        candidate_log_score = (
+            math.log10(max(1, candidate_score)) if candidate_score is not None else None
+        )
+        if baseline_log_score is not None and candidate_log_score is not None:
+            log_score_deltas.append(candidate_log_score - baseline_log_score)
         if baseline_win and candidate_win:
             outcome = "both_win"
             counts["both_wins"] += 1
@@ -83,17 +112,37 @@ def compare_reports(baseline_path: Path, candidate_path: Path) -> dict[str, Any]
                 "candidate_antes_cleared": candidate_antes,
                 "candidate_survived_to_ante_6": candidate_survival,
                 "antes_cleared_delta": candidate_antes - baseline_antes,
+                "baseline_best_hand_score": baseline_score,
+                "candidate_best_hand_score": candidate_score,
+                "log10_best_hand_score_delta": (
+                    candidate_log_score - baseline_log_score
+                    if candidate_log_score is not None and baseline_log_score is not None
+                    else None
+                ),
                 "outcome": outcome,
             }
         )
     survival_interval = _bootstrap_mean_interval(survival_deltas)
     ante_interval = _bootstrap_mean_interval(ante_deltas)
+    log_score_interval = (
+        _bootstrap_mean_interval(log_score_deltas) if log_score_deltas else None
+    )
     baseline_survivals = sum(_survived(row) for row in baseline_results)
     candidate_survivals = sum(_survived(row) for row in candidate_results)
     baseline_wins = sum(row["baseline_win"] for row in rows)
     candidate_wins = sum(row["candidate_win"] for row in rows)
     baseline_mean_antes = sum(_antes_cleared(row) for row in baseline_results) / len(rows)
     candidate_mean_antes = sum(_antes_cleared(row) for row in candidate_results) / len(rows)
+    baseline_mean_log_score = (
+        sum(math.log10(max(1, _best_hand_score(row))) for row in baseline_results) / len(rows)
+        if score_metrics_available
+        else None
+    )
+    candidate_mean_log_score = (
+        sum(math.log10(max(1, _best_hand_score(row))) for row in candidate_results) / len(rows)
+        if score_metrics_available
+        else None
+    )
     return {
         "baseline": str(baseline_path),
         "candidate": str(candidate_path),
@@ -103,6 +152,7 @@ def compare_reports(baseline_path: Path, candidate_path: Path) -> dict[str, Any]
         "stake": baseline["manifest"]["run"]["stake"],
         "baseline_inference_budget": baseline["manifest"]["inference_budget"],
         "candidate_inference_budget": candidate["manifest"]["inference_budget"],
+        "seed_panel": baseline_panel.as_dict(),
         "runs": len(rows),
         "baseline_mean_antes_cleared": baseline_mean_antes,
         "candidate_mean_antes_cleared": candidate_mean_antes,
@@ -113,6 +163,27 @@ def compare_reports(baseline_path: Path, candidate_path: Path) -> dict[str, Any]
             "samples": 10_000,
             "seed": 0,
         },
+        "baseline_maximum_ante": max(int(row["ante"]) for row in baseline_results),
+        "candidate_maximum_ante": max(int(row["ante"]) for row in candidate_results),
+        "best_hand_score_metrics_available": score_metrics_available,
+        "best_hand_score_pair_coverage": len(log_score_deltas),
+        "baseline_mean_log10_best_hand_score": baseline_mean_log_score,
+        "candidate_mean_log10_best_hand_score": candidate_mean_log_score,
+        "paired_mean_log10_best_hand_score_delta": (
+            candidate_mean_log_score - baseline_mean_log_score
+            if candidate_mean_log_score is not None and baseline_mean_log_score is not None
+            else None
+        ),
+        "paired_log10_best_hand_score_delta_bootstrap_95": (
+            {
+                "lower": log_score_interval[0],
+                "upper": log_score_interval[1],
+                "samples": 10_000,
+                "seed": 0,
+            }
+            if log_score_interval is not None
+            else None
+        ),
         **counts,
         "baseline_wins": baseline_wins,
         "candidate_wins": candidate_wins,
@@ -174,6 +245,19 @@ def _check_compatible(left: dict[str, Any], right: dict[str, Any]) -> None:
         raise ReportError("candidate_runtime must be an object in both reports")
     if left_runtime != right_runtime:
         raise ReportError("incompatible candidate runtime")
+    left_protocol = left.get("benchmark_protocol")
+    right_protocol = right.get("benchmark_protocol")
+    if not isinstance(left_protocol, dict) or not isinstance(right_protocol, dict):
+        raise ReportError("benchmark_protocol must be an object in both reports")
+    for field in (
+        "category",
+        "seed_provenance",
+        "restart_selection",
+        "filtered_seeds",
+        "mods",
+    ):
+        if left_protocol.get(field) != right_protocol.get(field):
+            raise ReportError(f"incompatible benchmark protocol field: {field}")
     for name in ("deck", "stake", "seed"):
         left_run = left_manifest.get("run")
         right_run = right_manifest.get("run")
@@ -259,9 +343,32 @@ def _results(
             raise ReportError(f"report {path} results[{index}] has inconsistent survival metric")
         if value["won"] and not expected_survival:
             raise ReportError(f"report {path} results[{index}] marks a pre-Ante-6 run won")
+        if "best_hand_score" in value:
+            score = value["best_hand_score"]
+            if isinstance(score, bool) or not isinstance(score, int) or score < 0:
+                raise ReportError(f"report {path} results[{index}] has invalid best_hand_score")
         seen.add(seed)
         result.append(value)
     return result
+
+
+def _validate_report_seed_panel(
+    report: dict[str, Any], results: list[dict[str, Any]], path: Path
+) -> SeedPanelValidation:
+    protocol = report.get("benchmark_protocol")
+    if not isinstance(protocol, dict):
+        raise ReportError(f"report {path} has no benchmark_protocol object")
+    provenance = protocol.get("seed_provenance")
+    if not isinstance(provenance, str):
+        raise ReportError(f"report {path} has no declared seed provenance")
+    seeds = [row["seed"] for row in results]
+    expected = list(range(seeds[0], seeds[0] + len(seeds)))
+    if seeds != expected:
+        raise ReportError(f"report {path} results are not a contiguous ordered seed panel")
+    try:
+        return validate_seed_panel(seeds[0], len(seeds), provenance)
+    except PanelValidationError as exc:
+        raise ReportError(f"report {path} has invalid seed panel: {exc}") from exc
 
 
 def _win(result: dict[str, Any]) -> bool:
@@ -277,8 +384,14 @@ def _antes_cleared(result: dict[str, Any]) -> int:
     return int(result["antes_cleared"]) if result["complete"] else 0
 
 
+def _best_hand_score(result: dict[str, Any]) -> int:
+    """Read a validated public chip-delta metric."""
+
+    return int(result["best_hand_score"])
+
+
 def _bootstrap_mean_interval(
-    values: list[int],
+    values: list[int] | list[float],
     *,
     samples: int = 10_000,
     seed: int = 0,

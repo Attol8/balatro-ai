@@ -1,4 +1,4 @@
-# Superhuman Balatro at White Stake: Execution Plan
+# Fair Superhuman Balatro: Execution Plan
 
 This file is the single active instruction set. An agent picking up this
 project reads this file first, then `docs/plan-lab-notes.md` only for
@@ -12,21 +12,23 @@ retired it.
 
 ## Objective
 
-Build an agent that plays Red Deck at White Stake in real Balatro better
-than a strong human, using only information visible through the normal
-game interface, and continues into Endless to clear as many antes as it
-can.
+Build an agent that plays real Balatro better than strong humans using only
+information visible through the normal game interface. The final claim covers
+all standard decks at Gold Stake on evaluator-secret seeds. Red Deck at White
+Stake remains the current development track: it is where architecture and
+strength changes are rejected cheaply before graduating to Gold.
 
-Two numbers, in priority order:
+Per run, the objective is lexicographic:
 
-1. **Win rate**: fraction of runs that clear Ante 8. This is the
-   superhuman claim. Strong humans win White Stake most of the time.
-2. **Mean antes cleared** on paired evaluator-secret seeds, Endless
-   continued until death or the cap. This is the score. It never
-   saturates the way win rate does.
+1. **Win probability**: before the first win, clearing Ante 8 dominates every
+   Endless or score objective.
+2. **Endless progression**: after `won=true`, maximize ante reached and then
+   `log10(best_hand_score)` without changing the environment semantics.
 
-Gold Stake is deferred. Nothing in this plan targets stickers, faster
-scaling, or fewer discards. When White is beaten, Gold gets its own plan.
+Every report also keeps lower-tail survival, boss/build failure attribution,
+maximum ante, and best-hand score separate. Seeded, filtered, modded, restarted,
+or save-scummed high-score demonstrations are research inputs, never mixed with
+the fair frozen-agent benchmark.
 
 ## Why the plan was rescoped
 
@@ -107,15 +109,15 @@ These do not change. Any change to them is a new plan, not an edit.
 | Rollout value | Rounds cleared within the horizon, plus the fraction of the failed blind's requirement scored if the rollout died. Alive at the horizon scores the maximum. |
 | Continuation policy | The public-only policy that finishes rollouts. Today `PublicStrategicPolicy` in `balatro_ai_v2/baselines.py`. |
 | Control | The tagged, frozen policy every candidate is compared against. Today `control-v0`. |
-| Panel | A fixed contiguous seed range. Tuning 1-200, gate 501-700, authority is evaluator-secret. |
+| Panel | A fixed contiguous seed range. Tuning 1-200, replacement gate 701-900, authority is evaluator-secret. Seeds 501-700 are quarantined after prior adaptive use. |
 
-## Where we are (measured 2026-09-03, commit d085a5f)
+## Where we are (measured 2026-09-04, commit 58a34ca)
 
 | Quantity | Value |
 |---|---|
-| Control wins, gate panel 501-700 | 6/200 |
-| Control mean antes cleared, gate panel | 3.855 |
-| Control survival to Ante 6, gate panel | 52/200 |
+| Control wins, former 501-700 panel | 6/200 |
+| Control mean antes cleared, former 501-700 panel | 3.855 |
+| Control survival to Ante 6, former 501-700 panel | 52/200 |
 | Decisions per run, mean / max | 111 / 216 |
 | Wall time per run through policy boundary, one worker | 1.5 s |
 | Jackdaw clone + step | 3.5 ms |
@@ -129,6 +131,489 @@ Solid: public-information firewall, isolated policy process, Jackdaw
 lockstep replay with hash-chained traces, paired evaluator, Endless
 metric, Jackdaw fidelity fixes from organic authority replays. Not solid:
 strength.
+
+## Strategy architecture build (2026-09-04)
+
+The elite-play audit changes the next capability increment. The retained
+one-ante search is a useful survival teacher, but it cannot by itself express
+the multi-shop preparation, deck transformation, phase-specific copying, or
+post-win score growth used by strong Gold-stake and Endless players. Build the
+following public-only vertical slice before another large seed panel. This
+section supersedes the narrower leaf/parameter experiments below where they
+conflict.
+
+1. **Engine state.** Derive a typed, immutable `PublicEngineState` from
+   `PublicObservation`: scoring roles, trigger/copy relationships, deck
+   concentration and modifiers, economy/liabilities, consumable resources,
+   hand development, and boss vulnerabilities. It describes state and
+   capability; it must not contain private simulator data or hard-coded action
+   values.
+2. **Goal and intent.** Represent the lexicographic run goal explicitly:
+   before the first win, survival and Ante-8 win probability dominate; after
+   `won=true`, Endless ante and log-score growth dominate. Infer a bounded set
+   of revisable strategic intents such as stabilize, build economy, develop a
+   reliable hand, sculpt the deck, assemble a held-card or played-card
+   retrigger engine, exploit consumable generation, and prepare for a boss.
+3. **Options.** Add public strategy-option candidates above atomic actions.
+   An option proposes an intent and a legal first action; subsequent decisions
+   revalidate the public state and may continue, revise, or terminate the
+   intent. Options never bypass typed legality and never inject state.
+4. **Relational model.** Add a compositional public policy/value model over
+   card, Joker, consumable, voucher, blind, and action entities. Preserve
+   order and target relationships. Produce separate current-blind,
+   next-boss, Ante-8 win, Endless-ante, and log-score heads rather than one
+   scalar. Do not reuse the retired hashed GRU as the strategy model.
+5. **Search integration.** Keep the existing paired determinization and
+   fail-closed behavior. Allow search to compare option first actions and
+   phase-relevant reorders, carry public intent through continuation, and use
+   a lexicographic utility whose Endless terms cannot trade away an unearned
+   win. Model leaves are shadow-only until calibration passes on held-out
+   complete runs.
+6. **Diagnostics and expert fixtures.** Emit engine, intent, goal, boss-risk,
+   deck-sculpting, consumable, and option diagnostics. Add constructed
+   public-only expert decision vignettes for economy ordering, Blue Seals,
+   Tarot targeting, consumable holding, copy/retrigger order, and boss
+   preparation. These are capability tests, never promotion evidence.
+7. **Evaluation.** Report win rate, lower-tail survival, boss/build failures,
+   maximum ante, and `log10(best_hand_score)` separately. Keep seeded,
+   filtered, modded, or restart-selected high-score demonstrations outside the
+   fair benchmark. No tuning or gate panel runs until focused tests, the full
+   suite, firewall tests, and a diff review pass.
+
+Acceptance for this build:
+
+- every new feature is a pure function of typed public state/history;
+- hidden twins produce identical engine state, intents, options, model inputs,
+  and utility;
+- every option first action is present in the public legal-action set;
+- the pre-win utility cannot prefer a losing line because of Endless score;
+- `won=true` switches the objective without changing environment semantics;
+- expert vignettes cover every declared intent and fail on shuffled targets or
+  order where the mechanic is order-sensitive;
+- existing policy behavior remains available as the unchanged control;
+- focused tests and the complete suite pass before any game panel is started.
+
+Implementation status: the public engine projection, option/intent contract,
+goal-conditioned paired search mode, relational entity/action model, strict
+artifact format, shadow-only model wrapper, best-hand metric, and strategy
+diagnostics are built. The retained scalar search remains the default; strategy
+options, reorders, and model shadowing are explicit evaluator flags. No learned
+strategy artifact is promoted, and no tuning/gate panel may run until the new
+model is trained and calibrated on complete development-run splits. The focused
+strategy surface passes 120 tests and the complete repository passes 673 tests.
+Finite integral scientific-notation scores are retained as arbitrary-size public
+integers and encoded with bounded linear/log features; fractional and non-finite
+score values fail closed.
+
+## Relational expert-iteration increment (active 2026-09-04)
+
+The next increment turns the architecture into a measurable candidate without
+letting an uncalibrated model affect play. It does not consume the tuning panel
+`1-200`, replacement gate panel `701-900`, or evaluator-secret authority seeds.
+The former `501-700` gate is quarantined: saved reports show repeated adaptive
+candidate screens on `501-550`, including causal tuning on seeds 506 and 541,
+so its earlier "fresh gate" designation was false.
+
+1. **Teacher contract.** At each successful strategy-option search, retain the
+   canonical public observation, ordered typed option roots, public intent per
+   root, the selected root, and per-root/per-sample scalar outcome targets.
+   Attach eventual win, ante, and best-hand labels only after the originating
+   run completes. Dataset rows contain an opaque run group, never the seed,
+   private clone, RNG, raw state, save payload, or hidden identity. Any
+   incomplete originating run or rejected/truncated root invalidates its row.
+2. **Run-safe splits.** Split by complete opaque run before expanding decisions
+   or sibling roots. Use fixed train/calibration/untouched-holdout group lists
+   and record their digests. Weight records inversely by decisions in their
+   originating run so long trajectories cannot dominate.
+3. **Intent-conditioned model.** Encode the declared public strategy intent on
+   each option candidate so identical first actions with different continuation
+   purposes are distinguishable. Train policy ranking only from the teacher's
+   lexicographic decision. Train current-blind and next-boss survival from
+   rollout resolution targets, Ante-8 win from complete pre-win run outcomes,
+   and Endless ante/log-score only from complete post-win outcomes. Never
+   softmax a blended utility across lexicographic components.
+4. **Calibration artifact.** Fit temperatures for the three binary heads and
+   policy logits, biases/error radii for the two regression heads, and a
+   baseline-relative policy margin on calibration groups. Bind model/schema,
+   teacher/search/config/backend, dataset, split, trainer, normalizer, metric,
+   and calibration digests in the frozen artifact. Missing, extra, mismatched,
+   non-finite, or out-of-domain metadata fails closed.
+5. **Shadow gate.** On untouched complete runs report per-head Brier/log loss or
+   MAE/RMSE, option agreement, baseline-relative coverage, teacher regret, and
+   results by phase/ante. An advisor may recommend an action only when it is
+   still legal and clears the frozen calibration margin; every exception or
+   uncertainty returns the unchanged continuation. Point predictions do not
+   enter the lexicographic search value.
+6. **Bounded execution.** First prove the collector/trainer on synthetic and
+   organic fixtures. Then collect a preregistered pilot on development seeds
+   `901-912` using two samples, one-ante horizon, no reorders, and Red/White.
+   Split eight/two/two complete run groups. If coverage is sufficient, train
+   once and run shadow-only on development seeds `913-916`. The first shadow
+   attempt exposed those seeds but failed before report emission because the
+   evaluator referenced a retired decision field. Retire that block, repair
+   the reporter and its tests, and use fresh development seeds `921-924` for
+   the single replacement smoke. Record calibrated value-head predictions as
+   well as policy margins. Do not promote or launch a larger panel from this
+   pilot.
+
+Acceptance for this increment:
+
+- serialized teacher rows round-trip and contain no seed or private fields;
+- hidden twins yield identical model candidates and tensors;
+- every recorded candidate action is legal and every intent is an admitted
+  `StrategyIntent`;
+- no row crosses a run split and no incomplete/rejected row trains the model;
+- every loss/head is finite, separately reported, and masked by target
+  eligibility;
+- calibration parameters are learned on calibration groups only and frozen
+  before untouched holdout evaluation;
+- shadow recommendations never change the played action;
+- full tests, firewall tests, artifact reload, and diff review pass before the
+  bounded development pilot.
+
+Bounded-pilot result (2026-09-04): the collector wrote 290 complete-run-grouped
+decisions from all 12 development runs with zero rejected rollouts. The frozen
+30-epoch relational artifact reloads and is shadow-only. On its untouched
+two-run holdout, only next-boss Brier beat the train-only empirical baseline;
+policy agreement was 53.85% versus the baseline's 76.92%, and there were no
+Endless targets. All 580 selected-root current-blind samples were positive, so
+that head also had no class variation. The offline gate therefore failed and
+the model is forbidden from action or leaf influence. After retiring the failed `913-916` integration
+attempt, the replacement `921-924` shadow completed 4/4 runs, recorded all five
+value heads for 222/222 decisions, and had zero unavailable predictions. Its
+nine margin-clearing signals remain diagnostics, not playable recommendations.
+The next data collection must deliberately cover wins and post-win states and
+must improve every held-out head plus policy ranking before this lane can alter
+search.
+
+Diff-review correction: that first artifact is diagnostic-only for a stronger
+reason. `PublicStrategicPolicy` did not yet implement the option continuation
+contract, so different intent labels sharing a first action did not produce
+different rollout behavior. Add a stateless, distinct rollout fork and an
+intent-filtered public action method; have search use the active intent between
+strategic roots; bump the search protocol version; and prove fallback legality,
+fork isolation, hidden-twin equality, and multi-step intent use. Preserve the
+old dataset/model/report as failed evidence, retire their exposed seeds, and
+repeat the same bounded eight/two/two collection on fresh development seeds
+`925-936`, followed by shadow-only seeds `937-940` only if the new artifact
+reloads. No protected panel is authorized.
+
+The `925-936` v3 attempt failed closed before any rollout step because search
+passes the active intent into `fork_for_rollout`, while the new stateless fork
+omitted that argument. All 8,248 roots were rejected, the evaluator wrote zero
+teacher rows, and the entire panel is invalid. Retire both `925-936` and its
+unused companion block `937-940`; fix the exact interface contract and cover it
+with a production-continuation rollout test. Preregister fresh `941-952` for
+the replacement teacher and `953-956` for its conditional shadow smoke.
+
+The `941-952` replacement executed 86,474 rollout steps but one seed produced
+one rejected root, so the panel correctly wrote no teacher rows. A deterministic
+diagnostic replay tied it to an Ante-2 `deck_sculpt` pack line reaching a public
+selecting-hand state with legal discards but no playable hand; the legacy
+strategic heuristic raised instead of taking the legal discard. Fix that
+root cause with an organic legal-subset regression test. Retire `941-952` and
+unused `953-956`, then use fresh `957-968` and conditional `969-972` once.
+
+The `957-968` block had zero rejected rollouts across 102,420 steps, but only
+11/12 runs completed: seed 959 stopped after Jackdaw asserted that an Economy
+Tag must award positive dollars. A public diagnostic showed the valid edge
+case was `$0 -> $0`; doubling zero pays zero. Accept nonnegative Economy Tag
+deltas, surface bounded terminal policy errors in evaluator reports, and turn
+backend exceptions inside rollouts into explicit rejected outcomes. The same
+seed then completed organically to five antes with 15,892 rollout steps and
+zero rejections. Preserve the failed block, train nothing from it, and do not
+run its unused `969-972` shadow block. The next session may preregister fresh
+development `973-984` for a clean v3 teacher and `985-988` for conditional
+shadow; do not splice any prior run.
+
+The preregistered `973-984` v3 collection completed 12/12 runs and 80,517
+rollout steps, but the atomic collector discarded it because two seed-983
+`deck_sculpt` pack roots reached The Hook with an empty hand and no public
+play/discard action. This is the previously observed deck-exhaustion deadlock,
+not a malformed root: vanilla's draw function only forces `GAME_OVER` when the
+configured hand-size limit is zero, so neither the wrapper nor the continuation
+may invent a terminal phase or sell assets to mask it. Represent an observable
+selecting-hand deadlock as a resolved losing rollout with zero liveness, while
+retaining rejected status for exceptions and simulator faults. This changes
+teacher semantics, so bump the protocol to determinized-search-v4. Prove the
+distinction with direct rollout regressions and rerun seed 983 diagnostically.
+Retire `973-984` and its unused companion `985-988`; after the full suite and
+diff review pass, use fresh development `989-1000` for one clean v4 teacher
+collection and `1001-1004` for the conditional shadow smoke. No protected panel
+is authorized.
+
+Bounded v4 result: the fresh `989-1000` collection completed 12/12 runs with
+79,414 rollout steps, zero rejected roots, and 284 teacher decisions in 12
+opaque complete-run groups. The dataset SHA-256 is
+`aa82c5af5038a6db444e79c60d194ac860fe2f781219172076a18300edb319d7`.
+The frozen relational artifact SHA-256 is
+`67ae20a24abce0af805eb1898562fd228842807340cfcc060c18e9b7363b62d8`.
+Its untouched two-run holdout improves option agreement over the train-only
+empirical baseline (61.02% versus 55.56%) and improves next-boss Brier, but all
+three margin-clearing recommendations are wrong, the other heads do not beat
+their baselines, and the data contain no win or Endless targets. The gate fails;
+the artifact is shadow-only and cannot influence options, actions, or leaves.
+The preregistered `1001-1004` smoke completed 4/4 with zero rejected rollouts,
+finite predictions on 95/95 strategic decisions, zero unavailable predictions,
+and nine diagnostic margin signals. It explicitly records
+`affects_actions=false` and `authorizes_action_influence=false`. Do not run a
+protected panel for this artifact. The next learning collection must add actual
+win and post-win coverage before the value heads can be considered for leaf use.
+
+### Success-horizon expert iteration (active)
+
+The v4 result exposed a structural defect rather than merely a small dataset.
+Its teacher records carry per-candidate Ante-8, Endless, and score outcomes,
+but the trainer reads those heads from the action actually played by the source
+run. Buying longer rollouts without repairing that contract would discard the
+counterfactual signal. The next slice is therefore a shadow-teacher and
+action-conditioned learning correction, not a larger repetition of v4.
+
+Design sketch:
+
+1. **One candidate contract.** Search, teacher collection, and model shadowing
+   use one canonical builder for ordered `(public action, public intent)` roots.
+   The continuation's active intent and reorder setting are part of that
+   contract. Agreement means exact action-and-intent identity; action-only
+   agreement is insufficient.
+2. **Action-inert teacher.** The organic trajectory continues to use the frozen
+   retained behavior choice. At a fixed public-only anchor schedule, a separate
+   teacher evaluates every sibling root on paired determinizations and records
+   its preferred root without changing the played action or active intent.
+   Reports state `teacher_affects_actions=false`, and twin/control tests prove
+   byte-identical trajectories with the teacher enabled or disabled.
+3. **Success horizons.** Cheap one-ante labels remain available at ordinary
+   roots. The success teacher anchors at the first shop in each ante, the first
+   pack in each ante from Ante 4, boss selection from Ante 5, and the first
+   post-win shop and pack in each ante. Pre-win
+   roots from Ante 4 continue to win or death; post-win roots continue two more
+   antes or death. All siblings share the same sample blocks and sample count.
+   Step-cap and ante-cap endpoints are explicitly censored and never treated as
+   exact death or score labels.
+4. **Counterfactual heads.** Bump the teacher schema. Store target eligibility
+   and endpoint kind per root sample. Produce current-blind, next-boss, Ante-8,
+   Endless-ante, and log-score predictions per candidate, not per state. Train
+   only resolved targets and normalize each head independently so every
+   eligible source run has equal total weight. Policy ranking uses the complete
+   paired root outcome ordering instead of silently substituting the played-run
+   result.
+5. **Honest acquisition.** All rows from a source run share one opaque lineage
+   and split. The split rule, teacher nonce, anchor schedule, and fresh
+   development block are fixed before outcomes are observed. No losing run is
+   omitted and no calibration or holdout cohort is success-conditioned.
+   Successful-prefix replay is deferred until ancestor lineage and duplicate
+   decision grouping are enforced; this slice obtains more useful labels at
+   the original online decisions instead.
+6. **Hard gates.** Dataset loading reconciles complete groups, record counts,
+   teacher configuration, and zero rejected roots. Calibration/holdout gates
+   require both target classes where applicable, winning and losing groups,
+   meaningful recommendation coverage, zero high-confidence recommendation
+   errors, and non-positive teacher regret. The model remains shadow-only in
+   this iteration regardless of diagnostic quality.
+
+Bounded execution order:
+
+- add focused schema, candidate-contract, censoring, action-conditioned-loss,
+  run-weighting, and action-inertness tests;
+- run the full suite and public-information firewall tests;
+- replay reused development seed `207` only as a post-win implementation
+  diagnostic, requiring a genuine resolved Endless row and zero rejected roots;
+- if that diagnostic passes, collect one complete fresh development tranche on
+  preregistered seeds `1005-1054`; retain every completed source run and stop on
+  any hidden-twin disagreement, teacher influence, illegal root, rejected
+  rollout, lineage discontinuity, or censored target admitted as exact;
+- require at least five winning and five losing source groups, 25 resolved
+  Endless rows from at least five groups, and 20 late pre-win decisions with
+  action-sensitive Ante-8 outcomes before training. Otherwise record the
+  coverage failure and improve the organic behavior source rather than buying
+  a larger horizon.
+
+No tuning `1-200`, quarantined `501-700`, replacement gate `701-900`, or
+authority-secret seed may be used by this increment.
+
+## Active development loop
+
+The two disjoint 30-seed screens are enough to retain one-ante strategic
+search as a provisional baseline. Do not spend the tuning or gate panels
+merely to confirm it yet. Improve capability on preregistered development
+seeds starting at 901, then run the full tuning and replacement gate panels
+only when a
+combined candidate materially improves win rate or Endless progression.
+
+The White-stake exact-DAG probe on development seeds 201-210 was killed: all
+10 paired trajectories were identical, and all 99 admitted attempts failed
+the two-decision horizon before evaluating a root. White Small and Big Blinds
+end before that solver becomes eligible. Preserve the Gold solver and its
+tests, but do not deploy or widen it for White.
+
+The exhaustive boss-root probe on development seeds 201-210 was also killed:
+mean antes fell from 3.9 to 3.8, one seed regressed, none improved, and 45 boss
+searches consumed 509,923 rollout steps in 38.8 minutes. Selecting among up to
+441 roots with six samples admitted a tiny noisy advantage on the regressing
+seed.
+
+The independent two-stage boss allocator passed its tactical-only development
+screen, but failed the required interaction check. Strategic-only search on
+seeds 206-210 scored `[6, 8, 4, 6, 3]`; the first completed combined run,
+seed 206, fell from six antes to three. Stop the panel, delete the boss-search
+candidate, and keep the proven strategic path unchanged. A tactical-only gain
+does not count when composition destroys strategic value.
+
+Current increment: improve strategic-search throughput before testing another
+capability vector. Preserve the 6-sample, 1-ante, `z=1` decision rule and its
+public-information boundary. Profile the exact-Fraction continuation scorer,
+replace only proven redundant work with behavior-identical caching or integer
+arithmetic, and verify action/trajectory identity on reused development seeds.
+Do not use tuning or gate seeds yet.
+
+The first full-run profile rules out a broad arithmetic rewrite: exact scoring
+dominates, while Fraction construction is only a minority of scorer cost. A
+one-table tactical rescore slice preserved seed 210 exactly but was neutral in
+wall time (56.6 versus 56.2 seconds), so delete it rather than retain
+complexity. Keep the independently necessary custom-hand-stat cache-key fix.
+
+Next slice: remove two engine-side copies that the profile proves redundant in
+rollout mode. Reuse Jackdaw's already-established `current_public` when
+encoding the next action, and let lightweight observation normalization own
+the freshly serialized bridge dictionary instead of deep-copying it. Keep the
+normal/authority path copy-isolated. Prove lightweight and normal public
+observations plus action RPCs remain identical before benchmarking the same
+seed and budget. Do not cache whole policy decisions or anything across public
+history.
+
+Retain the engine slice together with prepared per-observation scoring context.
+On the matched seed-210 one-sample replay, the stable result is exactly equal:
+Ante 3, 6,682 steps, 45 searches, eight overrides, identical terminal state and
+action aggregates. The final-code replay cut runtime from 56.2 to 47.1 seconds
+and raised rollout throughput from 125.6 to 151.3 steps/s (+20.5%). Normal observation
+normalization remains copy-isolated, and all score operations remain exact.
+
+Current capability experiment: spend the recovered throughput on eight final
+samples per strategic root, still at one ante and `z=1`, on reused development
+seeds 206-210. Compare directly with the current six-sample report on the same
+seeds. Retain eight samples only if it preserves the existing win and improves
+paired progression without regression; otherwise keep six samples and move to
+a learned or analytic leaf value rather than buying more particles.
+
+Eight samples fail the kill rule. Seed 208 stayed at four antes, but seed 206
+fell from six antes at six samples to three antes at eight samples. Stop the
+other three workers and keep the six-sample artifact. The next strength lever
+is a calibrated public leaf value or a better continuation, not more rollout
+particles.
+
+Leaf design sketch: do not reuse the existing capacity estimate, whose current
+development reports cover only about one quarter of strategic rows and whose
+recorded predictive gate lost to ante alone. First shadow-calibrate one bounded
+public feature at organic boss clears: achieved public chips relative to the
+next visible boss requirement. Map the log ratio monotonically into `(0, 1)`
+and scale it below `1 / (4 * samples)`, so no leaf difference can outweigh one
+sample's extra round. The feature may apply only to a validated public
+boss-clear transition; malformed or unavailable context is neutral for every
+sibling in that shared sample.
+
+Before implementation, collect the feature and next-ante-clear label on reused
+development control runs. Require broad availability and predictive lift over
+ante alone. Kill it without policy code if the next boss is not yet public at
+the cutoff, if overkill is not monotone with the next clear, or if it mainly
+rewards consumable burn. A learned residual leaf remains the next path after a
+failed analytic shadow, with train/holdout splits by complete originating run.
+
+The analytic leaf fails that shadow gate. On complete control runs for reused
+development seeds 201--250, all 167 boss clears exposed a positive next-ante
+boss requirement, but log clear-score margin had AUC 0.524 for clearing the
+following ante versus 0.698 for ante alone. Conditional AUC fell below 0.5 at
+Antes 4, 5, and 7, and outcome rate was non-monotone across margin quartiles.
+Do not implement or tune this feature.
+
+Do not repeat the existing White exact-DAG probe: its reused development report
+already shows 99 of 99 admitted attempts stopped at the certified two-decision
+horizon and all ten trajectories matched control. The next capability path is
+a learned residual leaf for the retained determinized search, not the deleted
+single-intervention action-value probe and not the existing distilled absolute
+value head. First add shadow-only collection at a fixed public decision cutoff:
+store the cutoff `PublicObservation`, public progress and remaining horizon,
+then label it by continuing the same sampled branch to the existing one-ante
+endpoint. Never store seed, raw state, RNG, or clone identity. Split by complete
+originating run and require selector agreement, zero false overrides on full-
+rollout ties, and no positive full-rollout regret before any learned value can
+affect play.
+
+The first 8-run collector smoke is schema-valid and all 678 rows are eligible,
+but its ordinal schedule put all 22 sibling groups in Antes 1--2. A phase/ante
+mean residual reduced held-out MSE from 1.071 to 0.304, yet caused one false
+override on a full-rollout tie. Treat this as collection calibration, not leaf
+evidence. Replace ordinal scheduling with public Ante 1/3/5 triggers, retain the
+unchanged one-step cutoff and full-horizon labels, and calibrate a minimum
+paired margin from held-out model error before judging selector agreement.
+
+The corrected 12-run set contains 1,098/1,098 eligible rows in 27 atomic sibling
+groups at Ante 1, 3, and 5. A frozen 2,048-hash, 32-unit public MLP improves
+held-out residual MSE slightly over the phase/ante baseline and, after a
+calibration-group maximum root-delta error margin, creates no false override.
+It misses one teacher override in the five-decision Ante-5 slice, for +0.052
+mean held-out teacher regret, so it cannot enter policy. Because the miss is in
+the explicitly underrepresented stratum while predictive loss improved, allow
+one final data-scale test with the architecture, split rule, cutoff, margin
+rule, and optimizer frozen on reused seeds 201--250. Any positive held-out
+teacher regret kills this residual lane; zero false overrides and non-positive
+regret justify one behavior screen.
+
+The final residual test kills the lane. All 50 runs and 4,374 public rows
+completed with atomic eligibility. With groups 0--34 for training, 35--41 for
+calibration, and 42--49 untouched, the frozen model's holdout MSE was 0.557
+versus 0.502 for phase/ante. The calibration maximum root-delta error required
+a 1.438 override margin; even then the model missed two of 21 holdout teacher
+choices and incurred +0.028 mean teacher regret. Delete the residual collector
+and do not run a policy screen.
+
+Next continuation experiment: collect sparse teacher decisions from the
+retained six-sample search on reused development seeds only. Each record holds
+the root `PublicObservation`, complete typed public history, legal non-reorder
+roots, their full-rollout mean utilities, the continuation baseline, and the
+search selection. It contains no seed, raw state, RNG, or private clone. Fit
+only the existing five `StrategyTuning` integers, maximizing teacher utility
+of the continuation-selected root rather than raw agreement. Split by complete
+originating run before optimization. Require positive held-out utility versus
+the default tuning and no missing candidate action before running the tuned
+continuation in games; otherwise kill parameter distillation.
+
+Keep this first fit one-shot and cheap: generate a fixed, digestible set of 64
+monotone reserve/threshold vectors from an experiment RNG independent of game
+state, include the default vector, and score every vector in shadow while each
+scheduled teacher search still has its public history in memory. Use runs
+201--235 for selection and 236--250 only for the verdict. The played trajectory
+always follows the default continuation plus teacher-selected scheduled roots;
+shadow candidates never affect data collection.
+
+The one-shot parameter fit also fails. Across 50 complete development runs and
+110 scheduled teacher decisions, the vector selected on runs 201--235 gained
+only +0.0164 mean rollout utility over default and then lost -0.0135 on the
+untouched runs 236--250. It chose reserves 6/6/6, sell threshold 54, and
+replacement margin 2; all actions mapped to searched roots, so the failure is
+generalization rather than missing coverage. Delete the harness and do not run
+the vector in games. The five current integers cannot express enough of the
+search teacher. The next continuation increment needs contextual public
+state/action features trained directly on paired root utilities, with a model
+class and data volume chosen before another held-out split.
+
+Separately, the open continuation exception has a concrete diagnosis. Replaying
+seed 40's saved public search prefix to its first rejected decision reproduces
+three identical states: The Hook has forced the last two held cards into a
+fully exhausted 52-card discard/play pool, leaving an empty public hand, zero
+cards to draw, and one nominal hand. No legal play or discard exists. This is a
+Jackdaw missing terminal transition, not a heuristic choice with a safe legal
+fallback. Preserve failed-rollout scoring until the empty-deck transition is
+checked against real Balatro; do not sell or reorder Jokers to mask it.
+
+Acceptance before retaining the increment:
+
+- focused scorer and search tests preserve exact ordering and fail-closed
+  rollout behavior;
+- the full suite and information-firewall tests pass;
+- a paired development replay produces identical actions and outcomes to the
+  retained search artifact;
+- measured rollout throughput improves materially without changing the search
+  budget, roots, samples, or selector.
 
 ## Stage A: Determinization
 
@@ -175,18 +660,20 @@ digest, the search nonce, and the sample index.
   sample and continue with the continuation policy in-process until the
   horizon. Value as defined in the vocabulary. Aggregate mean over
   samples; ties go to the continuation policy's own choice.
-- **Budget.** Start at 8 samples, horizon of 2 antes, 200-step cap.
+- **Budget.** The retained provisional vector uses 6 samples, a 1-ante
+  horizon, a 200-step cap, and `override_z=1`. Longer horizons wait for a leaf
+  value because the measured 2-ante vector was slower and worse.
   Record roots, samples, steps, and seconds per decision in every
   report. Raise the budget only with a recorded measurement.
 - **Evaluator.** New `scripts/evaluate_determinized_search.py` emitting
   the same report schema as `evaluate_candidate_baselines.py` so
   `compare_candidate_reports.py` works unchanged. `--workers N` shards
   seeds across processes, one Jackdaw per worker.
-- **Order of evidence.** A 50-seed screen on 1-50 against control first,
-  to measure throughput and direction. Then the full tuning panel. The
-  gate panel only for the vector that will be tagged.
+- **Order of evidence.** Continue capability work on development seeds. Run
+  the full tuning panel only for a materially stronger combined candidate.
+  The gate panel is used once for the vector that will be tagged.
 
-Gate: paired antes cleared on 501-700 beats `control-v0` with the
+Gate: paired antes cleared on the untouched replacement gate 701-900 beats `control-v0` with the
 bootstrap lower bound above zero. Tag `control-v1`. Kill: if search with
 ten times the starting budget does not beat control, the rollout value
 or the continuation is wrong. Inspect the twenty largest per-seed losses
@@ -196,9 +683,9 @@ before touching search knobs.
 
 Bosses kill 64% of runs. In-blind play is where boss counters are won.
 
-- **Ungate.** Remove the Gold-only condition in `blind_search.py`. Re-pin
-  its fixtures to constructed states. Measure the effect alone on the
-  tuning panel before combining with Stage B.
+- **Boss roots.** Evaluate all legal public actions at the first visible
+  decision of each boss blind with determinized Jackdaw rollouts. Measure the
+  effect alone and combined with Stage B on development seeds before tuning.
 - **Discards.** Raise `max_discard_cards` from one to five with a
   hand-type-aware target, or replace the exact enumerator with
   determinized rollouts over draws scoring clear probability. Choose by
@@ -213,13 +700,15 @@ bound above zero, with the strategic layer held fixed.
 
 Search quality is bounded by the continuation. Improve it from search.
 
-- **Targets.** Every strategic decision search makes is stored with the
-  public observation, root values, and the chosen root under
-  `runs/search_data/` with the search version that produced it.
-- **Cheapest first.** CMA-ES over the continuation policy's parameters,
-  objective: agreement with search decisions on the tuning panel, then
-  mean antes cleared. Then a boosted leaf on rollout value to shorten
-  rollouts, verified by calibration on held-out states.
+- **Targets.** Every eligible strategic search decision is stored with its
+  public observation, legal action/intent roots, paired scalar rollout targets,
+  chosen root, opaque complete-run group, and teacher-config digest under
+  `runs/search_data/`. Incomplete runs and any decision with a failed root are
+  discarded atomically.
+- **Relational first.** Train the intent-conditioned relational policy/value
+  model on whole-run splits using the active increment above. The old CMA-ES
+  script and retired hashed recurrent distillation path are not eligible: the
+  former is broken and both previously failed contextual generalization.
 - **Iterate.** Search with the new continuation is the teacher for the
   next round. Continue while the Stage B gate passes against the
   previous control.
@@ -299,18 +788,20 @@ Every gate uses the same procedure. Do not improvise.
 # control or a public baseline
 uv run python scripts/evaluate_candidate_baselines.py \
   --policy strategic --seed-start 1 --seeds 200 --deck RED --stake WHITE \
+  --seed-provenance tuning \
   --ante-cap 20 --report-json runs/evidence/<name>-tuning-seeds1-200.json
 
 # determinized search
 uv run python scripts/evaluate_determinized_search.py \
   --seed-start 1 --seeds 200 --deck RED --stake WHITE --ante-cap 20 \
-  --samples 8 --horizon-antes 2 --workers 6 \
+  --seed-provenance tuning \
+  --samples 6 --horizon-antes 1 --override-z 1 --workers 6 \
   --report-json runs/evidence/<name>-tuning-seeds1-200.json
 
 # paired comparison
 uv run python scripts/compare_candidate_reports.py \
-  runs/evidence/<control>-gate-seeds501-700.json \
-  runs/evidence/<candidate>-gate-seeds501-700.json
+  runs/evidence/<control>-gate-seeds701-900.json \
+  runs/evidence/<candidate>-gate-seeds701-900.json
 ```
 
 A stage passes when the comparison's paired antes-cleared delta has a

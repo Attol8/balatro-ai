@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from collections import Counter
 from collections.abc import Mapping
+from dataclasses import dataclass
 from fractions import Fraction
 
 from balatro_ai_v2.actions import HandSlot
@@ -129,26 +130,88 @@ _COPY_HELD_INDIVIDUAL_JOKERS = frozenset(
     {"j_raised_fist", "j_shoot_the_moon", "j_baron"}
 )
 _COPY_HELD_RETRIGGER_JOKERS = frozenset({"j_mime"})
+
+
+@dataclass(frozen=True, slots=True)
+class _PreparedScoreContext:
+    observation: PublicObservation
+    current_boss: BossRule | None
+    active_keys: frozenset[str]
+    baseball_count: int
+    hiker_count: int
+    played_individual_jokers: tuple[PublicItem, ...]
+    played_retrigger_jokers: tuple[PublicItem, ...]
+    held_individual_jokers: tuple[PublicItem, ...]
+    held_retrigger_jokers: tuple[PublicItem, ...]
+    main_jokers: tuple[PublicItem | None, ...]
+    splash: bool
+
+
+def _prepare_score_context(observation: PublicObservation) -> _PreparedScoreContext:
+    active_jokers = tuple(joker for joker in observation.jokers if not joker.debuffed)
+    return _PreparedScoreContext(
+        observation=observation,
+        current_boss=_current_boss_rule(observation),
+        active_keys=frozenset(joker.key for joker in active_jokers),
+        baseball_count=sum(joker.key == "j_baseball" for joker in active_jokers),
+        hiker_count=sum(joker.key == "j_hiker" for joker in active_jokers),
+        played_individual_jokers=_effective_jokers_for_pass(
+            observation.jokers,
+            _COPY_PLAYED_INDIVIDUAL_JOKERS,
+        ),
+        played_retrigger_jokers=_effective_jokers_for_pass(
+            observation.jokers,
+            _COPY_PLAYED_RETRIGGER_JOKERS,
+        ),
+        held_individual_jokers=_effective_jokers_for_pass(
+            observation.jokers,
+            _COPY_HELD_INDIVIDUAL_JOKERS,
+        ),
+        held_retrigger_jokers=_effective_jokers_for_pass(
+            observation.jokers,
+            _COPY_HELD_RETRIGGER_JOKERS,
+        ),
+        main_jokers=tuple(
+            _effective_joker_for_pass(observation.jokers, index, _COPY_MAIN_JOKERS)
+            for index in range(len(observation.jokers))
+        ),
+        splash=any(joker.key == "j_splash" for joker in observation.jokers),
+    )
+
+
 def score_play(
     observation: PublicObservation,
     selected: tuple[HandSlot, ...],
     stats: Mapping[str, HandStat] | None = None,
 ) -> tuple[int | Fraction, str]:
+    return _score_play_prepared(
+        observation,
+        selected,
+        stats,
+        _prepare_score_context(observation),
+    )
+
+
+def _score_play_prepared(
+    observation: PublicObservation,
+    selected: tuple[HandSlot, ...],
+    stats: Mapping[str, HandStat] | None,
+    context: _PreparedScoreContext,
+) -> tuple[int | Fraction, str]:
+    if context.observation is not observation:
+        raise ValueError("prepared score context belongs to a different observation")
     stats = stats if stats is not None else {hand.name: hand for hand in observation.hand_stats}
     cards = tuple(observation.hand[slot.value] for slot in selected)
-    hand_name = _classify(
-        cards,
-        frozenset(joker.key for joker in observation.jokers if not joker.debuffed),
-    )
+    hand_name = _classify(cards, context.active_keys)
     stat = stats.get(hand_name)
     scoring_cards = (
         tuple(card for card in cards if isinstance(card, VisiblePlayingCard))
-        if any(joker.key == "j_splash" for joker in observation.jokers)
+        if context.splash
         else _scoring_cards(cards, hand_name)
     )
     base_chips = stat.chips if stat is not None else 0
     base_mult = stat.mult if stat is not None else 1
-    current_boss = _current_boss_rule(observation)
+    current_boss = context.current_boss
     if (
         current_boss is not None
         and current_boss.level_reduction > 0
@@ -166,30 +229,11 @@ def score_play(
         base_mult = max(1, (base_mult + 1) // 2)
     chips = base_chips
     mult: int | Fraction = base_mult
-    active_jokers = tuple(joker for joker in observation.jokers if not joker.debuffed)
-    active_keys = frozenset(joker.key for joker in active_jokers)
-    baseball_count = sum(joker.key == "j_baseball" for joker in active_jokers)
-    played_individual_jokers = _effective_jokers_for_pass(
-        observation.jokers,
-        _COPY_PLAYED_INDIVIDUAL_JOKERS,
-    )
-    played_retrigger_jokers = _effective_jokers_for_pass(
-        observation.jokers,
-        _COPY_PLAYED_RETRIGGER_JOKERS,
-    )
-    held_individual_jokers = _effective_jokers_for_pass(
-        observation.jokers,
-        _COPY_HELD_INDIVIDUAL_JOKERS,
-    )
-    held_retrigger_jokers = _effective_jokers_for_pass(
-        observation.jokers,
-        _COPY_HELD_RETRIGGER_JOKERS,
-    )
     first_face_index = next(
         (
             index
             for index, card in enumerate(scoring_cards)
-            if _is_face(card, active_keys)
+            if _is_face(card, context.active_keys)
         ),
         None,
     )
@@ -198,11 +242,10 @@ def score_play(
             observation,
             card,
             index,
-            played_retrigger_jokers,
-            active_keys,
+            context.played_retrigger_jokers,
+            context.active_keys,
         )
         hiker_bonus = 0
-        hiker_count = sum(joker.key == "j_hiker" for joker in active_jokers)
         for _ in range(1 + repeats):
             chips += _card_chips(card) + hiker_bonus
             if card.enhancement == "MULT" and not card.debuffed:
@@ -213,11 +256,11 @@ def score_play(
                 mult += 10
             if card.edition == "POLYCHROME" and not card.debuffed:
                 mult *= Fraction(3, 2)
-            for joker in played_individual_jokers:
+            for joker in context.played_individual_jokers:
                 repeat_chips, repeat_mult = _card_joker_effect(
                     joker.key,
                     (card,),
-                    active_keys,
+                    context.active_keys,
                 )
                 chips += repeat_chips
                 mult += repeat_mult
@@ -227,7 +270,7 @@ def score_play(
                     joker.key,
                     first_face=index == first_face_index,
                 )
-            hiker_bonus += 5 * hiker_count
+            hiker_bonus += 5 * context.hiker_count
     selected_slots = {slot.value for slot in selected}
     held = tuple(
         card
@@ -255,12 +298,12 @@ def score_play(
         held_repeats = (
             1
             + int(card.seal == "RED")
-            + sum(joker.key == "j_mime" for joker in held_retrigger_jokers)
+            + sum(joker.key == "j_mime" for joker in context.held_retrigger_jokers)
         )
         for _ in range(held_repeats):
             if card.enhancement == "STEEL":
                 mult *= Fraction(3, 2)
-            for joker in held_individual_jokers:
+            for joker in context.held_individual_jokers:
                 if joker.key == "j_raised_fist" and index == lowest_held_index:
                     mult += 2 * _RANK_CHIPS.get(card.rank, 0)
                 elif joker.key == "j_shoot_the_moon" and card.rank == "Q":
@@ -268,12 +311,7 @@ def score_play(
                 elif joker.key == "j_baron" and card.rank == "K":
                     mult *= Fraction(3, 2)
 
-    for index, source_joker in enumerate(observation.jokers):
-        joker = _effective_joker_for_pass(
-            observation.jokers,
-            index,
-            _COPY_MAIN_JOKERS,
-        )
+    for source_joker, joker in zip(observation.jokers, context.main_jokers, strict=True):
         if joker is None:
             continue
         # Joker edition chips/Mult score before its main effect. Polychrome
@@ -293,13 +331,13 @@ def score_play(
         chips += joker_chips
         mult += joker_mult
         mult *= joker_xmult
-        if baseball_count:
+        if context.baseball_count:
             try:
                 source_rarity = get_joker_profile(source_joker.key).rarity
             except KeyError:
                 source_rarity = 0
             if source_rarity == 2:
-                mult *= Fraction(3, 2) ** baseball_count
+                mult *= Fraction(3, 2) ** context.baseball_count
         if source_joker.edition == "POLYCHROME":
             mult *= Fraction(3, 2)
     if "v_observatory" in observation.used_vouchers:

@@ -65,6 +65,9 @@ from balatro_ai_v2.public_state import (
     PublicObservation,
     VisiblePlayingCard,
 )
+from balatro_ai_v2.policy import NoPublicProgressAction
+from balatro_ai_v2.strategy_options import StrategyIntent
+from balatro_ai_v2.public_scoring import score_play
 from state_factory import item_card, playing_card, state
 
 
@@ -146,6 +149,41 @@ def test_strategic_baseline_skips_only_guaranteed_small_economy_tag(
 
     assert isinstance(action, expected_type)
     assert is_legal(observation, action)
+
+
+def test_strategic_baseline_revalidates_an_intent_and_forks_distinctly() -> None:
+    raw = state("BLIND_SELECT", money=10)
+    raw["blinds"]["small"]["tag_name"] = "Coupon Tag"
+    observation = to_public_observation(raw)
+    policy = PublicStrategicPolicy()
+
+    action = policy.choose_action_for_intent(
+        observation,
+        lambda: iter_legal_actions(observation),
+        (),
+        StrategyIntent.ECONOMY,
+    )
+    fork = policy.fork_for_rollout(StrategyIntent.ECONOMY)
+
+    assert isinstance(action, SkipBlind)
+    assert is_legal(observation, action)
+    assert fork == policy
+    assert fork is not policy
+
+
+def test_strategic_baseline_names_an_empty_hand_as_no_public_progress() -> None:
+    raw = state("SELECTING_HAND")
+    raw["hand"]["cards"] = []
+    raw["hand"]["count"] = 0
+    raw["round"].update(hands_left=1, discards_left=0)
+    observation = to_public_observation(raw)
+
+    with pytest.raises(NoPublicProgressAction):
+        PublicStrategicPolicy().choose_action(
+            observation,
+            lambda: iter_legal_actions(observation),
+            (),
+        )
 
 
 def test_public_belief_tactical_policy_is_identical_for_hidden_twins() -> None:
@@ -295,6 +333,23 @@ def test_strategic_tactical_action_is_in_the_canonical_legal_set() -> None:
 
     assert action_to_data(action) in [action_to_data(candidate) for candidate in legal]
     assert action_to_data(action)["cards"] == sorted(action_to_data(action)["cards"])
+
+
+def test_strategic_policy_uses_a_legal_discard_when_no_play_is_proposed() -> None:
+    observation = to_public_observation(state("SELECTING_HAND"))
+    discards = tuple(
+        action
+        for action in iter_legal_actions(observation)
+        if isinstance(action, DiscardCards)
+    )
+    assert discards
+
+    action = PublicStrategicPolicy().choose_action(
+        observation, lambda: iter(discards), ()
+    )
+
+    assert action == discards[0]
+    assert is_legal(observation, action)
 
 
 def test_strategic_policy_plays_a_weak_hand_that_already_clears() -> None:
@@ -978,6 +1033,22 @@ def test_public_score_halves_only_the_hand_base_for_the_flint() -> None:
 
     assert _play_score(ordinary, selected, ordinary_stats)[0] == 180
     assert _play_score(flint, selected, flint_stats)[0] == 56
+
+
+def test_play_score_cache_preserves_custom_hand_stat_mapping_keys() -> None:
+    observation = to_public_observation(state("SELECTING_HAND"))
+    selected = (HandSlot(0),)
+    low = HandStat("High Card", 1, 1, 1, 0, 0)
+    high = HandStat("Pair", 1, 1_000, 10, 0, 0)
+    first = {"High Card": low, "Pair": high}
+    swapped = {"High Card": high, "Pair": low}
+
+    assert _play_score(observation, selected, first) == score_play(
+        observation, selected, first
+    )
+    assert _play_score(observation, selected, swapped) == score_play(
+        observation, selected, swapped
+    )
 
 
 def test_public_score_projects_the_arms_pre_score_level_reduction() -> None:

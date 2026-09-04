@@ -55,12 +55,14 @@ class RunResult:
     decisions: int
     rejected_decisions: int
     terminal_reason: str
+    terminal_error: str | None
     final_observation: PublicObservation | None
     terminal_blind: PublicBlind | None
     action_counts: tuple[tuple[str, int], ...]
     semantic_action_counts: tuple[tuple[str, int], ...]
     cards_played: int
     cards_discarded: int
+    best_hand_score: int
     capacity_decisions: tuple[dict[str, object], ...]
 
 
@@ -82,17 +84,23 @@ class AuthorityRunner:
         semantic_action_counts: Counter[str] = Counter()
         cards_played = 0
         cards_discarded = 0
+        best_hand_score = 0
         rejected = 0
         capacity_decisions: list[dict[str, object]] = []
         final: PublicObservation | None = None
         terminal_blind: PublicBlind | None = None
         terminal_reason = "policy_error"
+        terminal_error: str | None = None
         try:
             authority = self.backend.reset(spec)
             public = _public(authority)
             final = public
             terminal_blind = _current_blind(public)
-            self._record("run_start", authority=_authority_data(authority), public=json.loads(public.canonical_json()))
+            self._record(
+                "run_start",
+                authority=_authority_data(authority),
+                public=json.loads(public.canonical_json()),
+            )
             for _ in range(self.max_decisions):
                 terminal_blind = _current_blind(public) or terminal_blind
                 if public.terminal:
@@ -112,11 +120,13 @@ class AuthorityRunner:
                     )
                 except Exception as exc:  # the trace must close even for model failures
                     terminal_reason = "policy_error"
-                    self._record("policy_error", error=f"{type(exc).__name__}: {exc}")
+                    terminal_error = f"{type(exc).__name__}: {exc}"
+                    self._record("policy_error", error=terminal_error)
                     break
                 if not is_legal(public, action):
                     terminal_reason = "policy_error"
-                    self._record("policy_error", error=f"policy emitted illegal action {action!r}")
+                    terminal_error = f"policy emitted illegal action {action!r}"
+                    self._record("policy_error", error=terminal_error)
                     break
 
                 result = self.backend.step(action)
@@ -127,7 +137,9 @@ class AuthorityRunner:
                     "rpc_method": result.rpc_method,
                     "rpc_params": result.rpc_params,
                     "status": result.status,
-                    "rpc_observations": [json.loads(value) for value in result.rpc_observations],
+                    "rpc_observations": [
+                        json.loads(value) for value in result.rpc_observations
+                    ],
                     "error": result.error,
                 }
                 if capacity_diagnostic is not None:
@@ -154,9 +166,18 @@ class AuthorityRunner:
                     semantic_action_counts[semantic_action] += 1
                 if isinstance(action, PlayCards):
                     cards_played += len(action.cards)
+                    # A hand's score is observable as the increase in the
+                    # current blind's chip total.  Derive it here instead of
+                    # admitting a simulator-only scoring field.
+                    best_hand_score = max(
+                        best_hand_score,
+                        max(0, after_public.round.chips - public.round.chips),
+                    )
                 elif isinstance(action, DiscardCards):
                     cards_discarded += len(action.cards)
-                history.append(PublicHistoryStep(before=public, action=action, after=after_public))
+                history.append(
+                    PublicHistoryStep(before=public, action=action, after=after_public)
+                )
                 authority = result.after
                 public = after_public
                 final = public
@@ -171,28 +192,29 @@ class AuthorityRunner:
                 terminal_reason = "decision_limit"
         except UnsettledStateError as exc:
             terminal_reason = "unsettled"
-            self._record("authority_error", error=str(exc))
+            terminal_error = str(exc)
+            self._record("authority_error", error=terminal_error)
 
         complete = terminal_reason in {"game_over", "ante_cap"} and final is not None
         result = RunResult(
             complete=complete,
             won=bool(final.won) if complete else False,
             antes_cleared=(
-                min(final.antes_cleared, self.max_antes_cleared)
-                if complete
-                else 0
+                min(final.antes_cleared, self.max_antes_cleared) if complete else 0
             ),
             ante=final.ante if final is not None else 0,
             round_no=final.round_no if final is not None else 0,
             decisions=len(history),
             rejected_decisions=rejected,
             terminal_reason=terminal_reason,
+            terminal_error=terminal_error,
             final_observation=final,
             terminal_blind=terminal_blind,
             action_counts=tuple(sorted(action_counts.items())),
             semantic_action_counts=tuple(sorted(semantic_action_counts.items())),
             cards_played=cards_played,
             cards_discarded=cards_discarded,
+            best_hand_score=best_hand_score,
             capacity_decisions=tuple(capacity_decisions),
         )
         self._record(
@@ -220,6 +242,7 @@ class AuthorityRunner:
             semantic_action_counts=dict(result.semantic_action_counts),
             cards_played=result.cards_played,
             cards_discarded=result.cards_discarded,
+            best_hand_score=result.best_hand_score,
         )
         return result
 
@@ -260,7 +283,9 @@ def _public(authority: AuthorityObservation) -> PublicObservation:
 
 
 def _current_blind(observation: PublicObservation) -> PublicBlind | None:
-    return next((blind for blind in observation.blinds if blind.status == "CURRENT"), None)
+    return next(
+        (blind for blind in observation.blinds if blind.status == "CURRENT"), None
+    )
 
 
 def _capacity_diagnostic(

@@ -16,7 +16,14 @@ def _load_script():
     return module
 
 
-def _report(path: Path, *, seeds=(1, 2), wins=(), survivals=()) -> None:
+def _report(
+    path: Path,
+    *,
+    seeds=(1, 2),
+    wins=(),
+    survivals=(),
+    provenance="evaluator_secret",
+) -> None:
     payload = {
         "candidate_only": True,
         "candidate_runtime": {"dirty": False, "revision": "candidate"},
@@ -42,6 +49,13 @@ def _report(path: Path, *, seeds=(1, 2), wins=(), survivals=()) -> None:
             "inference_budget": "budget",
             "run": {"deck": "RED", "stake": "WHITE", "seed": "1:2"},
         },
+        "benchmark_protocol": {
+            "category": "fair_public_agent",
+            "seed_provenance": provenance,
+            "restart_selection": False,
+            "filtered_seeds": False,
+            "mods": False,
+        },
         "results": [
             {
                 "seed": seed,
@@ -50,6 +64,7 @@ def _report(path: Path, *, seeds=(1, 2), wins=(), survivals=()) -> None:
                 "antes_cleared": 8 if seed in wins else 5 if seed in survivals else 3,
                 "survived_to_ante_6": seed in survivals,
                 "ante": 9 if seed in wins else 6 if seed in survivals else 4,
+                "best_hand_score": 100 if seed in wins else 10,
                 "terminal_reason": "game_over",
             }
             for seed in seeds
@@ -101,6 +116,10 @@ def test_compare_counts_paired_outcomes_and_incomplete_as_loss(tmp_path: Path) -
         "samples": 10_000,
         "seed": 0,
     }
+    assert payload["baseline_maximum_ante"] == 9
+    assert payload["candidate_maximum_ante"] == 9
+    assert payload["baseline_mean_log10_best_hand_score"] == 1.5
+    assert payload["candidate_mean_log10_best_hand_score"] == 1.5
     assert [row["outcome"] for row in payload["paired"]] == [
         "baseline_only_win",
         "candidate_only_win",
@@ -125,6 +144,73 @@ def test_compare_rejects_seed_order_and_limits_mismatch(tmp_path: Path) -> None:
     candidate.write_text(json.dumps(value), encoding="utf-8")
     with pytest.raises(module.ReportError, match="max_decisions"):
         module.compare_reports(baseline, candidate)
+
+
+def test_compare_rejects_mixed_seed_provenance(tmp_path: Path) -> None:
+    module = _load_script()
+    baseline = tmp_path / "baseline.json"
+    candidate = tmp_path / "candidate.json"
+    _report(baseline)
+    _report(candidate)
+    value = json.loads(candidate.read_text(encoding="utf-8"))
+    value["benchmark_protocol"]["seed_provenance"] = "gate"
+    candidate.write_text(json.dumps(value), encoding="utf-8")
+
+    with pytest.raises(module.ReportError, match="seed_provenance"):
+        module.compare_reports(baseline, candidate)
+
+
+def test_compare_validates_declared_panel_against_registry(tmp_path: Path) -> None:
+    module = _load_script()
+    baseline = tmp_path / "baseline.json"
+    candidate = tmp_path / "candidate.json"
+    _report(baseline, seeds=(701, 702), provenance="gate")
+    _report(candidate, seeds=(701, 702), provenance="gate")
+
+    with pytest.raises(module.ReportError, match="gate panel must be exactly seeds 701-900"):
+        module.compare_reports(baseline, candidate)
+
+
+def test_compare_rejects_quarantined_former_gate_panel(tmp_path: Path) -> None:
+    module = _load_script()
+    baseline = tmp_path / "baseline.json"
+    candidate = tmp_path / "candidate.json"
+    _report(baseline, seeds=(501, 502), provenance="development")
+    _report(candidate, seeds=(501, 502), provenance="development")
+
+    with pytest.raises(module.ReportError, match="quarantined former_gate"):
+        module.compare_reports(baseline, candidate)
+
+
+def test_compare_rejects_noncontiguous_row_seed_set(tmp_path: Path) -> None:
+    module = _load_script()
+    baseline = tmp_path / "baseline.json"
+    candidate = tmp_path / "candidate.json"
+    _report(baseline, seeds=(901, 903), provenance="development")
+    _report(candidate, seeds=(901, 903), provenance="development")
+
+    with pytest.raises(module.ReportError, match="contiguous ordered seed panel"):
+        module.compare_reports(baseline, candidate)
+
+
+def test_compare_does_not_fabricate_score_delta_for_legacy_reports(tmp_path: Path) -> None:
+    module = _load_script()
+    baseline = tmp_path / "baseline.json"
+    candidate = tmp_path / "candidate.json"
+    _report(baseline)
+    _report(candidate)
+    for path in (baseline, candidate):
+        value = json.loads(path.read_text(encoding="utf-8"))
+        for result in value["results"]:
+            result.pop("best_hand_score")
+        path.write_text(json.dumps(value), encoding="utf-8")
+
+    payload = module.compare_reports(baseline, candidate)
+
+    assert not payload["best_hand_score_metrics_available"]
+    assert payload["best_hand_score_pair_coverage"] == 0
+    assert payload["paired_mean_log10_best_hand_score_delta"] is None
+    assert payload["paired_log10_best_hand_score_delta_bootstrap_95"] is None
 
 
 def test_compare_rejects_incomplete_marked_as_won(tmp_path: Path) -> None:

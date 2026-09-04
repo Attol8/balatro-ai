@@ -13,6 +13,10 @@ from balatro_ai_v2.public_state import PublicObservation
 ActionSource = Callable[[], Iterator[PublicAction]]
 
 
+class NoPublicProgressAction(RuntimeError):
+    """The public state has no policy action capable of advancing play."""
+
+
 @dataclass(frozen=True, slots=True)
 class PublicHistoryStep:
     before: PublicObservation

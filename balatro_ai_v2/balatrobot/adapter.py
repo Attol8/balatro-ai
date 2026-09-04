@@ -151,7 +151,7 @@ def to_public_observation(raw: Mapping[str, Any]) -> PublicObservation:
         round_no=_required_int(raw, "round_num"),
         money=_required_int(raw, "money"),
         round=RoundObservation(
-            chips=_required_int(round_raw, "chips"),
+            chips=_required_score_int(round_raw, "chips"),
             hands_left=_required_int(round_raw, "hands_left"),
             discards_left=_required_int(round_raw, "discards_left"),
             hands_played=_required_int(round_raw, "hands_played"),
@@ -391,7 +391,7 @@ def _blind(raw: object) -> PublicBlind:
         status=_required_string(raw, "status"),
         name=_required_string(raw, "name"),
         effect=str(raw.get("effect") or ""),
-        score=_required_int(raw, "score"),
+        score=_required_score_int(raw, "score"),
         tag_name=str(raw.get("tag_name") or ""),
         tag_effect=str(raw.get("tag_effect") or ""),
     )
@@ -403,8 +403,8 @@ def _hand_stat(name: object, raw: object) -> HandStat:
     return HandStat(
         name=name,
         level=_required_int(raw, "level"),
-        chips=_required_int(raw, "chips"),
-        mult=_required_int(raw, "mult"),
+        chips=_required_score_int(raw, "chips"),
+        mult=_required_score_int(raw, "mult"),
         played=_required_int(raw, "played"),
         played_this_round=_required_int(raw, "played_this_round"),
     )
@@ -509,6 +509,19 @@ def _required_int(raw: Mapping[str, Any], key: str) -> int:
     value = raw.get(key)
     if isinstance(value, bool) or not isinstance(value, int):
         raise ObservationError(f"{key} must be an integer")
+    return value
+
+
+def _required_score_int(raw: Mapping[str, Any], key: str) -> int:
+    """Accept the integral scientific notation emitted by late-game JSON scores."""
+
+    value = raw.get(key)
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        raise ObservationError(f"{key} must be an integer")
+    if isinstance(value, float):
+        if not math.isfinite(value) or not value.is_integer():
+            raise ObservationError(f"{key} must be a finite integer")
+        return int(value)
     return value
 
 

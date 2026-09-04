@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import sys
 import time
 from collections import Counter
@@ -18,9 +19,15 @@ from balatro_ai_v2.balatrobot.tracing import build_manifest
 from balatro_ai_v2.baselines import PUBLIC_BASELINE_NAMES, build_public_baseline
 from balatro_ai_v2.blind_search import exact_blind_inference_budget
 from balatro_ai_v2.capacity import CAPACITY_MODEL_VERSION, CAPACITY_SAMPLE_METHOD
+from balatro_ai_v2.evaluation_protocol import (
+    SEED_PROVENANCES,
+    PanelValidationError,
+    validate_seed_panel,
+)
 from balatro_ai_v2.jackdaw import JackdawBackend, JackdawUnavailable, verify_jackdaw_runtime
 from balatro_ai_v2.policy_process import PolicyProcess
 from balatro_ai_v2.public_state import PublicBlind, PublicObservation
+from balatro_ai_v2.strategy_diagnostics import strategy_snapshot, summarize_strategy_results
 from balatro_ai_v2.strategy_tuning import StrategyTuning
 
 
@@ -29,14 +36,19 @@ TERMINAL_PROJECTION_SCHEMA_VERSION = 2
 
 def main() -> None:
     args = build_parser().parse_args()
+    try:
+        panel_validation = validate_seed_panel(
+            args.seed_start, args.seeds, args.seed_provenance
+        )
+    except PanelValidationError as exc:
+        raise SystemExit(f"invalid seed panel: {exc}") from exc
     if (
-        args.seeds < 1
-        or args.max_decisions < 1
+        args.max_decisions < 1
         or args.ante_cap < 1
         or args.policy_timeout <= 0
     ):
         raise SystemExit(
-            "--seeds, --max-decisions, --ante-cap, and --policy-timeout must be positive"
+            "--max-decisions, --ante-cap, and --policy-timeout must be positive"
         )
     root = Path(__file__).resolve().parents[1]
     try:
@@ -97,6 +109,12 @@ def main() -> None:
                         "cards_played": result.cards_played,
                         "cards_discarded": result.cards_discarded,
                     },
+                    "best_hand_score": result.best_hand_score,
+                    "strategy": (
+                        strategy_snapshot(result.final_observation)
+                        if result.final_observation is not None
+                        else None
+                    ),
                     "policy_diagnostics": asdict(policy.run_diagnostic_counters),
                     "capacity_decisions": [
                         {
@@ -114,6 +132,7 @@ def main() -> None:
         elapsed = time.perf_counter() - started
         terminal_reasons = Counter(str(result["terminal_reason"]) for result in results)
         summary = summarize_results(results, elapsed=elapsed, terminal_reasons=terminal_reasons)
+        summary["strategy"] = summarize_strategy_results(results)
         complete_runs = sum(bool(result["complete"]) for result in results)
         manifest = build_manifest(
             repository_root=root,
@@ -148,6 +167,14 @@ def main() -> None:
                 "label": "cleared_next_boss",
             },
             "strategy_tuning": json.loads(tuning.canonical_json()),
+            "benchmark_protocol": {
+                "category": "fair_public_agent",
+                "seed_provenance": args.seed_provenance,
+                "panel_registry": panel_validation.as_dict(),
+                "restart_selection": False,
+                "filtered_seeds": False,
+                "mods": False,
+            },
             "results": results,
             "summary": summary,
         }
@@ -214,6 +241,7 @@ def summarize_results(
 
     survived = sum(bool(result["survived_to_ante_6"]) for result in results)
     antes_cleared = [int(result["antes_cleared"]) for result in results]
+    best_hand_scores = [max(0, int(result.get("best_hand_score", 0))) for result in results]
     return {
         "runs": len(results),
         "complete": sum(bool(result["complete"]) for result in results),
@@ -225,6 +253,12 @@ def summarize_results(
         "survival_to_ante_6_rate": survived / len(results),
         "average_ante": sum(int(result["ante"]) for result in results) / len(results),
         "average_round": sum(int(result["round"]) for result in results) / len(results),
+        "maximum_ante": max(int(result["ante"]) for result in results),
+        "best_hand_score": max(best_hand_scores),
+        "max_log10_best_hand_score": max(math.log10(max(1, score)) for score in best_hand_scores),
+        "mean_log10_best_hand_score": (
+            sum(math.log10(max(1, score)) for score in best_hand_scores) / len(best_hand_scores)
+        ),
         "elapsed_seconds": elapsed,
         "decisions_per_second": sum(int(result["decisions"]) for result in results) / elapsed,
         "terminal_reasons": dict(sorted(terminal_reasons.items())),
@@ -259,7 +293,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Evaluate public-only baselines in pinned Jackdaw")
     parser.add_argument("--policy", choices=PUBLIC_BASELINE_NAMES, required=True)
     parser.add_argument("--policy-seed", default="baseline-v1")
-    parser.add_argument("--seed-start", type=int, default=1)
+    parser.add_argument("--seed-start", type=int, default=901)
     parser.add_argument("--seeds", type=int, default=20)
     parser.add_argument("--deck", default="RED")
     parser.add_argument("--stake", default="WHITE")
@@ -267,6 +301,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--ante-cap", type=int, default=20)
     parser.add_argument("--policy-timeout", type=float, default=5.0)
     parser.add_argument("--tuning-json", default=StrategyTuning().canonical_json())
+    parser.add_argument(
+        "--seed-provenance",
+        choices=SEED_PROVENANCES,
+        default="development",
+    )
     parser.add_argument("--report-json", type=Path)
     parser.add_argument("--fitness-only", action="store_true")
     return parser

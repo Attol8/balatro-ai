@@ -45,7 +45,12 @@ from balatro_ai_v2.belief import PublicDrawBelief
 from balatro_ai_v2.boss_rules import BossRule, FaceDownMode, boss_rule
 from balatro_ai_v2.build_strategy import BuildPlan, infer_build_plan, planet_hand
 from balatro_ai_v2.joker_catalog import get_joker_profile
-from balatro_ai_v2.policy import ActionSource, PublicHistoryStep, PublicPolicy
+from balatro_ai_v2.policy import (
+    ActionSource,
+    NoPublicProgressAction,
+    PublicHistoryStep,
+    PublicPolicy,
+)
 from balatro_ai_v2.public_state import (
     HandStat,
     HiddenHandCard,
@@ -56,6 +61,7 @@ from balatro_ai_v2.public_state import (
     VisiblePlayingCard,
 )
 from balatro_ai_v2.public_scoring import (
+    _PreparedScoreContext,
     _COPY_HELD_INDIVIDUAL_JOKERS,
     _COPY_HELD_RETRIGGER_JOKERS,
     _COPY_JOKERS,
@@ -72,9 +78,11 @@ from balatro_ai_v2.public_scoring import (
     _current_boss_rule,
     _effective_joker_for_pass,
     _hand_matches,
-    score_play,
+    _prepare_score_context,
+    _score_play_prepared,
 )
 from balatro_ai_v2.strategy_tuning import StrategyTuning
+from balatro_ai_v2.strategy_options import StrategyIntent, options_for_intent
 
 
 _REORDER_TYPES = (ReorderHand, ReorderJokers, ReorderConsumables)
@@ -406,6 +414,47 @@ class PublicStrategicPolicy:
     max_shop_actions: int = 6
     tuning: StrategyTuning = StrategyTuning()
 
+    def fork_for_rollout(
+        self, intent: StrategyIntent | None = None
+    ) -> PublicStrategicPolicy:
+        """Return a distinct stateless continuation for one rollout root."""
+
+        del intent
+        return replace(self)
+
+    def choose_action_for_intent(
+        self,
+        observation: PublicObservation,
+        legal_actions: ActionSource,
+        history: tuple[PublicHistoryStep, ...],
+        intent: StrategyIntent,
+    ) -> PublicAction:
+        """Revalidate an intent and choose within its current public actions."""
+
+        supplied = tuple(legal_actions())
+        supplied_set = set(supplied)
+        intended = tuple(
+            dict.fromkeys(
+                option.first_action
+                for option in options_for_intent(observation, intent)
+                if option.first_action in supplied_set
+            )
+        )
+        if not intended:
+            return self.choose_action(observation, lambda: iter(supplied), history)
+        try:
+            selected = self.choose_action(observation, lambda: iter(intended), history)
+        except Exception:
+            # Existing phase heuristics may require a progress action that an
+            # intent-specific subset intentionally omits. Fall back to the
+            # ordinary public continuation rather than inventing a preference.
+            return self.choose_action(observation, lambda: iter(supplied), history)
+        # Some phases have a mandatory progress rule that does not consult the
+        # supplied action source. In that case retain the declared intent with
+        # the first canonical, revalidated action rather than returning an
+        # action outside the intent-filtered set.
+        return selected if selected in intended else intended[0]
+
     def choose_action(
         self,
         observation: PublicObservation,
@@ -449,6 +498,16 @@ class PublicStrategicPolicy:
                 if isinstance(action, (PlayCards, DiscardCards))
                 and is_legal(observation, action)
             ]
+            if not any(isinstance(action, PlayCards) for action in actions):
+                discard = next(
+                    (action for action in actions if isinstance(action, DiscardCards)),
+                    None,
+                )
+                if discard is not None:
+                    return discard
+                raise NoPublicProgressAction(
+                    "selecting-hand state has no public play or discard action"
+                )
             if current_boss is not None and not _boss_eligible_plays(
                 observation,
                 actions,
@@ -1123,7 +1182,14 @@ def _boss_disable_sale(
     )[2]
 
 
-_PLAY_SCORE_CACHE: dict[int, tuple[PublicObservation, dict[object, tuple[int | Fraction, str]]]] = {}
+_PLAY_SCORE_CACHE: dict[
+    int,
+    tuple[
+        PublicObservation,
+        _PreparedScoreContext,
+        dict[object, tuple[int | Fraction, str]],
+    ],
+] = {}
 _PLAY_SCORE_CACHE_OBSERVATIONS = 16
 
 
@@ -1138,13 +1204,13 @@ def _play_score(
     if entry is None or entry[0] is not observation:
         if len(_PLAY_SCORE_CACHE) >= _PLAY_SCORE_CACHE_OBSERVATIONS:
             _PLAY_SCORE_CACHE.clear()
-        entry = (observation, {})
+        entry = (observation, _prepare_score_context(observation), {})
         _PLAY_SCORE_CACHE[id(observation)] = entry
-    key = (selected, None if stats is None else frozenset(stats.values()))
-    cached = entry[1].get(key)
+    key = (selected, None if stats is None else tuple(sorted(stats.items())))
+    cached = entry[2].get(key)
     if cached is None:
-        cached = score_play(observation, selected, stats)
-        entry[1][key] = cached
+        cached = _score_play_prepared(observation, selected, stats, entry[1])
+        entry[2][key] = cached
     return cached
 
 
@@ -1202,8 +1268,6 @@ def _passive_control_action(
     if expected is None:
         raise RuntimeError(f"no passive action for {observation.phase.value}")
     return next(action for action in actions if isinstance(action, expected))
-
-
 
 
 def _held_planet_action(
