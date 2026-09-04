@@ -1123,7 +1123,29 @@ def _boss_disable_sale(
     )[2]
 
 
-_play_score = score_play
+_PLAY_SCORE_CACHE: dict[int, tuple[PublicObservation, dict[object, tuple[int | Fraction, str]]]] = {}
+_PLAY_SCORE_CACHE_OBSERVATIONS = 16
+
+
+def _play_score(
+    observation: PublicObservation,
+    selected: tuple[HandSlot, ...],
+    stats: Mapping[str, HandStat] | None = None,
+) -> tuple[int | Fraction, str]:
+    """``score_play`` memoized per observation object; scores are pure in their inputs."""
+
+    entry = _PLAY_SCORE_CACHE.get(id(observation))
+    if entry is None or entry[0] is not observation:
+        if len(_PLAY_SCORE_CACHE) >= _PLAY_SCORE_CACHE_OBSERVATIONS:
+            _PLAY_SCORE_CACHE.clear()
+        entry = (observation, {})
+        _PLAY_SCORE_CACHE[id(observation)] = entry
+    key = (selected, None if stats is None else frozenset(stats.values()))
+    cached = entry[1].get(key)
+    if cached is None:
+        cached = score_play(observation, selected, stats)
+        entry[1][key] = cached
+    return cached
 
 
 def _belief_tactical_action(observation: PublicObservation) -> PublicAction:

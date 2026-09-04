@@ -30,7 +30,8 @@ from balatro_ai_v2.backend import (
     StepResult,
 )
 from balatro_ai_v2.balatrobot.adapter import action_to_rpc, to_public_observation
-from balatro_ai_v2.canonical import BalatroBotCanonicalizer
+from balatro_ai_v2.canonical import BalatroBotCanonicalizer, CanonicalObservedState
+from balatro_ai_v2.public_state import PublicObservation
 
 
 JACKDAW_REVISION = "dbedc66255fe594cce7b7cccc188c8a11649d9ec"
@@ -330,6 +331,8 @@ class JackdawBackend:
     _pack_card_limit: int | None = field(default=None, init=False, repr=False)
     _won: bool = field(default=False, init=False, repr=False)
     _pending_skip_dollars: int = field(default=0, init=False, repr=False)
+    lightweight: bool = field(default=False)
+    current_public: PublicObservation | None = field(default=None, init=False, repr=False)
 
     def __post_init__(self) -> None:
         try:
@@ -857,7 +860,13 @@ class JackdawBackend:
             self._poker_hand_iteration_order,
             pack_card_limit,
         )
-        to_public_observation(normalized)
+        self.current_public = to_public_observation(normalized)
+        if self.lightweight:
+            # Rollout clones need only the raw frame for the next step and the
+            # public projection; hash-chained canonical digests are for traces.
+            raw_json = json.dumps(normalized, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+            observed = CanonicalObservedState(raw_json=raw_json, canonical_json="", raw_digest="", canonical_digest="")
+            return AuthorityObservation(observed=observed, settled=True, polls=())
         observed = self.canonicalizer.canonicalize(normalized)
         return AuthorityObservation(observed=observed, settled=True, polls=(observed.raw_json,))
 
