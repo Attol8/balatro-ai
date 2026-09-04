@@ -2,8 +2,8 @@
   "protocol_id": "terminal-actions-development-v1",
   "status": "reserved",
   "single_use": true,
-  "implementation_revision": "PENDING_IMPLEMENTATION_COMMIT",
-  "expected_source_digest": "PENDING_IMPLEMENTATION_SOURCE_DIGEST",
+  "implementation_revision": "85e8cb528d72ecb3ca57f9a42a899f3a2c52547a",
+  "expected_source_digest": "ffe62f9bc220d7c0fe9069534d267178a2a8592ccdf3ea96757793dfebb22a4b",
   "candidate_runtime": {
     "revision": "dbedc66255fe594cce7b7cccc188c8a11649d9ec",
     "dirty": false,
