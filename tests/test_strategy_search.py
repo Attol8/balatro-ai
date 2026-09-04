@@ -25,6 +25,7 @@ from balatro_ai_v2.determinized_search import (
     _public_best_hand_score,
     _required_positive_discordances,
     _select_goal_root,
+    _teacher_target,
     _terminal_action_relation,
 )
 from balatro_ai_v2.public_state import PublicItem
@@ -302,6 +303,21 @@ def test_teacher_score_target_includes_typed_public_prefix() -> None:
     assert _public_best_hand_score(history) == 12_345
 
 
+def test_dense_teacher_marks_observed_horizon_victory_as_exact() -> None:
+    outcome = RolloutOutcome(
+        value=3.0,
+        steps=2,
+        rejected=False,
+        goal_utility=_utility(win=1, clear=1, progress=3, ante=8),
+        endpoint=StrategyTargetEndpoint.HORIZON,
+    )
+
+    target = _teacher_target(outcome, 7, RunGoal.VICTORY)
+
+    assert target.ante8_win == 1.0
+    assert target.endpoint == StrategyTargetEndpoint.HORIZON
+
+
 def test_dense_teacher_reuses_paired_ordinary_search_without_changing_selection(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -362,27 +378,24 @@ def test_dense_teacher_reuses_paired_ordinary_search_without_changing_selection(
     } == {1.0, 2.0}
 
 
-def test_dense_teacher_subset_is_bounded_deterministic_and_keeps_required_roots() -> (
-    None
-):
+def test_dense_teacher_requires_the_complete_root_set_within_bound() -> None:
     roots = (LeaveShop(), SelectBlind(), *(RerollShop() for _ in range(138)))
 
     first = _dense_teacher_indexes(
         roots,
         baseline_index=0,
         selected_index=139,
-        limit=64,
-    )
-    second = _dense_teacher_indexes(
-        roots,
-        baseline_index=0,
-        selected_index=139,
-        limit=64,
+        limit=512,
     )
 
-    assert first == second
-    assert len(first) == 64
-    assert {0, 1, 139}.issubset(first)
+    assert first == tuple(range(140))
+    with pytest.raises(ValueError, match="complete-root cap"):
+        _dense_teacher_indexes(
+            roots,
+            baseline_index=0,
+            selected_index=139,
+            limit=64,
+        )
 
 
 def _terminal_outcome(*, won: bool, admissible: bool = True) -> RolloutOutcome:

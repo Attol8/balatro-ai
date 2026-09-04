@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import hmac
 import json
 import math
 import os
@@ -69,6 +70,37 @@ from evaluate_candidate_baselines import summarize_results, terminal_projection
 
 
 _WORKER: dict[str, object] = {}
+_CONTEXTUAL_BATCHES = tuple(
+    {
+        "batch_id": f"batch-{index + 1:02d}",
+        "seed_start": seed_start,
+        "seeds": 50,
+        "teacher_jsonl": (
+            "runs/experiments/contextual-continuation-v9/"
+            f"batch-{index + 1:02d}.teacher.jsonl"
+        ),
+        "report_json": (
+            "runs/experiments/contextual-continuation-v9/"
+            f"batch-{index + 1:02d}.report.json"
+        ),
+    }
+    for index, seed_start in enumerate(range(1075, 1375, 50))
+)
+_CONTEXTUAL_SEARCH = {
+    "samples": 6,
+    "horizon_antes": 1,
+    "max_steps": 200,
+    "override_z": 1.0,
+    "max_decisions": 1200,
+    "ante_cap": 12,
+    "workers": 6,
+    "nonce": "contextual-continuation-v9-frozen",
+    "continuation": "strategic",
+    "policy_seed": "baseline-v1",
+    "strategy_options": False,
+    "include_reorders": False,
+    "dense_teacher": True,
+}
 
 
 def _init_worker(args_dict: dict[str, object]) -> None:
@@ -80,6 +112,9 @@ def _init_worker(args_dict: dict[str, object]) -> None:
     rollout_continuation = None
     continuation_model = str(args_dict["strategy_continuation_model"])
     continuation_certificate = str(args_dict["strategy_continuation_certificate"])
+    continuation_training_report = str(
+        args_dict["strategy_continuation_training_report"]
+    )
     if continuation_model:
         fallback, _ = build_public_baseline(
             str(args_dict["continuation"]), str(args_dict["policy_seed"]), tuning
@@ -88,6 +123,7 @@ def _init_worker(args_dict: dict[str, object]) -> None:
             control=fallback,
             model_path=Path(continuation_model),
             certificate_path=Path(continuation_certificate),
+            training_report_path=Path(continuation_training_report),
         )
     policy = DeterminizedSearchPolicy(
         backend=backend,
@@ -381,6 +417,201 @@ def _verify_terminal_freeze(
         )
 
 
+def _validate_contextual_preregistration(
+    args: argparse.Namespace,
+    tuning: StrategyTuning,
+    *,
+    repository_root: Path,
+) -> dict[str, object] | None:
+    reserved = range(1075, 1375)
+    requested = range(args.seed_start, args.seed_start + args.seeds)
+    overlaps_reserved = (
+        requested.start < reserved.stop and reserved.start < requested.stop
+    )
+    path = args.contextual_preregistration_json
+    if path is None:
+        if overlaps_reserved:
+            raise SystemExit(
+                "seeds 1075-1374 require --contextual-preregistration-json"
+            )
+        return None
+    try:
+        raw = path.read_bytes()
+        spec = json.loads(raw)
+    except (OSError, json.JSONDecodeError) as exc:
+        raise SystemExit(f"invalid contextual preregistration: {exc}") from exc
+    if not isinstance(spec, dict):
+        raise SystemExit("contextual preregistration root must be an object")
+    if (
+        spec.get("protocol_id") != "contextual-continuation-development-v1"
+        or spec.get("status") != "reserved"
+        or spec.get("immutable_batches") is not True
+    ):
+        raise SystemExit("contextual preregistration is not the reserved protocol")
+    if (
+        spec.get("seed_provenance") != args.seed_provenance
+        or spec.get("deck") != args.deck
+        or spec.get("stake") != args.stake
+        or spec.get("strategy_tuning") != json.loads(tuning.canonical_json())
+    ):
+        raise SystemExit("contextual preregistration top-level mismatch")
+    expected_search = {
+        "samples": args.samples,
+        "horizon_antes": args.horizon_antes,
+        "max_steps": args.max_steps,
+        "override_z": args.override_z,
+        "max_decisions": args.max_decisions,
+        "ante_cap": args.ante_cap,
+        "workers": args.workers,
+        "nonce": args.nonce,
+        "continuation": args.continuation,
+        "policy_seed": args.policy_seed,
+        "strategy_options": args.strategy_options,
+        "include_reorders": args.include_reorders,
+        "dense_teacher": args.dense_teacher,
+    }
+    if (
+        spec.get("search") != _CONTEXTUAL_SEARCH
+        or expected_search != _CONTEXTUAL_SEARCH
+    ):
+        raise SystemExit("contextual preregistration search budget mismatch")
+    origin = spec.get("origin_mapping")
+    if (
+        not isinstance(origin, dict)
+        or origin.get("algorithm") != "hmac-sha256-truncated-128"
+        or origin.get("key_path")
+        != "runs/secrets/contextual-continuation-v9-origin.key"
+        or not isinstance(origin.get("key_sha256"), str)
+        or len(origin["key_sha256"]) != 64
+        or args.origin_key_file is None
+        or args.origin_key_file.resolve()
+        != (repository_root / origin["key_path"]).resolve()
+    ):
+        raise SystemExit("contextual preregistration origin mapping mismatch")
+    try:
+        origin_key = args.origin_key_file.read_bytes()
+    except OSError as exc:
+        raise SystemExit("contextual origin key is unreadable") from exc
+    if (
+        len(origin_key) != 32
+        or hashlib.sha256(origin_key).hexdigest() != origin["key_sha256"]
+    ):
+        raise SystemExit("contextual origin key disagrees with its commitment")
+    if (
+        not args.dense_teacher
+        or args.success_teacher
+        or args.success_terminal_actions
+        or args.strategy_shadow_model is not None
+        or args.strategy_continuation_model is not None
+        or args.teacher_jsonl is None
+        or args.report_json is None
+    ):
+        raise SystemExit(
+            "contextual preregistration requires isolated dense collection"
+        )
+    batches = spec.get("batches")
+    if batches != list(_CONTEXTUAL_BATCHES):
+        raise SystemExit("contextual preregistration changed the frozen batches")
+    matches = [
+        batch
+        for batch in batches
+        if isinstance(batch, dict)
+        and batch.get("seed_start") == args.seed_start
+        and batch.get("seeds") == args.seeds
+    ]
+    if len(matches) != 1:
+        raise SystemExit("contextual preregistration has no unique requested batch")
+    batch = matches[0]
+    for key, actual in (
+        ("teacher_jsonl", args.teacher_jsonl),
+        ("report_json", args.report_json),
+    ):
+        declared = batch.get(key)
+        if (
+            not isinstance(declared, str)
+            or actual.resolve() != (repository_root / declared).resolve()
+        ):
+            raise SystemExit(f"contextual preregistration mismatch: {key}")
+    return {
+        "protocol_id": spec["protocol_id"],
+        "sha256": hashlib.sha256(raw).hexdigest(),
+        "batch_id": batch.get("batch_id"),
+        "seed_start": args.seed_start,
+        "seeds": args.seeds,
+        "immutable_batches": True,
+        "implementation_revision": spec.get("implementation_revision"),
+        "expected_source_digest": spec.get("expected_source_digest"),
+        "candidate_runtime": spec.get("candidate_runtime"),
+        "backend": spec.get("backend"),
+        "origin_key_sha256": origin["key_sha256"],
+    }
+
+
+def _verify_contextual_freeze(
+    binding: dict[str, object] | None,
+    *,
+    repository_revision: str,
+    source_digest: str,
+    repository_dirty: bool,
+    candidate_runtime: dict[str, object],
+    backend: dict[str, object],
+    repository_root: Path,
+) -> None:
+    if binding is None:
+        return
+    implementation_revision = binding.get("implementation_revision")
+    expected_source_digest = binding.get("expected_source_digest")
+    if (
+        not isinstance(implementation_revision, str)
+        or len(implementation_revision) != 40
+        or not isinstance(expected_source_digest, str)
+        or len(expected_source_digest) != 64
+    ):
+        raise SystemExit("contextual preregistration source freeze is incomplete")
+    if repository_dirty or source_digest != expected_source_digest:
+        raise SystemExit("contextual run does not match preregistered clean source")
+    if candidate_runtime != binding.get("candidate_runtime"):
+        raise SystemExit("contextual run changed preregistered candidate runtime")
+    if backend != binding.get("backend"):
+        raise SystemExit("contextual run changed preregistered backend")
+    if repository_revision == implementation_revision:
+        raise SystemExit(
+            "contextual preregistration was not committed after implementation"
+        )
+    try:
+        subprocess.run(
+            [
+                "git",
+                "merge-base",
+                "--is-ancestor",
+                implementation_revision,
+                repository_revision,
+            ],
+            cwd=repository_root,
+            check=True,
+            capture_output=True,
+        )
+        changed = subprocess.run(
+            [
+                "git",
+                "diff",
+                "--name-only",
+                implementation_revision,
+                repository_revision,
+            ],
+            cwd=repository_root,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.splitlines()
+    except (OSError, subprocess.CalledProcessError) as exc:
+        raise SystemExit("cannot verify contextual implementation ancestry") from exc
+    if set(changed) != {"experiments/contextual-continuation-v9-preregistration.json"}:
+        raise SystemExit(
+            "contextual preregistration commit changed implementation source"
+        )
+
+
 def main() -> None:
     args = build_parser().parse_args()
     try:
@@ -447,9 +678,12 @@ def main() -> None:
     continuation_paths = (
         args.strategy_continuation_model,
         args.strategy_continuation_certificate,
+        args.strategy_continuation_training_report,
     )
-    if (continuation_paths[0] is None) != (continuation_paths[1] is None):
-        raise SystemExit("continuation model and certificate must be supplied together")
+    if len({path is None for path in continuation_paths}) != 1:
+        raise SystemExit(
+            "continuation model, certificate, and training report must be supplied together"
+        )
     if continuation_paths[0] is not None:
         if args.seed_provenance != "development":
             raise SystemExit("learned rollout continuation is development-only")
@@ -515,6 +749,13 @@ def main() -> None:
             if args.strategy_continuation_certificate is not None
             else None
         )
+        continuation_training_report_digest = (
+            hashlib.sha256(
+                args.strategy_continuation_training_report.read_bytes()
+            ).hexdigest()
+            if args.strategy_continuation_training_report is not None
+            else None
+        )
     except OSError as exc:
         raise SystemExit(f"invalid rollout continuation artifact: {exc}") from exc
     root = Path(__file__).resolve().parents[1]
@@ -524,6 +765,12 @@ def main() -> None:
         raise SystemExit(f"invalid --tuning-json: {exc}") from exc
     terminal_preregistration = _validate_terminal_preregistration(
         args, tuning, repository_root=root
+    )
+    contextual_preregistration = _validate_contextual_preregistration(
+        args, tuning, repository_root=root
+    )
+    origin_key = (
+        args.origin_key_file.read_bytes() if contextual_preregistration else None
     )
     _, continuation_name = build_public_baseline(
         args.continuation, args.policy_seed, tuning
@@ -605,6 +852,11 @@ def main() -> None:
             if args.strategy_continuation_certificate
             else ""
         ),
+        "strategy_continuation_training_report": (
+            str(args.strategy_continuation_training_report.resolve())
+            if args.strategy_continuation_training_report
+            else ""
+        ),
         "record_shadow_decisions": args.record_shadow_decisions,
         "collect_teacher": args.teacher_jsonl is not None,
         "success_teacher": args.success_teacher,
@@ -636,6 +888,7 @@ def main() -> None:
         teacher_records, teacher_status = _finalize_teacher_records(
             results,
             enabled=args.teacher_jsonl is not None,
+            origin_key=origin_key,
         )
         teacher_digest = (
             write_teacher_records(args.teacher_jsonl, teacher_records)
@@ -681,6 +934,15 @@ def main() -> None:
         )
         _verify_terminal_freeze(
             terminal_preregistration,
+            repository_revision=manifest.repository_revision,
+            source_digest=manifest.source_digest,
+            repository_dirty=manifest.repository_dirty,
+            candidate_runtime=candidate_runtime,
+            backend=asdict(metadata_backend.metadata),
+            repository_root=root,
+        )
+        _verify_contextual_freeze(
+            contextual_preregistration,
             repository_revision=manifest.repository_revision,
             source_digest=manifest.source_digest,
             repository_dirty=manifest.repository_dirty,
@@ -778,6 +1040,7 @@ def main() -> None:
             },
             "strategy_tuning": json.loads(tuning.canonical_json()),
             "terminal_action_preregistration": terminal_preregistration,
+            "contextual_teacher_preregistration": contextual_preregistration,
             "strategy_model_shadow": {
                 "enabled": shadow_digest is not None,
                 "artifact_digest": shadow_digest,
@@ -789,6 +1052,7 @@ def main() -> None:
                 "enabled": continuation_digest is not None,
                 "artifact_digest": continuation_digest,
                 "certificate_digest": certificate_digest,
+                "training_report_digest": continuation_training_report_digest,
                 "affects_actions": continuation_digest is not None,
                 "scope": "rollout_only",
             },
@@ -1080,6 +1344,7 @@ def _finalize_teacher_records(
     results: list[dict[str, object]],
     *,
     enabled: bool,
+    origin_key: bytes | None = None,
 ) -> tuple[tuple[StrategyTeacherRecord, ...], str]:
     """Attach public terminal labels only after every originating run completes."""
 
@@ -1100,7 +1365,19 @@ def _finalize_teacher_records(
             row.pop("_teacher_drafts", None)
         return (), "discarded_rejected_panel"
     records: list[StrategyTeacherRecord] = []
-    run_groups = [f"origin-{secrets.token_hex(16)}" for _ in results]
+    run_groups = [
+        (
+            "origin-"
+            + hmac.new(
+                origin_key,
+                str(int(row["seed"])).encode(),
+                hashlib.sha256,
+            ).hexdigest()[:32]
+            if origin_key is not None
+            else f"origin-{secrets.token_hex(16)}"
+        )
+        for row in results
+    ]
     if len(set(run_groups)) != len(run_groups):
         raise RuntimeError("opaque teacher origin identifier collision")
     for run_group, row in zip(run_groups, results, strict=True):
@@ -1195,12 +1472,15 @@ def _teacher_coverage(
     dense_sensitive_rows = 0
     phase_rows: Counter[str] = Counter()
     action_roots: Counter[str] = Counter()
+    observed_victory_groups: set[str] = set()
     for record in records:
         phase_rows[record.observation.phase.value] += 1
         baseline = record.candidates[record.baseline_index].samples
         sensitive = False
         for candidate in record.candidates:
             action_roots[type(candidate.action).__name__] += 1
+            if any(sample.ante8_win == 1.0 for sample in candidate.samples):
+                observed_victory_groups.add(record.run_group)
             delta = sum(
                 sample.search_utility - base.search_utility
                 for sample, base in zip(candidate.samples, baseline, strict=True)
@@ -1232,9 +1512,10 @@ def _teacher_coverage(
                 record.candidate_space_size > len(record.candidates)
                 for record in records
             ),
-            "subset_contract": (
-                "max64;behavior+selected+each_action_family+sha256_public_action"
-            ),
+            "subset_contract": "complete_roots;max512;overflow=fail_closed",
+            "observed_victory_origin_groups": len(observed_victory_groups),
+            "postwin_rows": len(endless_rows),
+            "postwin_origin_groups": endless_groups,
         },
     }
 
@@ -1260,6 +1541,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--strategy-shadow-model", type=Path)
     parser.add_argument("--strategy-continuation-model", type=Path)
     parser.add_argument("--strategy-continuation-certificate", type=Path)
+    parser.add_argument("--strategy-continuation-training-report", type=Path)
     parser.add_argument("--record-shadow-decisions", action="store_true")
     parser.add_argument("--teacher-jsonl", type=Path)
     parser.add_argument("--dense-teacher", action="store_true")
@@ -1273,6 +1555,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--success-terminal-max-roots", type=int, default=64)
     parser.add_argument("--success-terminal-family-alpha", type=float, default=0.05)
     parser.add_argument("--terminal-preregistration-json", type=Path)
+    parser.add_argument("--contextual-preregistration-json", type=Path)
+    parser.add_argument("--origin-key-file", type=Path)
     parser.add_argument("--strategy-options", action="store_true")
     parser.add_argument("--include-reorders", action="store_true")
     parser.add_argument(

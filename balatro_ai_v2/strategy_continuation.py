@@ -134,12 +134,20 @@ class CertifiedUtilityContinuationPolicy:
         control: PublicPolicy,
         model_path: Path,
         certificate_path: Path,
+        training_report_path: Path,
     ) -> CertifiedUtilityContinuationPolicy:
         model_digest = hashlib.sha256(model_path.read_bytes()).hexdigest()
         certificate = load_rollout_continuation_certificate(certificate_path)
         if model_digest != certificate.model_sha256:
             raise ValueError("continuation model digest disagrees with certificate")
-        return cls(control, load_strategy_model(model_path), certificate)
+        model = load_strategy_model(model_path)
+        _verify_training_evidence(
+            model,
+            model_digest=model_digest,
+            certificate=certificate,
+            training_report_path=training_report_path,
+        )
+        return cls(control, model, certificate)
 
     def choose_action(
         self,
@@ -252,6 +260,62 @@ def load_rollout_continuation_certificate(
         )
     except (TypeError, ValueError) as exc:
         raise ValueError("continuation certificate values are invalid") from exc
+
+
+def _verify_training_evidence(
+    model: RelationalStrategyPolicyValue,
+    *,
+    model_digest: str,
+    certificate: RolloutContinuationCertificate,
+    training_report_path: Path,
+) -> None:
+    try:
+        report_bytes = training_report_path.read_bytes()
+        report = json.loads(report_bytes)
+        artifact = report["artifact"]
+        dataset = report["dataset"]
+        split = report["split"]
+        policy = report["holdout_metrics"]["policy"]
+        strata = report["holdout_metrics"]["strata"]
+        gate = report["calibration_gate"]
+    except (OSError, json.JSONDecodeError, KeyError, TypeError) as exc:
+        raise ValueError("continuation training evidence is invalid") from exc
+    if (
+        hashlib.sha256(report_bytes).hexdigest() != certificate.training_report_sha256
+        or report.get("diagnostic") is not False
+        or report.get("influence_mode") != "shadow"
+        or not isinstance(artifact, dict)
+        or artifact.get("sha256") != model_digest
+        or artifact.get("schema_digest") != STRATEGY_MODEL_SCHEMA_DIGEST
+        or not isinstance(dataset, dict)
+        or not isinstance(split, dict)
+        or len(split.get("train_groups", ())) != 182
+        or len(split.get("calibration_groups", ())) != 59
+        or len(split.get("holdout_groups", ())) != 59
+        or model.provenance.get("split") != split
+        or model.provenance.get("dataset_sha256") != dataset.get("sha256")
+        or model.provenance.get("collection_report_sha256")
+        != dataset.get("collection_report_sha256")
+        or not isinstance(gate, dict)
+        or gate.get("offline_gate_passed") is not True
+        or gate.get("authorizes_action_influence") is not False
+        or gate.get("zero_recommendation_errors") is not True
+        or gate.get("zero_false_tie_overrides") is not True
+        or gate.get("non_positive_recommendation_regret") is not True
+        or gate.get("positive_recommended_utility_gain") is not True
+        or not isinstance(policy, dict)
+        or int(policy.get("recommendation_groups", 0)) < 59
+        or int(policy.get("recommendation_errors", -1)) != 0
+        or int(policy.get("false_tie_overrides", -1)) != 0
+        or float(policy.get("mean_recommendation_regret", 1.0)) > 0.0
+        or float(policy.get("mean_recommended_utility_gain", 0.0)) <= 0.0
+        or not isinstance(strata, dict)
+        or any(
+            phase not in {str(key).split(":", 1)[0] for key in strata}
+            for phase in certificate.support_phases
+        )
+    ):
+        raise ValueError("continuation training evidence failed authentication")
 
 
 __all__ = [

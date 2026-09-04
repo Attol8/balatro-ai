@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from dataclasses import replace
 
 import pytest
 
@@ -156,3 +157,20 @@ def test_censored_target_cannot_masquerade_as_exact_long_horizon_label() -> None
         StrategyTargetEndpoint.CENSORED,
     )
     assert target.ante8_win is None
+
+
+def test_reader_rejects_inconsistent_outcomes_within_origin(tmp_path) -> None:
+    first = _draft().finalize(
+        run_group="origin-00000000000000000000000000000000",
+        decision_index=0,
+        run_complete=True,
+        run_won=False,
+        terminal_ante=3,
+        best_hand_score=100,
+    )
+    second = replace(first, decision_index=1, terminal_ante=4)
+    path = tmp_path / "teacher.jsonl"
+    write_teacher_records(path, (first, second))
+
+    with pytest.raises(ValueError, match="inconsistent run outcome"):
+        read_teacher_records(path)

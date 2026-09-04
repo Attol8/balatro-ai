@@ -457,7 +457,10 @@ def _model_schema_digest() -> str:
         "action_kinds": {kind.name: int(kind) for kind in ActionKind},
         "action_relation_channels": ("involved", "argument_order", "new_position"),
         "strategy_intents": _INTENT_VALUES,
-        "output_semantics": "per_candidate_policy_and_five_per_candidate_value_heads_v2",
+        "output_semantics": (
+            "per_candidate_baseline_relative_search_utility_score_and_"
+            "five_per_candidate_value_heads_v3"
+        ),
         "calibration_fields": (
             "policy_temperature",
             "current_blind_bias",
@@ -472,6 +475,7 @@ def _model_schema_digest() -> str:
             "calibrated",
         ),
         "provenance_statuses": ("untrained", "trained"),
+        "trained_influence_modes": ("diagnostic", "leaf", "shadow"),
         "trained_provenance_fields": (
             "training_status",
             "influence_mode",
@@ -488,6 +492,9 @@ def _model_schema_digest() -> str:
             "positive_recommendation_coverage",
             "policy_agreement_beats_baseline",
             "zero_recommendation_errors",
+            "zero_false_tie_overrides",
+            "non_positive_recommendation_regret",
+            "positive_recommended_utility_gain",
             "head_improvements",
             "all_heads_beat_train_only_baselines",
             "offline_gate_passed",
@@ -1716,7 +1723,7 @@ def _normalize_provenance(provenance: Mapping[str, object]) -> dict[str, object]
 def _validate_trained_provenance(provenance: dict[str, object]) -> None:
     if set(provenance) != _TRAINED_PROVENANCE_FIELDS:
         raise ValueError("trained provenance fields are invalid")
-    if provenance["influence_mode"] not in {"shadow", "leaf"}:
+    if provenance["influence_mode"] not in {"diagnostic", "shadow", "leaf"}:
         raise ValueError("trained provenance influence mode is invalid")
     for key in (
         "dataset_sha256",

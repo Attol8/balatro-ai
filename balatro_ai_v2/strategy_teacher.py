@@ -436,6 +436,12 @@ def read_teacher_records(path: Path) -> tuple[StrategyTeacherRecord, ...]:
     identities = {(record.run_group, record.decision_index) for record in records}
     if len(identities) != len(records):
         raise ValueError("strategy teacher dataset repeats a run decision")
+    group_outcomes: dict[str, tuple[bool, int, float]] = {}
+    for record in records:
+        outcome = (record.run_won, record.terminal_ante, record.run_log_score)
+        previous = group_outcomes.setdefault(record.run_group, outcome)
+        if previous != outcome:
+            raise ValueError("strategy teacher origin has inconsistent run outcome")
     return records
 
 

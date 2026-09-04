@@ -6,6 +6,8 @@ import json
 from dataclasses import replace
 from pathlib import Path
 
+import pytest
+
 from balatro_ai_v2.actions import LeaveShop, RerollShop
 from balatro_ai_v2.balatrobot.adapter import to_public_observation
 from balatro_ai_v2.strategy_engine import RunGoal
@@ -139,6 +141,7 @@ def test_training_cli_builds_reloadable_shadow_artifact(tmp_path, monkeypatch) -
             "128",
             "--max-actions",
             "32",
+            "--diagnostic",
         ],
     )
 
@@ -148,7 +151,7 @@ def test_training_cli_builds_reloadable_shadow_artifact(tmp_path, monkeypatch) -
     report = json.loads(training_report.read_text(encoding="utf-8"))
     assert model.calibration.calibrated
     assert model.provenance["training_status"] == "trained"
-    assert model.provenance["influence_mode"] == "shadow"
+    assert model.provenance["influence_mode"] == "diagnostic"
     assert report["promotion_eligible"] is False
     assert (
         report["artifact"]["sha256"]
@@ -180,7 +183,7 @@ def test_empirical_policy_baseline_weights_complete_runs_equally() -> None:
     metrics = script.empirical_baseline_metrics((baseline, alternative), evaluated)
 
     assert metrics["weighting"] == "inverse_eligible_targets_per_run_and_head"
-    assert metrics["policy"]["agreement"] == 0.5
+    assert metrics["policy"]["agreement"] == pytest.approx(0.5)
 
 
 def test_policy_gate_rejects_vacuous_zero_coverage() -> None:
@@ -206,3 +209,37 @@ def test_policy_gate_rejects_vacuous_zero_coverage() -> None:
     assert not gate["positive_recommendation_coverage"]
     assert not gate["safe_policy_recommendations"]
     assert not gate["offline_gate_passed"]
+
+
+def test_dense_training_gate_recomputes_coverage_from_records() -> None:
+    script = _load_script()
+    original = _record(0)
+    record = replace(
+        original,
+        candidates=tuple(
+            replace(candidate, samples=candidate.samples * 6)
+            for candidate in original.candidates
+        ),
+    )
+    collection = {
+        "strategy_teacher_dataset": {
+            "coverage": {
+                "winning_source_groups": 20,
+                "dense_paired_utility": {
+                    "records": 1,
+                    "action_sensitive_rows": 1,
+                    "action_sensitive_fraction": 1.0,
+                    "phase_rows": {"SHOP": 1},
+                    "stored_root_max": 2,
+                    "candidate_space_max": 2,
+                    "subset_rows": 0,
+                    "observed_victory_origin_groups": 10,
+                    "postwin_rows": 100,
+                    "postwin_origin_groups": 20,
+                },
+            }
+        }
+    }
+
+    with pytest.raises(SystemExit, match="disagrees with records"):
+        script._validate_dense_collection_coverage(collection, (record,))

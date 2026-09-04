@@ -68,9 +68,9 @@ from balatro_ai_v2.strategy_teacher import (
 )
 
 
-SEARCH_VERSION = "determinized-search-v8"
+SEARCH_VERSION = "determinized-search-v9"
 _REORDER_TYPES = (ReorderHand, ReorderJokers, ReorderConsumables)
-_DENSE_TEACHER_MAX_ROOTS = 64
+_DENSE_TEACHER_MAX_ROOTS = 512
 
 
 @dataclass(frozen=True, slots=True)
@@ -1667,7 +1667,7 @@ def _dense_teacher_indexes(
     selected_index: int,
     limit: int,
 ) -> tuple[int, ...]:
-    """Public deterministic subset retaining behavior, teacher, and families."""
+    """Retain the complete deployable root set or fail closed above the cap."""
 
     if (
         limit < 2
@@ -1677,29 +1677,7 @@ def _dense_teacher_indexes(
         raise ValueError("dense teacher subset inputs are invalid")
     if len(roots) <= limit:
         return tuple(range(len(roots)))
-
-    def rank(index: int) -> bytes:
-        payload = {
-            "action": action_to_data(roots[index]),
-            "family": type(roots[index]).__qualname__,
-        }
-        return hashlib.sha256(
-            json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
-        ).digest()
-
-    retained = {baseline_index, selected_index}
-    families: dict[type[PublicAction], list[int]] = {}
-    for index, root in enumerate(roots):
-        families.setdefault(type(root), []).append(index)
-    for indexes in families.values():
-        retained.add(min(indexes, key=rank))
-    if len(retained) > limit:
-        raise ValueError("dense teacher action families exceed the root cap")
-    for index in sorted(range(len(roots)), key=rank):
-        if len(retained) >= limit:
-            break
-        retained.add(index)
-    return tuple(sorted(retained))
+    raise ValueError("dense teacher root set exceeds the complete-root cap")
 
 
 def _select_goal_root(
@@ -1863,7 +1841,7 @@ def _teacher_target(
         )
     ante8_win: float | None = None
     if goal == RunGoal.VICTORY:
-        if outcome.endpoint == StrategyTargetEndpoint.VICTORY:
+        if utility.win_probability == 1.0:
             ante8_win = 1.0
         elif outcome.endpoint == StrategyTargetEndpoint.DEATH:
             ante8_win = utility.win_probability

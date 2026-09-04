@@ -46,6 +46,7 @@ def main() -> None:
         raise SystemExit("training report is missing certification evidence") from exc
     if (
         report.get("candidate_only") is not True
+        or report.get("diagnostic") is not False
         or report.get("influence_mode") != "shadow"
         or report.get("promotion_eligible") is not False
         or not isinstance(artifact, dict)
@@ -71,10 +72,12 @@ def main() -> None:
         raise SystemExit("training report did not pass the rollout continuation gate")
     calibration_groups = len(split.get("calibration_groups", ()))
     holdout_groups = len(split.get("holdout_groups", ()))
-    if calibration_groups < 59 or holdout_groups < 59:
-        raise SystemExit(
-            "rollout certification requires 59 calibration and holdout runs"
-        )
+    if (
+        calibration_groups != 59
+        or holdout_groups != 59
+        or len(split.get("train_groups", ())) != 182
+    ):
+        raise SystemExit("rollout certification requires the frozen 182/59/59 split")
     strata = holdout.get("strata")
     if not isinstance(strata, dict):
         raise SystemExit("holdout report has no support strata")
@@ -85,7 +88,16 @@ def main() -> None:
     ):
         raise SystemExit("requested continuation phase lacks holdout support")
     model = load_strategy_model(args.model)
-    if model.provenance.get("influence_mode") != "shadow":
+    dataset = report.get("dataset")
+    if (
+        model.provenance.get("influence_mode") != "shadow"
+        or model.provenance.get("split") != split
+        or not isinstance(dataset, dict)
+        or model.provenance.get("dataset_sha256") != dataset.get("sha256")
+        or model.provenance.get("collection_report_sha256")
+        != dataset.get("collection_report_sha256")
+        or model.provenance.get("calibration", {}).get("gate") != gate
+    ):
         raise SystemExit("model artifact is not immutable shadow-only evidence")
     certificate = RolloutContinuationCertificate(
         version=CONTINUATION_CERTIFICATE_VERSION,

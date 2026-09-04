@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import importlib.util
+import hashlib
+import json
 from pathlib import Path
 
 import pytest
@@ -382,6 +384,122 @@ def test_terminal_preregistration_binds_exact_budget_and_output() -> None:
     args.samples = 7
     with pytest.raises(SystemExit, match="search budget mismatch"):
         module._validate_terminal_preregistration(  # noqa: SLF001
+            args, StrategyTuning(), repository_root=root
+        )
+
+
+def test_reserved_contextual_seeds_require_preregistration_before_backend_work(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    module = _load_script()
+    monkeypatch.setattr(
+        module.sys,
+        "argv",
+        [
+            "evaluate_determinized_search.py",
+            "--seed-start",
+            "1075",
+            "--seeds",
+            "50",
+            "--dense-teacher",
+            "--teacher-jsonl",
+            str(tmp_path / "teacher.jsonl"),
+            "--report-json",
+            str(tmp_path / "report.json"),
+        ],
+    )
+    monkeypatch.setattr(
+        module,
+        "verify_jackdaw_runtime",
+        lambda: pytest.fail("backend verification must not run"),
+    )
+
+    with pytest.raises(SystemExit, match="require --contextual-preregistration-json"):
+        module.main()
+
+
+def test_contextual_preregistration_binds_batch_budget_and_outputs(tmp_path) -> None:
+    module = _load_script()
+    root = tmp_path
+    teacher = root / module._CONTEXTUAL_BATCHES[0]["teacher_jsonl"]
+    report = root / module._CONTEXTUAL_BATCHES[0]["report_json"]
+    origin_key = root / "runs/secrets/contextual-continuation-v9-origin.key"
+    origin_key.parent.mkdir(parents=True)
+    origin_key.write_bytes(b"k" * 32)
+    preregistration = tmp_path / "prereg.json"
+    spec = {
+        "protocol_id": "contextual-continuation-development-v1",
+        "status": "reserved",
+        "immutable_batches": True,
+        "seed_provenance": "development",
+        "deck": "RED",
+        "stake": "WHITE",
+        "strategy_tuning": json.loads(StrategyTuning().canonical_json()),
+        "search": {
+            "samples": 6,
+            "horizon_antes": 1,
+            "max_steps": 200,
+            "override_z": 1.0,
+            "max_decisions": 1200,
+            "ante_cap": 12,
+            "workers": 6,
+            "nonce": "contextual-continuation-v9-frozen",
+            "continuation": "strategic",
+            "policy_seed": "baseline-v1",
+            "strategy_options": False,
+            "include_reorders": False,
+            "dense_teacher": True,
+        },
+        "origin_mapping": {
+            "algorithm": "hmac-sha256-truncated-128",
+            "key_path": "runs/secrets/contextual-continuation-v9-origin.key",
+            "key_sha256": hashlib.sha256(b"k" * 32).hexdigest(),
+        },
+        "batches": list(module._CONTEXTUAL_BATCHES),
+    }
+    preregistration.write_text(json.dumps(spec), encoding="utf-8")
+    args = module.build_parser().parse_args(
+        [
+            "--seed-start",
+            "1075",
+            "--seeds",
+            "50",
+            "--samples",
+            "6",
+            "--horizon-antes",
+            "1",
+            "--max-steps",
+            "200",
+            "--max-decisions",
+            "1200",
+            "--ante-cap",
+            "12",
+            "--workers",
+            "6",
+            "--nonce",
+            "contextual-continuation-v9-frozen",
+            "--dense-teacher",
+            "--teacher-jsonl",
+            str(teacher),
+            "--report-json",
+            str(report),
+            "--contextual-preregistration-json",
+            str(preregistration),
+            "--origin-key-file",
+            str(origin_key),
+        ]
+    )
+
+    binding = module._validate_contextual_preregistration(
+        args, StrategyTuning(), repository_root=root
+    )
+
+    assert binding is not None
+    assert binding["batch_id"] == "batch-01"
+    args.samples = 5
+    with pytest.raises(SystemExit, match="search budget mismatch"):
+        module._validate_contextual_preregistration(
             args, StrategyTuning(), repository_root=root
         )
 

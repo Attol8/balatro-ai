@@ -3722,3 +3722,31 @@ training report
 and seed-204 shadow report
 `e788ebe56f48387b041d761f65e2f40cb798107c7be07c59b4a2fd1faeb327f7`.
 These are implementation diagnostics only and are not promotion evidence.
+
+### Contextual collection v9 integrity freeze (2026-09-04)
+
+An adversarial pre-collection review rejected the v8 64-root subset. It always
+included the search-selected action, making the training candidate distribution
+depend on an outcome unavailable to the deployed continuation. No fresh v8 run
+was started. Search v9 instead persists every non-reorder root up to a hard 512
+cap and fails the batch above it; training rejects any subset row. The existing
+66- and 139-root reused diagnostics show this bound covers the observed tail.
+
+The fresh protocol is six immutable 50-run batches on development seeds
+1075--1374. The evaluator independently enforces Red/White, six paired samples,
+one-ante/200-step search, z=1, Ante 12, 1,200 decisions, six workers, the frozen
+nonce, exact output paths, and the complete six-batch registry. A private
+32-byte key is committed before outcomes and deterministically HMACs seed
+identities into opaque origin families; the key and seed-bearing component
+reports never enter model training. The strict merger requires the exact union,
+common preregistration/source/runtime/backend/configuration, six samples per
+root, no censored target, no overlap, and complete roots. Its training manifest
+contains only aggregate coverage and component hashes.
+
+Non-diagnostic training is code-frozen to the 182/59/59 origin split and
+recomputes coverage from the records rather than trusting report counters.
+Diagnostic artifacts carry a distinct influence mode and cannot shadow or
+certify. A rollout certificate now requires the exact hashed training report,
+authenticates its model/dataset/split/gate bindings at load time, and needs safe
+recommendations in all 59 independent holdout groups. These changes supersede
+the v8 subset paragraph above; v7/v8 files remain diagnostics only.

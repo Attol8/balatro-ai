@@ -9,6 +9,7 @@ import json
 import math
 import platform
 import sys
+from collections import Counter
 from dataclasses import asdict
 from pathlib import Path
 
@@ -46,6 +47,8 @@ def main() -> None:
         dataset_digest,
         records,
     )
+    if not args.diagnostic:
+        _validate_dense_collection_coverage(collection, records)
     teacher_config_digest = collection["strategy_teacher_dataset"][
         "teacher_config_digest"
     ]
@@ -99,9 +102,10 @@ def main() -> None:
     baseline_metrics = empirical_baseline_metrics(split.train, split.holdout)
     gate = calibration_gate(holdout_metrics, baseline_metrics)
     split_manifest = split.manifest()
+    influence_mode = "diagnostic" if args.diagnostic else "shadow"
     provenance = {
         "training_status": "trained",
-        "influence_mode": "shadow",
+        "influence_mode": influence_mode,
         "dataset_sha256": dataset_digest,
         "collection_report_sha256": collection_digest,
         "teacher_config_digest": teacher_config_digest,
@@ -138,7 +142,8 @@ def main() -> None:
     artifact_digest = save_strategy_model(args.output_model, model)
     report = {
         "candidate_only": True,
-        "influence_mode": "shadow",
+        "diagnostic": args.diagnostic,
+        "influence_mode": influence_mode,
         "promotion_eligible": False,
         "dataset": {
             "path": str(args.input_jsonl.resolve()),
@@ -290,6 +295,7 @@ def calibration_gate(
     positive_utility = float(policy["mean_recommended_utility_gain"]) > 0.0
     safe_policy = (
         positive_coverage
+        and int(policy.get("recommendation_groups", 0)) >= 59
         and zero_recommendation_errors
         and zero_false_ties
         and non_positive_regret
@@ -322,7 +328,9 @@ def _load_collection_report(
         manifest = report["manifest"]
         runtime = report["candidate_runtime"]
         search = report["search_protocol"]
-        results = report["results"]
+        results = report.get("results")
+        merged = report.get("merged_components")
+        collection_summary = report.get("collection_summary")
     except (OSError, json.JSONDecodeError, KeyError, TypeError) as exc:
         raise SystemExit("collection report is invalid") from exc
     if (
@@ -343,24 +351,42 @@ def _load_collection_report(
         or benchmark.get("seed_provenance") != "development"
         or benchmark.get("filtered_seeds") is not False
         or not isinstance(benchmark.get("panel_registry"), dict)
-        or benchmark["panel_registry"].get("verification") != "registry_verified"
+        or benchmark["panel_registry"].get("verification")
+        not in {"registry_verified", "component_registries_verified"}
         or not isinstance(manifest.get("source_digest"), str)
         or not isinstance(manifest.get("backend"), dict)
         or not isinstance(runtime.get("revision"), str)
         or not isinstance(runtime.get("data_hashes"), dict)
         or not isinstance(search.get("version"), str)
-        or not isinstance(results, list)
-        or len(results) != teacher.get("groups")
-        or any(
-            not isinstance(row, dict)
-            or row.get("complete") is not True
-            or not isinstance(row.get("search"), dict)
-            or row["search"].get("rejected_rollouts") != 0
-            for row in results
-        )
     ):
         raise SystemExit(
             "collection report does not bind a valid public teacher dataset"
+        )
+    direct_valid = (
+        isinstance(results, list)
+        and len(results) == teacher.get("groups")
+        and all(
+            isinstance(row, dict)
+            and row.get("complete") is True
+            and isinstance(row.get("search"), dict)
+            and row["search"].get("rejected_rollouts") == 0
+            for row in results
+        )
+    )
+    merged_valid = (
+        results is None
+        and isinstance(merged, list)
+        and len(merged) == 6
+        and isinstance(collection_summary, dict)
+        and collection_summary.get("complete_groups") == teacher.get("groups")
+        and collection_summary.get("rejected_rollouts") == 0
+        and isinstance(report.get("contextual_teacher_preregistration"), dict)
+        and report["contextual_teacher_preregistration"].get("immutable_batches")
+        is True
+    )
+    if not (direct_valid or merged_valid):
+        raise SystemExit(
+            "collection report does not bind complete rejection-free groups"
         )
     success_teacher = search.get("success_teacher")
     if (
@@ -379,6 +405,85 @@ def _load_collection_report(
         ):
             raise SystemExit("success teacher dataset does not meet frozen coverage")
     return digest, report
+
+
+def _validate_dense_collection_coverage(collection: dict[str, object], records) -> None:
+    try:
+        teacher = collection["strategy_teacher_dataset"]
+        coverage = teacher["coverage"]
+        dense = coverage["dense_paired_utility"]
+        phases = dense["phase_rows"]
+    except (KeyError, TypeError) as exc:
+        raise SystemExit("dense collection coverage is missing") from exc
+    groups = {record.run_group for record in records}
+    phases = Counter(record.observation.phase.value for record in records)
+    winning_groups = {record.run_group for record in records if record.run_won}
+    observed_victory_groups = {
+        record.run_group
+        for record in records
+        if any(
+            sample.ante8_win == 1.0
+            for candidate in record.candidates
+            for sample in candidate.samples
+        )
+    }
+    postwin = tuple(record for record in records if record.goal.value == "endless")
+    if any(
+        len(candidate.samples) != 6
+        or any(sample.endpoint.value == "censored" for sample in candidate.samples)
+        for record in records
+        for candidate in record.candidates
+    ):
+        raise SystemExit("dense collection contains censored or unpaired samples")
+    sensitive = 0
+    for record in records:
+        baseline = record.candidates[record.baseline_index].samples
+        sensitive += int(
+            any(
+                abs(
+                    sum(
+                        sample.search_utility - base.search_utility
+                        for sample, base in zip(
+                            candidate.samples, baseline, strict=True
+                        )
+                    )
+                    / len(candidate.samples)
+                )
+                > 1e-12
+                for candidate in record.candidates
+            )
+        )
+    computed = {
+        "records": len(records),
+        "action_sensitive_rows": sensitive,
+        "action_sensitive_fraction": sensitive / len(records),
+        "phase_rows": dict(sorted(phases.items())),
+        "stored_root_max": max(len(record.candidates) for record in records),
+        "candidate_space_max": max(record.candidate_space_size for record in records),
+        "subset_rows": sum(
+            record.candidate_space_size > len(record.candidates) for record in records
+        ),
+        "observed_victory_origin_groups": len(observed_victory_groups),
+        "postwin_rows": len(postwin),
+        "postwin_origin_groups": len({record.run_group for record in postwin}),
+    }
+    for key, value in computed.items():
+        if dense.get(key) != value:
+            raise SystemExit(f"dense collection coverage disagrees with records: {key}")
+    if (
+        len(groups) != 300
+        or len(records) < 2_000
+        or any(phases.get(phase, 0) < 1 for phase in ("BLIND_SELECT", "SHOP", "PACK"))
+        or computed["action_sensitive_fraction"] < 0.40
+        or len(winning_groups) < 20
+        or len(observed_victory_groups) < 10
+        or len(postwin) < 100
+        or computed["postwin_origin_groups"] < 20
+        or computed["stored_root_max"] > 512
+        or computed["subset_rows"] != 0
+        or coverage.get("winning_source_groups") != len(winning_groups)
+    ):
+        raise SystemExit("dense collection does not meet frozen training coverage")
 
 
 def _constant_binary(
@@ -470,6 +575,12 @@ def _validate_args(args: argparse.Namespace) -> None:
         raise SystemExit("optimizer parameters are invalid")
     if args.split_nonce != "strategy-split-v3-predeclared":
         raise SystemExit("--split-nonce is frozen for this expert-iteration protocol")
+    if not args.diagnostic and (
+        args.train_groups,
+        args.calibration_groups,
+        args.holdout_groups,
+    ) != (182, 59, 59):
+        raise SystemExit("non-diagnostic split is frozen at 182/59/59 groups")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -480,9 +591,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--report-json", type=Path)
     parser.add_argument("--epochs", type=int, default=30)
     parser.add_argument("--training-seed", type=int, default=20260904)
-    parser.add_argument("--train-groups", type=int, default=8)
-    parser.add_argument("--calibration-groups", type=int, default=2)
-    parser.add_argument("--holdout-groups", type=int, default=2)
+    parser.add_argument("--train-groups", type=int, default=182)
+    parser.add_argument("--calibration-groups", type=int, default=59)
+    parser.add_argument("--holdout-groups", type=int, default=59)
     parser.add_argument("--split-nonce", default="strategy-split-v3-predeclared")
     parser.add_argument("--hidden-size", type=int, default=64)
     parser.add_argument("--attention-heads", type=int, default=4)
@@ -494,6 +605,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--weight-decay", type=float, default=1e-4)
     parser.add_argument("--max-gradient-norm", type=float, default=1.0)
     parser.add_argument("--device", default="cpu")
+    parser.add_argument("--diagnostic", action="store_true")
     return parser
 
 

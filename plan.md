@@ -543,8 +543,9 @@ Build this as a staged, auditable increment:
    counts, failed/censored siblings, duplicate roots, or non-legal actions.
 2. **Behavior-inert dense collection.** Reuse the ordinary search's exact
    sampled sibling outcomes and canonical non-reorder roots. Collection never
-   changes the selected root. Use opaque origin-family IDs that cannot be
-   joined to the seed-ordered report, and keep every authoritative run and all
+   changes the selected root. Derive opaque origin-family IDs from a
+   precommitted private HMAC key so they cannot be joined to the seed-ordered
+   report, and keep every candidate run and all
    descendants in one atomic split. Report coverage by phase, ante, root
    family, and outcome; winners and failures are both training evidence.
 3. **Paired objective.** Reuse the relational encoder and treat its per-action
@@ -586,6 +587,36 @@ fallback, legal-action permutation equivariance, exact behavior on tactical or
 unsupported states, distinct rollout forks, serial/parallel identity, import
 firewalls, split collision rejection, holdout isolation, and artifact/
 certificate digest tampering.
+
+Fresh collection protocol, frozen before seed `1075`:
+
+- Six separately atomic 50-run batches cover development seeds `1075-1374`.
+  No batch may be extended or selectively rerun. Merge only complete reports
+  with identical source, backend, search, teacher, and public schema digests.
+- Red Deck, White Stake, pinned Jackdaw candidate, Ante cap 12, six common-random
+  samples, one-ante horizon, 200-step cap, `override_z=1`, nonce
+  `contextual-continuation-v9-frozen`, six workers. Dense collection is
+  behavior-inert relative to that exact search.
+- The schema-v4 collector stores the complete deployable root set, capped at
+  512 roots. Overflow fails closed and invalidates the batch; outcome-dependent
+  root subsetting is forbidden because it cannot be reproduced at inference.
+- After all six batches merge, hash-split exactly 182 origin families for
+  training, 59 for calibration, and 59 untouched holdout using nonce
+  `strategy-split-v3-predeclared`. Calibration and holdout are each large
+  enough that zero unsafe recommendations across all 59 independent holdout
+  groups has a one-sided 95% upper error bound below 5%. Fewer than 59
+  recommendation-bearing holdout groups cannot certify continuation.
+- Before training, require at least 2,000 dense decisions, nonzero BLIND_SELECT,
+  SHOP, and PACK coverage, at least 40% action-sensitive rows overall, zero
+  rejected/censored stored siblings, all 300 complete origin families, at
+  least 20 winning source runs, and at least 100 post-win rows across 20 origin
+  families. At the first 100 complete groups, kill or redesign if action
+  sensitivity is below 40%, victory endpoints occur in fewer than ten source
+  families, or rejection/censor accounting is nonzero.
+- Training architecture and optimizer remain those committed before the first
+  batch. No epoch, margin, feature, root, or split tuning may read calibration
+  or holdout results. Failure quarantines the cohort for diagnosis; it does not
+  authorize a second split or a threshold adjustment.
 
 No tuning `1-200`, quarantined `501-700`, replacement gate `701-900`, or
 authority-secret seed may be used by this increment.
