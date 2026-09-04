@@ -17,6 +17,7 @@ from balatro_ai_v2.actions import (
     ReorderConsumables,
     ReorderHand,
     ReorderJokers,
+    action_to_data,
 )
 from balatro_ai_v2.policy import ActionSource, PublicHistoryStep, PublicPolicy
 from balatro_ai_v2.public_state import Phase, PublicObservation
@@ -158,7 +159,18 @@ class CertifiedUtilityContinuationPolicy:
             if baseline not in supplied:
                 raise ValueError("control action is absent from supplied legal actions")
             candidates = tuple(
-                action for action in supplied if not isinstance(action, _REORDERS)
+                sorted(
+                    (
+                        action
+                        for action in supplied
+                        if not isinstance(action, _REORDERS)
+                    ),
+                    key=lambda action: json.dumps(
+                        action_to_data(action),
+                        sort_keys=True,
+                        separators=(",", ":"),
+                    ),
+                )
             )
             if baseline not in candidates or len(candidates) <= 1:
                 return baseline

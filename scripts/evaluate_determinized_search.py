@@ -1192,6 +1192,21 @@ def _teacher_coverage(
         and endless_groups >= 5
         and sensitive_late_rows >= 20
     )
+    dense_sensitive_rows = 0
+    phase_rows: Counter[str] = Counter()
+    action_roots: Counter[str] = Counter()
+    for record in records:
+        phase_rows[record.observation.phase.value] += 1
+        baseline = record.candidates[record.baseline_index].samples
+        sensitive = False
+        for candidate in record.candidates:
+            action_roots[type(candidate.action).__name__] += 1
+            delta = sum(
+                sample.search_utility - base.search_utility
+                for sample, base in zip(candidate.samples, baseline, strict=True)
+            ) / len(candidate.samples)
+            sensitive |= abs(delta) > 1e-12
+        dense_sensitive_rows += int(sensitive)
     return {
         "winning_source_groups": winning_groups,
         "losing_source_groups": losing_groups,
@@ -1199,6 +1214,28 @@ def _teacher_coverage(
         "resolved_endless_groups": endless_groups,
         "late_action_sensitive_ante8_rows": sensitive_late_rows,
         "training_coverage_passed": passed,
+        "dense_paired_utility": {
+            "records": len(records),
+            "action_sensitive_rows": dense_sensitive_rows,
+            "action_sensitive_fraction": (
+                dense_sensitive_rows / len(records) if records else 0.0
+            ),
+            "phase_rows": dict(sorted(phase_rows.items())),
+            "action_roots": dict(sorted(action_roots.items())),
+            "stored_root_max": max(
+                (len(record.candidates) for record in records), default=0
+            ),
+            "candidate_space_max": max(
+                (record.candidate_space_size for record in records), default=0
+            ),
+            "subset_rows": sum(
+                record.candidate_space_size > len(record.candidates)
+                for record in records
+            ),
+            "subset_contract": (
+                "max64;behavior+selected+each_action_family+sha256_public_action"
+            ),
+        },
     }
 
 

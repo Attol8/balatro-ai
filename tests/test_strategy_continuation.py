@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+import json
 from types import SimpleNamespace
 
 import pytest
 
 torch = pytest.importorskip("torch")
 
-from balatro_ai_v2.actions import iter_legal_actions  # noqa: E402
+from balatro_ai_v2.actions import action_to_data, iter_legal_actions  # noqa: E402
 from balatro_ai_v2.balatrobot.adapter import to_public_observation  # noqa: E402
 from balatro_ai_v2.strategy_continuation import (  # noqa: E402
     CertifiedUtilityContinuationPolicy,
@@ -23,6 +24,15 @@ from state_factory import state  # noqa: E402
 class _FirstControl:
     def choose_action(self, observation, legal_actions, history):
         return next(legal_actions())
+
+
+class _FixedControl:
+    def __init__(self, action) -> None:
+        self.action = action
+
+    def choose_action(self, observation, legal_actions, history):
+        del observation, legal_actions, history
+        return self.action
 
 
 class _UtilityModel:
@@ -79,7 +89,13 @@ def test_certified_continuation_can_override_only_supported_strategic_state() ->
 
     selected = policy.choose_action(observation, lambda: iter(legal), ())
 
-    assert selected == legal[-1]
+    canonical = sorted(
+        legal,
+        key=lambda action: json.dumps(
+            action_to_data(action), sort_keys=True, separators=(",", ":")
+        ),
+    )
+    assert selected == canonical[-1]
     assert selected != legal[0]
 
 
@@ -93,6 +109,21 @@ def test_certified_continuation_fails_closed_on_inference_or_bad_history() -> No
     )
 
     assert failing.choose_action(observation, lambda: iter(legal), ()) == legal[0]
+
+
+def test_certified_continuation_is_invariant_to_supplied_action_order() -> None:
+    observation = to_public_observation(state("SHOP"))
+    legal = tuple(iter_legal_actions(observation))
+    policy = CertifiedUtilityContinuationPolicy(
+        _FixedControl(legal[0]),  # type: ignore[arg-type]
+        _UtilityModel(),  # type: ignore[arg-type]
+        _certificate(),
+    )
+
+    forward = policy.choose_action(observation, lambda: iter(legal), ())
+    reverse = policy.choose_action(observation, lambda: iter(reversed(legal)), ())
+
+    assert forward == reverse
 
 
 def test_certificate_rejects_insufficient_independent_runs() -> None:

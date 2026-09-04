@@ -21,6 +21,7 @@ from balatro_ai_v2.determinized_search import (
     RolloutOutcome,
     SuccessTeacherBudget,
     SuccessTerminalActionBudget,
+    _dense_teacher_indexes,
     _public_best_hand_score,
     _required_positive_discordances,
     _select_goal_root,
@@ -359,6 +360,29 @@ def test_dense_teacher_reuses_paired_ordinary_search_without_changing_selection(
         for candidate in draft.candidates
         for sample in candidate.samples
     } == {1.0, 2.0}
+
+
+def test_dense_teacher_subset_is_bounded_deterministic_and_keeps_required_roots() -> (
+    None
+):
+    roots = (LeaveShop(), SelectBlind(), *(RerollShop() for _ in range(138)))
+
+    first = _dense_teacher_indexes(
+        roots,
+        baseline_index=0,
+        selected_index=139,
+        limit=64,
+    )
+    second = _dense_teacher_indexes(
+        roots,
+        baseline_index=0,
+        selected_index=139,
+        limit=64,
+    )
+
+    assert first == second
+    assert len(first) == 64
+    assert {0, 1, 139}.issubset(first)
 
 
 def _terminal_outcome(*, won: bool, admissible: bool = True) -> RolloutOutcome:

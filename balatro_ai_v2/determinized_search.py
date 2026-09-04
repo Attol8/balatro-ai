@@ -68,8 +68,9 @@ from balatro_ai_v2.strategy_teacher import (
 )
 
 
-SEARCH_VERSION = "determinized-search-v7"
+SEARCH_VERSION = "determinized-search-v8"
 _REORDER_TYPES = (ReorderHand, ReorderJokers, ReorderConsumables)
+_DENSE_TEACHER_MAX_ROOTS = 64
 
 
 @dataclass(frozen=True, slots=True)
@@ -533,6 +534,12 @@ class DeterminizedSearchPolicy:
         selected = roots[selected_index]
         if self.collect_dense_teacher and rejected == 0:
             engine = derive_engine_state(observation)
+            teacher_indexes = _dense_teacher_indexes(
+                roots,
+                baseline_index=baseline_index,
+                selected_index=selected_index,
+                limit=_DENSE_TEACHER_MAX_ROOTS,
+            )
             self.teacher_drafts.append(
                 StrategyTeacherDraft(
                     observation=observation,
@@ -558,12 +565,15 @@ class DeterminizedSearchPolicy:
                                 for outcome in root_outcomes
                             ),
                         )
-                        for root, root_outcomes in zip(roots, outcomes, strict=True)
+                        for root, root_outcomes in (
+                            (roots[index], outcomes[index]) for index in teacher_indexes
+                        )
                     ),
-                    selected_index=selected_index,
-                    baseline_index=baseline_index,
+                    selected_index=teacher_indexes.index(selected_index),
+                    baseline_index=teacher_indexes.index(baseline_index),
                     goal=engine.goal,
                     teacher_config_digest=_teacher_config_digest(self),
+                    candidate_space_size=len(roots),
                 )
             )
         self.counters.searched += 1
@@ -1650,6 +1660,48 @@ def _select_root(
     return best_index
 
 
+def _dense_teacher_indexes(
+    roots: Sequence[PublicAction],
+    *,
+    baseline_index: int,
+    selected_index: int,
+    limit: int,
+) -> tuple[int, ...]:
+    """Public deterministic subset retaining behavior, teacher, and families."""
+
+    if (
+        limit < 2
+        or not 0 <= baseline_index < len(roots)
+        or not 0 <= selected_index < len(roots)
+    ):
+        raise ValueError("dense teacher subset inputs are invalid")
+    if len(roots) <= limit:
+        return tuple(range(len(roots)))
+
+    def rank(index: int) -> bytes:
+        payload = {
+            "action": action_to_data(roots[index]),
+            "family": type(roots[index]).__qualname__,
+        }
+        return hashlib.sha256(
+            json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+        ).digest()
+
+    retained = {baseline_index, selected_index}
+    families: dict[type[PublicAction], list[int]] = {}
+    for index, root in enumerate(roots):
+        families.setdefault(type(root), []).append(index)
+    for indexes in families.values():
+        retained.add(min(indexes, key=rank))
+    if len(retained) > limit:
+        raise ValueError("dense teacher action families exceed the root cap")
+    for index in sorted(range(len(roots)), key=rank):
+        if len(retained) >= limit:
+            break
+        retained.add(index)
+    return tuple(sorted(retained))
+
+
 def _select_goal_root(
     values: Sequence[Sequence[GoalUtility]],
     baseline_index: int,
@@ -1855,6 +1907,10 @@ def _teacher_config_digest(policy: DeterminizedSearchPolicy) -> str:
         "nonce": policy.nonce,
         "strategy_options": policy.enable_strategy_options,
         "dense_teacher": policy.collect_dense_teacher,
+        "dense_teacher_max_roots": _DENSE_TEACHER_MAX_ROOTS,
+        "dense_teacher_subset": (
+            "behavior+selected+each_action_family+sha256_public_action"
+        ),
         "include_reorders": policy.include_reorders,
         "success_teacher": (
             policy.success_teacher.canonical()

@@ -3658,7 +3658,7 @@ Natural simulated victories from losing source runs are therefore valuable,
 but all descendants must remain in their source origin family.
 
 The accepted architecture reuses the relational public encoder but replaces
-winner cross-entropy as the action objective. Schema v3 stores the ordinary
+winner cross-entropy as the action objective. Strategy-teacher schema v4 stores the ordinary
 search's per-sample scalar utility and a versioned typed-history summary. The
 model learns candidate-minus-behavior utility with run/decision/alternative
 equal weighting. Calibration bounds one-sided unsafe overestimation; the
@@ -3680,3 +3680,45 @@ diagnostic through collect, strict reload, train, calibrate, and shadow replay.
 Then freeze the fresh development cohort and its coverage quotas. Protected
 panels `1-200`, `501-700`, `701-900`, and evaluator-secret authority remain
 untouched.
+
+### Contextual continuation implementation diagnostic (2026-09-04)
+
+The committed v7 pipeline completed the full behavior-inert path on reused
+development seeds. Seed 207 won through Ante 8 and emitted 88 ordinary-search
+decisions from 19,151 rollout steps at 101.5 steps/second, with zero unavailable
+or rejected work. Sixty-three of 88 rows (71.6%) had a nonzero sibling utility
+delta, confirming the intended dense target. The strict schema reload found no
+seed text; the dataset SHA-256 is
+`e23740e26b735d5df9e86302d81cf6e5b9112bb36fb847b36745e8ddd46cd730`.
+
+A three-run reused diagnostic on seeds 201--203 produced 199 decisions from
+three complete origin families: one win, one Ante-7 loss, and one Ante-1 loss,
+with zero rejected work. Ten diagnostic training epochs reduced paired-utility
+loss from 0.0972 to 0.0671. On the single-run holdout, next-boss Brier improved
+from the train-only constant's 0.294 to 0.171. The calibration origin allowed
+no safe recommendations, so the offline gate correctly failed and the model
+remained shadow-only. A reused seed-204 shadow replay then tensorized all 41
+strategic decisions with zero unavailable states and zero margin signals; live
+behavior was unchanged.
+
+This diagnostic also exposed the root tail before fresh collection. Two rows
+had 66 and 139 public PACK actions, despite a typical maximum of 12--13. A
+lowered 128-action diagnostic model therefore failed closed before artifact
+publication; rerunning at the declared 512 limit passed. Search v8 now records
+the original candidate-space size and stores at most 64 teacher roots using a
+public deterministic subset that always retains behavior, search selection,
+and every action family, then fills by SHA-256 rank. Actual search still sees
+all roots and its action is unchanged. The schema is v4 because this metadata
+postdates the first v3 diagnostic.
+
+Diagnostic SHA-256 values: three-run dataset
+`2d02f716c24c4841cb6924bd23a61079b6e314cbff1d46d1170acdee86513ccc`,
+collection report
+`18f1b024041bfc7a86ea7019a352cf891181b4ce7a914720f3653df8ab59b58f`,
+shadow model
+`a1bd35ea6cc06502b3e7409d802cd5c24da9c90b8fea91a424426f29897743da`,
+training report
+`e44e526e5096676db872e0b77c4a2788fb3c432604cfd7b5566eeb39468df4c3`,
+and seed-204 shadow report
+`e788ebe56f48387b041d761f65e2f40cb798107c7be07c59b4a2fd1faeb327f7`.
+These are implementation diagnostics only and are not promotion evidence.

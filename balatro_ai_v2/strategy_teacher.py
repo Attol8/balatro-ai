@@ -34,7 +34,7 @@ from balatro_ai_v2.strategy_engine import RunGoal, derive_engine_state
 from balatro_ai_v2.strategy_options import StrategyIntent
 
 
-STRATEGY_TEACHER_SCHEMA_VERSION = 3
+STRATEGY_TEACHER_SCHEMA_VERSION = 4
 _RUN_GROUP = re.compile(r"origin-[0-9a-f]{32}")
 _SHA256 = re.compile(r"[0-9a-f]{64}")
 
@@ -106,10 +106,16 @@ class StrategyTeacherDraft:
     goal: RunGoal
     teacher_config_digest: str
     context: PublicStrategyContext = PublicStrategyContext()
+    candidate_space_size: int = 0
 
     def __post_init__(self) -> None:
         if not isinstance(self.context, PublicStrategyContext):
             raise ValueError("strategy teacher context has the wrong type")
+        if self.candidate_space_size < 0 or (
+            self.candidate_space_size
+            and self.candidate_space_size < len(self.candidates)
+        ):
+            raise ValueError("teacher candidate space size is invalid")
         _validate_decision(
             self.observation,
             self.candidates,
@@ -145,6 +151,7 @@ class StrategyTeacherDraft:
             goal=self.goal,
             teacher_config_digest=self.teacher_config_digest,
             context=self.context,
+            candidate_space_size=self.candidate_space_size or len(self.candidates),
             run_won=run_won,
             terminal_ante=terminal_ante,
             run_log_score=math.log10(max(1, best_hand_score)),
@@ -165,12 +172,15 @@ class StrategyTeacherRecord:
     terminal_ante: int
     run_log_score: float
     context: PublicStrategyContext = PublicStrategyContext()
+    candidate_space_size: int = 0
 
     def __post_init__(self) -> None:
         if _RUN_GROUP.fullmatch(self.run_group) is None:
             raise ValueError("run_group must be an opaque origin identifier")
         if not isinstance(self.context, PublicStrategyContext):
             raise ValueError("strategy teacher context has the wrong type")
+        if self.candidate_space_size < len(self.candidates):
+            raise ValueError("teacher candidate space size is invalid")
         if self.decision_index < 0 or self.terminal_ante < 0:
             raise ValueError("teacher indexes and terminal ante must be non-negative")
         if not math.isfinite(self.run_log_score) or self.run_log_score < 0:
@@ -204,6 +214,7 @@ def teacher_record_to_data(record: StrategyTeacherRecord) -> dict[str, object]:
                 else None
             ),
         },
+        "candidate_space_size": record.candidate_space_size,
         "candidates": [
             {
                 "action": action_to_data(candidate.action),
@@ -244,6 +255,7 @@ def teacher_record_from_data(data: object) -> StrategyTeacherRecord:
         "decision_index",
         "observation",
         "context",
+        "candidate_space_size",
         "candidates",
         "selected_index",
         "baseline_index",
@@ -367,6 +379,7 @@ def teacher_record_from_data(data: object) -> StrategyTeacherRecord:
             terminal_ante=int(outcome["terminal_ante"]),
             run_log_score=float(outcome["log_score"]),
             context=context,
+            candidate_space_size=int(data["candidate_space_size"]),
         )
     except (TypeError, ValueError) as exc:
         raise ValueError("strategy teacher record is invalid") from exc
