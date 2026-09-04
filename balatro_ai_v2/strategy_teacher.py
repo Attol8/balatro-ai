@@ -29,12 +29,13 @@ from balatro_ai_v2.public_codec import (
     public_observation_to_data,
 )
 from balatro_ai_v2.public_state import PublicObservation
+from balatro_ai_v2.strategy_context import PublicStrategyContext
 from balatro_ai_v2.strategy_engine import RunGoal, derive_engine_state
 from balatro_ai_v2.strategy_options import StrategyIntent
 
 
-STRATEGY_TEACHER_SCHEMA_VERSION = 2
-_RUN_GROUP = re.compile(r"run-[0-9]{6}")
+STRATEGY_TEACHER_SCHEMA_VERSION = 3
+_RUN_GROUP = re.compile(r"origin-[0-9a-f]{32}")
 _SHA256 = re.compile(r"[0-9a-f]{64}")
 
 
@@ -57,6 +58,7 @@ class StrategyRolloutTarget:
     endless_ante: float | None
     log_score: float | None
     endpoint: StrategyTargetEndpoint = StrategyTargetEndpoint.HORIZON
+    search_utility: float = 0.0
 
     def __post_init__(self) -> None:
         for name in ("current_blind_clear", "next_boss_clear"):
@@ -70,9 +72,9 @@ class StrategyRolloutTarget:
         for name in ("endless_ante", "log_score"):
             value = getattr(self, name)
             if value is not None and (not math.isfinite(value) or value < 0):
-                raise ValueError(
-                    f"{name} must be null or a finite non-negative target"
-                )
+                raise ValueError(f"{name} must be null or a finite non-negative target")
+        if not math.isfinite(self.search_utility) or self.search_utility < 0:
+            raise ValueError("search utility must be finite and non-negative")
         if not isinstance(self.endpoint, StrategyTargetEndpoint):
             raise ValueError("strategy target endpoint is unsupported")
         if self.endpoint == StrategyTargetEndpoint.CENSORED and any(
@@ -103,8 +105,11 @@ class StrategyTeacherDraft:
     baseline_index: int
     goal: RunGoal
     teacher_config_digest: str
+    context: PublicStrategyContext = PublicStrategyContext()
 
     def __post_init__(self) -> None:
+        if not isinstance(self.context, PublicStrategyContext):
+            raise ValueError("strategy teacher context has the wrong type")
         _validate_decision(
             self.observation,
             self.candidates,
@@ -139,6 +144,7 @@ class StrategyTeacherDraft:
             baseline_index=self.baseline_index,
             goal=self.goal,
             teacher_config_digest=self.teacher_config_digest,
+            context=self.context,
             run_won=run_won,
             terminal_ante=terminal_ante,
             run_log_score=math.log10(max(1, best_hand_score)),
@@ -158,10 +164,13 @@ class StrategyTeacherRecord:
     run_won: bool
     terminal_ante: int
     run_log_score: float
+    context: PublicStrategyContext = PublicStrategyContext()
 
     def __post_init__(self) -> None:
         if _RUN_GROUP.fullmatch(self.run_group) is None:
-            raise ValueError("run_group must be an opaque run-NNNNNN identifier")
+            raise ValueError("run_group must be an opaque origin identifier")
+        if not isinstance(self.context, PublicStrategyContext):
+            raise ValueError("strategy teacher context has the wrong type")
         if self.decision_index < 0 or self.terminal_ante < 0:
             raise ValueError("teacher indexes and terminal ante must be non-negative")
         if not math.isfinite(self.run_log_score) or self.run_log_score < 0:
@@ -182,6 +191,19 @@ def teacher_record_to_data(record: StrategyTeacherRecord) -> dict[str, object]:
         "run_group": record.run_group,
         "decision_index": record.decision_index,
         "observation": public_observation_to_data(record.observation),
+        "context": {
+            "version": record.context.version,
+            "current_shop_actions": record.context.current_shop_actions,
+            "current_shop_has_joker_sale": record.context.current_shop_has_joker_sale,
+            "prior_shop_has_joker_sale": record.context.prior_shop_has_joker_sale,
+            "loyalty_remaining": record.context.loyalty_remaining,
+            "best_hand_log_score": record.context.best_hand_log_score,
+            "incoming_intent": (
+                record.context.incoming_intent.value
+                if record.context.incoming_intent is not None
+                else None
+            ),
+        },
         "candidates": [
             {
                 "action": action_to_data(candidate.action),
@@ -195,6 +217,7 @@ def teacher_record_to_data(record: StrategyTeacherRecord) -> dict[str, object]:
                         "ante8_win": sample.ante8_win,
                         "endless_ante": sample.endless_ante,
                         "log_score": sample.log_score,
+                        "search_utility": sample.search_utility,
                         "endpoint": sample.endpoint.value,
                     }
                     for sample in candidate.samples
@@ -220,6 +243,7 @@ def teacher_record_from_data(data: object) -> StrategyTeacherRecord:
         "run_group",
         "decision_index",
         "observation",
+        "context",
         "candidates",
         "selected_index",
         "baseline_index",
@@ -260,6 +284,7 @@ def teacher_record_from_data(data: object) -> StrategyTeacherRecord:
                 "ante8_win",
                 "endless_ante",
                 "log_score",
+                "search_utility",
                 "endpoint",
             }:
                 raise ValueError("strategy rollout target has invalid fields")
@@ -271,6 +296,7 @@ def teacher_record_from_data(data: object) -> StrategyTeacherRecord:
                         ante8_win=_optional_float(raw_sample["ante8_win"]),
                         endless_ante=_optional_float(raw_sample["endless_ante"]),
                         log_score=_optional_float(raw_sample["log_score"]),
+                        search_utility=float(raw_sample["search_utility"]),
                         endpoint=StrategyTargetEndpoint(raw_sample["endpoint"]),
                     )
                 )
@@ -292,8 +318,42 @@ def teacher_record_from_data(data: object) -> StrategyTeacherRecord:
         raise ValueError("strategy teacher run outcome has invalid fields")
     if not isinstance(outcome["won"], bool):
         raise ValueError("strategy teacher won target must be boolean")
+    raw_context = data["context"]
+    if not isinstance(raw_context, dict) or set(raw_context) != {
+        "version",
+        "current_shop_actions",
+        "current_shop_has_joker_sale",
+        "prior_shop_has_joker_sale",
+        "loyalty_remaining",
+        "best_hand_log_score",
+        "incoming_intent",
+    }:
+        raise ValueError("strategy teacher context has invalid fields")
+    raw_incoming_intent = raw_context["incoming_intent"]
+    if raw_incoming_intent is not None and not isinstance(raw_incoming_intent, str):
+        raise ValueError("incoming strategy intent must be a string or null")
+    for name in ("current_shop_has_joker_sale", "prior_shop_has_joker_sale"):
+        if not isinstance(raw_context[name], bool):
+            raise ValueError("strategy teacher context flags must be boolean")
     try:
         goal = RunGoal(data["goal"])
+        context = PublicStrategyContext(
+            version=int(raw_context["version"]),
+            current_shop_actions=int(raw_context["current_shop_actions"]),
+            current_shop_has_joker_sale=raw_context["current_shop_has_joker_sale"],
+            prior_shop_has_joker_sale=raw_context["prior_shop_has_joker_sale"],
+            loyalty_remaining=(
+                int(raw_context["loyalty_remaining"])
+                if raw_context["loyalty_remaining"] is not None
+                else None
+            ),
+            best_hand_log_score=float(raw_context["best_hand_log_score"]),
+            incoming_intent=(
+                StrategyIntent(raw_incoming_intent)
+                if raw_incoming_intent is not None
+                else None
+            ),
+        )
         return StrategyTeacherRecord(
             run_group=str(data["run_group"]),
             decision_index=int(data["decision_index"]),
@@ -306,6 +366,7 @@ def teacher_record_from_data(data: object) -> StrategyTeacherRecord:
             run_won=outcome["won"],
             terminal_ante=int(outcome["terminal_ante"]),
             run_log_score=float(outcome["log_score"]),
+            context=context,
         )
     except (TypeError, ValueError) as exc:
         raise ValueError("strategy teacher record is invalid") from exc
@@ -412,6 +473,7 @@ __all__ = [
     "StrategyTeacherCandidate",
     "StrategyTeacherDraft",
     "StrategyTeacherRecord",
+    "PublicStrategyContext",
     "read_teacher_records",
     "teacher_record_from_data",
     "teacher_record_to_data",

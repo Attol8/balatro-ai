@@ -301,6 +301,66 @@ def test_teacher_score_target_includes_typed_public_prefix() -> None:
     assert _public_best_hand_score(history) == 12_345
 
 
+def test_dense_teacher_reuses_paired_ordinary_search_without_changing_selection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class Sample:
+        def close(self) -> None:
+            pass
+
+    class Frozen:
+        def clone(self):
+            return SimpleNamespace(close=lambda: None)
+
+    monkeypatch.setattr(search_module, "sample_candidate", lambda *args: Sample())
+    monkeypatch.setattr(search_module, "freeze_backend", lambda sample: Frozen())
+    monkeypatch.setattr(
+        search_module, "_teacher_config_digest", lambda policy: "1" * 64
+    )
+
+    def rollout(self, clone, observation, history, root, **kwargs):
+        del self, clone, observation, history, kwargs
+        value = 2.0 if isinstance(root, RerollShop) else 1.0
+        return RolloutOutcome(
+            value=value,
+            steps=1,
+            rejected=False,
+            goal_utility=_utility(clear=1, progress=value, ante=1),
+        )
+
+    monkeypatch.setattr(DeterminizedSearchPolicy, "_rollout", rollout)
+    observation = to_public_observation(state("SHOP", money=10))
+    legal = tuple(iter_legal_actions(observation))
+
+    class FirstContinuation:
+        def choose_action(self, observation, legal_actions, history):
+            del observation, history
+            return next(
+                action for action in legal_actions() if isinstance(action, LeaveShop)
+            )
+
+    policy = DeterminizedSearchPolicy(
+        backend=None,  # type: ignore[arg-type]
+        continuation=FirstContinuation(),  # type: ignore[arg-type]
+        budget=RolloutBudget(samples=2, horizon_antes=1, override_z=0),
+        collect_dense_teacher=True,
+    )
+
+    selected = policy.choose_action(observation, lambda: iter(legal), ())
+
+    assert isinstance(selected, RerollShop)
+    assert len(policy.teacher_drafts) == 1
+    draft = policy.teacher_drafts[0]
+    assert draft.candidates[draft.selected_index].action == selected
+    assert draft.candidates[draft.baseline_index].action != selected
+    assert all(len(candidate.samples) == 2 for candidate in draft.candidates)
+    assert {
+        sample.search_utility
+        for candidate in draft.candidates
+        for sample in candidate.samples
+    } == {1.0, 2.0}
+
+
 def _terminal_outcome(*, won: bool, admissible: bool = True) -> RolloutOutcome:
     return RolloutOutcome(
         value=float(won),
@@ -369,9 +429,7 @@ class _IntentTrackingContinuation:
             actions[0],
         )
 
-    def choose_action_for_intent(
-        self, observation, legal_actions, history, intent
-    ):
+    def choose_action_for_intent(self, observation, legal_actions, history, intent):
         del observation, history
         self.intent_calls.append(intent)
         return tuple(legal_actions())[-1]
@@ -696,10 +754,7 @@ def test_terminal_action_selector_falls_back_on_nonterminal_dead_end(
 
     assert selected == 0
     assert policy.last_success_decision is not None
-    assert (
-        policy.last_success_decision.fallback_reason
-        == "nonterminal_public_dead_end"
-    )
+    assert policy.last_success_decision.fallback_reason == "nonterminal_public_dead_end"
     assert policy.counters.success_anchor_fallbacks == 1
 
 
@@ -756,8 +811,7 @@ def test_terminal_action_selector_enforces_compute_root_bound_without_sampling(
         antes_cleared=3,
     )
     roots = tuple(
-        StrategyCandidateRoot(LeaveShop(), StrategyIntent.ECONOMY)
-        for _ in range(65)
+        StrategyCandidateRoot(LeaveShop(), StrategyIntent.ECONOMY) for _ in range(65)
     )
     policy = DeterminizedSearchPolicy(
         backend=None,  # type: ignore[arg-type]
@@ -777,10 +831,7 @@ def test_terminal_action_selector_enforces_compute_root_bound_without_sampling(
 
     assert selected == 0
     assert policy.last_success_decision is not None
-    assert (
-        policy.last_success_decision.fallback_reason
-        == "root_compute_bound_exceeded"
-    )
+    assert policy.last_success_decision.fallback_reason == "root_compute_bound_exceeded"
     assert policy.last_success_decision.sample_evaluations == 0
 
 
@@ -823,8 +874,7 @@ def test_terminal_action_selector_skips_unattainable_statistical_bound(
     assert _required_positive_discordances(2, 1e-6) == 20
     assert policy.last_success_decision is not None
     assert (
-        policy.last_success_decision.fallback_reason
-        == "root_count_bound_unattainable"
+        policy.last_success_decision.fallback_reason == "root_count_bound_unattainable"
     )
     assert policy.last_success_decision.sample_evaluations == 0
 

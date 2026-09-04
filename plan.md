@@ -507,6 +507,86 @@ Performance continuation after the fixed cohort:
    fallback semantics, and nonce into one terminal protocol digest. Mark
    `1055-1074` exposed after this single frozen pair.
 
+Result: retire terminal action selection. The frozen `1055-1074` pair completed
+40/40 runs with identical trajectories: both modes won 2/20, cleared a mean
+4.60 bosses, and reached Ante 6 on 9/20 seeds. Candidate terminal work added
+79,017 rollout steps across 191 scheduled anchors. Ninety-three late anchors
+evaluated exact terminal samples, yet every alternative recorded zero positive
+win/death or Endless discordances; there were no action or intent overrides.
+Seven anchors exceeded the independent 64-root compute ceiling and 35 had only
+one root, so the strict coverage/failure gate rejected the report before its
+zero outcome delta could be considered. Do not weaken the sign rule, raise the
+root ceiling, or rerun these exposed seeds. Keep v6 collection and diagnostics
+available, but action mode is not a strength path.
+
+Next design sketch: move the learning target back to the dense paired utility
+available at ordinary strategic decisions. Train a contextual public
+state/action continuation model, not another terminal selector and not the
+killed absolute/residual leaf. Reuse the relational entity representation and
+full-rollout teacher schema where sound, but predict each candidate's paired
+utility delta against the continuation-selected root. Split only by complete
+originating run. Calibrate an abstention margin on held-out groups and require
+no positive full-rollout regret, no false override on teacher ties, complete
+legal-root mapping, and useful action coverage before any model influences a
+rollout. A promoted continuation must still choose through the typed public
+action surface, fail atomically to `PublicStrategicPolicy`, and face a fresh
+paired development screen before protected panels.
+
+Build this as a staged, auditable increment:
+
+1. **Context and targets.** Bump the teacher schema rather than retrofitting
+   the v4 or v5 files. Every admitted sibling sample stores its finite scalar
+   search utility, and every row stores a versioned summary derived only from
+   typed public history plus the incoming public intent. The first summary
+   covers current-shop action/sale state, history-derived Joker counters, and
+   public best-hand score. Reject malformed history, unequal paired sample
+   counts, failed/censored siblings, duplicate roots, or non-legal actions.
+2. **Behavior-inert dense collection.** Reuse the ordinary search's exact
+   sampled sibling outcomes and canonical non-reorder roots. Collection never
+   changes the selected root. Use opaque origin-family IDs that cannot be
+   joined to the seed-ordered report, and keep every authoritative run and all
+   descendants in one atomic split. Report coverage by phase, ante, root
+   family, and outcome; winners and failures are both training evidence.
+3. **Paired objective.** Reuse the relational encoder and treat its per-action
+   policy score as relative utility. Fit predicted score difference to the
+   sample-paired utility difference from the behavior root with Smooth L1 plus
+   ordering loss. Weight run, then decision, then alternative equally so large
+   packs do not dominate. Preserve the absolute heads as diagnostics only;
+   they cannot authorize an action.
+4. **Selective offline gate.** Split by origin family before training.
+   Calibration chooses a one-sided overestimation margin without reading the
+   holdout. The untouched holdout requires complete root mapping, nonzero
+   supported coverage, zero overrides on exact teacher ties, zero overrides
+   with an adverse paired mean, non-positive run-weighted regret, and positive
+   utility gain over the behavior root. Agreement is only descriptive.
+5. **Separate authority.** Training emits a shadow artifact only. A distinct
+   digest-bound certificate may authorize rollout continuation after the
+   offline gate; old classification artifacts and an edited influence string
+   cannot qualify. The wrapper is deterministic and stateless, handles only
+   declared strategic strata, and falls back to the exact behavior action on
+   abstention, unsupported context, mapping drift, shape/nonfinite output, or
+   inference failure.
+6. **Split live behavior from simulated continuation.** The root baseline and
+   actual fallback remain the frozen `PublicStrategicPolicy`. Only isolated
+   simulated future decisions may use a certified learned continuation. Bind
+   both configurations into the search digest. This first changes search
+   indirectly, so reports declare `affects_actions=true`.
+7. **Distribution and evidence.** First prove the complete collector/trainer/
+   shadow path on reused development seeds. Then freeze a fresh development
+   collection after choosing its run-group counts. Before rollout influence,
+   collect or audit support on the counterfactual states the continuation will
+   actually see. A single frozen paired behavior-vs-learned-continuation screen
+   must have zero invalid/rejected work, useful certified coverage, no win or
+   lower-tail regression, and a strictly positive paired progression lower
+   bound. Failure quarantines the artifact and exposed seeds; it does not tune
+   the margin after the fact.
+
+Acceptance tests cover public-history twin identity, malformed/future history
+fallback, legal-action permutation equivariance, exact behavior on tactical or
+unsupported states, distinct rollout forks, serial/parallel identity, import
+firewalls, split collision rejection, holdout isolation, and artifact/
+certificate digest tampering.
+
 No tuning `1-200`, quarantined `501-700`, replacement gate `701-900`, or
 authority-secret seed may be used by this increment.
 

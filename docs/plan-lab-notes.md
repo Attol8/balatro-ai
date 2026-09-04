@@ -3606,3 +3606,77 @@ pair, the selector gained a separate 64-root fail-closed compute bound, exact
 unavailable/unsupported accounting, atomic report publication, committed
 single-use preregistration, and a comparator that freezes tuning and all scalar
 and terminal protocol constants rather than trusting pair equality.
+
+### Terminal-action capability result (2026-09-04)
+
+The preregistered Red/White development pair on fresh seeds `1055-1074`
+completed all 40 runs from repository revision `996801d` and source digest
+`ffe62f9bc220d7c0fe9069534d267178a2a8592ccdf3ea96757793dfebb22a4b`.
+The implementation is commit `85e8cb5`; the intervening commit changes only
+the machine-readable preregistration. Both modes won 2/20, cleared a mean 4.60
+bosses, reached Ante 6 on 9/20 seeds, and produced the same final score on
+every seed. The paired ante, survival, win, and log-score deltas are exactly
+zero with bootstrap intervals `[0, 0]`.
+
+The candidate attempted 191 scheduled success anchors. Fifty-six early
+anchors were deliberately inert, 35 exposed only one root, seven late packs
+exceeded the independent 64-root compute bound (111 to 231 roots), and 93 late
+anchors evaluated 79,017 rollout steps. Those 93 anchors produced 1,900 exact
+death and 192 exact victory endpoints, but every alternative had zero positive
+paired terminal discordances. The conservative selector therefore executed
+zero action and zero intent overrides. Its slowest anchor used 4,050 steps and
+61.39 seconds; total added terminal time was 1,229 seconds across worker runs.
+All measured rollout/counter reconciliations pass and there were no rejected
+or censored rollouts.
+
+The strict comparator rejects the candidate because unavailable anchor work is
+nonzero; even without that gate, intervention coverage and the strictly
+positive outcome gate both fail. This is not a near miss. Exact terminal
+win/death is too sparse to distinguish sibling strategic actions at this
+budget. Do not relax the evidence threshold, raise the root ceiling, or rerun
+the exposed block. Retain the terminal machinery for diagnostics/labeling only
+and redirect strength work to dense paired root-utility learning for the
+contextual public continuation.
+
+Evidence SHA-256: baseline report
+`6d14f2d419482b72c56b1ff0831e8970b22754669983f9ce29b5ed7bb509df40`,
+candidate report
+`07fc9168a202d948b3f7b790b3fa1884d52ae6ecd7947e1b2bd4628affc77b18`,
+and preregistration
+`03b8e6b1984e60b14fc1167d99f5927caca0652c755db84cb7035f11207c65b1`.
+
+### Contextual continuation design review (2026-09-04)
+
+Three read-only reviews independently rejected winner-only imitation and direct
+reuse of the v4/v5 datasets. The terminal screen's tie is structural: 71 of 87
+evaluated pre-win anchors had one endpoint for every sibling/sample. In
+contrast, next-boss outcome varied by root at 184/284 v4 decisions and 237/369
+v5 decisions. Intent changed next-boss utility at 121/369 v5 decisions, so an
+action-only model would collapse real counterfactual signal. The scarce target
+is post-win growth: v5 contains only 14 Endless rows from five source groups.
+Natural simulated victories from losing source runs are therefore valuable,
+but all descendants must remain in their source origin family.
+
+The accepted architecture reuses the relational public encoder but replaces
+winner cross-entropy as the action objective. Schema v3 stores the ordinary
+search's per-sample scalar utility and a versioned typed-history summary. The
+model learns candidate-minus-behavior utility with run/decision/alternative
+equal weighting. Calibration bounds one-sided unsafe overestimation; the
+holdout judges utility gain, regret, false ties, legal mapping, and independent
+run coverage. Absolute survival/score heads remain diagnostics and cannot
+authorize an action.
+
+Training still emits an immutable shadow artifact. Rollout authority is a
+separate digest-bound certificate requiring at least 59 calibration origin
+families, 59 untouched holdout families, and safe recommendations in at least
+59 holdout families. The search now has distinct behavior and simulated
+continuation slots: actual root baseline/fallback stays on the frozen public
+heuristic, while only a certified wrapper may alter simulated future strategic
+actions. Any malformed history, unsupported phase, root mismatch, nonfinite or
+wrong-shaped output, or inference exception returns the exact behavior action.
+
+The fresh collection has not started. First run a reused-seed implementation
+diagnostic through collect, strict reload, train, calibrate, and shadow replay.
+Then freeze the fresh development cohort and its coverage quotas. Protected
+panels `1-200`, `501-700`, `701-900`, and evaluator-secret authority remain
+untouched.

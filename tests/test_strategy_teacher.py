@@ -40,7 +40,7 @@ def _draft():
 
 def test_teacher_record_round_trips_without_seed_or_private_state(tmp_path) -> None:
     record = _draft().finalize(
-        run_group="run-000000",
+        run_group="origin-00000000000000000000000000000000",
         decision_index=0,
         run_complete=True,
         run_won=False,
@@ -64,7 +64,7 @@ def test_teacher_record_round_trips_without_seed_or_private_state(tmp_path) -> N
 def test_incomplete_run_cannot_finalize_teacher_record() -> None:
     with pytest.raises(ValueError, match="incomplete originating run"):
         _draft().finalize(
-            run_group="run-000000",
+            run_group="origin-00000000000000000000000000000000",
             decision_index=0,
             run_complete=False,
             run_won=False,
@@ -75,7 +75,7 @@ def test_incomplete_run_cannot_finalize_teacher_record() -> None:
 
 def test_teacher_reader_rejects_extra_or_unknown_fields() -> None:
     record = _draft().finalize(
-        run_group="run-000000",
+        run_group="origin-00000000000000000000000000000000",
         decision_index=0,
         run_complete=True,
         run_won=False,
@@ -110,7 +110,7 @@ def test_hidden_private_twins_produce_identical_teacher_data() -> None:
         RunGoal.VICTORY,
         "1" * 64,
     ).finalize(
-        run_group="run-000000",
+        run_group="origin-00000000000000000000000000000000",
         decision_index=0,
         run_complete=True,
         run_won=False,
@@ -125,7 +125,7 @@ def test_hidden_private_twins_produce_identical_teacher_data() -> None:
         RunGoal.VICTORY,
         "1" * 64,
     ).finalize(
-        run_group="run-000000",
+        run_group="origin-00000000000000000000000000000000",
         decision_index=0,
         run_complete=True,
         run_won=False,

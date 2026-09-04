@@ -53,6 +53,7 @@ from balatro_ai_v2.strategy_engine import (
     RunGoal,
     derive_engine_state,
 )
+from balatro_ai_v2.strategy_context import derive_public_strategy_context
 from balatro_ai_v2.strategy_options import (
     PersistentIntent,
     StrategyCandidateRoot,
@@ -67,7 +68,7 @@ from balatro_ai_v2.strategy_teacher import (
 )
 
 
-SEARCH_VERSION = "determinized-search-v6"
+SEARCH_VERSION = "determinized-search-v7"
 _REORDER_TYPES = (ReorderHand, ReorderJokers, ReorderConsumables)
 
 
@@ -101,12 +102,15 @@ class SuccessTeacherBudget:
     max_steps: int = 600
 
     def __post_init__(self) -> None:
-        if min(
-            self.samples,
-            self.prewin_start_ante,
-            self.endless_horizon_antes,
-            self.max_steps,
-        ) < 1:
+        if (
+            min(
+                self.samples,
+                self.prewin_start_ante,
+                self.endless_horizon_antes,
+                self.max_steps,
+            )
+            < 1
+        ):
             raise ValueError("success teacher budget values must be positive")
 
     def canonical(self) -> str:
@@ -344,9 +348,11 @@ class DeterminizedSearchPolicy:
 
     backend: JackdawBackend
     continuation: PublicPolicy
+    rollout_continuation: PublicPolicy | None = None
     nonce: str = "search-v1"
     budget: RolloutBudget = RolloutBudget()
     enable_strategy_options: bool = False
+    collect_dense_teacher: bool = False
     include_reorders: bool = False
     success_teacher: SuccessTeacherBudget | None = None
     success_terminal_actions: SuccessTerminalActionBudget | None = None
@@ -475,6 +481,7 @@ class DeterminizedSearchPolicy:
             return baseline
 
         values: list[list[float]] = [[] for _ in roots]
+        outcomes: list[list[RolloutOutcome]] = [[] for _ in roots]
         steps = 0
         rejected = 0
         prefix_best_hand_score = _public_best_hand_score(history)
@@ -493,6 +500,7 @@ class DeterminizedSearchPolicy:
                     finally:
                         clone.close()
                     values[index].append(outcome.value)
+                    outcomes[index].append(outcome)
                     steps += outcome.steps
                     rejected += int(outcome.rejected)
         except DeterminizationUnavailable as exc:
@@ -523,6 +531,41 @@ class DeterminizedSearchPolicy:
         baseline_index = roots.index(baseline)
         selected_index = _select_root(values, baseline_index, self.budget.override_z)
         selected = roots[selected_index]
+        if self.collect_dense_teacher and rejected == 0:
+            engine = derive_engine_state(observation)
+            self.teacher_drafts.append(
+                StrategyTeacherDraft(
+                    observation=observation,
+                    context=derive_public_strategy_context(
+                        observation,
+                        history,
+                        incoming_intent=(
+                            self.active_intent.intent
+                            if self.active_intent is not None
+                            else None
+                        ),
+                    ),
+                    candidates=tuple(
+                        StrategyTeacherCandidate(
+                            action=root,
+                            intent=None,
+                            samples=tuple(
+                                _teacher_target(
+                                    outcome,
+                                    engine.antes_cleared,
+                                    engine.goal,
+                                )
+                                for outcome in root_outcomes
+                            ),
+                        )
+                        for root, root_outcomes in zip(roots, outcomes, strict=True)
+                    ),
+                    selected_index=selected_index,
+                    baseline_index=baseline_index,
+                    goal=engine.goal,
+                    teacher_config_digest=_teacher_config_digest(self),
+                )
+            )
         self.counters.searched += 1
         self.counters.changed += int(selected != baseline)
         self._record(
@@ -787,6 +830,15 @@ class DeterminizedSearchPolicy:
             self.teacher_drafts.append(
                 StrategyTeacherDraft(
                     observation=observation,
+                    context=derive_public_strategy_context(
+                        observation,
+                        history,
+                        incoming_intent=(
+                            self.active_intent.intent
+                            if self.active_intent is not None
+                            else None
+                        ),
+                    ),
                     candidates=tuple(
                         StrategyTeacherCandidate(
                             action=root.action,
@@ -975,9 +1027,7 @@ class DeterminizedSearchPolicy:
         prefix_best_hand_score = _public_best_hand_score(history)
         action_budget = self.success_terminal_actions
         required_positive = (
-            _required_positive_discordances(
-                len(roots), action_budget.family_alpha
-            )
+            _required_positive_discordances(len(roots), action_budget.family_alpha)
             if action_budget is not None
             else 0
         )
@@ -1063,10 +1113,7 @@ class DeterminizedSearchPolicy:
                 fallback_reason="root_compute_bound_exceeded",
                 unavailable=True,
             )
-        if (
-            action_budget is not None
-            and required_positive > action_budget.max_samples
-        ):
+        if action_budget is not None and required_positive > action_budget.max_samples:
             return finish(
                 teacher_index=behavior_index,
                 executed_index=behavior_index,
@@ -1155,7 +1202,8 @@ class DeterminizedSearchPolicy:
         if any(utility is None for row in utilities for utility in row):
             raise AssertionError("success teacher rollout omitted goal utility")
         typed_utilities = tuple(
-            tuple(utility for utility in row if utility is not None) for row in utilities
+            tuple(utility for utility in row if utility is not None)
+            for row in utilities
         )
         if action_budget is None:
             selected_index = _select_goal_root(
@@ -1167,6 +1215,15 @@ class DeterminizedSearchPolicy:
             self.teacher_drafts.append(
                 StrategyTeacherDraft(
                     observation=observation,
+                    context=derive_public_strategy_context(
+                        observation,
+                        history,
+                        incoming_intent=(
+                            self.active_intent.intent
+                            if self.active_intent is not None
+                            else None
+                        ),
+                    ),
                     candidates=tuple(
                         StrategyTeacherCandidate(
                             action=root.action,
@@ -1229,9 +1286,7 @@ class DeterminizedSearchPolicy:
         qualified = qualified_indexes()
         try:
             while (
-                not qualified
-                and survivors
-                and sample_index < action_budget.max_samples
+                not qualified and survivors and sample_index < action_budget.max_samples
             ):
                 evaluated = (behavior_index, *sorted(survivors))
                 evaluate_sample(sample_index, evaluated)
@@ -1331,9 +1386,9 @@ class DeterminizedSearchPolicy:
             if prefix_best_hand_score is None
             else prefix_best_hand_score
         )
-        continuation = self.continuation
+        continuation = self.rollout_continuation or self.continuation
         if isolate_continuation:
-            fork = getattr(self.continuation, "fork_for_rollout", None)
+            fork = getattr(continuation, "fork_for_rollout", None)
             if callable(fork):
                 try:
                     continuation = fork(intent)
@@ -1348,7 +1403,7 @@ class DeterminizedSearchPolicy:
                     )
             else:
                 try:
-                    continuation = deepcopy(self.continuation)
+                    continuation = deepcopy(continuation)
                 except Exception as exc:
                     value = _progress_value(current, start_rounds)
                     return RolloutOutcome(
@@ -1358,7 +1413,7 @@ class DeterminizedSearchPolicy:
                         _goal_utility(current, value, best_hand_score, alive=False),
                         _exception_reason("copy_exception", exc),
                     )
-            if continuation is self.continuation:
+            if continuation is (self.rollout_continuation or self.continuation):
                 value = _progress_value(current, start_rounds)
                 return RolloutOutcome(
                     value,
@@ -1689,8 +1744,7 @@ def _mean_terminal_action_key(
 ) -> tuple[float, ...]:
     keys = tuple(_terminal_action_key(outcome, goal) for outcome in outcomes)
     return tuple(
-        sum(key[index] for key in keys) / len(keys)
-        for index in range(len(keys[0]))
+        sum(key[index] for key in keys) / len(keys) for index in range(len(keys[0]))
     )
 
 
@@ -1752,6 +1806,7 @@ def _teacher_target(
             ante8_win=None,
             endless_ante=None,
             log_score=None,
+            search_utility=outcome.value,
             endpoint=StrategyTargetEndpoint.CENSORED,
         )
     ante8_win: float | None = None
@@ -1768,6 +1823,7 @@ def _teacher_target(
         ante8_win=ante8_win,
         endless_ante=endless_ante,
         log_score=log_score,
+        search_utility=outcome.value,
         endpoint=outcome.endpoint,
     )
 
@@ -1789,11 +1845,16 @@ def _teacher_config_digest(policy: DeterminizedSearchPolicy) -> str:
     continuation_config = (
         asdict(policy.continuation) if is_dataclass(policy.continuation) else None
     )
+    rollout_continuation = policy.rollout_continuation or policy.continuation
+    rollout_continuation_config = (
+        asdict(rollout_continuation) if is_dataclass(rollout_continuation) else None
+    )
     payload = {
         "search_version": SEARCH_VERSION,
         "budget": policy.budget.canonical(),
         "nonce": policy.nonce,
         "strategy_options": policy.enable_strategy_options,
+        "dense_teacher": policy.collect_dense_teacher,
         "include_reorders": policy.include_reorders,
         "success_teacher": (
             policy.success_teacher.canonical()
@@ -1810,6 +1871,11 @@ def _teacher_config_digest(policy: DeterminizedSearchPolicy) -> str:
             f"{type(policy.continuation).__qualname__}"
         ),
         "continuation_config": continuation_config,
+        "rollout_continuation_type": (
+            f"{type(rollout_continuation).__module__}."
+            f"{type(rollout_continuation).__qualname__}"
+        ),
+        "rollout_continuation_config": rollout_continuation_config,
         "backend": asdict(policy.backend.metadata),
     }
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()

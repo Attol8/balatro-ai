@@ -63,7 +63,7 @@ def _record(group: int, *, selected: int = 1, endless: bool = False):
         teacher_config_digest="1" * 64,
     )
     return draft.finalize(
-        run_group=f"run-{group:06d}",
+        run_group=f"origin-{group:032x}",
         decision_index=0,
         run_complete=True,
         run_won=endless,
@@ -136,9 +136,7 @@ def test_nonselected_candidate_outcome_changes_counterfactual_value_loss() -> No
         model.ante8_head.weight.zero_()
         model.ante8_head.bias.fill_(2.0)
     changed_sample = replace(record.candidates[1].samples[0], ante8_win=1.0)
-    changed_candidate = replace(
-        record.candidates[1], samples=(changed_sample,)
-    )
+    changed_candidate = replace(record.candidates[1], samples=(changed_sample,))
     changed = replace(
         record,
         candidates=(record.candidates[0], changed_candidate),
@@ -149,6 +147,27 @@ def test_nonselected_candidate_outcome_changes_counterfactual_value_loss() -> No
 
     assert original_metrics["ante8_loss"] != changed_metrics["ante8_loss"]
     assert not torch.equal(original_loss, changed_loss)
+
+
+def test_paired_utility_target_changes_relative_action_loss() -> None:
+    record = _record(0, selected=0)
+    model = _model()
+    changed_sample = replace(record.candidates[1].samples[0], search_utility=2.0)
+    changed = replace(
+        record,
+        candidates=(
+            record.candidates[0],
+            replace(record.candidates[1], samples=(changed_sample,)),
+        ),
+    )
+
+    _, original_metrics = strategy_training_loss(model, (record,))
+    _, changed_metrics = strategy_training_loss(model, (changed,))
+
+    assert (
+        original_metrics["paired_utility_loss"]
+        != changed_metrics["paired_utility_loss"]
+    )
 
 
 def test_calibration_freezes_safe_margin_and_reports_every_head() -> None:

@@ -10,6 +10,7 @@ import torch
 from balatro_ai_v2.actions import PublicAction, action_to_data
 from balatro_ai_v2.policy import ActionSource, PublicHistoryStep, PublicPolicy
 from balatro_ai_v2.public_state import Phase, PublicObservation
+from balatro_ai_v2.strategy_context import derive_public_strategy_context
 from balatro_ai_v2.strategy_model import (
     PublicStrategyTensorizer,
     RelationalStrategyPolicyValue,
@@ -166,6 +167,17 @@ class ShadowStrategyPolicy:
                 (observation,),
                 (candidate_actions,),
                 (candidate_intents,),
+                (
+                    derive_public_strategy_context(
+                        observation,
+                        history,
+                        incoming_intent=(
+                            active_before.intent
+                            if isinstance(active_before, PersistentIntent)
+                            else None
+                        ),
+                    ),
+                ),
             )
             with torch.no_grad():
                 output = self.model(batch)
@@ -265,7 +277,9 @@ class ShadowStrategyPolicy:
         selected_index = getattr(self.control, "last_strategy_selected_index", None)
         if recorded:
             if not all(isinstance(root, StrategyCandidateRoot) for root in recorded):
-                raise ValueError("control exposed an invalid strategy candidate contract")
+                raise ValueError(
+                    "control exposed an invalid strategy candidate contract"
+                )
             if not isinstance(selected_index, int) or not 0 <= selected_index < len(
                 recorded
             ):

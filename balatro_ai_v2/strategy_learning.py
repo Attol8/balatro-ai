@@ -42,7 +42,9 @@ class StrategyDatasetSplit:
 
 @dataclass(frozen=True, slots=True)
 class StrategyLossWeights:
-    policy: float = 1.0
+    policy: float = 0.0
+    paired_utility: float = 1.0
+    ordering: float = 0.25
     current_blind: float = 1.0
     next_boss: float = 1.0
     ante8: float = 1.0
@@ -52,6 +54,8 @@ class StrategyLossWeights:
     def __post_init__(self) -> None:
         values = (
             self.policy,
+            self.paired_utility,
+            self.ordering,
             self.current_blind,
             self.next_boss,
             self.ante8,
@@ -132,6 +136,7 @@ def strategy_training_loss(
             tuple(candidate.intent for candidate in record.candidates)
             for record in records
         ),
+        tuple(record.context for record in records),
     )
     output = model(batch)
     device = output.policy_logits.device
@@ -140,6 +145,9 @@ def strategy_training_loss(
         [record.selected_index for record in records], dtype=torch.long, device=device
     )
     policy_rows = F.cross_entropy(output.policy_logits, selected, reduction="none")
+    paired_utility_loss, ordering_loss = _paired_utility_losses(
+        output.policy_logits, records
+    )
 
     target_tensors: dict[str, Tensor] = {}
     target_masks: dict[str, Tensor] = {}
@@ -159,8 +167,12 @@ def strategy_training_loss(
 
     losses = {
         "policy": _weighted(policy_rows, all_rows, row_weights),
+        "paired_utility": paired_utility_loss,
+        "ordering": ordering_loss,
         "current_blind": _weighted(
-            _binary_loss(output.current_blind_survival, target_tensors["current_blind"]),
+            _binary_loss(
+                output.current_blind_survival, target_tensors["current_blind"]
+            ),
             target_masks["current_blind"],
             target_weights["current_blind"],
         ),
@@ -191,6 +203,8 @@ def strategy_training_loss(
     }
     total = (
         weights.policy * losses["policy"]
+        + weights.paired_utility * losses["paired_utility"]
+        + weights.ordering * losses["ordering"]
         + weights.current_blind * losses["current_blind"]
         + weights.next_boss * losses["next_boss"]
         + weights.ante8 * losses["ante8"]
@@ -215,10 +229,7 @@ def fit_strategy_calibration(
     if model.calibration.calibrated:
         raise ValueError("strategy model is already calibrated")
     predictions = _predict(model, records)
-    row_weights = _run_equal_numeric_weights(records)
-    policy_temperature = _policy_temperature(
-        predictions["policy"], records, row_weights
-    )
+    policy_temperature = 1.0
     current_predictions, current_targets, current_weights = _flatten_head(
         predictions["current_blind"], records, "current_blind"
     )
@@ -240,15 +251,11 @@ def fit_strategy_calibration(
     endless_predictions, endless_targets, endless_weights = _flatten_head(
         predictions["endless_ante"], records, "endless_ante"
     )
-    endless_bias = _mean_residual(
-        endless_predictions, endless_targets, endless_weights
-    )
+    endless_bias = _mean_residual(endless_predictions, endless_targets, endless_weights)
     score_predictions, score_targets, score_weights = _flatten_head(
         predictions["log_score"], records, "log_score"
     )
-    score_bias = _mean_residual(
-        score_predictions, score_targets, score_weights
-    )
+    score_bias = _mean_residual(score_predictions, score_targets, score_weights)
     provisional = StrategyCalibration(
         policy_temperature=policy_temperature,
         current_blind_bias=current_bias,
@@ -264,7 +271,7 @@ def fit_strategy_calibration(
     )
     model.calibration = provisional
     calibrated_predictions = _predict(model, records)
-    margin = _safe_policy_margin(calibrated_predictions["policy"], records)
+    margin = _safe_utility_margin(calibrated_predictions["policy"], records)
     calibration = replace(provisional, policy_override_margin=margin)
     model.calibration = calibration
     metrics = evaluate_strategy_model(model, records)
@@ -284,6 +291,11 @@ def evaluate_strategy_model(
     agreements = 0.0
     recommendations = 0
     recommendation_errors = 0
+    false_tie_overrides = 0
+    recommended_utility_gain = 0.0
+    recommendation_regret = 0.0
+    recommendation_weight = 0.0
+    recommendation_groups: set[str] = set()
     for logits, record, row_weight in zip(
         policy_rows, records, row_weights, strict=True
     ):
@@ -295,7 +307,19 @@ def evaluate_strategy_model(
             and margin > model.calibration.policy_override_margin
         ):
             recommendations += 1
-            recommendation_errors += int(top != record.selected_index)
+            recommendation_groups.add(record.run_group)
+            baseline_target = _paired_target(record, record.baseline_index)
+            top_target = _paired_target(record, top)
+            selected_target = _paired_target(record, record.selected_index)
+            gain = top_target - baseline_target
+            regret = max(0.0, selected_target - top_target)
+            recommendation_errors += int(
+                top != record.selected_index or gain <= 0.0 or regret > 1e-9
+            )
+            false_tie_overrides += int(abs(gain) <= 1e-12)
+            recommended_utility_gain += row_weight * gain
+            recommendation_regret += row_weight * regret
+            recommendation_weight += row_weight
 
     flattened = {
         name: _flatten_head(predictions[name], records, name)
@@ -314,24 +338,26 @@ def evaluate_strategy_model(
         "policy": {
             "agreement": agreements / sum(row_weights),
             "recommendations": recommendations,
+            "recommendation_groups": len(recommendation_groups),
             "recommendation_errors": recommendation_errors,
+            "false_tie_overrides": false_tie_overrides,
+            "mean_recommended_utility_gain": (
+                recommended_utility_gain / recommendation_weight
+                if recommendation_weight
+                else 0.0
+            ),
+            "mean_recommendation_regret": (
+                recommendation_regret / recommendation_weight
+                if recommendation_weight
+                else 0.0
+            ),
             "override_margin": model.calibration.policy_override_margin,
         },
-        "current_blind": _binary_metrics(
-            *flattened["current_blind"]
-        ),
-        "next_boss": _binary_metrics(
-            *flattened["next_boss"]
-        ),
-        "ante8": _binary_metrics(
-            *flattened["ante8"]
-        ),
-        "endless_ante": _regression_metrics(
-            *flattened["endless_ante"]
-        ),
-        "log_score": _regression_metrics(
-            *flattened["log_score"]
-        ),
+        "current_blind": _binary_metrics(*flattened["current_blind"]),
+        "next_boss": _binary_metrics(*flattened["next_boss"]),
+        "ante8": _binary_metrics(*flattened["ante8"]),
+        "endless_ante": _regression_metrics(*flattened["endless_ante"]),
+        "log_score": _regression_metrics(*flattened["log_score"]),
     }
     strata: dict[str, list[StrategyTeacherRecord]] = {}
     for record in records:
@@ -359,6 +385,7 @@ def _predict(
             tuple(candidate.intent for candidate in record.candidates)
             for record in records
         ),
+        tuple(record.context for record in records),
     )
     model.eval()
     with torch.no_grad():
@@ -410,13 +437,63 @@ def _candidate_target(
     if field is None:
         raise ValueError(f"unsupported strategy target head {name!r}")
     values = [
-        getattr(sample, field)
-        for sample in record.candidates[candidate_index].samples
+        getattr(sample, field) for sample in record.candidates[candidate_index].samples
     ]
     admitted = [float(value) for value in values if value is not None]
     if not admitted:
         return None
     return sum(admitted) / len(admitted)
+
+
+def _paired_target(record: StrategyTeacherRecord, candidate_index: int) -> float:
+    candidate = record.candidates[candidate_index].samples
+    baseline = record.candidates[record.baseline_index].samples
+    if len(candidate) != len(baseline):
+        raise ValueError("paired utility targets have unequal sample counts")
+    return sum(
+        sample.search_utility - baseline_sample.search_utility
+        for sample, baseline_sample in zip(candidate, baseline, strict=True)
+    ) / len(candidate)
+
+
+def _paired_utility_losses(
+    logits: Tensor,
+    records: Sequence[StrategyTeacherRecord],
+) -> tuple[Tensor, Tensor]:
+    """Run/decision/alternative-equal paired utility and ordering losses."""
+
+    decisions_per_run = Counter(record.run_group for record in records)
+    losses: list[Tensor] = []
+    ordering: list[Tensor] = []
+    weights: list[float] = []
+    for row, record in enumerate(records):
+        alternatives = [
+            index
+            for index in range(len(record.candidates))
+            if index != record.baseline_index
+        ]
+        if not alternatives:
+            continue
+        baseline_logit = logits[row, record.baseline_index]
+        weight = 1.0 / decisions_per_run[record.run_group] / len(alternatives)
+        for index in alternatives:
+            target = _paired_target(record, index)
+            prediction = logits[row, index] - baseline_logit
+            losses.append(F.smooth_l1_loss(prediction, prediction.new_tensor(target)))
+            ordering.append(
+                F.softplus(-math.copysign(1.0, target) * prediction)
+                if abs(target) > 1e-12
+                else prediction.square()
+            )
+            weights.append(weight)
+    if not losses:
+        zero = logits.sum() * 0.0
+        return zero, zero
+    weight_tensor = logits.new_tensor(weights)
+    return (
+        torch.stack(losses).mul(weight_tensor).sum() / weight_tensor.sum(),
+        torch.stack(ordering).mul(weight_tensor).sum() / weight_tensor.sum(),
+    )
 
 
 def _candidate_target_tensors(
@@ -576,16 +653,28 @@ def _mean_residual(
     )
 
 
-def _safe_policy_margin(
+def _safe_utility_margin(
     policy_rows: Sequence[Sequence[float]],
     records: Sequence[StrategyTeacherRecord],
 ) -> float:
-    wrong_margins = []
+    unsafe_margins = []
     for logits, record in zip(policy_rows, records, strict=True):
-        top = max(range(len(logits)), key=logits.__getitem__)
-        if top != record.selected_index and top != record.baseline_index:
-            wrong_margins.append(logits[top] - logits[record.baseline_index])
-    return max(0.0, max(wrong_margins, default=0.0)) + (1e-6 if wrong_margins else 0.0)
+        baseline = record.baseline_index
+        selected_target = _paired_target(record, record.selected_index)
+        for index in range(len(logits)):
+            if index == baseline:
+                continue
+            predicted_gain = logits[index] - logits[baseline]
+            actual_gain = _paired_target(record, index)
+            if (
+                index != record.selected_index
+                or actual_gain <= 0.0
+                or actual_gain < selected_target - 1e-9
+            ):
+                unsafe_margins.append(predicted_gain)
+    return max(0.0, max(unsafe_margins, default=0.0)) + (
+        1e-6 if unsafe_margins else 0.0
+    )
 
 
 def _binary_metrics(

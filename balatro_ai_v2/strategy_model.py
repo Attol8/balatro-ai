@@ -62,6 +62,7 @@ from balatro_ai_v2.public_state import (
     VisiblePlayingCard,
 )
 from balatro_ai_v2.strategy_engine import CopyKind, derive_engine_state
+from balatro_ai_v2.strategy_context import PublicStrategyContext
 from balatro_ai_v2.strategy_options import StrategyIntent
 
 
@@ -357,6 +358,12 @@ _SCALARS = (
     "consumable_count",
     "consumable_limit",
     "antes_cleared",
+    "context_shop_actions",
+    "context_shop_sale",
+    "context_prior_shop_sale",
+    "context_loyalty_known",
+    "context_loyalty_remaining",
+    "context_best_hand_log_score",
     "won",
     "required",
     "debuffed",
@@ -779,6 +786,7 @@ class PublicStrategyTensorizer:
         observations: Sequence[PublicObservation],
         legal_actions: Sequence[Sequence[PublicAction]],
         action_intents: Sequence[Sequence[StrategyIntent | None]] | None = None,
+        contexts: Sequence[PublicStrategyContext] | None = None,
     ) -> StrategyTensorBatch:
         if not observations or len(observations) != len(legal_actions):
             raise StrategyModelError(
@@ -786,14 +794,25 @@ class PublicStrategyTensorizer:
             )
         if action_intents is not None and len(action_intents) != len(observations):
             raise StrategyModelError("action intents have the wrong batch size")
+        if contexts is not None and len(contexts) != len(observations):
+            raise StrategyModelError("public contexts have the wrong batch size")
+        context_rows = (
+            tuple(PublicStrategyContext() for _ in observations)
+            if contexts is None
+            else tuple(contexts)
+        )
+        if not all(
+            isinstance(context, PublicStrategyContext) for context in context_rows
+        ):
+            raise StrategyModelError("public context has the wrong type")
 
         rows: list[tuple[list[_Entity], dict[tuple[str, int], int]]] = []
         action_rows: list[tuple[PublicAction, ...]] = []
         intent_rows: list[tuple[StrategyIntent | None, ...]] = []
-        for row, (observation, supplied_actions) in enumerate(
-            zip(observations, legal_actions)
+        for row, (observation, supplied_actions, context) in enumerate(
+            zip(observations, legal_actions, context_rows, strict=True)
         ):
-            entities, locations = self._entities(observation)
+            entities, locations = self._entities(observation, context)
             actions = tuple(supplied_actions)
             intents = (
                 (None,) * len(actions)
@@ -933,7 +952,9 @@ class PublicStrategyTensorizer:
         return relations
 
     def _entities(
-        self, observation: PublicObservation
+        self,
+        observation: PublicObservation,
+        context: PublicStrategyContext,
     ) -> tuple[list[_Entity], dict[tuple[str, int], int]]:
         if observation.deck not in _DECKS:
             raise StrategyModelError(f"unsupported public deck {observation.deck!r}")
@@ -968,6 +989,44 @@ class PublicStrategyTensorizer:
             global_features, "round_log_chips", observation.round.chips, 100
         )
         _put(global_features, "won", float(observation.won))
+        _put_scaled(
+            global_features, "context_shop_actions", context.current_shop_actions, 10
+        )
+        _put(
+            global_features,
+            "context_shop_sale",
+            float(context.current_shop_has_joker_sale),
+        )
+        _put(
+            global_features,
+            "context_prior_shop_sale",
+            float(context.prior_shop_has_joker_sale),
+        )
+        _put(
+            global_features,
+            "context_loyalty_known",
+            float(context.loyalty_remaining is not None),
+        )
+        if context.loyalty_remaining is not None:
+            _put_scaled(
+                global_features,
+                "context_loyalty_remaining",
+                context.loyalty_remaining,
+                5,
+            )
+        _put_scaled(
+            global_features,
+            "context_best_hand_log_score",
+            context.best_hand_log_score,
+            16,
+        )
+        if context.incoming_intent is not None:
+            _put_category(
+                global_features,
+                "intent",
+                context.incoming_intent.value,
+                _INTENT_VALUES,
+            )
         _put_category(global_features, "deck", observation.deck, _DECKS)
         _put_category(global_features, "stake", observation.stake, _STAKES)
         _put_category(global_features, "phase", observation.phase.value, _PHASES)
@@ -1657,7 +1716,7 @@ def _normalize_provenance(provenance: Mapping[str, object]) -> dict[str, object]
 def _validate_trained_provenance(provenance: dict[str, object]) -> None:
     if set(provenance) != _TRAINED_PROVENANCE_FIELDS:
         raise ValueError("trained provenance fields are invalid")
-    if provenance["influence_mode"] not in {"shadow", "continuation", "leaf"}:
+    if provenance["influence_mode"] not in {"shadow", "leaf"}:
         raise ValueError("trained provenance influence mode is invalid")
     for key in (
         "dataset_sha256",
@@ -1687,7 +1746,7 @@ def _validate_trained_provenance(provenance: dict[str, object]) -> None:
             not isinstance(groups, list)
             or not groups
             or not all(
-                isinstance(group, str) and re.fullmatch(r"run-[0-9]{6}", group)
+                isinstance(group, str) and re.fullmatch(r"origin-[0-9a-f]{32}", group)
                 for group in groups
             )
             or len(set(groups)) != len(groups)
@@ -1726,6 +1785,7 @@ def _validate_trained_provenance(provenance: dict[str, object]) -> None:
         "torch_version",
         "source_digest",
         "loss_weights",
+        "objective",
     }
     if not isinstance(trainer, dict) or set(trainer) != trainer_fields:
         raise ValueError("trained provenance trainer fields are invalid")
@@ -1758,6 +1818,8 @@ def _validate_trained_provenance(provenance: dict[str, object]) -> None:
     weights = trainer["loss_weights"]
     if not isinstance(weights, dict) or set(weights) != {
         "policy",
+        "paired_utility",
+        "ordering",
         "current_blind",
         "next_boss",
         "ante8",
@@ -1765,6 +1827,13 @@ def _validate_trained_provenance(provenance: dict[str, object]) -> None:
         "log_score",
     }:
         raise ValueError("trained provenance loss weights are invalid")
+    if trainer["objective"] != {
+        "name": "paired_baseline_relative_search_utility_v1",
+        "regression": "smooth_l1",
+        "ordering": "signed_softplus;exact_ties=squared_delta",
+        "weighting": "run_then_decision_then_alternative_equal",
+    }:
+        raise ValueError("trained provenance objective is invalid")
 
     calibration = provenance["calibration"]
     if not isinstance(calibration, dict) or set(calibration) != {
@@ -1795,6 +1864,9 @@ def _validate_trained_provenance(provenance: dict[str, object]) -> None:
         "positive_recommendation_coverage",
         "policy_agreement_beats_baseline",
         "zero_recommendation_errors",
+        "zero_false_tie_overrides",
+        "non_positive_recommendation_regret",
+        "positive_recommended_utility_gain",
         "head_improvements",
         "all_heads_beat_train_only_baselines",
         "offline_gate_passed",
@@ -1816,6 +1888,9 @@ def _validate_trained_provenance(provenance: dict[str, object]) -> None:
         gate["positive_recommendation_coverage"],
         gate["policy_agreement_beats_baseline"],
         gate["zero_recommendation_errors"],
+        gate["zero_false_tie_overrides"],
+        gate["non_positive_recommendation_regret"],
+        gate["positive_recommended_utility_gain"],
         gate["all_heads_beat_train_only_baselines"],
         gate["offline_gate_passed"],
         gate["authorizes_action_influence"],
@@ -1831,6 +1906,9 @@ def _validate_trained_provenance(provenance: dict[str, object]) -> None:
     expected_coverage = policy["recommendations"] > 0
     expected_policy_improvement = policy["agreement"] > baseline_policy["agreement"]
     expected_zero_errors = policy["recommendation_errors"] == 0
+    expected_zero_false_ties = policy["false_tie_overrides"] == 0
+    expected_non_positive_regret = policy["mean_recommendation_regret"] <= 0.0
+    expected_positive_utility = policy["mean_recommended_utility_gain"] > 0.0
     expected_head_improvements = {
         name: holdout[name]["count"] > 0
         and holdout[name][
@@ -1842,14 +1920,21 @@ def _validate_trained_provenance(provenance: dict[str, object]) -> None:
         for name in head_improvements
     }
     expected_safe_policy = (
-        expected_coverage and expected_policy_improvement and expected_zero_errors
+        expected_coverage
+        and expected_zero_errors
+        and expected_zero_false_ties
+        and expected_non_positive_regret
+        and expected_positive_utility
     )
-    expected_offline = gate["safe_policy_recommendations"] and expected_all_heads
+    expected_offline = gate["safe_policy_recommendations"]
     if (
         head_improvements != expected_head_improvements
         or gate["positive_recommendation_coverage"] != expected_coverage
         or gate["policy_agreement_beats_baseline"] != expected_policy_improvement
         or gate["zero_recommendation_errors"] != expected_zero_errors
+        or gate["zero_false_tie_overrides"] != expected_zero_false_ties
+        or gate["non_positive_recommendation_regret"] != expected_non_positive_regret
+        or gate["positive_recommended_utility_gain"] != expected_positive_utility
         or expected_all_heads != all(expected_head_improvements.values())
         or gate["safe_policy_recommendations"] != expected_safe_policy
         or gate["all_heads_beat_train_only_baselines"] != expected_all_heads
@@ -1950,7 +2035,11 @@ def _validate_policy_metrics(value: object) -> None:
     if not isinstance(value, dict) or set(value) != {
         "agreement",
         "recommendations",
+        "recommendation_groups",
         "recommendation_errors",
+        "false_tie_overrides",
+        "mean_recommended_utility_gain",
+        "mean_recommendation_regret",
         "override_margin",
     }:
         raise ValueError("trained provenance policy metrics are invalid")
@@ -1958,8 +2047,15 @@ def _validate_policy_metrics(value: object) -> None:
         not _finite_number(value["agreement"])
         or not 0 <= value["agreement"] <= 1
         or not _nonnegative_integer(value["recommendations"])
+        or not _nonnegative_integer(value["recommendation_groups"])
+        or value["recommendation_groups"] > value["recommendations"]
         or not _nonnegative_integer(value["recommendation_errors"])
+        or not _nonnegative_integer(value["false_tie_overrides"])
         or value["recommendation_errors"] > value["recommendations"]
+        or value["false_tie_overrides"] > value["recommendations"]
+        or not _finite_number(value["mean_recommended_utility_gain"])
+        or not _finite_number(value["mean_recommendation_regret"])
+        or value["mean_recommendation_regret"] < 0
         or not _finite_number(value["override_margin"])
         or value["override_margin"] < 0
     ):

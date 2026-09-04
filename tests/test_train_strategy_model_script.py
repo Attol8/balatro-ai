@@ -54,7 +54,7 @@ def _record(index: int):
         teacher_config_digest="3" * 64,
     )
     return draft.finalize(
-        run_group=f"run-{index:06d}",
+        run_group=f"origin-{index:032x}",
         decision_index=0,
         run_complete=True,
         run_won=observation.won,
@@ -94,6 +94,7 @@ def test_training_cli_builds_reloadable_shadow_artifact(tmp_path, monkeypatch) -
                 ],
                 "strategy_teacher_dataset": {
                     "status": "written",
+                    "mode": "dense_paired_utility",
                     "sha256": dataset_digest,
                     "contains_game_seeds": False,
                     "complete_runs_only": True,
@@ -192,7 +193,11 @@ def test_policy_gate_rejects_vacuous_zero_coverage() -> None:
         "policy": {
             "agreement": 1.0,
             "recommendations": 0,
+            "recommendation_groups": 0,
             "recommendation_errors": 0,
+            "false_tie_overrides": 0,
+            "mean_recommended_utility_gain": 0.0,
+            "mean_recommendation_regret": 0.0,
         },
     }
 

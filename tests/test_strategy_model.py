@@ -17,6 +17,7 @@ from balatro_ai_v2.actions import (  # noqa: E402
 )
 from balatro_ai_v2.balatrobot.adapter import to_public_observation  # noqa: E402
 from balatro_ai_v2.public_state import PublicItem, PublicJokerRuntime  # noqa: E402
+from balatro_ai_v2.strategy_context import PublicStrategyContext  # noqa: E402
 from balatro_ai_v2.strategy_model import (  # noqa: E402
     EntityKind,
     PublicStrategyTensorizer,
@@ -56,9 +57,9 @@ def _model() -> RelationalStrategyPolicyValue:
 
 
 def _trained_provenance(calibration: StrategyCalibration) -> dict[str, object]:
-    train_groups = ["run-000000"]
-    calibration_groups = ["run-000001"]
-    holdout_groups = ["run-000002"]
+    train_groups = ["origin-00000000000000000000000000000000"]
+    calibration_groups = ["origin-00000000000000000000000000000001"]
+    holdout_groups = ["origin-00000000000000000000000000000002"]
 
     def digest(groups: list[str]) -> str:
         return hashlib.sha256("\n".join(sorted(groups)).encode()).hexdigest()
@@ -71,7 +72,11 @@ def _trained_provenance(calibration: StrategyCalibration) -> dict[str, object]:
             "policy": {
                 "agreement": 0.75,
                 "recommendations": 1,
+                "recommendation_groups": 1,
                 "recommendation_errors": 0,
+                "false_tie_overrides": 0,
+                "mean_recommended_utility_gain": 0.1,
+                "mean_recommendation_regret": 0.0,
                 "override_margin": calibration.policy_override_margin,
             },
             "current_blind": {"count": 0.0, "brier": 0.0, "log_loss": 0.0},
@@ -129,11 +134,19 @@ def _trained_provenance(calibration: StrategyCalibration) -> dict[str, object]:
             "source_digest": "4" * 64,
             "loss_weights": {
                 "policy": 1.0,
+                "paired_utility": 1.0,
+                "ordering": 0.25,
                 "current_blind": 1.0,
                 "next_boss": 1.0,
                 "ante8": 1.0,
                 "endless_ante": 0.5,
                 "log_score": 0.5,
+            },
+            "objective": {
+                "name": "paired_baseline_relative_search_utility_v1",
+                "regression": "smooth_l1",
+                "ordering": "signed_softplus;exact_ties=squared_delta",
+                "weighting": "run_then_decision_then_alternative_equal",
             },
         },
         "calibration": {
@@ -146,6 +159,9 @@ def _trained_provenance(calibration: StrategyCalibration) -> dict[str, object]:
                 "positive_recommendation_coverage": True,
                 "policy_agreement_beats_baseline": True,
                 "zero_recommendation_errors": True,
+                "zero_false_tie_overrides": True,
+                "non_positive_recommendation_regret": True,
+                "positive_recommended_utility_gain": True,
                 "head_improvements": {
                     "current_blind": False,
                     "next_boss": False,
@@ -154,7 +170,7 @@ def _trained_provenance(calibration: StrategyCalibration) -> dict[str, object]:
                     "log_score": False,
                 },
                 "all_heads_beat_train_only_baselines": False,
-                "offline_gate_passed": False,
+                "offline_gate_passed": True,
                 "authorizes_action_influence": False,
             },
         },
@@ -199,7 +215,9 @@ def test_relational_model_outputs_policy_and_all_distinct_finite_value_heads() -
     ):
         assert probabilities.shape == output.legal_mask.shape
         assert ((0.0 <= probabilities) & (probabilities <= 1.0)).all()
-    assert output.endless_ante.shape == output.log_score.shape == output.legal_mask.shape
+    assert (
+        output.endless_ante.shape == output.log_score.shape == output.legal_mask.shape
+    )
     assert (output.endless_ante >= 0).all()
     assert (output.log_score >= 0).all()
 
@@ -437,6 +455,31 @@ def test_tensorization_is_deterministic_and_batch_padding_is_masked() -> None:
     assert first.action_mask[0].sum() != first.action_mask[1].sum()
     assert not first.action_relations[~first.action_mask].any()
     first.validate()
+
+
+def test_public_history_context_changes_only_public_tensor_features() -> None:
+    observation = to_public_observation(state("SHOP"))
+    actions = tuple(iter_legal_actions(observation))
+    tensorizer = PublicStrategyTensorizer(_config())
+
+    plain = tensorizer.tensorize((observation,), (actions,))
+    contextual = tensorizer.tensorize(
+        (observation,),
+        (actions,),
+        contexts=(
+            PublicStrategyContext(
+                current_shop_actions=2,
+                current_shop_has_joker_sale=True,
+                prior_shop_has_joker_sale=True,
+                best_hand_log_score=5.0,
+                incoming_intent=StrategyIntent.ECONOMY,
+            ),
+        ),
+    )
+
+    assert not torch.equal(plain.entity_features, contextual.entity_features)
+    assert torch.equal(plain.action_kinds, contextual.action_kinds)
+    assert torch.equal(plain.action_relations, contextual.action_relations)
 
 
 def test_hidden_twins_and_display_prose_do_not_change_tensors() -> None:
@@ -707,7 +750,7 @@ def test_trained_provenance_recomputes_split_digest_and_gate_logic() -> None:
     bad_digest = _trained_provenance(calibration)
     bad_digest["split"]["train_digest"] = "0" * 64
     bad_gate = _trained_provenance(calibration)
-    bad_gate["calibration"]["gate"]["offline_gate_passed"] = True
+    bad_gate["calibration"]["gate"]["offline_gate_passed"] = False
 
     with pytest.raises(ValueError, match="digest disagrees"):
         RelationalStrategyPolicyValue(_config(), calibration, bad_digest)

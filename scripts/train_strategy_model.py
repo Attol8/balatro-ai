@@ -119,6 +119,12 @@ def main() -> None:
             "torch_version": str(torch.__version__),
             "source_digest": collection["manifest"]["source_digest"],
             "loss_weights": asdict(loss_weights),
+            "objective": {
+                "name": "paired_baseline_relative_search_utility_v1",
+                "regression": "smooth_l1",
+                "ordering": "signed_softplus;exact_ties=squared_delta",
+                "weighting": "run_then_decision_then_alternative_equal",
+            },
         },
         "calibration": {
             "parameters": asdict(calibration),
@@ -144,6 +150,7 @@ def main() -> None:
         "split": split_manifest,
         "config": asdict(config),
         "loss_weights": asdict(loss_weights),
+        "objective": provenance["trainer"]["objective"],
         "losses": losses,
         "calibration": asdict(calibration),
         "calibration_metrics": calibration_metrics,
@@ -178,7 +185,10 @@ def empirical_baseline_metrics(train, evaluated) -> dict[str, object]:
                 ]
                 if values:
                     rows.append(
-                        (record.run_group, sum(float(value) for value in values) / len(values))
+                        (
+                            record.run_group,
+                            sum(float(value) for value in values) / len(values),
+                        )
                     )
         counts: dict[str, int] = {}
         for group, _ in rows:
@@ -210,9 +220,7 @@ def empirical_baseline_metrics(train, evaluated) -> dict[str, object]:
     evaluated_endless, evaluated_endless_weights = candidate_targets(
         evaluated, "endless_ante"
     )
-    evaluated_score, evaluated_score_weights = candidate_targets(
-        evaluated, "log_score"
-    )
+    evaluated_score, evaluated_score_weights = candidate_targets(evaluated, "log_score")
     baseline_agreement = _weighted_mean(
         [float(record.baseline_index == record.selected_index) for record in evaluated],
         evaluated_weights,
@@ -277,21 +285,35 @@ def calibration_gate(
     positive_coverage = int(policy["recommendations"]) > 0
     policy_improves = float(policy["agreement"]) > float(baseline_policy["agreement"])
     zero_recommendation_errors = int(policy["recommendation_errors"]) == 0
-    safe_policy = positive_coverage and policy_improves and zero_recommendation_errors
+    zero_false_ties = int(policy["false_tie_overrides"]) == 0
+    non_positive_regret = float(policy["mean_recommendation_regret"]) <= 0.0
+    positive_utility = float(policy["mean_recommended_utility_gain"]) > 0.0
+    safe_policy = (
+        positive_coverage
+        and zero_recommendation_errors
+        and zero_false_ties
+        and non_positive_regret
+        and positive_utility
+    )
     all_heads = all(head_checks.values())
     return {
         "safe_policy_recommendations": safe_policy,
         "positive_recommendation_coverage": positive_coverage,
         "policy_agreement_beats_baseline": policy_improves,
         "zero_recommendation_errors": zero_recommendation_errors,
+        "zero_false_tie_overrides": zero_false_ties,
+        "non_positive_recommendation_regret": non_positive_regret,
+        "positive_recommended_utility_gain": positive_utility,
         "head_improvements": head_checks,
         "all_heads_beat_train_only_baselines": all_heads,
-        "offline_gate_passed": safe_policy and all_heads,
+        "offline_gate_passed": safe_policy,
         "authorizes_action_influence": False,
     }
 
 
-def _load_collection_report(path: Path, dataset_digest: str, records) -> tuple[str, dict]:
+def _load_collection_report(
+    path: Path, dataset_digest: str, records
+) -> tuple[str, dict]:
     digest = hashlib.sha256(path.read_bytes()).hexdigest()
     try:
         report = json.loads(path.read_text(encoding="utf-8"))
@@ -314,6 +336,7 @@ def _load_collection_report(path: Path, dataset_digest: str, records) -> tuple[s
         or teacher.get("sha256") != dataset_digest
         or teacher.get("contains_game_seeds") is not False
         or teacher.get("complete_runs_only") is not True
+        or teacher.get("mode") != "dense_paired_utility"
         or teacher.get("records") != len(records)
         or teacher.get("groups") != len({record.run_group for record in records})
         or not isinstance(teacher.get("teacher_config_digest"), str)
@@ -345,7 +368,9 @@ def _load_collection_report(path: Path, dataset_digest: str, records) -> tuple[s
         and success_teacher.get("enabled") is True
         and success_teacher.get("affects_actions") is not False
     ):
-        raise SystemExit("success teacher report does not prove action-inert collection")
+        raise SystemExit(
+            "success teacher report does not prove action-inert collection"
+        )
     if isinstance(success_teacher, dict) and success_teacher.get("enabled") is True:
         coverage = teacher.get("coverage")
         if (
@@ -443,7 +468,7 @@ def _validate_args(args: argparse.Namespace) -> None:
         or args.max_gradient_norm <= 0
     ):
         raise SystemExit("optimizer parameters are invalid")
-    if args.split_nonce != "strategy-split-v2-predeclared":
+    if args.split_nonce != "strategy-split-v3-predeclared":
         raise SystemExit("--split-nonce is frozen for this expert-iteration protocol")
 
 
@@ -458,7 +483,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--train-groups", type=int, default=8)
     parser.add_argument("--calibration-groups", type=int, default=2)
     parser.add_argument("--holdout-groups", type=int, default=2)
-    parser.add_argument("--split-nonce", default="strategy-split-v2-predeclared")
+    parser.add_argument("--split-nonce", default="strategy-split-v3-predeclared")
     parser.add_argument("--hidden-size", type=int, default=64)
     parser.add_argument("--attention-heads", type=int, default=4)
     parser.add_argument("--attention-layers", type=int, default=2)

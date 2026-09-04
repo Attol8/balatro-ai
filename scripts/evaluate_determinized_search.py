@@ -13,6 +13,7 @@ import hashlib
 import json
 import math
 import os
+import secrets
 import subprocess
 import sys
 import tempfile
@@ -51,6 +52,7 @@ from balatro_ai_v2.strategy_diagnostics import (
     strategy_snapshot,
     summarize_strategy_results,
 )
+from balatro_ai_v2.strategy_continuation import CertifiedUtilityContinuationPolicy
 from balatro_ai_v2.strategy_model import (
     PublicStrategyTensorizer,
     StrategyModelError,
@@ -75,9 +77,22 @@ def _init_worker(args_dict: dict[str, object]) -> None:
         str(args_dict["continuation"]), str(args_dict["policy_seed"]), tuning
     )
     backend = JackdawBackend()
+    rollout_continuation = None
+    continuation_model = str(args_dict["strategy_continuation_model"])
+    continuation_certificate = str(args_dict["strategy_continuation_certificate"])
+    if continuation_model:
+        fallback, _ = build_public_baseline(
+            str(args_dict["continuation"]), str(args_dict["policy_seed"]), tuning
+        )
+        rollout_continuation = CertifiedUtilityContinuationPolicy.from_artifacts(
+            control=fallback,
+            model_path=Path(continuation_model),
+            certificate_path=Path(continuation_certificate),
+        )
     policy = DeterminizedSearchPolicy(
         backend=backend,
         continuation=continuation,
+        rollout_continuation=rollout_continuation,
         nonce=str(args_dict["nonce"]),
         budget=RolloutBudget(
             samples=int(args_dict["samples"]),
@@ -86,14 +101,13 @@ def _init_worker(args_dict: dict[str, object]) -> None:
             override_z=float(args_dict["override_z"]),
         ),
         enable_strategy_options=bool(args_dict["strategy_options"]),
+        collect_dense_teacher=bool(args_dict["dense_teacher"]),
         include_reorders=bool(args_dict["include_reorders"]),
         success_teacher=(
             SuccessTeacherBudget(
                 samples=int(args_dict["success_teacher_samples"]),
                 prewin_start_ante=int(args_dict["success_teacher_start_ante"]),
-                endless_horizon_antes=int(
-                    args_dict["success_teacher_endless_antes"]
-                ),
+                endless_horizon_antes=int(args_dict["success_teacher_endless_antes"]),
                 max_steps=int(args_dict["success_teacher_max_steps"]),
             )
             if bool(args_dict["success_teacher"])
@@ -218,13 +232,13 @@ def _validate_terminal_preregistration(
 ) -> dict[str, object] | None:
     reserved = range(1055, 1075)
     requested = range(args.seed_start, args.seed_start + args.seeds)
-    overlaps_reserved = requested.start < reserved.stop and reserved.start < requested.stop
+    overlaps_reserved = (
+        requested.start < reserved.stop and reserved.start < requested.stop
+    )
     path = args.terminal_preregistration_json
     if path is None:
         if overlaps_reserved:
-            raise SystemExit(
-                "seeds 1055-1074 require --terminal-preregistration-json"
-            )
+            raise SystemExit("seeds 1055-1074 require --terminal-preregistration-json")
         return None
     try:
         raw = path.read_bytes()
@@ -330,16 +344,30 @@ def _verify_terminal_freeze(
     if backend != binding.get("backend"):
         raise SystemExit("terminal run changed preregistered backend")
     if repository_revision == implementation_revision:
-        raise SystemExit("terminal preregistration was not committed after implementation")
+        raise SystemExit(
+            "terminal preregistration was not committed after implementation"
+        )
     try:
         subprocess.run(
-            ["git", "merge-base", "--is-ancestor", implementation_revision, repository_revision],
+            [
+                "git",
+                "merge-base",
+                "--is-ancestor",
+                implementation_revision,
+                repository_revision,
+            ],
             cwd=repository_root,
             check=True,
             capture_output=True,
         )
         changed = subprocess.run(
-            ["git", "diff", "--name-only", implementation_revision, repository_revision],
+            [
+                "git",
+                "diff",
+                "--name-only",
+                implementation_revision,
+                repository_revision,
+            ],
             cwd=repository_root,
             check=True,
             capture_output=True,
@@ -348,7 +376,9 @@ def _verify_terminal_freeze(
     except (OSError, subprocess.CalledProcessError) as exc:
         raise SystemExit("cannot verify terminal implementation ancestry") from exc
     if set(changed) != {"experiments/terminal-actions-v6-preregistration.json"}:
-        raise SystemExit("terminal preregistration commit changed implementation source")
+        raise SystemExit(
+            "terminal preregistration commit changed implementation source"
+        )
 
 
 def main() -> None:
@@ -359,17 +389,20 @@ def main() -> None:
         )
     except PanelValidationError as exc:
         raise SystemExit(f"invalid seed panel: {exc}") from exc
-    if min(
-        args.max_decisions,
-        args.ante_cap,
-        args.workers,
-        args.success_teacher_samples,
-        args.success_teacher_start_ante,
-        args.success_teacher_endless_antes,
-        args.success_teacher_max_steps,
-        args.success_terminal_max_samples,
-        args.success_terminal_max_roots,
-    ) < 1:
+    if (
+        min(
+            args.max_decisions,
+            args.ante_cap,
+            args.workers,
+            args.success_teacher_samples,
+            args.success_teacher_start_ante,
+            args.success_teacher_endless_antes,
+            args.success_teacher_max_steps,
+            args.success_terminal_max_samples,
+            args.success_terminal_max_roots,
+        )
+        < 1
+    ):
         raise SystemExit("decision, worker, and teacher budgets must be positive")
     if args.include_reorders and not (
         args.strategy_options or args.success_teacher or args.success_terminal_actions
@@ -380,9 +413,18 @@ def main() -> None:
             "--success-teacher and --success-terminal-actions are mutually exclusive"
         )
     if args.teacher_jsonl is not None and not (
+        args.dense_teacher
+        or args.strategy_options
+        or args.success_teacher
+        or args.success_terminal_actions
+    ):
+        raise SystemExit("--teacher-jsonl requires a teacher collection mode")
+    if args.dense_teacher and (
         args.strategy_options or args.success_teacher or args.success_terminal_actions
     ):
-        raise SystemExit("--teacher-jsonl requires strategy options or success teacher")
+        raise SystemExit("--dense-teacher is an exclusive ordinary-root collector")
+    if args.dense_teacher and args.teacher_jsonl is None:
+        raise SystemExit("--dense-teacher requires --teacher-jsonl")
     if args.success_teacher and args.teacher_jsonl is None:
         raise SystemExit("--success-teacher requires --teacher-jsonl")
     if args.success_terminal_actions:
@@ -390,6 +432,8 @@ def main() -> None:
             raise SystemExit("terminal action mode cannot emit teacher JSONL")
         if args.strategy_shadow_model is not None:
             raise SystemExit("terminal action mode cannot load a shadow model")
+        if args.strategy_continuation_model is not None:
+            raise SystemExit("terminal action mode cannot load a continuation model")
         if args.seed_provenance != "development":
             raise SystemExit("terminal action mode is development-only")
         if not 0.0 < args.success_terminal_family_alpha < 1.0:
@@ -400,6 +444,25 @@ def main() -> None:
         raise SystemExit("--teacher-jsonl requires --report-json for provenance")
     if args.teacher_jsonl is not None and args.strategy_shadow_model is not None:
         raise SystemExit("teacher collection cannot be combined with model shadowing")
+    continuation_paths = (
+        args.strategy_continuation_model,
+        args.strategy_continuation_certificate,
+    )
+    if (continuation_paths[0] is None) != (continuation_paths[1] is None):
+        raise SystemExit("continuation model and certificate must be supplied together")
+    if continuation_paths[0] is not None:
+        if args.seed_provenance != "development":
+            raise SystemExit("learned rollout continuation is development-only")
+        if (
+            args.teacher_jsonl is not None
+            or args.strategy_shadow_model is not None
+            or args.strategy_options
+            or args.success_teacher
+            or args.success_terminal_actions
+        ):
+            raise SystemExit(
+                "continuation evaluation requires ordinary search without teachers"
+            )
     if (
         args.teacher_jsonl is not None
         and args.report_json is not None
@@ -439,6 +502,21 @@ def main() -> None:
             ).hexdigest()
         except (OSError, StrategyModelError) as exc:
             raise SystemExit(f"invalid --strategy-shadow-model: {exc}") from exc
+    try:
+        continuation_digest = (
+            hashlib.sha256(args.strategy_continuation_model.read_bytes()).hexdigest()
+            if args.strategy_continuation_model is not None
+            else None
+        )
+        certificate_digest = (
+            hashlib.sha256(
+                args.strategy_continuation_certificate.read_bytes()
+            ).hexdigest()
+            if args.strategy_continuation_certificate is not None
+            else None
+        )
+    except OSError as exc:
+        raise SystemExit(f"invalid rollout continuation artifact: {exc}") from exc
     root = Path(__file__).resolve().parents[1]
     try:
         tuning = StrategyTuning.from_json(args.tuning_json)
@@ -480,14 +558,20 @@ def main() -> None:
     )
     strategy_mode = (
         f"strategy_options={args.strategy_options};"
+        f"dense_teacher={args.dense_teacher};"
         f"include_reorders={args.include_reorders};"
         f"success_teacher={success_teacher_mode};"
         f"success_terminal_actions={success_action_mode}"
     )
     shadow_mode = f"strategy_shadow={shadow_digest or 'disabled'}"
+    continuation_mode = (
+        f"strategy_continuation={continuation_digest or 'disabled'};"
+        f"certificate={certificate_digest or 'disabled'}"
+    )
     policy_name = (
         f"DeterminizedSearchPolicy[{SEARCH_VERSION};{continuation_name};"
-        f"{budget.canonical()};{strategy_mode};{shadow_mode}]:parent-v1"
+        f"{budget.canonical()};{strategy_mode};{shadow_mode};"
+        f"{continuation_mode}]:parent-v1"
     )
     worker_args = {
         "tuning_json": tuning.canonical_json(),
@@ -504,10 +588,21 @@ def main() -> None:
         "stake": args.stake,
         "record_decisions": args.record_decisions,
         "strategy_options": args.strategy_options,
+        "dense_teacher": args.dense_teacher,
         "include_reorders": args.include_reorders,
         "strategy_shadow_model": (
             str(args.strategy_shadow_model.resolve())
             if args.strategy_shadow_model
+            else ""
+        ),
+        "strategy_continuation_model": (
+            str(args.strategy_continuation_model.resolve())
+            if args.strategy_continuation_model
+            else ""
+        ),
+        "strategy_continuation_certificate": (
+            str(args.strategy_continuation_certificate.resolve())
+            if args.strategy_continuation_certificate
             else ""
         ),
         "record_shadow_decisions": args.record_shadow_decisions,
@@ -617,13 +712,17 @@ def main() -> None:
                 "censored_never_exact;no_public_progress_inadmissible_for_actions"
             ),
             "terminal_action_budget": (
-                json.loads(json.dumps(asdict(
-                    SuccessTerminalActionBudget(
-                        max_samples=args.success_terminal_max_samples,
-                        max_roots=args.success_terminal_max_roots,
-                        family_alpha=args.success_terminal_family_alpha,
+                json.loads(
+                    json.dumps(
+                        asdict(
+                            SuccessTerminalActionBudget(
+                                max_samples=args.success_terminal_max_samples,
+                                max_roots=args.success_terminal_max_roots,
+                                family_alpha=args.success_terminal_family_alpha,
+                            )
+                        )
                     )
-                )))
+                )
                 if args.success_terminal_actions
                 else None
             ),
@@ -686,6 +785,13 @@ def main() -> None:
                 "record_decisions": args.record_shadow_decisions,
                 **shadow_artifact_status,
             },
+            "strategy_model_continuation": {
+                "enabled": continuation_digest is not None,
+                "artifact_digest": continuation_digest,
+                "certificate_digest": certificate_digest,
+                "affects_actions": continuation_digest is not None,
+                "scope": "rollout_only",
+            },
             "strategy_teacher_dataset": {
                 "enabled": args.teacher_jsonl is not None,
                 "status": teacher_status,
@@ -697,6 +803,7 @@ def main() -> None:
                 "groups": len({record.run_group for record in teacher_records}),
                 "contains_game_seeds": False,
                 "complete_runs_only": True,
+                "mode": "dense_paired_utility" if args.dense_teacher else "legacy",
                 "teacher_config_digest": (
                     teacher_records[0].teacher_config_digest
                     if teacher_records
@@ -820,9 +927,7 @@ def _success_teacher_profile(
         else None
     )
     total_steps = sum(int(decision.get("steps", 0)) for decision in decisions)
-    total_seconds = sum(
-        float(decision.get("seconds", 0.0)) for decision in decisions
-    )
+    total_seconds = sum(float(decision.get("seconds", 0.0)) for decision in decisions)
     counter_steps = sum(
         int(search.get("success_teacher_steps", 0))
         for row in results
@@ -995,7 +1100,10 @@ def _finalize_teacher_records(
             row.pop("_teacher_drafts", None)
         return (), "discarded_rejected_panel"
     records: list[StrategyTeacherRecord] = []
-    for group_index, row in enumerate(results):
+    run_groups = [f"origin-{secrets.token_hex(16)}" for _ in results]
+    if len(set(run_groups)) != len(run_groups):
+        raise RuntimeError("opaque teacher origin identifier collision")
+    for run_group, row in zip(run_groups, results, strict=True):
         drafts = row.pop("_teacher_drafts", ())
         if not isinstance(drafts, tuple) or not all(
             isinstance(draft, StrategyTeacherDraft) for draft in drafts
@@ -1004,7 +1112,7 @@ def _finalize_teacher_records(
         for decision_index, draft in enumerate(drafts):
             records.append(
                 draft.finalize(
-                    run_group=f"run-{group_index:06d}",
+                    run_group=run_group,
                     decision_index=decision_index,
                     run_complete=True,
                     run_won=bool(row["won"]),
@@ -1014,6 +1122,7 @@ def _finalize_teacher_records(
             )
     if not records:
         return (), "discarded_no_eligible_decisions"
+    secrets.SystemRandom().shuffle(records)
     return tuple(records), "written"
 
 
@@ -1112,8 +1221,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--tuning-json", default=StrategyTuning().canonical_json())
     parser.add_argument("--record-decisions", action="store_true")
     parser.add_argument("--strategy-shadow-model", type=Path)
+    parser.add_argument("--strategy-continuation-model", type=Path)
+    parser.add_argument("--strategy-continuation-certificate", type=Path)
     parser.add_argument("--record-shadow-decisions", action="store_true")
     parser.add_argument("--teacher-jsonl", type=Path)
+    parser.add_argument("--dense-teacher", action="store_true")
     parser.add_argument("--success-teacher", action="store_true")
     parser.add_argument("--success-terminal-actions", action="store_true")
     parser.add_argument("--success-teacher-samples", type=int, default=2)

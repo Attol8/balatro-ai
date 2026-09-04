@@ -172,7 +172,8 @@ def test_complete_run_drafts_receive_opaque_groups_and_terminal_labels() -> None
     records, status = module._finalize_teacher_records(rows, enabled=True)
 
     assert status == "written"
-    assert records[0].run_group == "run-000000"
+    assert records[0].run_group.startswith("origin-")
+    assert len(records[0].run_group) == len("origin-") + 32
     assert records[0].terminal_ante == 3
     assert "_teacher_drafts" not in rows[0]
 
@@ -265,7 +266,7 @@ def test_success_teacher_coverage_requires_distinct_winning_groups() -> None:
     )
     records = tuple(
         draft.finalize(
-            run_group=f"run-{index:06d}",
+            run_group=f"origin-{index:032x}",
             decision_index=0,
             run_complete=True,
             run_won=index < 5,
@@ -366,8 +367,7 @@ def test_terminal_preregistration_binds_exact_budget_and_output() -> None:
             str(preregistration),
             "--report-json",
             str(
-                root
-                / "runs/experiments/terminal-actions-v6/"
+                root / "runs/experiments/terminal-actions-v6/"
                 "seeds1055-1074.baseline.json"
             ),
         ]
