@@ -4,6 +4,8 @@
 from __future__ import annotations
 
 import argparse
+import ctypes
+import errno
 import hashlib
 import json
 import os
@@ -48,11 +50,14 @@ from balatro_ai_v2.route_learning_protocol import (
 )
 from balatro_ai_v2.route_model import load_route_model, save_route_model
 from balatro_ai_v2.route_teacher import (
+    RouteTeacherValidationError,
     route_teacher_coverage_gate_failures,
     route_terminal_teacher_coverage,
+    validate_route_teacher_component,
 )
 from balatro_ai_v2.route_teacher_protocol import (
     ROUTE_TEACHER_BATCHES,
+    ROUTE_TEACHER_BATCH_SIZE,
     ROUTE_TEACHER_COVERAGE_GATE,
     ROUTE_TEACHER_ORIGIN_KEY,
     ROUTE_TEACHER_PILOT_GATE,
@@ -127,12 +132,10 @@ def main() -> None:
         calibration,
         calibration_evidence=calibration_evidence,
     )
+    gate = _validated_holdout_gate(evaluation)
     report["evaluation"] = evaluation
-    report["gate"] = evaluation["gate"]
-    if (
-        not isinstance(evaluation.get("gate"), dict)
-        or evaluation["gate"].get("passed") is not True
-    ):
+    report["gate"] = gate
+    if gate["passed"] is not True:
         report["status"] = "rejected"
         report["rejection_reason"] = "holdout_gate_failed"
         _publish_report_only(args.report_json, report, root, source)
@@ -215,6 +218,7 @@ def _load_inputs(args: argparse.Namespace, root: Path, source: _Source) -> _Inpu
     )
     if learner["collection_preregistration_sha256"] != collection_digest:
         raise SystemExit("learner preregistration does not bind collection protocol")
+    origin_key = _load_origin_key(collection, root)
     try:
         dataset_bytes = args.input_jsonl.read_bytes()
         report_bytes = args.collection_report.read_bytes()
@@ -231,6 +235,14 @@ def _load_inputs(args: argparse.Namespace, root: Path, source: _Source) -> _Inpu
         learner,
         collection,
         collection_digest,
+        root,
+    )
+    _reauthenticate_original_components(
+        records,
+        merged_report,
+        collection,
+        collection_digest,
+        origin_key,
         root,
     )
     return _Inputs(
@@ -312,6 +324,23 @@ def _load_collection_preregistration(
     return spec, hashlib.sha256(raw).hexdigest()
 
 
+def _load_origin_key(collection: dict[str, object], root: Path) -> bytes:
+    path = (root / ROUTE_TEACHER_ORIGIN_KEY).resolve()
+    try:
+        key = path.read_bytes()
+    except OSError as exc:
+        raise SystemExit("route-terminal origin key is unreadable") from exc
+    origin = collection.get("origin_mapping")
+    if (
+        len(key) != 32
+        or not isinstance(origin, dict)
+        or origin.get("key_path") != ROUTE_TEACHER_ORIGIN_KEY
+        or hashlib.sha256(key).hexdigest() != origin.get("key_sha256")
+    ):
+        raise SystemExit("route-terminal origin key violates the frozen protocol")
+    return key
+
+
 def _validate_source_bindings(
     root: Path, source: _Source, learner: dict[str, object]
 ) -> None:
@@ -352,8 +381,6 @@ def _validate_merged_bundle(
         or teacher.get("groups") != len({record.run_group for record in records})
         or teacher.get("contains_game_seeds") is not False
         or teacher.get("complete_runs_only") is not True
-        or teacher.get("collection_only") is not True
-        or teacher.get("training_authorized") is not False
         or not isinstance(binding, dict)
         or binding.get("protocol_id") != ROUTE_TEACHER_PROTOCOL_ID
         or binding.get("sha256") != collection_digest
@@ -466,6 +493,195 @@ def _validate_merged_bundle(
     return str(teacher_config)
 
 
+def _reauthenticate_original_components(
+    merged_records: tuple[StrategyTeacherRecord, ...],
+    merged_report: dict[str, object],
+    collection: dict[str, object],
+    collection_digest: str,
+    origin_key: bytes,
+    root: Path,
+) -> None:
+    components = merged_report.get("merged_components")
+    batches = collection.get("batches")
+    if (
+        not isinstance(components, list)
+        or len(components) != len(ROUTE_TEACHER_BATCHES)
+        or not _equal_exact(batches, list(ROUTE_TEACHER_BATCHES))
+    ):
+        raise SystemExit("route component authentication inputs are invalid")
+    canonical_records: list[StrategyTeacherRecord] = []
+    for merged_component, batch in zip(
+        components, ROUTE_TEACHER_BATCHES, strict=True
+    ):
+        dataset_path = (root / str(batch["teacher_jsonl"])).resolve()
+        report_path = (root / str(batch["report_json"])).resolve()
+        try:
+            dataset_bytes = dataset_path.read_bytes()
+            report_bytes = report_path.read_bytes()
+            report = json.loads(report_bytes)
+            records = teacher_records_from_bytes(dataset_bytes)
+        except (OSError, json.JSONDecodeError, TypeError, ValueError) as exc:
+            raise SystemExit(
+                f"route component {batch['batch_id']} is unreadable"
+            ) from exc
+        if not isinstance(merged_component, dict) or not isinstance(report, dict):
+            raise SystemExit("route component authentication payload is malformed")
+        dataset_digest = hashlib.sha256(dataset_bytes).hexdigest()
+        report_digest = hashlib.sha256(report_bytes).hexdigest()
+        if (
+            merged_component.get("batch_id") != batch["batch_id"]
+            or merged_component.get("dataset_sha256") != dataset_digest
+            or merged_component.get("report_sha256") != report_digest
+        ):
+            raise SystemExit("merged route component byte digests disagree")
+
+        teacher = report.get("strategy_teacher_dataset")
+        binding = report.get("route_terminal_teacher_preregistration")
+        manifest = report.get("manifest")
+        search = report.get("search_protocol")
+        success = search.get("success_teacher") if isinstance(search, dict) else None
+        run = manifest.get("run") if isinstance(manifest, dict) else None
+        benchmark = report.get("benchmark_protocol")
+        component_coverage = route_terminal_teacher_coverage(records)
+        expected_binding = {
+            "protocol_id": ROUTE_TEACHER_PROTOCOL_ID,
+            "sha256": collection_digest,
+            "batch_id": batch["batch_id"],
+            "seed_start": batch["seed_start"],
+            "seeds": batch["seeds"],
+            "immutable_batches": True,
+            "collection_only": True,
+            "training_authorized": False,
+            "schema_version": STRATEGY_TEACHER_SCHEMA_VERSION,
+            "implementation_revision": collection.get("implementation_revision"),
+            "expected_source_digest": collection.get("expected_source_digest"),
+            "candidate_runtime": collection.get("candidate_runtime"),
+            "backend": collection.get("backend"),
+            "origin_key_sha256": collection["origin_mapping"]["key_sha256"],
+        }
+        reported_coverage = (
+            teacher.get("coverage") if isinstance(teacher, dict) else None
+        )
+        teacher_path = teacher.get("path") if isinstance(teacher, dict) else None
+        if (
+            not _equal_exact(binding, expected_binding)
+            or not isinstance(teacher, dict)
+            or teacher.get("enabled") is not True
+            or teacher.get("status") != "written"
+            or teacher.get("mode") != ROUTE_LEARNING_COLLECTION_MODE
+            or teacher.get("schema_version") != STRATEGY_TEACHER_SCHEMA_VERSION
+            or not isinstance(teacher_path, str)
+            or (root / teacher_path).resolve() != dataset_path
+            or teacher.get("sha256") != dataset_digest
+            or not _equal_exact(teacher.get("records"), len(records))
+            or not _equal_exact(
+                teacher.get("groups"), len({record.run_group for record in records})
+            )
+            or teacher.get("contains_game_seeds") is not False
+            or teacher.get("complete_runs_only") is not True
+            or {record.teacher_config_digest for record in records}
+            != {teacher.get("teacher_config_digest")}
+            or not isinstance(reported_coverage, dict)
+            or not _equal_exact(
+                reported_coverage.get(ROUTE_LEARNING_COLLECTION_MODE),
+                component_coverage,
+            )
+            or not isinstance(manifest, dict)
+            or manifest.get("repository_dirty") is not False
+            or not _is_revision(manifest.get("repository_revision"))
+            or manifest.get("source_digest") != collection.get("expected_source_digest")
+            or not _equal_exact(manifest.get("backend"), collection.get("backend"))
+            or manifest.get("max_decisions") != ROUTE_TEACHER_SEARCH["max_decisions"]
+            or manifest.get("max_antes_cleared") != ROUTE_TEACHER_SEARCH["ante_cap"]
+            or manifest.get("profile_mode") != "all_unlocked"
+            or not _equal_exact(
+                run,
+                {
+                    "deck": collection.get("deck"),
+                    "stake": collection.get("stake"),
+                    "seed": f"{batch['seed_start']}:{batch['seeds']}",
+                },
+            )
+            or not isinstance(benchmark, dict)
+            or benchmark.get("seed_provenance") != collection.get("seed_provenance")
+            or report.get("candidate_only") is not True
+            or not _equal_exact(
+                report.get("candidate_runtime"), collection.get("candidate_runtime")
+            )
+            or not _equal_exact(
+                report.get("strategy_tuning"), collection.get("strategy_tuning")
+            )
+            or not isinstance(search, dict)
+            or search.get("version") != "determinized-search-v16"
+            or not _equal_exact(
+                search.get("budget"),
+                {
+                    name: ROUTE_TEACHER_SEARCH[name]
+                    for name in (
+                        "samples",
+                        "horizon_antes",
+                        "max_steps",
+                        "override_z",
+                    )
+                },
+            )
+            or search.get("nonce") != ROUTE_TEACHER_SEARCH["nonce"]
+            or search.get("continuation") != "PublicStrategicPolicy"
+            or search.get("policy_seed") != ROUTE_TEACHER_SEARCH["policy_seed"]
+            or search.get("strategy_options") is not True
+            or search.get("include_reorders") is not False
+            or search.get("phases") != ["BLIND_SELECT", "PACK", "SHOP"]
+            or not isinstance(success, dict)
+            or success.get("enabled") is not True
+            or success.get("mode") != "collect"
+            or success.get("affects_actions") is not False
+            or success.get("emits_teacher_rows") is not True
+            or success.get("terminal_action_budget") is not None
+            or success.get("terminal_action_selector") is not None
+            or success.get("root_builder") != "determinized-search-v16"
+            or success.get("sample_nonce_stream")
+            != f"{search.get('nonce')}:success-terminal-v1"
+            or any(
+                not _equal_exact(success.get(name), value)
+                for name, value in ROUTE_TEACHER_TERMINAL.items()
+                if name != "affects_actions"
+            )
+        ):
+            raise SystemExit(
+                f"route component {batch['batch_id']} violates frozen metadata"
+            )
+        _validate_frozen_revision(
+            root,
+            collection.get("implementation_revision"),
+            manifest.get("repository_revision"),
+            ROUTE_TEACHER_PREREGISTRATION,
+            "collection",
+        )
+        try:
+            validate_route_teacher_component(
+                records,
+                report.get("results"),
+                origin_key=origin_key,
+                expected_seed_start=int(batch["seed_start"]),
+                expected_seed_count=ROUTE_TEACHER_BATCH_SIZE,
+                sample_count=int(ROUTE_TEACHER_TERMINAL["samples"]),
+            )
+        except RouteTeacherValidationError as exc:
+            raise SystemExit(
+                f"route component {batch['batch_id']} record authentication failed"
+            ) from exc
+        groups = sorted({record.run_group for record in records})
+        group_digest = hashlib.sha256("\n".join(groups).encode()).hexdigest()
+        if (
+            merged_component.get("opaque_groups") != groups
+            or merged_component.get("opaque_group_sha256") != group_digest
+        ):
+            raise SystemExit("merged route component group membership disagrees")
+        canonical_records.extend(records)
+    if tuple(canonical_records) != merged_records:
+        raise SystemExit("merged route records are not the canonical component records")
+
+
 def _validate_frozen_revision(
     root: Path,
     implementation: object,
@@ -538,6 +754,23 @@ def _train(
             }
         )
     return model, losses
+
+
+def _validated_holdout_gate(evaluation: object) -> dict[str, bool]:
+    if not isinstance(evaluation, dict):
+        raise RuntimeError("route holdout evaluation is malformed")
+    gate = evaluation.get("gate")
+    required = {*HOLDOUT_GATE, "passed"}
+    if (
+        type(gate) is not dict
+        or set(gate) != required
+        or any(type(gate[name]) is not bool for name in required)
+    ):
+        raise RuntimeError("route holdout gate is malformed")
+    recomputed = all(gate[name] for name in HOLDOUT_GATE)
+    if gate["passed"] is not recomputed:
+        raise RuntimeError("route holdout aggregate gate is inconsistent")
+    return dict(gate)
 
 
 def _route_provenance(
@@ -672,6 +905,7 @@ def _publish_pass_bundle(
             hashlib.sha256(staged_model.read_bytes()).hexdigest() != artifact_digest
             or loaded.calibration != calibration
             or loaded.provenance != provenance
+            or not _model_states_equal(loaded.model, model)
         ):
             raise RuntimeError("staged route artifact failed reload verification")
         report["artifact"] = {
@@ -691,11 +925,25 @@ def _publish_pass_bundle(
             raise RuntimeError("staged route report failed digest verification")
         if _capture_source(root) != expected_source:
             raise SystemExit("route trainer source changed before publication")
-        os.rename(staged, final)
+        _publish_staged_directory(staged, final)
         return artifact_digest, hashlib.sha256(report_bytes).hexdigest()
-    except BaseException:
+    finally:
         shutil.rmtree(staged, ignore_errors=True)
-        raise
+
+
+def _model_states_equal(
+    loaded: RelationalStrategyPolicyValue,
+    trained: RelationalStrategyPolicyValue,
+) -> bool:
+    actual = loaded.state_dict()
+    expected = trained.state_dict()
+    return set(actual) == set(expected) and all(
+        actual[name].dtype == expected[name].dtype
+        and actual[name].shape == expected[name].shape
+        and actual[name].layout == expected[name].layout
+        and torch.equal(actual[name].detach().cpu(), expected[name].detach().cpu())
+        for name in expected
+    )
 
 
 def _publish_directory_bundle(
@@ -716,17 +964,55 @@ def _publish_directory_bundle(
             path = staged / name
             path.write_bytes(value)
             _fsync_file(path)
-        if _capture_source(root) != expected_source:
-            raise SystemExit("route trainer source changed before publication")
         digests = {
             name: hashlib.sha256((staged / name).read_bytes()).hexdigest()
             for name in files
         }
-        os.rename(staged, final)
+        if _capture_source(root) != expected_source:
+            raise SystemExit("route trainer source changed before publication")
+        _publish_staged_directory(staged, final)
         return digests
-    except BaseException:
+    finally:
         shutil.rmtree(staged, ignore_errors=True)
-        raise
+
+
+def _publish_staged_directory(staged: Path, final: Path) -> None:
+    _fsync_directory(staged)
+    _rename_directory_no_replace(staged, final)
+    _fsync_directory(final.parent)
+
+
+def _rename_directory_no_replace(source: Path, destination: Path) -> None:
+    libc = ctypes.CDLL(None, use_errno=True)
+    source_bytes = os.fsencode(source)
+    destination_bytes = os.fsencode(destination)
+    if sys.platform == "darwin":
+        rename = libc.renamex_np
+        rename.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint]
+        rename.restype = ctypes.c_int
+        result = rename(source_bytes, destination_bytes, 0x00000004)
+    elif sys.platform.startswith("linux"):
+        try:
+            rename = libc.renameat2
+        except AttributeError as exc:
+            raise RuntimeError("atomic no-replace publication is unsupported") from exc
+        rename.argtypes = [
+            ctypes.c_int,
+            ctypes.c_char_p,
+            ctypes.c_int,
+            ctypes.c_char_p,
+            ctypes.c_uint,
+        ]
+        rename.restype = ctypes.c_int
+        result = rename(-100, source_bytes, -100, destination_bytes, 1)
+    else:
+        raise RuntimeError("atomic no-replace publication is unsupported")
+    if result == 0:
+        return
+    error = ctypes.get_errno()
+    if error in {errno.EEXIST, errno.ENOTEMPTY}:
+        raise SystemExit("refusing to overwrite existing route output bundle")
+    raise OSError(error, os.strerror(error), destination)
 
 
 def _encode_report(report: dict[str, object]) -> bytes:
@@ -736,6 +1022,14 @@ def _encode_report(report: dict[str, object]) -> bytes:
 def _fsync_file(path: Path) -> None:
     with path.open("rb") as handle:
         os.fsync(handle.fileno())
+
+
+def _fsync_directory(path: Path) -> None:
+    descriptor = os.open(path, os.O_RDONLY)
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
 
 
 def _print_result(report: dict[str, object], path: Path) -> None:
@@ -750,6 +1044,20 @@ def _print_result(report: dict[str, object], path: Path) -> None:
             allow_nan=False,
         )
     )
+
+
+def _equal_exact(left: object, right: object) -> bool:
+    if type(left) is not type(right):
+        return False
+    if isinstance(left, dict):
+        return set(left) == set(right) and all(
+            _equal_exact(left[name], right[name]) for name in left
+        )
+    if isinstance(left, list | tuple):
+        return len(left) == len(right) and all(
+            _equal_exact(a, b) for a, b in zip(left, right, strict=True)
+        )
+    return left == right
 
 
 def _is_digest(value: object) -> bool:

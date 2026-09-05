@@ -4,6 +4,7 @@ import hashlib
 import importlib.util
 import json
 import sys
+from copy import deepcopy
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -12,6 +13,7 @@ import torch
 
 from balatro_ai_v2.route_learning import RouteDatasetSplit
 from balatro_ai_v2.route_learning_protocol import (
+    HOLDOUT_GATE,
     MODEL_CONFIG,
     OPTIMIZER_CONFIG,
     ROUTE_LEARNING_COLLECTION_MODE,
@@ -96,6 +98,13 @@ def _model() -> RelationalStrategyPolicyValue:
     return RelationalStrategyPolicyValue(StrategyModelConfig(**MODEL_CONFIG))
 
 
+def _gate(*, passed: bool) -> dict[str, bool]:
+    gate = {name: True for name in HOLDOUT_GATE}
+    if not passed:
+        gate["scalar_residual_mae_beats_zero"] = False
+    return {**gate, "passed": passed}
+
+
 def _patch_main_inputs(module, monkeypatch, args, *, admission_passed: bool):
     source = _source(module)
     captures = []
@@ -140,7 +149,7 @@ def test_happy_path_publishes_verified_shadow_only_bundle(
     def evaluate(model, split, fitted, *, calibration_evidence):
         calls.append(("evaluate", split.holdout, calibration_evidence))
         assert fitted == calibration
-        return {"gate": {"passed": True}, "holdout_heads": {}}
+        return {"gate": _gate(passed=True), "holdout_heads": {}}
 
     monkeypatch.setattr(module, "_train", train)
     monkeypatch.setattr(module, "fit_route_residual_calibration", calibrate)
@@ -206,9 +215,7 @@ def test_failed_holdout_gate_publishes_report_only(tmp_path, monkeypatch):
     monkeypatch.setattr(
         module,
         "evaluate_route_holdout",
-        lambda *_args, **_kwargs: {
-            "gate": {"scalar_residual_mae_beats_zero": False, "passed": False}
-        },
+        lambda *_args, **_kwargs: {"gate": _gate(passed=False)},
     )
     module.main()
     report = json.loads(args.report_json.read_bytes())
@@ -218,6 +225,49 @@ def test_failed_holdout_gate_publishes_report_only(tmp_path, monkeypatch):
     assert report["gate"]["passed"] is False
     assert report["artifact"]["status"] == "absent"
     assert not args.output_model.exists()
+
+
+def test_inconsistent_holdout_gate_cannot_publish_model(tmp_path, monkeypatch):
+    module = _module()
+    args = _args(tmp_path)
+    _patch_main_inputs(module, monkeypatch, args, admission_passed=True)
+    calibration = RouteResidualCalibration(calibrated=True)
+    inconsistent = _gate(passed=True)
+    inconsistent["zero_regret_against_safe_specialist"] = False
+    monkeypatch.setattr(module, "_train", lambda *_: (_model(), [{"loss": 1.0}]))
+    monkeypatch.setattr(
+        module,
+        "fit_route_residual_calibration",
+        lambda *_: (calibration, {"kind": "test-evidence"}),
+    )
+    monkeypatch.setattr(
+        module,
+        "evaluate_route_holdout",
+        lambda *_args, **_kwargs: {"gate": inconsistent},
+    )
+    monkeypatch.setattr(
+        module,
+        "_publish_pass_bundle",
+        lambda *_args: pytest.fail("inconsistent gate must not publish"),
+    )
+    with pytest.raises(RuntimeError, match="aggregate gate is inconsistent"):
+        module.main()
+    assert not args.output_model.exists()
+    assert not args.report_json.exists()
+
+
+@pytest.mark.parametrize("mutation", ["missing", "extra", "integer"])
+def test_holdout_gate_requires_exact_boolean_schema(mutation):
+    module = _module()
+    gate = _gate(passed=True)
+    if mutation == "missing":
+        gate.pop("zero_victory_routes")
+    elif mutation == "extra":
+        gate["unregistered_gate"] = True
+    else:
+        gate["zero_victory_routes"] = 1
+    with pytest.raises(RuntimeError, match="gate is malformed"):
+        module._validated_holdout_gate({"gate": gate})
 
 
 def test_source_snapshot_precedes_any_input_read(tmp_path, monkeypatch):
@@ -271,6 +321,59 @@ def test_source_race_discards_staged_bundle(tmp_path, monkeypatch):
     assert not tuple(tmp_path.glob(".bundle.*.tmp"))
 
 
+def test_publication_never_replaces_race_created_destination(tmp_path, monkeypatch):
+    module = _module()
+    expected = _source(module)
+    final = tmp_path / "bundle"
+
+    def create_competing_destination(_root):
+        final.mkdir()
+        return expected
+
+    monkeypatch.setattr(module, "_capture_source", create_competing_destination)
+    with pytest.raises(SystemExit, match="overwrite"):
+        module._publish_directory_bundle(
+            final, {"report.json": b"{}\n"}, tmp_path, expected
+        )
+    assert final.is_dir()
+    assert list(final.iterdir()) == []
+    assert not tuple(tmp_path.glob(".bundle.*.tmp"))
+
+
+def test_staged_reload_rejects_different_finite_model_state(tmp_path, monkeypatch):
+    module = _module()
+    expected = _source(module)
+    monkeypatch.setattr(module, "_capture_source", lambda *_: expected)
+    original_save = module.save_route_model
+
+    def save_different(path, _model_to_save, *, calibration, provenance):
+        wrong = _model()
+        with torch.no_grad():
+            next(wrong.parameters()).add_(1.0)
+        return original_save(
+            path,
+            wrong,
+            calibration=calibration,
+            provenance=provenance,
+        )
+
+    monkeypatch.setattr(module, "save_route_model", save_different)
+    bundle = tmp_path / "bundle"
+    with pytest.raises(RuntimeError, match="reload verification"):
+        module._publish_pass_bundle(
+            bundle / "model.pt",
+            bundle / "report.json",
+            _model(),
+            RouteResidualCalibration(calibrated=True),
+            module._route_provenance(_inputs(module), _split(), expected),
+            {"artifact": {"status": "absent"}},
+            tmp_path,
+            expected,
+        )
+    assert not bundle.exists()
+    assert not tuple(tmp_path.glob(".bundle.*.tmp"))
+
+
 def test_collection_preregistration_digest_and_frozen_contract(tmp_path):
     module = _module()
     repository = Path(__file__).parents[1]
@@ -289,6 +392,24 @@ def test_collection_preregistration_digest_and_frozen_contract(tmp_path):
     path.write_text(json.dumps(tampered))
     with pytest.raises(SystemExit, match="changed the frozen protocol"):
         module._load_collection_preregistration(path, tmp_path)
+
+
+def test_origin_key_is_exact_path_length_and_digest_bound(tmp_path):
+    module = _module()
+    key = b"k" * 32
+    path = tmp_path / module.ROUTE_TEACHER_ORIGIN_KEY
+    path.parent.mkdir(parents=True)
+    path.write_bytes(key)
+    collection = {
+        "origin_mapping": {
+            "key_path": module.ROUTE_TEACHER_ORIGIN_KEY,
+            "key_sha256": hashlib.sha256(key).hexdigest(),
+        }
+    }
+    assert module._load_origin_key(collection, tmp_path) == key
+    path.write_bytes(b"short")
+    with pytest.raises(SystemExit, match="origin key violates"):
+        module._load_origin_key(collection, tmp_path)
 
 
 def _merged_fixture():
@@ -315,6 +436,9 @@ def _merged_fixture():
         "candidate_runtime": {"revision": "runtime"},
         "backend": {"backend_name": "Jackdaw"},
         "strategy_tuning": {"replacement_margin": 20},
+        "seed_provenance": "development",
+        "deck": "RED",
+        "stake": "WHITE",
     }
     learner = {
         "merger_implementation_revision": "3" * 40,
@@ -382,6 +506,211 @@ def _patch_coverage(module, monkeypatch):
     monkeypatch.setattr(
         module, "route_teacher_coverage_gate_failures", lambda *_args, **_kwargs: ()
     )
+
+
+def _authenticated_component_fixture(module, monkeypatch, tmp_path):
+    key = b"k" * 32
+    key_path = tmp_path / module.ROUTE_TEACHER_ORIGIN_KEY
+    key_path.parent.mkdir(parents=True)
+    key_path.write_bytes(key)
+    teacher_config = "c" * 64
+    collection_digest = "d" * 64
+    collection = {
+        "implementation_revision": "1" * 40,
+        "expected_source_digest": "2" * 64,
+        "candidate_runtime": {"revision": "runtime"},
+        "backend": {"backend_name": "Jackdaw"},
+        "strategy_tuning": {"replacement_margin": 20},
+        "seed_provenance": "development",
+        "deck": "RED",
+        "stake": "WHITE",
+        "origin_mapping": {
+            "key_path": module.ROUTE_TEACHER_ORIGIN_KEY,
+            "key_sha256": hashlib.sha256(key).hexdigest(),
+        },
+        "batches": list(module.ROUTE_TEACHER_BATCHES),
+    }
+    parsed = {}
+    merged_components = []
+    merged_records = []
+    validated = []
+    for index, batch in enumerate(module.ROUTE_TEACHER_BATCHES):
+        group = f"origin-{index + 1:032x}"
+        record = SimpleNamespace(
+            run_group=group,
+            teacher_config_digest=teacher_config,
+        )
+        records = (record,)
+        merged_records.extend(records)
+        dataset_path = tmp_path / str(batch["teacher_jsonl"])
+        report_path = tmp_path / str(batch["report_json"])
+        dataset_path.parent.mkdir(parents=True, exist_ok=True)
+        dataset_bytes = f"dataset-{batch['batch_id']}".encode()
+        dataset_path.write_bytes(dataset_bytes)
+        parsed[dataset_bytes] = records
+        dataset_digest = hashlib.sha256(dataset_bytes).hexdigest()
+        coverage = {"group": group}
+        report = {
+            "candidate_only": True,
+            "candidate_runtime": collection["candidate_runtime"],
+            "strategy_tuning": collection["strategy_tuning"],
+            "benchmark_protocol": {"seed_provenance": "development"},
+            "manifest": {
+                "repository_revision": "3" * 40,
+                "repository_dirty": False,
+                "source_digest": collection["expected_source_digest"],
+                "backend": collection["backend"],
+                "max_decisions": module.ROUTE_TEACHER_SEARCH["max_decisions"],
+                "max_antes_cleared": module.ROUTE_TEACHER_SEARCH["ante_cap"],
+                "profile_mode": "all_unlocked",
+                "run": {
+                    "deck": "RED",
+                    "stake": "WHITE",
+                    "seed": f"{batch['seed_start']}:{batch['seeds']}",
+                },
+            },
+            "search_protocol": {
+                "version": "determinized-search-v16",
+                "budget": {
+                    name: module.ROUTE_TEACHER_SEARCH[name]
+                    for name in (
+                        "samples",
+                        "horizon_antes",
+                        "max_steps",
+                        "override_z",
+                    )
+                },
+                "nonce": module.ROUTE_TEACHER_SEARCH["nonce"],
+                "continuation": "PublicStrategicPolicy",
+                "policy_seed": module.ROUTE_TEACHER_SEARCH["policy_seed"],
+                "strategy_options": True,
+                "include_reorders": False,
+                "phases": ["BLIND_SELECT", "PACK", "SHOP"],
+                "success_teacher": {
+                    "enabled": True,
+                    "mode": "collect",
+                    "affects_actions": False,
+                    "emits_teacher_rows": True,
+                    "terminal_action_budget": None,
+                    "terminal_action_selector": None,
+                    "root_builder": "determinized-search-v16",
+                    "sample_nonce_stream": (
+                        f"{module.ROUTE_TEACHER_SEARCH['nonce']}:success-terminal-v1"
+                    ),
+                    **module.ROUTE_TEACHER_TERMINAL,
+                },
+            },
+            "route_terminal_teacher_preregistration": {
+                "protocol_id": module.ROUTE_TEACHER_PROTOCOL_ID,
+                "sha256": collection_digest,
+                "batch_id": batch["batch_id"],
+                "seed_start": batch["seed_start"],
+                "seeds": batch["seeds"],
+                "immutable_batches": True,
+                "collection_only": True,
+                "training_authorized": False,
+                "schema_version": module.STRATEGY_TEACHER_SCHEMA_VERSION,
+                "implementation_revision": collection["implementation_revision"],
+                "expected_source_digest": collection["expected_source_digest"],
+                "candidate_runtime": collection["candidate_runtime"],
+                "backend": collection["backend"],
+                "origin_key_sha256": collection["origin_mapping"]["key_sha256"],
+            },
+            "strategy_teacher_dataset": {
+                "enabled": True,
+                "status": "written",
+                "path": str(dataset_path.relative_to(tmp_path)),
+                "sha256": dataset_digest,
+                "records": 1,
+                "groups": 1,
+                "contains_game_seeds": False,
+                "complete_runs_only": True,
+                "mode": module.ROUTE_LEARNING_COLLECTION_MODE,
+                "schema_version": module.STRATEGY_TEACHER_SCHEMA_VERSION,
+                "teacher_config_digest": teacher_config,
+                "coverage": {module.ROUTE_LEARNING_COLLECTION_MODE: coverage},
+            },
+            "results": [{"seed": batch["seed_start"]}],
+        }
+        report_bytes = json.dumps(report, sort_keys=True).encode()
+        report_path.write_bytes(report_bytes)
+        groups = [group]
+        merged_components.append(
+            {
+                "batch_id": batch["batch_id"],
+                "dataset_sha256": dataset_digest,
+                "report_sha256": hashlib.sha256(report_bytes).hexdigest(),
+                "opaque_groups": groups,
+                "opaque_group_sha256": hashlib.sha256(group.encode()).hexdigest(),
+            }
+        )
+
+    monkeypatch.setattr(module, "teacher_records_from_bytes", parsed.__getitem__)
+    monkeypatch.setattr(
+        module,
+        "route_terminal_teacher_coverage",
+        lambda records: {"group": records[0].run_group},
+    )
+    monkeypatch.setattr(module, "_validate_frozen_revision", lambda *_: None)
+
+    def validate(records, results, **kwargs):
+        validated.append((records, results, kwargs))
+
+    monkeypatch.setattr(module, "validate_route_teacher_component", validate)
+    return (
+        tuple(merged_records),
+        {"merged_components": merged_components},
+        collection,
+        collection_digest,
+        key,
+        validated,
+    )
+
+
+def test_original_components_prevent_split_membership_and_record_tamper(
+    tmp_path, monkeypatch
+):
+    module = _module()
+    records, report, collection, digest, key, validated = (
+        _authenticated_component_fixture(module, monkeypatch, tmp_path)
+    )
+    module._reauthenticate_original_components(
+        records, report, collection, digest, key, tmp_path
+    )
+    assert len(validated) == 5
+    assert all(
+        call[2]["expected_seed_count"] == module.ROUTE_TEACHER_BATCH_SIZE
+        and call[2]["sample_count"] == module.ROUTE_TEACHER_TERMINAL["samples"]
+        for call in validated
+    )
+
+    reassigned = deepcopy(report)
+    first = reassigned["merged_components"][0]
+    last = reassigned["merged_components"][-1]
+    first["opaque_groups"], last["opaque_groups"] = (
+        last["opaque_groups"],
+        first["opaque_groups"],
+    )
+    for component in (first, last):
+        component["opaque_group_sha256"] = hashlib.sha256(
+            "\n".join(component["opaque_groups"]).encode()
+        ).hexdigest()
+    with pytest.raises(SystemExit, match="group membership disagrees"):
+        module._reauthenticate_original_components(
+            records, reassigned, collection, digest, key, tmp_path
+        )
+
+    with pytest.raises(SystemExit, match="canonical component records"):
+        module._reauthenticate_original_components(
+            tuple(reversed(records)), report, collection, digest, key, tmp_path
+        )
+
+    wrong_digest = deepcopy(report)
+    wrong_digest["merged_components"][0]["dataset_sha256"] = "0" * 64
+    with pytest.raises(SystemExit, match="byte digests disagree"):
+        module._reauthenticate_original_components(
+            records, wrong_digest, collection, digest, key, tmp_path
+        )
 
 
 def test_merged_bundle_validates_all_frozen_bindings(monkeypatch, tmp_path):
