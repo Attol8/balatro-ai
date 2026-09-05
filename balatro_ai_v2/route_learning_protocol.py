@@ -53,10 +53,28 @@ OBJECTIVE_CONFIG = {
         "endless_ante": 0.5,
         "log_score": 0.5,
     },
-    "weighting": "run-decision-pair-sample-equal",
+    "weighting": "paired-sample-mean-then-run-decision-pair-equal",
+    "target_reduction": "arithmetic-mean-before-loss-and-ordering",
     "selected_index_target": False,
     "behavior_index_target": False,
     "factual_outcome_on_siblings": False,
+}
+CALIBRATION_CONFIG = {
+    "bias_estimator": "weighted-mean-target-minus-raw",
+    "radius_estimator": "maximum-nonnegative-corrected-overprediction",
+    "weighting": "run-decision-pair-sample-equal-by-head",
+    "pair_label_admission": "all-paired-samples-jointly-resolved",
+    "canonical_order": [
+        "run_group",
+        "decision_index",
+        "specialist_index",
+        "sample_index",
+    ],
+    "ordinary_anchor": "zero-after-candidate-difference",
+    "scalar_lcb_tie": "not-positive-no-recommendation",
+    "safety_lcb_tie": "zero-is-admissible",
+    "full_rank_tie": "no-recommendation",
+    "empirical_only": True,
 }
 SPLIT_CONFIG = {
     "nonce": "route-learning-split-v1-predeclared",
@@ -174,6 +192,7 @@ def validate_route_learning_preregistration(spec: object) -> dict[str, Any]:
             "model",
             "optimizer",
             "objective",
+            "calibration",
             "admission",
             "holdout_gate",
             "support_cell_contract",
@@ -219,6 +238,7 @@ def validate_route_learning_preregistration(spec: object) -> dict[str, Any]:
         or not _equal_exact(root["model"], MODEL_CONFIG)
         or not _equal_exact(root["optimizer"], OPTIMIZER_CONFIG)
         or not _equal_exact(root["objective"], OBJECTIVE_CONFIG)
+        or not _equal_exact(root["calibration"], CALIBRATION_CONFIG)
         or not _equal_exact(root["admission"], ADMISSION_CONFIG)
         or not _equal_exact(root["holdout_gate"], HOLDOUT_GATE)
         or not _equal_exact(root["support_cell_contract"], SUPPORT_CELL_CONTRACT)

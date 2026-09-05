@@ -1226,8 +1226,11 @@ and one negative pair in every split. A miss produces no model.
 Each non-Victory specialist is compared with its unique same-action root whose
 intent and route are both null, even when that comparator is not the decision's
 global `ordinary_index`. Train differences for scalar search utility and the
-five public terminal heads, weighted equally by run, decision, eligible pair,
-and paired sample. Do not train cross-entropy on `selected_index`, use
+five public terminal heads. Arithmetic-mean the paired samples before applying
+Smooth-L1 or signed ordering because the public model predicts the sampled
+expectation, then weight equally by run, eligible decision, and eligible pair;
+each head recomputes those weights after its null mask. Do not train
+cross-entropy on `selected_index`, use
 `behavior_index` as a target, or apply factual run outcomes to sibling roots.
 Null-mismatched head targets are masked and counted; utilities remain
 lexicographic rather than blended. Freeze a distinct learner preregistration
@@ -1235,6 +1238,11 @@ before opening batch 05, binding the 3/1/1 split, optimizer, model configuration
 objective, comparator, collection protocol, and numerical gates.
 
 Calibration uses only batch 04 and fits fixed one-sided overprediction radii.
+For every head, canonicalize by opaque group, decision, specialist, and sample;
+fit the run/decision/pair/sample-equal mean of `target - raw residual` as the
+bias, then take the maximum non-negative corrected overprediction as the
+empirical radius. Admit a pair/head only when every paired sample is jointly
+resolved. This is an empirical envelope, not a statistical coverage claim.
 Batch 05 must have at least two safe recommendations from distinct groups;
 scalar residual MAE must beat zero, sensitive-pair balanced sign accuracy must
 exceed one half, current-blind and next-Boss residual MAE must each beat zero,

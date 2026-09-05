@@ -6,6 +6,7 @@ import pytest
 
 from balatro_ai_v2.route_learning_protocol import (
     ADMISSION_CONFIG,
+    CALIBRATION_CONFIG,
     HOLDOUT_GATE,
     MODEL_CONFIG,
     OBJECTIVE_CONFIG,
@@ -47,6 +48,7 @@ def _spec():
         "model": copy.deepcopy(MODEL_CONFIG),
         "optimizer": copy.deepcopy(OPTIMIZER_CONFIG),
         "objective": copy.deepcopy(OBJECTIVE_CONFIG),
+        "calibration": copy.deepcopy(CALIBRATION_CONFIG),
         "admission": copy.deepcopy(ADMISSION_CONFIG),
         "holdout_gate": copy.deepcopy(HOLDOUT_GATE),
         "support_cell_contract": copy.deepcopy(SUPPORT_CELL_CONTRACT),
@@ -98,6 +100,7 @@ def test_configuration_and_shadow_authority_mutations_fail_closed():
         ("model", "dropout", 0.1),
         ("optimizer", "training_seed", 1),
         ("objective", "weighting", "row"),
+        ("calibration", "radius_estimator", "quantile"),
         ("admission", "minimum_positive_and_negative_by_split", False),
         ("holdout_gate", "zero_ties", False),
         ("support_cell_contract", "no_independent_field_lists", False),
