@@ -177,6 +177,24 @@ def test_unequal_pair_counts_still_weight_each_eligible_decision_equally():
     assert sum(weights[:2]) == sum(weights[2:])
 
 
+def test_head_weighting_ignores_pairs_without_that_head():
+    record_a = _record(1)
+    record_b = replace(record_a, run_group="origin-" + "2" * 32)
+    example_a = route_paired_examples((record_a,))[0]
+    example_b = replace(route_paired_examples((record_b,))[0], record=record_b)
+    masked_targets = replace(
+        example_a.targets,
+        masks={**example_a.targets.masks, "ante8_win": (False, False)},
+    )
+    examples = (
+        example_a,
+        replace(example_a, record_index=1, targets=masked_targets),
+        example_b,
+    )
+    weights = _example_weights(examples, head="ante8_win")
+    assert sum(weights[:2]) == weights[2]
+
+
 def test_null_mismatch_masks_only_the_affected_head():
     torch.manual_seed(9)
     record = _record(1, null_ante8=True)

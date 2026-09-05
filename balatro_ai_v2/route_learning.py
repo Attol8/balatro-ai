@@ -246,16 +246,27 @@ def route_pair_coverage(records: Sequence[StrategyTeacherRecord]) -> dict[str, o
 
 def _example_weights(
     examples: Sequence[RoutePairedExample],
+    *,
+    head: str | None = None,
 ) -> tuple[float, ...]:
+    eligible = tuple(
+        example
+        for example in examples
+        if head is None or all(example.targets.masks[head])
+    )
     eligible_decisions = {
-        (example.record.run_group, example.record_index) for example in examples
+        (example.record.run_group, example.record_index) for example in eligible
     }
     decisions_per_run = Counter(run_group for run_group, _ in eligible_decisions)
-    pairs_per_decision = Counter(example.record_index for example in examples)
+    pairs_per_decision = Counter(example.record_index for example in eligible)
     return tuple(
-        1.0
-        / decisions_per_run[example.record.run_group]
-        / pairs_per_decision[example.record_index]
+        (
+            0.0
+            if head is not None and not all(example.targets.masks[head])
+            else 1.0
+            / decisions_per_run[example.record.run_group]
+            / pairs_per_decision[example.record_index]
+        )
         for example in examples
     )
 
@@ -290,11 +301,14 @@ def route_training_loss(
     )
     output = model(batch)
     example_weights = _example_weights(examples)
+    head_weights = {head: _example_weights(examples, head=head) for head in HEADS}
     losses: dict[str, list[Tensor]] = {name: [] for name in TARGETS}
     ordering_values: list[Tensor] = []
     ordering_weights: list[float] = []
     weights: dict[str, list[float]] = {name: [] for name in TARGETS}
-    for example, base_weight in zip(examples, example_weights, strict=True):
+    for example_index, (example, base_weight) in enumerate(
+        zip(examples, example_weights, strict=True)
+    ):
         row = example.record_index
         specialist = example.specialist_index
         ordinary = example.ordinary_index
@@ -341,7 +355,7 @@ def route_training_loss(
                         predictions[head], predictions[head].new_tensor(head_target)
                     )
                 )
-                weights[head].append(weight)
+                weights[head].append(head_weights[head][example_index])
     result = output.policy_logits.new_zeros(())
     metrics: dict[str, float] = {}
     for name, values in losses.items():
