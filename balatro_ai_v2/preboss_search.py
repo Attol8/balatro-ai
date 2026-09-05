@@ -224,7 +224,8 @@ def _candidate_buys(
     for index, item in enumerate(observation.shop):
         action = BuyShopCard(ShopSlot(index))
         if (
-            item.kind.upper() != "JOKER"
+            not isinstance(item, PublicItem)
+            or item.kind.upper() != "JOKER"
             or item.key not in PREBLIND_EXACT_JOKERS
             or not exact_joker_multiplicity((*observation.jokers, item))
             or item.edition not in {None, "FOIL"}

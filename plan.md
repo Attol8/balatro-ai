@@ -621,6 +621,70 @@ Fresh collection protocol, frozen before seed `1075`:
 No tuning `1-200`, quarantined `501-700`, replacement gate `701-900`, or
 authority-secret seed may be used by this increment.
 
+### Contextual v9 result and shop-card recovery (active 2026-09-05)
+
+The frozen v9 collection completed all six preregistered batches and merged
+17,004 dense decisions from 300 opaque complete-run groups. Raw-record
+validation found 84.02% action-sensitive rows, all three strategic phases, 28
+winning source groups, 38 groups with observed victory siblings, 526 post-win
+rows across 28 groups, a maximum of 388 stored roots, and zero subsets,
+rejections, or censored samples. The dataset SHA-256 is
+`c4f268d343338397232e39ce01f56206951a90d57eb2805b619f50aa7f8a74c1` and
+the merged report SHA-256 is
+`4eb2c99a8d967662ca11099569002f84a83b2173a3db2dc95021d84f5e3e835d`.
+
+Training failed closed before writing a model or report: organic Magic Trick
+shops contain visible playing-card offers whose Balatro set is `DEFAULT`, but
+`PublicObservation.shop` and the relational tensorizer admitted only generic
+`PublicItem` values. This is not an unknown mechanic. The adapter already
+represents the same playing cards structurally inside Standard packs, while the
+shop path erased their rank, suit, enhancement, seal, and edition and public
+legality rejected buying them. The v9 cohort is therefore valuable failed
+evidence but cannot produce a promotable artifact: repairing the public/model
+schema after seeing its outcomes would violate the frozen architecture
+contract.
+
+Recovery design sketch:
+
+1. Add a typed public shop-playing-card offer containing a
+   `VisiblePlayingCard` and its visible buy cost. Change the shop observation
+   to an exhaustive union of ordinary public items and that offer. Unknown
+   shapes, missing prices, and legacy generic `DEFAULT`/`ENHANCED` items remain
+   fail-closed.
+2. Have BalatroBot/Jackdaw adaptation preserve full visible playing-card
+   structure in shops. Update the strict public codec and round-trip tests; do
+   not infer hidden or absent modifiers from labels or tooltips.
+3. Admit buying a visible shop card through the existing typed
+   `BuyShopCard` action with no inventory-capacity requirement. Update the
+   relational and retained hashed model encoders, strategy-option classifier,
+   baseline filters, exact pre-boss candidate filter, and semantic diagnostics
+   to branch explicitly on the shop-offer union. Search may value the new legal
+   root through Jackdaw; do not add a hand-written purchase score.
+4. Bump every observation-dependent teacher/search/model schema or protocol
+   digest. Add organic Magic Trick and Illusion fixtures, codec round trips,
+   legal-action tests, hidden-twin equality, tensorization/action-relation
+   tests, and fail-closed malformed/legacy tests. Run focused and full suites
+   plus diff review before collecting again.
+5. Preserve v9 artifacts and hashes as failed evidence. After the corrected
+   source is committed, preregister a fresh disjoint development cohort and a
+   new private origin mapping before observing outcomes. Do not reuse or splice
+   v9 groups, alter the frozen 182/59/59 split, or consume protected panels.
+
+Only a fresh cohort under the corrected public schema may authorize a
+continuation certificate. A diagnostic v9 training run, if used to exercise
+the trainer, must remain explicitly non-influential and cannot set v10
+hyperparameters from calibration or holdout results.
+
+Adversarial review added two pre-freeze requirements. Stone enhancement hides
+its underlying base rank and suit, so the public card adapter must replace both
+with an explicit opaque sentinel everywhere a Stone card is observed; the
+public value type and codec must reject real rank/suit values on Stone cards
+and reject the sentinel on every other card. Hidden-twin tests vary the private
+Stone base identity and require identical observations and model inputs. Also
+exercise an organic Jackdaw shop-card purchase transition before freezing v10,
+checking the indexed action, price, deck growth, shop removal, and resulting
+public round trip. Synthetic adapter/RPC tests alone are not sufficient.
+
 ## Active development loop
 
 The two disjoint 30-seed screens are enough to retain one-ante strategic

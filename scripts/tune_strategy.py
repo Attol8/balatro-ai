@@ -87,7 +87,6 @@ def main() -> None:
         "parameters": asdict(best),
         "fitness": fitness,
         "fitness_metric": "survival_to_ante_6_rate",
-        "seeds": seeds,
         "seed_manifest": {"start": args.seed_start, "count": args.seeds},
         "generations": args.generations,
         "population": args.population,

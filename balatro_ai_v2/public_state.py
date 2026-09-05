@@ -13,6 +13,9 @@ from enum import Enum
 from typing import TypeAlias
 
 
+OBSCURED_CARD_ATTRIBUTE = "?"
+
+
 class Phase(str, Enum):
     BLIND_SELECT = "BLIND_SELECT"
     SELECTING_HAND = "SELECTING_HAND"
@@ -32,6 +35,20 @@ class VisiblePlayingCard:
     debuffed: bool = False
     permanent_bonus: int = 0
     effect_text: str = ""
+
+    def __post_init__(self) -> None:
+        obscured = (
+            self.rank == OBSCURED_CARD_ATTRIBUTE
+            or self.suit == OBSCURED_CARD_ATTRIBUTE
+        )
+        if self.enhancement == "STONE":
+            if (
+                self.rank != OBSCURED_CARD_ATTRIBUTE
+                or self.suit != OBSCURED_CARD_ATTRIBUTE
+            ):
+                raise ValueError("Stone cards must obscure their base rank and suit")
+        elif obscured:
+            raise ValueError("only Stone cards may obscure rank and suit")
 
 
 @dataclass(frozen=True, slots=True)
@@ -88,6 +105,27 @@ PublicOffer: TypeAlias = PublicItem | VisiblePlayingCard
 
 
 @dataclass(frozen=True, slots=True)
+class PublicShopPlayingCard:
+    """A fully visible playing card offered for sale in a Magic Trick shop."""
+
+    card: VisiblePlayingCard
+    buy_cost: int
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.card, VisiblePlayingCard):
+            raise ValueError("shop playing-card offer must contain a visible card")
+        if (
+            isinstance(self.buy_cost, bool)
+            or not isinstance(self.buy_cost, int)
+            or self.buy_cost < 0
+        ):
+            raise ValueError("shop playing-card buy cost must be non-negative")
+
+
+PublicShopOffer: TypeAlias = PublicItem | PublicShopPlayingCard
+
+
+@dataclass(frozen=True, slots=True)
 class PublicBlind:
     kind: str
     status: str
@@ -141,7 +179,7 @@ class PublicObservation:
     joker_limit: int
     consumables: tuple[PublicItem, ...]
     consumable_limit: int
-    shop: tuple[PublicItem, ...]
+    shop: tuple[PublicShopOffer, ...]
     vouchers: tuple[PublicItem, ...]
     packs: tuple[PublicItem, ...]
     opened_pack: tuple[PublicOffer, ...]
@@ -153,6 +191,19 @@ class PublicObservation:
     won: bool
 
     def __post_init__(self) -> None:
+        if any(
+            not isinstance(offer, (PublicItem, PublicShopPlayingCard))
+            for offer in self.shop
+        ):
+            raise ValueError("shop offers must use a recognized public representation")
+        if any(
+            isinstance(offer, PublicItem)
+            and offer.kind.upper() in {"DEFAULT", "ENHANCED"}
+            for offer in self.shop
+        ):
+            raise ValueError(
+                "visible shop playing cards require PublicShopPlayingCard"
+            )
         if tuple(sorted(set(self.required_hand_slots))) != self.required_hand_slots:
             raise ValueError("required hand slots must be unique and increasing")
         if any(slot < 0 or slot >= len(self.hand) for slot in self.required_hand_slots):

@@ -18,6 +18,7 @@ from balatro_ai_v2.public_state import (
     PublicJokerRuntime,
     PublicObservation,
     PublicOffer,
+    PublicShopPlayingCard,
     RoundObservation,
     VisiblePlayingCard,
 )
@@ -29,6 +30,7 @@ class PublicCodecError(ValueError):
 
 _VISIBLE_CARD_FIELDS = {field.name for field in fields(VisiblePlayingCard)}
 _ITEM_FIELDS = {field.name for field in fields(PublicItem)}
+_SHOP_PLAYING_CARD_FIELDS = {field.name for field in fields(PublicShopPlayingCard)}
 _JOKER_RUNTIME_FIELDS = {field.name for field in fields(PublicJokerRuntime)}
 _OBSERVATION_FIELDS = {field.name for field in fields(PublicObservation)}
 
@@ -73,7 +75,7 @@ def public_observation_from_data(data: object) -> PublicObservation:
             _item(value) for value in _array(raw["consumables"], "consumables", 32)
         ),
         consumable_limit=_integer(raw["consumable_limit"], "consumable_limit"),
-        shop=tuple(_item(value) for value in _array(raw["shop"], "shop", 64)),
+        shop=tuple(_shop_offer(value) for value in _array(raw["shop"], "shop", 64)),
         vouchers=tuple(_item(value) for value in _array(raw["vouchers"], "vouchers", 64)),
         packs=tuple(_item(value) for value in _array(raw["packs"], "packs", 64)),
         opened_pack=tuple(
@@ -140,16 +142,19 @@ def _hand_card(value: object) -> HandCard:
 def _visible_card(value: object) -> VisiblePlayingCard:
     raw = _object(value, "visible card")
     _require_fields(raw, _VISIBLE_CARD_FIELDS, "visible card")
-    return VisiblePlayingCard(
-        rank=_string(raw["rank"], "card.rank"),
-        suit=_string(raw["suit"], "card.suit"),
-        enhancement=_optional_string(raw["enhancement"], "card.enhancement"),
-        edition=_optional_string(raw["edition"], "card.edition"),
-        seal=_optional_string(raw["seal"], "card.seal"),
-        debuffed=_boolean(raw["debuffed"], "card.debuffed"),
-        permanent_bonus=_integer(raw["permanent_bonus"], "card.permanent_bonus"),
-        effect_text=_string(raw["effect_text"], "card.effect_text"),
-    )
+    try:
+        return VisiblePlayingCard(
+            rank=_string(raw["rank"], "card.rank"),
+            suit=_string(raw["suit"], "card.suit"),
+            enhancement=_optional_string(raw["enhancement"], "card.enhancement"),
+            edition=_optional_string(raw["edition"], "card.edition"),
+            seal=_optional_string(raw["seal"], "card.seal"),
+            debuffed=_boolean(raw["debuffed"], "card.debuffed"),
+            permanent_bonus=_integer(raw["permanent_bonus"], "card.permanent_bonus"),
+            effect_text=_string(raw["effect_text"], "card.effect_text"),
+        )
+    except ValueError as exc:
+        raise PublicCodecError(str(exc)) from exc
 
 
 def _deck_count(value: object) -> DeckCardCount:
@@ -217,6 +222,26 @@ def _offer(value: object) -> PublicOffer:
     if set(raw) == _ITEM_FIELDS:
         return _item(raw)
     raise PublicCodecError("opened-pack offer has unknown fields")
+
+
+def _shop_offer(value: object) -> PublicItem | PublicShopPlayingCard:
+    raw = _object(value, "shop offer")
+    if set(raw) == _SHOP_PLAYING_CARD_FIELDS:
+        buy_cost = _integer(raw["buy_cost"], "shop playing-card buy_cost")
+        if buy_cost < 0:
+            raise PublicCodecError("shop playing-card buy_cost must be non-negative")
+        return PublicShopPlayingCard(
+            card=_visible_card(raw["card"]),
+            buy_cost=buy_cost,
+        )
+    if set(raw) == _ITEM_FIELDS:
+        item = _item(raw)
+        if item.kind.upper() in {"DEFAULT", "ENHANCED"}:
+            raise PublicCodecError(
+                "shop playing card uses legacy generic item representation"
+            )
+        return item
+    raise PublicCodecError("shop offer has unknown fields")
 
 
 def _object(value: object, name: str) -> Mapping[str, object]:

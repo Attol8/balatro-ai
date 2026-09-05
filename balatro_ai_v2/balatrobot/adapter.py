@@ -35,12 +35,14 @@ from balatro_ai_v2.public_state import (
     HandCard,
     HandStat,
     HiddenHandCard,
+    OBSCURED_CARD_ATTRIBUTE,
     Phase,
     PublicBlind,
     PublicItem,
     PublicJokerRuntime,
     PublicObservation,
     PublicOffer,
+    PublicShopPlayingCard,
     RoundObservation,
     VisiblePlayingCard,
 )
@@ -177,7 +179,7 @@ def to_public_observation(raw: Mapping[str, Any]) -> PublicObservation:
         joker_limit=_required_int(joker_area, "limit"),
         consumables=tuple(_item(card) for card in consumable_area["cards"]),
         consumable_limit=_required_int(consumable_area, "limit"),
-        shop=_items_from_optional_area(raw, "shop") if phase == Phase.SHOP else (),
+        shop=_shop_offers_from_optional_area(raw, "shop") if phase == Phase.SHOP else (),
         vouchers=_items_from_optional_area(raw, "vouchers") if phase == Phase.SHOP else (),
         packs=_items_from_optional_area(raw, "packs") if phase == Phase.SHOP else (),
         opened_pack=_offers_from_optional_area(raw, "pack") if phase == Phase.PACK else (),
@@ -273,6 +275,38 @@ def _offers_from_optional_area(raw: Mapping[str, Any], name: str) -> tuple[Publi
     return tuple(_playing_card(card, respect_hidden=False) if _is_playing(card) else _item(card) for card in area["cards"])
 
 
+def _shop_offers_from_optional_area(
+    raw: Mapping[str, Any], name: str
+) -> tuple[PublicItem | PublicShopPlayingCard, ...]:
+    area = _optional_area(raw, name)
+    if area is None:
+        return ()
+    offers: list[PublicItem | PublicShopPlayingCard] = []
+    for raw_offer in area["cards"]:
+        if _is_playing(raw_offer):
+            cost = _required_mapping(raw_offer, "cost")
+            set_name = _required_string(raw_offer, "set").upper()
+            card = _playing_card(raw_offer, respect_hidden=True)
+            if (set_name == "DEFAULT") != (card.enhancement is None):
+                raise ObservationError(
+                    "shop playing-card set disagrees with its visible enhancement"
+                )
+            buy_cost = _required_int(cost, "buy")
+            if buy_cost < 0:
+                raise ObservationError(
+                    "shop playing-card buy cost must be non-negative"
+                )
+            offers.append(
+                PublicShopPlayingCard(
+                    card=card,
+                    buy_cost=buy_cost,
+                )
+            )
+        else:
+            offers.append(_item(raw_offer))
+    return tuple(offers)
+
+
 def _hand_card(raw: Mapping[str, Any]) -> HandCard:
     state = raw.get("state")
     if isinstance(state, Mapping) and bool(state.get("hidden")):
@@ -286,10 +320,16 @@ def _playing_card(raw: Mapping[str, Any], *, respect_hidden: bool) -> VisiblePla
         raise ObservationError("hidden card identity reached playing-card adapter")
     value = _required_mapping(raw, "value")
     modifiers = _modifier_table(raw)
+    enhancement = _named_modifier(modifiers, "enhancement", _ENHANCEMENTS)
+    rank = _required_string(value, "rank")
+    suit = _required_string(value, "suit")
+    if enhancement == "STONE":
+        rank = OBSCURED_CARD_ATTRIBUTE
+        suit = OBSCURED_CARD_ATTRIBUTE
     return VisiblePlayingCard(
-        rank=_required_string(value, "rank"),
-        suit=_required_string(value, "suit"),
-        enhancement=_named_modifier(modifiers, "enhancement", _ENHANCEMENTS),
+        rank=rank,
+        suit=suit,
+        enhancement=enhancement,
         edition=_named_modifier(modifiers, "edition", _EDITIONS),
         seal=_named_modifier(modifiers, "seal", _SEALS),
         debuffed=isinstance(state, Mapping) and bool(state.get("debuff")),

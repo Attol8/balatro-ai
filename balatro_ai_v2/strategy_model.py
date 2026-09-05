@@ -57,8 +57,10 @@ from balatro_ai_v2.consumable_rules import public_consumable_rule
 from balatro_ai_v2.joker_catalog import JOKER_CATALOG
 from balatro_ai_v2.public_state import (
     HiddenHandCard,
+    OBSCURED_CARD_ATTRIBUTE,
     PublicItem,
     PublicObservation,
+    PublicShopPlayingCard,
     VisiblePlayingCard,
 )
 from balatro_ai_v2.strategy_engine import CopyKind, derive_engine_state
@@ -66,7 +68,7 @@ from balatro_ai_v2.strategy_context import PublicStrategyContext
 from balatro_ai_v2.strategy_options import StrategyIntent
 
 
-STRATEGY_MODEL_FORMAT_VERSION: Final = 3
+STRATEGY_MODEL_FORMAT_VERSION: Final = 4
 
 
 class StrategyModelError(RuntimeError):
@@ -131,8 +133,11 @@ _ACTION_KIND = {
     ReorderConsumables: ActionKind.REORDER_CONSUMABLES,
 }
 
-_RANKS = ("2", "3", "4", "5", "6", "7", "8", "9", "T", "J", "Q", "K", "A")
-_SUITS = ("S", "H", "D", "C")
+_RANKS = (
+    "2", "3", "4", "5", "6", "7", "8", "9", "T", "J", "Q", "K", "A",
+    OBSCURED_CARD_ATTRIBUTE,
+)
+_SUITS = ("S", "H", "D", "C", OBSCURED_CARD_ATTRIBUTE)
 _ENHANCEMENTS = ("BONUS", "MULT", "WILD", "GLASS", "STEEL", "STONE", "GOLD", "LUCKY")
 _EDITIONS = ("FOIL", "HOLO", "HOLOGRAPHIC", "POLYCHROME", "NEGATIVE")
 _SEALS = ("RED", "BLUE", "GOLD", "GOLD SEAL", "PURPLE")
@@ -461,6 +466,7 @@ def _model_schema_digest() -> str:
             "per_candidate_baseline_relative_search_utility_score_and_"
             "five_per_candidate_value_heads_v3"
         ),
+        "public_shop_offer_contract": "item_or_structured_playing_card_v1",
         "calibration_fields": (
             "policy_temperature",
             "current_blind_bias",
@@ -1174,9 +1180,7 @@ class PublicStrategyTensorizer:
             observation.consumables,
             EntityKind.CONSUMABLE,
         )
-        self._append_items(
-            entities, locations, "shop", observation.shop, EntityKind.SHOP_ITEM
-        )
+        self._append_shop_offers(entities, locations, observation)
         self._append_items(
             entities, locations, "voucher", observation.vouchers, EntityKind.VOUCHER
         )
@@ -1251,6 +1255,35 @@ class PublicStrategyTensorizer:
         for index, item in enumerate(items):
             locations[(zone, index)] = len(entities)
             entities.append(self._item_entity(item, kind, index, len(items)))
+
+    def _append_shop_offers(
+        self,
+        entities: list[_Entity],
+        locations: dict[tuple[str, int], int],
+        observation: PublicObservation,
+    ) -> None:
+        for index, offer in enumerate(observation.shop):
+            locations[("shop", index)] = len(entities)
+            if isinstance(offer, PublicItem):
+                entity = self._item_entity(
+                    offer, EntityKind.SHOP_ITEM, index, len(observation.shop)
+                )
+            elif isinstance(offer, PublicShopPlayingCard):
+                features = _features()
+                _card_features(features, offer.card)
+                _put_scaled(features, "buy_cost", offer.buy_cost, 100)
+                entity = _entity(
+                    EntityKind.SHOP_ITEM,
+                    "<visible-card>",
+                    features,
+                    index,
+                    len(observation.shop),
+                )
+            else:  # pragma: no cover - guarded by the public observation type
+                raise StrategyModelError(
+                    f"unsupported shop offer {type(offer).__name__}"
+                )
+            entities.append(entity)
 
     def _item_entity(
         self, item: PublicItem, entity_kind: EntityKind, position: int, size: int

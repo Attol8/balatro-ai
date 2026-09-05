@@ -34,7 +34,12 @@ from balatro_ai_v2.actions import (
 )
 from balatro_ai_v2.consumable_rules import public_consumable_rule
 from balatro_ai_v2.joker_catalog import JOKER_CATALOG
-from balatro_ai_v2.public_state import PublicItem, PublicObservation, VisiblePlayingCard
+from balatro_ai_v2.public_state import (
+    PublicItem,
+    PublicObservation,
+    PublicShopPlayingCard,
+    VisiblePlayingCard,
+)
 from balatro_ai_v2.strategy_engine import (
     KNOWN_VOUCHERS,
     PublicEngineState,
@@ -317,9 +322,15 @@ def _classify_action(
     elif isinstance(action, (PlayCards, DiscardCards)):
         classified.extend(_classify_hand_action(observation, engine, action))
     elif isinstance(action, BuyShopCard):
-        classified.extend(
-            _classify_item(observation.shop[action.card.value], engine, "buy_shop_item")
-        )
+        offer = observation.shop[action.card.value]
+        if isinstance(offer, PublicShopPlayingCard):
+            classified.append(
+                (StrategyIntent.DECK_SCULPT, ("buy_shop_playing_card",))
+            )
+            classified.extend(_held_card_intents((offer.card,), engine))
+            classified.extend(_played_card_intents((offer.card,)))
+        else:
+            classified.extend(_classify_item(offer, engine, "buy_shop_item"))
     elif isinstance(action, BuyVoucher):
         classified.extend(
             _classify_item(observation.vouchers[action.voucher.value], engine, "buy_voucher")
@@ -585,7 +596,10 @@ def _classify_joker_reorder(
 def _supports_endless(observation: PublicObservation, action: PublicAction) -> bool:
     item: PublicItem | None = None
     if isinstance(action, BuyShopCard):
-        item = observation.shop[action.card.value]
+        offer = observation.shop[action.card.value]
+        if isinstance(offer, PublicShopPlayingCard):
+            return True
+        item = offer
     elif isinstance(action, ChoosePackCard):
         offer = observation.opened_pack[action.card.value]
         item = offer if isinstance(offer, PublicItem) else None

@@ -68,7 +68,7 @@ from balatro_ai_v2.strategy_teacher import (
 )
 
 
-SEARCH_VERSION = "determinized-search-v9"
+SEARCH_VERSION = "determinized-search-v10"
 _REORDER_TYPES = (ReorderHand, ReorderJokers, ReorderConsumables)
 _DENSE_TEACHER_MAX_ROOTS = 512
 

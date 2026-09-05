@@ -38,6 +38,7 @@ from balatro_ai_v2.public_state import (
     PublicBlind,
     PublicItem,
     PublicObservation,
+    PublicShopPlayingCard,
     VisiblePlayingCard,
 )
 
@@ -345,7 +346,7 @@ def _semantic_action_label(
 ) -> str | None:
     """Describe an accepted item action using only its pre-action public key."""
 
-    item: PublicItem | VisiblePlayingCard
+    item: PublicItem | PublicShopPlayingCard | VisiblePlayingCard
     action_name: str
     if isinstance(action, BuyShopCard):
         item = observation.shop[action.card.value]
@@ -370,7 +371,12 @@ def _semantic_action_label(
         action_name = "sell_consumable"
     else:
         return None
-    key = item.key if isinstance(item, PublicItem) else f"{item.suit}_{item.rank}"
+    if isinstance(item, PublicItem):
+        key = item.key
+    elif isinstance(item, PublicShopPlayingCard):
+        key = f"{item.card.suit}_{item.card.rank}"
+    else:
+        key = f"{item.suit}_{item.rank}"
     return f"{action_name}:{key}"
 
 

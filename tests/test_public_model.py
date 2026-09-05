@@ -40,7 +40,8 @@ from balatro_ai_v2.public_model import (  # noqa: E402
     public_model_candidates,
     save_public_model,
 )
-from state_factory import item_card, state  # noqa: E402
+from balatro_ai_v2.public_state import PublicShopPlayingCard  # noqa: E402
+from state_factory import item_card, playing_card, state  # noqa: E402
 
 
 def _model() -> PublicRecurrentPolicyValue:
@@ -91,6 +92,52 @@ def test_model_ignores_item_label_and_effect_prose_but_uses_public_money() -> No
     assert torch.equal(original.logits, prose.logits)
     assert torch.equal(original.values, prose.values)
     assert not torch.equal(original.values, money.values)
+
+
+def test_model_encodes_structured_shop_playing_card_and_ignores_prose() -> None:
+    raw = state("SHOP", money=10)
+    raw["shop"] = {
+        "cards": [playing_card("H_K", card_id=90)],
+        "count": 1,
+        "highlighted_limit": 1,
+        "limit": 2,
+    }
+    observation = to_public_observation(raw)
+    offer = observation.shop[0]
+    assert isinstance(offer, PublicShopPlayingCard)
+    prose_twin = replace(
+        observation,
+        shop=(replace(offer, card=replace(offer.card, effect_text="Private prose")),),
+    )
+    model = _model()
+
+    original = _step(model, observation)
+    prose = _step(model, prose_twin)
+
+    assert any(isinstance(action, BuyShopCard) for action in public_model_candidates(observation))
+    assert torch.equal(original.logits, prose.logits)
+    assert torch.equal(original.values, prose.values)
+
+
+def test_model_cannot_distinguish_stone_shop_private_base_identity() -> None:
+    left_raw = state("SHOP")
+    left_card = playing_card("H_K", card_id=91, modifier=["STONE"])
+    left_card["set"] = "ENHANCED"
+    left_raw["shop"] = {
+        "cards": [left_card], "count": 1, "highlighted_limit": 1, "limit": 2
+    }
+    right_raw = json.loads(json.dumps(left_raw))
+    right_card = right_raw["shop"]["cards"][0]
+    right_card["key"] = "C_2"
+    right_card["value"]["rank"] = "2"
+    right_card["value"]["suit"] = "C"
+    model = _model()
+
+    left = _step(model, to_public_observation(left_raw))
+    right = _step(model, to_public_observation(right_raw))
+
+    assert torch.equal(left.logits, right.logits)
+    assert torch.equal(left.values, right.values)
 
 
 def test_remaining_deck_encoding_is_order_invariant_and_count_sensitive() -> None:

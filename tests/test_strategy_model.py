@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from dataclasses import asdict, fields, replace
 
 import pytest
@@ -8,6 +9,8 @@ import pytest
 torch = pytest.importorskip("torch")
 
 from balatro_ai_v2.actions import (  # noqa: E402
+    BuyShopCard,
+    ShopSlot,
     HandSlot,
     PlayCards,
     SelectBlind,
@@ -35,7 +38,7 @@ from balatro_ai_v2.strategy_model import (  # noqa: E402
     save_strategy_model,
 )
 from balatro_ai_v2.strategy_options import StrategyIntent  # noqa: E402
-from state_factory import item_card, state  # noqa: E402
+from state_factory import item_card, playing_card, state  # noqa: E402
 
 
 def _config() -> StrategyModelConfig:
@@ -241,6 +244,47 @@ def test_target_relations_and_logits_distinguish_consumable_targets() -> None:
     with torch.no_grad():
         logits = _model()(batch).policy_logits[0]
     assert logits[0] != logits[1]
+
+
+def test_shop_playing_card_tensor_preserves_card_price_and_action_relation() -> None:
+    first_raw = state("SHOP", money=10)
+    first_card = playing_card("H_K", card_id=90)
+    first_card["cost"]["buy"] = 1
+    first_raw["shop"] = {
+        "cards": [first_card],
+        "count": 1,
+        "highlighted_limit": 1,
+        "limit": 2,
+    }
+    second_raw = state("SHOP", money=10)
+    second_card = playing_card("D_6", card_id=91, modifier=["BONUS", "FOIL", "RED"])
+    second_card["set"] = "ENHANCED"
+    second_card["cost"]["buy"] = 2
+    second_raw["shop"] = {
+        "cards": [second_card],
+        "count": 1,
+        "highlighted_limit": 1,
+        "limit": 2,
+    }
+    observations = (
+        to_public_observation(first_raw),
+        to_public_observation(second_raw),
+    )
+    action = BuyShopCard(ShopSlot(0))
+    batch = PublicStrategyTensorizer(_config()).tensorize(
+        observations, ((action,), (action,))
+    )
+    shop_rows = [
+        torch.nonzero(row == int(EntityKind.SHOP_ITEM), as_tuple=False).item()
+        for row in batch.entity_kinds
+    ]
+
+    assert not torch.equal(
+        batch.entity_features[0, shop_rows[0]],
+        batch.entity_features[1, shop_rows[1]],
+    )
+    assert batch.action_relations[0, 0, shop_rows[0]].any()
+    assert batch.action_relations[1, 0, shop_rows[1]].any()
 
 
 def test_intent_conditioning_admits_same_action_with_distinct_intents() -> None:
@@ -525,6 +569,31 @@ def test_hidden_twins_and_display_prose_do_not_change_tensors() -> None:
     )
 
 
+def test_stone_shop_private_base_identity_does_not_change_strategy_tensors() -> None:
+    left_raw = state("SHOP")
+    left_card = playing_card("H_K", card_id=92, modifier=["STONE"])
+    left_card["set"] = "ENHANCED"
+    left_raw["shop"] = {
+        "cards": [left_card], "count": 1, "highlighted_limit": 1, "limit": 2
+    }
+    right_raw = json.loads(json.dumps(left_raw))
+    right_card = right_raw["shop"]["cards"][0]
+    right_card["key"] = "C_2"
+    right_card["value"]["rank"] = "2"
+    right_card["value"]["suit"] = "C"
+    left = to_public_observation(left_raw)
+    right = to_public_observation(right_raw)
+    left_actions = tuple(iter_legal_actions(left))
+    right_actions = tuple(iter_legal_actions(right))
+    tensorizer = PublicStrategyTensorizer(_config())
+
+    a = tensorizer.tensorize((left,), (left_actions,))
+    b = tensorizer.tensorize((right,), (right_actions,))
+
+    for field in fields(a):
+        assert torch.equal(getattr(a, field.name), getattr(b, field.name))
+
+
 def test_unknown_public_semantics_and_illegal_actions_fail_closed() -> None:
     observation = _observation("SELECTING_HAND")
     unknown = replace(
@@ -642,7 +711,7 @@ def test_strategy_checkpoint_round_trip_and_digest(tmp_path) -> None:
     assert loaded.calibration == StrategyCalibration()
     assert loaded.provenance == {"training_status": "untrained"}
     payload = torch.load(path, weights_only=True)
-    assert payload["format_version"] == STRATEGY_MODEL_FORMAT_VERSION == 3
+    assert payload["format_version"] == STRATEGY_MODEL_FORMAT_VERSION == 4
     assert set(payload) == {
         "format_version",
         "schema_digest",

@@ -23,9 +23,9 @@ from balatro_ai_v2.strategy_teacher import (
 )
 
 
-_BATCH_STARTS = tuple(range(1075, 1375, 50))
+_BATCH_STARTS = tuple(range(1375, 1675, 50))
 _BATCH_SIZE = 50
-_EXPECTED_SEEDS = set(range(1075, 1375))
+_EXPECTED_SEEDS = set(range(1375, 1675))
 _EXPECTED_BUDGET = {
     "samples": 6,
     "horizon_antes": 1,
@@ -164,15 +164,15 @@ def _validate_components(components) -> None:
         manifest = report["manifest"]
         if (
             not isinstance(binding, dict)
-            or binding.get("protocol_id") != "contextual-continuation-development-v1"
+            or binding.get("protocol_id") != "contextual-continuation-development-v2"
             or binding.get("immutable_batches") is not True
             or not isinstance(binding.get("batch_id"), str)
             or not isinstance(panel, dict)
             or panel.get("verification") != "registry_verified"
             or panel.get("count") != _BATCH_SIZE
-            or search.get("version") != "determinized-search-v9"
+            or search.get("version") != "determinized-search-v10"
             or search.get("budget") != _EXPECTED_BUDGET
-            or search.get("nonce") != "contextual-continuation-v9-frozen"
+            or search.get("nonce") != "contextual-continuation-v10-frozen"
             or search.get("strategy_options") is not False
             or search.get("include_reorders") is not False
             or report["benchmark_protocol"].get("restart_selection") is not False
@@ -272,7 +272,7 @@ def _merged_report(components, records, output_jsonl: Path) -> dict[str, object]
         "winning_source_groups": sum(bool(row["won"]) for row in results),
     }
     report["contextual_teacher_preregistration"] = {
-        "protocol_id": "contextual-continuation-development-v1",
+        "protocol_id": "contextual-continuation-development-v2",
         "sha256": components[0][1]["contextual_teacher_preregistration"]["sha256"],
         "immutable_batches": True,
         "batch_ids": sorted(

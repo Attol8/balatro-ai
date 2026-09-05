@@ -399,7 +399,7 @@ def test_reserved_contextual_seeds_require_preregistration_before_backend_work(
         [
             "evaluate_determinized_search.py",
             "--seed-start",
-            "1075",
+            "1375",
             "--seeds",
             "50",
             "--dense-teacher",
@@ -419,17 +419,48 @@ def test_reserved_contextual_seeds_require_preregistration_before_backend_work(
         module.main()
 
 
+def test_retired_contextual_v9_seeds_cannot_be_reused(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    module = _load_script()
+    monkeypatch.setattr(
+        module.sys,
+        "argv",
+        [
+            "evaluate_determinized_search.py",
+            "--seed-start",
+            "1075",
+            "--seeds",
+            "50",
+            "--dense-teacher",
+            "--teacher-jsonl",
+            str(tmp_path / "teacher.jsonl"),
+            "--report-json",
+            str(tmp_path / "report.json"),
+        ],
+    )
+    monkeypatch.setattr(
+        module,
+        "verify_jackdaw_runtime",
+        lambda: pytest.fail("backend verification must not run"),
+    )
+
+    with pytest.raises(SystemExit, match="v9 seeds 1075-1374 are retired"):
+        module.main()
+
+
 def test_contextual_preregistration_binds_batch_budget_and_outputs(tmp_path) -> None:
     module = _load_script()
     root = tmp_path
     teacher = root / module._CONTEXTUAL_BATCHES[0]["teacher_jsonl"]
     report = root / module._CONTEXTUAL_BATCHES[0]["report_json"]
-    origin_key = root / "runs/secrets/contextual-continuation-v9-origin.key"
+    origin_key = root / "runs/secrets/contextual-continuation-v10-origin.key"
     origin_key.parent.mkdir(parents=True)
     origin_key.write_bytes(b"k" * 32)
     preregistration = tmp_path / "prereg.json"
     spec = {
-        "protocol_id": "contextual-continuation-development-v1",
+        "protocol_id": "contextual-continuation-development-v2",
         "status": "reserved",
         "immutable_batches": True,
         "seed_provenance": "development",
@@ -444,7 +475,7 @@ def test_contextual_preregistration_binds_batch_budget_and_outputs(tmp_path) -> 
             "max_decisions": 1200,
             "ante_cap": 12,
             "workers": 6,
-            "nonce": "contextual-continuation-v9-frozen",
+            "nonce": "contextual-continuation-v10-frozen",
             "continuation": "strategic",
             "policy_seed": "baseline-v1",
             "strategy_options": False,
@@ -453,7 +484,7 @@ def test_contextual_preregistration_binds_batch_budget_and_outputs(tmp_path) -> 
         },
         "origin_mapping": {
             "algorithm": "hmac-sha256-truncated-128",
-            "key_path": "runs/secrets/contextual-continuation-v9-origin.key",
+            "key_path": "runs/secrets/contextual-continuation-v10-origin.key",
             "key_sha256": hashlib.sha256(b"k" * 32).hexdigest(),
         },
         "batches": list(module._CONTEXTUAL_BATCHES),
@@ -462,7 +493,7 @@ def test_contextual_preregistration_binds_batch_budget_and_outputs(tmp_path) -> 
     args = module.build_parser().parse_args(
         [
             "--seed-start",
-            "1075",
+            "1375",
             "--seeds",
             "50",
             "--samples",
@@ -478,7 +509,7 @@ def test_contextual_preregistration_binds_batch_budget_and_outputs(tmp_path) -> 
             "--workers",
             "6",
             "--nonce",
-            "contextual-continuation-v9-frozen",
+            "contextual-continuation-v10-frozen",
             "--dense-teacher",
             "--teacher-jsonl",
             str(teacher),

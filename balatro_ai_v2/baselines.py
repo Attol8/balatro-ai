@@ -1315,7 +1315,8 @@ def _strategic_consumable_action(
     if len(observation.consumables) < observation.consumable_limit:
         return None
     useful_planet = any(
-        item.kind.upper() == "PLANET"
+        isinstance(item, PublicItem)
+        and item.kind.upper() == "PLANET"
         and _committed_planet_value(item.key, build) > 0
         and (item.buy_cost or 0) <= observation.money
         for item in observation.shop
@@ -1442,6 +1443,7 @@ def _strategic_shop_action(
         action
         for action in actions
         if isinstance(action, BuyShopCard)
+        and isinstance(observation.shop[action.card.value], PublicItem)
         and observation.shop[action.card.value].kind.upper() == "JOKER"
     ]
     buyable_jokers = [
@@ -1515,6 +1517,7 @@ def _strategic_shop_action(
             action
             for action in actions
             if isinstance(action, BuyShopCard)
+            and isinstance(observation.shop[action.card.value], PublicItem)
             and observation.shop[action.card.value].kind.upper() == "PLANET"
             and (observation.shop[action.card.value].buy_cost or 0)
             <= observation.money
@@ -2146,7 +2149,8 @@ def _replacement_sale(
         offers = [
             item
             for item in observation.shop
-            if item.kind.upper() == "JOKER"
+            if isinstance(item, PublicItem)
+            and item.kind.upper() == "JOKER"
             and item.key not in owned_keys
             and (
                 not require_score_gain or item.key not in {"j_bloodstone", "j_misprint"}

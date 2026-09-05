@@ -10,6 +10,7 @@ from balatro_ai_v2.actions import (
     BuyPack,
     BuyShopCard,
     ReorderJokers,
+    ShopSlot,
     UseConsumable,
     iter_legal_actions,
 )
@@ -23,7 +24,7 @@ from balatro_ai_v2.strategy_options import (
     iter_strategy_options,
     options_for_intent,
 )
-from state_factory import item_card, state
+from state_factory import item_card, playing_card, state
 
 
 def _with_consumable(key: str):
@@ -64,6 +65,26 @@ def test_hermit_is_an_economy_option() -> None:
     options = options_for_intent(observation, StrategyIntent.ECONOMY)
 
     assert any(isinstance(option.first_action, UseConsumable) for option in options)
+
+
+def test_magic_trick_shop_card_is_a_legal_deck_sculpting_option() -> None:
+    raw = state("SHOP", money=10)
+    raw["shop"] = {
+        "cards": [playing_card("H_K", card_id=90)],
+        "count": 1,
+        "highlighted_limit": 1,
+        "limit": 2,
+    }
+    observation = to_public_observation(raw)
+
+    options = options_for_intent(observation, StrategyIntent.DECK_SCULPT)
+
+    assert any(
+        option.first_action == BuyShopCard(ShopSlot(0))
+        and option.evidence == ("buy_shop_playing_card",)
+        for option in options
+        if isinstance(option.first_action, BuyShopCard)
+    )
 
 
 def test_copy_reorders_are_exposed_as_retrigger_engine_options() -> None:

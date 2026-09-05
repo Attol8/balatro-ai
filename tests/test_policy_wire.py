@@ -6,6 +6,7 @@ import pytest
 from balatro_ai_v2.actions import action_to_data, iter_legal_actions
 from balatro_ai_v2.balatrobot.adapter import to_public_observation
 from balatro_ai_v2.policy_wire import (
+    POLICY_ACTION_CONTRACT,
     PolicyDiagnostics,
     PolicyRequest,
     PolicyResponse,
@@ -23,6 +24,11 @@ from state_factory import state
 def _request() -> PolicyRequest:
     observation = to_public_observation(state("SELECTING_HAND", seed="PRIVATE-SEED"))
     return PolicyRequest(7, 3, observation)
+
+
+def test_policy_wire_versions_structured_shop_card_legality() -> None:
+    assert POLICY_PROTOCOL_VERSION == 5
+    assert POLICY_ACTION_CONTRACT == "public_legality_v4"
 
 
 def test_policy_request_round_trip_contains_only_public_information() -> None:

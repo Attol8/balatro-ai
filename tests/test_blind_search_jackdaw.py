@@ -19,7 +19,6 @@ from balatro_ai_v2.actions import (
 )
 from balatro_ai_v2.backend import AuthorityObservation, RunSpec
 from balatro_ai_v2.balatrobot.adapter import to_public_observation
-from balatro_ai_v2.baselines import PublicStrategicPolicy
 from balatro_ai_v2.blind_search import (
     PublicBlindBeliefSearch,
     _RolloutState,

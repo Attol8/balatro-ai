@@ -88,14 +88,14 @@ def _component(tmp_path: Path, name: str, seed_start: int, group_start: int):
             "command": ["collector"],
         },
         "search_protocol": {
-            "version": "determinized-search-v9",
+            "version": "determinized-search-v10",
             "budget": {
                 "samples": 6,
                 "horizon_antes": 1,
                 "max_steps": 200,
                 "override_z": 1.0,
             },
-            "nonce": "contextual-continuation-v9-frozen",
+            "nonce": "contextual-continuation-v10-frozen",
             "strategy_options": False,
             "include_reorders": False,
         },
@@ -111,10 +111,10 @@ def _component(tmp_path: Path, name: str, seed_start: int, group_start: int):
             },
         },
         "contextual_teacher_preregistration": {
-            "protocol_id": "contextual-continuation-development-v1",
+            "protocol_id": "contextual-continuation-development-v2",
             "sha256": "d" * 64,
             "immutable_batches": True,
-            "batch_id": f"batch-{(seed_start - 1075) // 50 + 1:02d}",
+            "batch_id": f"batch-{(seed_start - 1375) // 50 + 1:02d}",
             "seed_start": seed_start,
             "seeds": 50,
         },
@@ -151,7 +151,7 @@ def test_merge_cli_preserves_all_disjoint_groups_and_component_hashes(
     script = _load_script()
     components = [
         _component(tmp_path, f"batch-{index}", seed, index * 100)
-        for index, seed in enumerate(range(1075, 1375, 50), start=1)
+        for index, seed in enumerate(range(1375, 1675, 50), start=1)
     ]
     output = tmp_path / "merged.jsonl"
     report = tmp_path / "merged.json"
@@ -188,22 +188,26 @@ def test_merge_cli_preserves_all_disjoint_groups_and_component_hashes(
         == 300
     )
     assert len(merged["merged_components"]) == 6
+    assert (
+        merged["contextual_teacher_preregistration"]["protocol_id"]
+        == "contextual-continuation-development-v2"
+    )
     assert "results" not in merged
-    assert "1075" not in json.dumps(merged)
+    assert "1375" not in json.dumps(merged)
 
 
 def test_merge_rejects_revision_or_seed_overlap(tmp_path) -> None:
     script = _load_script()
     paths = [
         _component(tmp_path, f"batch-{index}", seed, index * 100)
-        for index, seed in enumerate(range(1075, 1375, 50), start=1)
+        for index, seed in enumerate(range(1375, 1675, 50), start=1)
     ]
     duplicate = json.loads(paths[1][1].read_text(encoding="utf-8"))
     duplicate["results"] = json.loads(paths[0][1].read_text(encoding="utf-8"))[
         "results"
     ]
     duplicate["contextual_teacher_preregistration"].update(
-        {"batch_id": "batch-01", "seed_start": 1075}
+        {"batch_id": "batch-01", "seed_start": 1375}
     )
     paths[1][1].write_text(json.dumps(duplicate), encoding="utf-8")
     components = tuple(script._load_component(*component) for component in paths)
@@ -211,7 +215,7 @@ def test_merge_rejects_revision_or_seed_overlap(tmp_path) -> None:
     with pytest.raises(SystemExit, match="overlap"):
         script._validate_components(components)
 
-    paths[1] = _component(tmp_path, "replacement", 1125, 700)
+    paths[1] = _component(tmp_path, "replacement", 1425, 700)
     changed = json.loads(paths[1][1].read_text(encoding="utf-8"))
     changed["manifest"]["repository_revision"] = "c" * 40
     paths[1][1].write_text(json.dumps(changed), encoding="utf-8")
@@ -224,7 +228,7 @@ def test_merge_rejects_missing_binding_and_internal_duplicate_seed(tmp_path) -> 
     script = _load_script()
     paths = [
         _component(tmp_path, f"batch-{index}", seed, index * 100)
-        for index, seed in enumerate(range(1075, 1375, 50), start=1)
+        for index, seed in enumerate(range(1375, 1675, 50), start=1)
     ]
     components = tuple(script._load_component(*component) for component in paths)
     components[0][1].pop("contextual_teacher_preregistration")

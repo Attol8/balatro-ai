@@ -306,6 +306,22 @@ def test_greedy_baseline_leaves_shop_without_private_economy_model() -> None:
     assert action != BuyShopCard(ShopSlot(0))
 
 
+def test_strategic_baseline_handles_shop_playing_card_without_guessing_value() -> None:
+    raw = state("SHOP", money=10)
+    raw["shop"] = {
+        "cards": [playing_card("H_K", card_id=90)],
+        "count": 1,
+        "highlighted_limit": 1,
+        "limit": 2,
+    }
+    shop = to_public_observation(raw)
+    legal = tuple(iter_legal_actions(shop))
+
+    action = PublicStrategicPolicy().choose_action(shop, lambda: iter(legal), ())
+
+    assert action in legal
+
+
 def test_strategic_baseline_buys_an_early_public_joker() -> None:
     shop = to_public_observation(state("SHOP", money=10))
 

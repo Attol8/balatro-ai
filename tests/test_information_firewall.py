@@ -7,7 +7,12 @@ import pytest
 
 from balatro_ai_v2.actions import action_to_data, iter_legal_actions
 from balatro_ai_v2.balatrobot.adapter import ObservationError, to_public_observation
-from balatro_ai_v2.public_state import HiddenHandCard, PublicObservation
+from balatro_ai_v2.public_state import (
+    HiddenHandCard,
+    OBSCURED_CARD_ATTRIBUTE,
+    PublicObservation,
+    PublicShopPlayingCard,
+)
 from state_factory import item_card, playing_card, state
 
 
@@ -208,6 +213,108 @@ def test_live_lua_table_shapes_are_normalized_at_the_firewall() -> None:
     assert observation.shop[0].rental
     assert observation.used_vouchers == ("v_seed_money",)
     assert observation.round.ancient_suit == "H"
+
+
+def test_magic_trick_shop_card_preserves_only_visible_card_semantics() -> None:
+    raw = state("SHOP", seed="SECRET-A")
+    card = playing_card("H_K", card_id=991)
+    card["cost"]["buy"] = 2
+    card["modifier"] = {"enhancement": "", "edition": "FOIL", "seal": "RED"}
+    raw["shop"] = {"cards": [card], "count": 1, "highlighted_limit": 1, "limit": 2}
+    raw["used_vouchers"] = ["v_magic_trick"]
+
+    twin = deepcopy(raw)
+    twin["seed"] = "SECRET-B"
+    twin["shop"]["cards"][0]["id"] = 123_456
+
+    observation = to_public_observation(raw)
+    twin_observation = to_public_observation(twin)
+
+    assert observation == twin_observation
+    assert isinstance(observation.shop[0], PublicShopPlayingCard)
+    assert observation.shop[0].buy_cost == 2
+    assert observation.shop[0].card.rank == "K"
+    assert observation.shop[0].card.suit == "H"
+    assert observation.shop[0].card.edition == "FOIL"
+    assert observation.shop[0].card.seal == "RED"
+
+
+def test_illusion_stone_shop_card_hides_private_base_identity() -> None:
+    left = state("SHOP", seed="SECRET-A")
+    stone = playing_card("H_K", card_id=996, modifier=["STONE", "FOIL", "RED"])
+    stone["set"] = "ENHANCED"
+    stone["cost"]["buy"] = 5
+    left["shop"] = {
+        "cards": [stone],
+        "count": 1,
+        "highlighted_limit": 1,
+        "limit": 2,
+    }
+    left["used_vouchers"] = ["v_magic_trick", "v_illusion"]
+    right = deepcopy(left)
+    right["seed"] = "SECRET-B"
+    right_stone = right["shop"]["cards"][0]
+    right_stone["id"] = 123_457
+    right_stone["key"] = "C_2"
+    right_stone["value"]["rank"] = "2"
+    right_stone["value"]["suit"] = "C"
+
+    left_public = to_public_observation(left)
+    right_public = to_public_observation(right)
+
+    assert left_public == right_public
+    offer = left_public.shop[0]
+    assert isinstance(offer, PublicShopPlayingCard)
+    assert offer.card.rank == OBSCURED_CARD_ATTRIBUTE
+    assert offer.card.suit == OBSCURED_CARD_ATTRIBUTE
+    assert offer.card.enhancement == "STONE"
+    assert offer.card.edition == "FOIL"
+    assert offer.card.seal == "RED"
+
+
+def test_shop_playing_card_hidden_or_set_modifier_mismatch_fails_closed() -> None:
+    hidden = state("SHOP")
+    hidden_card = playing_card("C_2", card_id=992, hidden=True)
+    hidden["shop"] = {
+        "cards": [hidden_card],
+        "count": 1,
+        "highlighted_limit": 1,
+        "limit": 2,
+    }
+    with pytest.raises(ObservationError, match="hidden card identity"):
+        to_public_observation(hidden)
+
+    mismatched = state("SHOP")
+    enhanced = playing_card("D_6", card_id=993, modifier=["BONUS"])
+    mismatched["shop"] = {
+        "cards": [enhanced],
+        "count": 1,
+        "highlighted_limit": 1,
+        "limit": 2,
+    }
+    with pytest.raises(ObservationError, match="set disagrees"):
+        to_public_observation(mismatched)
+
+
+@pytest.mark.parametrize("bad_cost", [True, "1", None])
+def test_shop_playing_card_invalid_buy_cost_fails_closed(bad_cost: object) -> None:
+    raw = state("SHOP")
+    card = playing_card("C_2", card_id=994)
+    card["cost"]["buy"] = bad_cost
+    raw["shop"] = {"cards": [card], "count": 1, "highlighted_limit": 1, "limit": 2}
+
+    with pytest.raises(ObservationError, match="buy must be an integer"):
+        to_public_observation(raw)
+
+
+def test_shop_playing_card_negative_buy_cost_fails_closed() -> None:
+    raw = state("SHOP")
+    card = playing_card("C_2", card_id=995)
+    card["cost"]["buy"] = -1
+    raw["shop"] = {"cards": [card], "count": 1, "highlighted_limit": 1, "limit": 2}
+
+    with pytest.raises(ObservationError, match="buy cost must be non-negative"):
+        to_public_observation(raw)
 
 
 def test_transient_animation_state_is_not_a_policy_decision() -> None:

@@ -288,6 +288,35 @@ def test_credit_card_purchase_floor_stacks_per_active_copy() -> None:
     assert not is_legal(to_public_observation(raw), action)
 
 
+def test_magic_trick_shop_card_purchase_uses_money_not_item_capacity() -> None:
+    raw = state("SHOP", money=1)
+    raw["shop"] = {
+        "cards": [playing_card("H_K", card_id=90)],
+        "count": 1,
+        "highlighted_limit": 1,
+        "limit": 2,
+    }
+    raw["jokers"]["limit"] = raw["jokers"]["count"]
+    raw["consumables"]["limit"] = raw["consumables"]["count"]
+    observation = to_public_observation(raw)
+    action = BuyShopCard(ShopSlot(0))
+
+    assert is_legal(observation, action)
+    assert action in set(iter_legal_actions(observation))
+    assert action_to_rpc(action, observation) == ("buy", {"card": 0})
+    assert not is_legal(replace(observation, money=0), action)
+
+    credit_raw = deepcopy(raw)
+    credit_raw["money"] = -20
+    credit_raw["jokers"]["cards"] = [
+        item_card("j_credit_card", card_id=91, kind="JOKER")
+    ]
+    credit_raw["jokers"]["count"] = 1
+    credit_raw["jokers"]["limit"] = 1
+    credit_raw["shop"]["cards"][0]["cost"]["buy"] = 0
+    assert is_legal(to_public_observation(credit_raw), action)
+
+
 def test_reorder_generator_exposes_only_adjacent_swaps() -> None:
     observation = to_public_observation(state("SELECTING_HAND"))
     reorders = [

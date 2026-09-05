@@ -461,6 +461,7 @@ class JackdawBackend:
         if method == "next_round":
             self._stale_shop_areas = _empty_shop_areas(raw_before)
         standard_pack_card = self._selected_standard_pack_card(method, params)
+        shop_playing_card = self._selected_shop_playing_card(method, params)
         voucher_effect = self._selected_voucher_effect(method, params)
         boss_disabling_sale = self._selected_boss_disabling_sale(method, params)
         self._apply_pending_skip_dollars()
@@ -496,6 +497,10 @@ class JackdawBackend:
             raw_after = self._handle("gamestate", {})
         if standard_pack_card is not None and self._place_standard_pack_card(
             standard_pack_card
+        ):
+            raw_after = self._handle("gamestate", {})
+        if shop_playing_card is not None and self._sync_shop_playing_card_count(
+            shop_playing_card
         ):
             raw_after = self._handle("gamestate", {})
         if voucher_effect is not None and self._apply_immediate_voucher_effect(
@@ -1037,6 +1042,27 @@ class JackdawBackend:
         card_set = ability.get("set") if isinstance(ability, Mapping) else None
         return card if card_set in {"Default", "Enhanced"} else None
 
+    def _selected_shop_playing_card(
+        self, method: str, params: Mapping[str, Any]
+    ) -> object | None:
+        """Capture a visible playing-card offer before the buy removes it."""
+
+        if method != "buy":
+            return None
+        index = params.get("card")
+        if not isinstance(index, int) or isinstance(index, bool):
+            return None
+        game_state = getattr(self._backend, "_gs", None)
+        if not isinstance(game_state, Mapping):
+            raise RuntimeError("Jackdaw backend does not expose its active game state")
+        shop_cards = game_state.get("shop_cards")
+        if not isinstance(shop_cards, list) or not 0 <= index < len(shop_cards):
+            return None
+        card = shop_cards[index]
+        ability = getattr(card, "ability", None)
+        card_set = ability.get("set") if isinstance(ability, Mapping) else None
+        return card if card_set in {"Default", "Enhanced"} else None
+
     def _selected_boss_disabling_sale(
         self,
         method: str,
@@ -1271,6 +1297,37 @@ class JackdawBackend:
             return changed
         deck.insert(0, deck.pop(index))
         return True
+
+    def _sync_shop_playing_card_count(self, card: object) -> bool:
+        """Include a bought shop card in the permanent public deck size."""
+
+        game_state = getattr(self._backend, "_gs", None)
+        if not isinstance(game_state, Mapping):
+            raise RuntimeError("Jackdaw backend does not expose its active game state")
+        piles = (
+            game_state.get("deck"),
+            game_state.get("hand"),
+            game_state.get("discard_pile"),
+        )
+        if not all(isinstance(pile, list) for pile in piles):
+            raise RuntimeError(
+                "Jackdaw playing-card piles are unavailable after shop purchase"
+            )
+        if sum(candidate is card for pile in piles for candidate in pile) != 1:
+            raise RuntimeError(
+                "Jackdaw did not add the bought shop playing card exactly once"
+            )
+        playing_cards_count = game_state.get("playing_cards_count")
+        if not isinstance(playing_cards_count, int) or isinstance(
+            playing_cards_count, bool
+        ):
+            raise RuntimeError(
+                "Jackdaw playing-card count is unavailable after shop purchase"
+            )
+        expected_count = sum(len(pile) for pile in piles)
+        changed = playing_cards_count != expected_count
+        game_state["playing_cards_count"] = expected_count
+        return changed
 
     @contextmanager
     def _play_compatibility(self) -> Iterator[None]:

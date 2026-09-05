@@ -45,12 +45,13 @@ from balatro_ai_v2.public_state import (
     HiddenHandCard,
     PublicItem,
     PublicObservation,
+    PublicShopPlayingCard,
     VisiblePlayingCard,
 )
 
 
-MODEL_FORMAT_VERSION: Final = 3
-PUBLIC_MODEL_ACTION_PROPOSAL_SCHEMA: Final = "factorized_tactical_targeted_adjacent_reorder_v3"
+MODEL_FORMAT_VERSION: Final = 4
+PUBLIC_MODEL_ACTION_PROPOSAL_SCHEMA: Final = "factorized_tactical_targeted_shop_card_v4"
 _REORDER_ACTIONS = (ReorderHand, ReorderJokers, ReorderConsumables)
 _ACTION_FAMILIES = {
     SelectBlind: "select_blind",
@@ -571,9 +572,17 @@ def _observation_features(observation: PublicObservation, size: int) -> list[flo
         _add_card(vector, f"hand.{index}", card)
     for entry in observation.remaining_deck:
         _add_card(vector, "remaining", entry.card, weight=math.log1p(entry.count))
-    for region in ("jokers", "consumables", "shop", "vouchers", "packs"):
+    for region in ("jokers", "consumables", "vouchers", "packs"):
         for index, item in enumerate(getattr(observation, region)):
             _add_item(vector, f"{region}.{index}", item)
+    for index, offer in enumerate(observation.shop):
+        if isinstance(offer, PublicItem):
+            _add_item(vector, f"shop.{index}", offer)
+        elif isinstance(offer, PublicShopPlayingCard):
+            _add_card(vector, f"shop.{index}.card", offer.card)
+            vector.number(f"shop.{index}.buy_cost", offer.buy_cost, 50)
+        else:  # pragma: no cover - guarded by PublicObservation
+            raise PublicModelError(f"unsupported shop offer {type(offer).__name__}")
     for index, offer in enumerate(observation.opened_pack):
         if isinstance(offer, PublicItem):
             _add_item(vector, f"opened_pack.{index}", offer)
@@ -616,7 +625,14 @@ def _action_features(
             _add_card(vector, f"action.card.{position}", observation.hand[slot.value])
     elif isinstance(action, BuyShopCard):
         vector.category("action.buy_mode", action.mode.value)
-        _add_item(vector, "action.item", observation.shop[action.card.value])
+        offer = observation.shop[action.card.value]
+        if isinstance(offer, PublicItem):
+            _add_item(vector, "action.item", offer)
+        elif isinstance(offer, PublicShopPlayingCard):
+            _add_card(vector, "action.item", offer.card)
+            vector.number("action.item.buy_cost", offer.buy_cost, 50)
+        else:  # pragma: no cover - guarded by PublicObservation
+            raise PublicModelError(f"unsupported shop offer {type(offer).__name__}")
     elif isinstance(action, BuyVoucher):
         _add_item(vector, "action.item", observation.vouchers[action.voucher.value])
     elif isinstance(action, BuyPack):

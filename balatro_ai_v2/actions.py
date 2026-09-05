@@ -15,7 +15,13 @@ from balatro_ai_v2.consumable_rules import (
     iter_public_targets,
     public_consumable_is_usable,
 )
-from balatro_ai_v2.public_state import Phase, PublicItem, PublicObservation, VisiblePlayingCard
+from balatro_ai_v2.public_state import (
+    Phase,
+    PublicItem,
+    PublicObservation,
+    PublicShopPlayingCard,
+    VisiblePlayingCard,
+)
 
 
 @dataclass(frozen=True, slots=True, order=True)
@@ -475,7 +481,11 @@ def _can_spend(observation: PublicObservation, cost: int | None) -> bool:
     return observation.money - cost >= floor
 
 
-def _has_room(observation: PublicObservation, item: PublicItem) -> bool:
+def _has_room(
+    observation: PublicObservation, item: PublicItem | PublicShopPlayingCard
+) -> bool:
+    if isinstance(item, PublicShopPlayingCard):
+        return True
     kind = item.kind.upper()
     if kind == "JOKER":
         return item.edition == "NEGATIVE" or len(observation.jokers) < observation.joker_limit

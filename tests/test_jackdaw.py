@@ -24,6 +24,7 @@ from balatro_ai_v2.actions import (
 from balatro_ai_v2.backend import RunSpec
 from balatro_ai_v2.balatrobot.adapter import to_public_observation
 from balatro_ai_v2.balatrobot.tracing import read_verified_trace
+from balatro_ai_v2.public_state import PublicShopPlayingCard
 from state_factory import state
 
 
@@ -732,6 +733,60 @@ def test_candidate_seed_one_shop_and_pack_compatibility() -> None:
     assert next_blind.after.observed.canonical["state"] == "BLIND_SELECT"
     assert next_blind.after.observed.canonical["shop"]["count"] == 1
     assert next_blind.after.observed.canonical["shop"]["cards"] == []
+
+
+def test_candidate_organic_magic_trick_shop_card_purchase_grows_deck() -> None:
+    pytest.importorskip("jackdaw")
+    actions = (
+        {"type": "select_blind"},
+        {"type": "discard_cards", "cards": [1, 2, 5, 6, 7]},
+        {"type": "play_cards", "cards": [0, 1, 2, 3, 4]},
+        {"type": "play_cards", "cards": [0, 1, 2, 3, 4]},
+        {"type": "cash_out"},
+        {"type": "buy_shop_card", "card": 0, "mode": "store"},
+        {"type": "leave_shop"},
+        {"type": "select_blind"},
+        {"type": "play_cards", "cards": [0, 1, 2, 3, 4]},
+        {"type": "discard_cards", "cards": [0, 1, 3, 4]},
+        {"type": "discard_cards", "cards": [0, 2, 5, 6, 7]},
+        {"type": "play_cards", "cards": [0, 1, 2, 3, 4]},
+        {"type": "play_cards", "cards": [0, 3, 4, 5, 6]},
+        {"type": "cash_out"},
+        {"type": "buy_voucher", "voucher": 0},
+        {"type": "leave_shop"},
+        {"type": "select_blind"},
+        {"type": "discard_cards", "cards": [0, 5, 6, 7]},
+        {"type": "play_cards", "cards": [0, 1, 2, 3, 4]},
+        {"type": "discard_cards", "cards": [1, 2, 5, 6, 7]},
+        {"type": "play_cards", "cards": [1, 2, 3, 5, 6]},
+        {"type": "cash_out"},
+    )
+    backend = jackdaw.JackdawBackend()
+    try:
+        observation = backend.reset(RunSpec("RED", "WHITE", "4002"))
+        for data in actions:
+            result = backend.step(action_from_data(data))
+            assert result.status == "accepted"
+            assert result.after is not None
+            observation = result.after
+
+        before = to_public_observation(json.loads(observation.observed.raw_json))
+        assert "v_magic_trick" in before.used_vouchers
+        assert isinstance(before.shop[1], PublicShopPlayingCard)
+        price = before.shop[1].buy_cost
+        result = backend.step(BuyShopCard(ShopSlot(1)))
+        assert result.status == "accepted"
+        assert result.after is not None
+        after = to_public_observation(json.loads(result.after.observed.raw_json))
+
+        assert result.rpc_method == "buy"
+        assert result.rpc_params == {"card": 1}
+        assert after.money == before.money - price
+        assert after.deck_size == before.deck_size + 1
+        assert sum(entry.count for entry in after.remaining_deck) == after.deck_size
+        assert len(after.shop) == len(before.shop) - 1
+    finally:
+        backend.close()
 
 
 def test_candidate_seed_five_gold_shop_stickers_use_stake_modifiers() -> None:

@@ -11,7 +11,7 @@ from balatro_ai_v2.public_codec import (
     public_observation_from_data,
     public_observation_to_data,
 )
-from state_factory import state
+from state_factory import playing_card, state
 
 
 @pytest.mark.parametrize(
@@ -167,6 +167,71 @@ def test_public_observation_codec_rejects_malformed_card_union() -> None:
 
     with pytest.raises(PublicCodecError, match="visible card fields differ"):
         public_observation_from_data(data)
+
+
+def test_shop_playing_card_codec_round_trips_full_visible_card_and_cost() -> None:
+    raw = state("SHOP")
+    card = playing_card("S_A", card_id=901, modifier=["GLASS", "POLYCHROME", "BLUE"])
+    card["set"] = "ENHANCED"
+    card["cost"]["buy"] = 0
+    raw["shop"] = {"cards": [card], "count": 1, "highlighted_limit": 1, "limit": 2}
+    observation = to_public_observation(raw)
+
+    data = public_observation_to_data(observation)
+    decoded = public_observation_from_data(data)
+
+    assert decoded == observation
+    assert decoded.shop[0].buy_cost == 0
+    assert decoded.shop[0].card.enhancement == "GLASS"
+    assert decoded.shop[0].card.edition == "POLYCHROME"
+    assert decoded.shop[0].card.seal == "BLUE"
+
+
+def test_public_codec_enforces_opaque_stone_identity() -> None:
+    raw = state("SHOP")
+    card = playing_card("S_A", card_id=906, modifier=["STONE"])
+    card["set"] = "ENHANCED"
+    raw["shop"] = {"cards": [card], "count": 1, "highlighted_limit": 1, "limit": 2}
+    encoded = public_observation_to_data(to_public_observation(raw))
+
+    exposed = deepcopy(encoded)
+    exposed["shop"][0]["card"]["rank"] = "A"  # type: ignore[index]
+    exposed["shop"][0]["card"]["suit"] = "S"  # type: ignore[index]
+    with pytest.raises(PublicCodecError, match="must obscure"):
+        public_observation_from_data(exposed)
+
+    non_stone = deepcopy(encoded)
+    non_stone["shop"][0]["card"]["enhancement"] = "GLASS"  # type: ignore[index]
+    with pytest.raises(PublicCodecError, match="only Stone"):
+        public_observation_from_data(non_stone)
+
+
+def test_shop_playing_card_codec_rejects_legacy_and_malformed_shapes() -> None:
+    legacy = public_observation_to_data(to_public_observation(state("SHOP")))
+    legacy["shop"][0]["kind"] = "DEFAULT"  # type: ignore[index]
+    legacy["shop"][0]["key"] = "H_K"  # type: ignore[index]
+    with pytest.raises(PublicCodecError, match="legacy generic item"):
+        public_observation_from_data(legacy)
+
+    raw = state("SHOP")
+    raw["shop"] = {
+        "cards": [playing_card("C_2", card_id=902)],
+        "count": 1,
+        "highlighted_limit": 1,
+        "limit": 2,
+    }
+    malformed = public_observation_to_data(to_public_observation(raw))
+    malformed["shop"][0]["buy_cost"] = True  # type: ignore[index]
+    with pytest.raises(PublicCodecError, match="buy_cost must be an integer"):
+        public_observation_from_data(malformed)
+
+    malformed["shop"][0]["buy_cost"] = -1  # type: ignore[index]
+    with pytest.raises(PublicCodecError, match="buy_cost must be non-negative"):
+        public_observation_from_data(malformed)
+
+    malformed["shop"][0].pop("buy_cost")  # type: ignore[index]
+    with pytest.raises(PublicCodecError, match="shop offer has unknown fields"):
+        public_observation_from_data(malformed)
 
 
 def test_public_codec_has_no_authority_or_candidate_dependency() -> None:

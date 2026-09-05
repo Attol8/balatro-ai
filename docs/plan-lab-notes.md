@@ -3750,3 +3750,48 @@ certify. A rollout certificate now requires the exact hashed training report,
 authenticates its model/dataset/split/gate bindings at load time, and needs safe
 recommendations in all 59 independent holdout groups. These changes supersede
 the v8 subset paragraph above; v7/v8 files remain diagnostics only.
+
+### Contextual collection v9 result and failed training (2026-09-05)
+
+All six frozen batches on seeds 1075--1374 completed without rejected,
+unavailable, censored, or incomplete work. The strict merge contains 17,004
+dense decisions in exactly 300 opaque origin families. Raw-record validation
+found 14,287 action-sensitive rows (84.02%), BLIND_SELECT/SHOP/PACK coverage of
+3,130/11,707/2,167 rows, 28 winning source groups, 38 origin groups with an
+observed victory sibling, and 526 post-win rows across 28 groups. Every row
+stores all deployable roots: the maximum is 388 and there are zero subset rows.
+The merged dataset SHA-256 is
+`c4f268d343338397232e39ce01f56206951a90d57eb2805b619f50aa7f8a74c1`;
+the sanitized training-manifest SHA-256 is
+`4eb2c99a8d967662ca11099569002f84a83b2173a3db2dc95021d84f5e3e835d`.
+
+The first frozen training attempt failed closed before publishing a model or
+training report. Sixteen decisions from four Magic Trick origin groups exposed
+18 ordinary playing-card shop offers represented as generic `DEFAULT` items.
+The relational tensorizer rejected the unsupported kind. Static and raw-record
+audit then found the deeper defect: the shop adapter had erased the cards'
+visible rank, suit, enhancement, edition, and seal; public legality excluded
+buying them; consequently those 18 slots had no corresponding teacher roots.
+The v9 cohort therefore does not satisfy the corrected complete-root contract
+and is permanently failed evidence despite passing its frozen validator.
+
+The repair uses a typed public shop-playing-card offer containing the complete
+visible card plus buy cost, admits its normal indexed purchase independent of
+Joker/consumable capacity, and encodes/classifies it compositionally. Canonical
+environment, teacher, search, and model formats advance. V9 seeds and artifacts
+remain immutable and cannot be reused, filtered, spliced, trained for
+influence, or promoted. A fresh v10 cohort is required after the corrected
+source and tests freeze.
+
+Adversarial review found and closed two additional pre-freeze defects. Stone
+cards now replace their unobservable underlying rank and suit with a validated
+opaque sentinel at the shared public adapter; private-base twins are identical
+in canonical state and both model encodings. The policy-process protocol and
+legality contract also advanced, and the v10 merger now stamps the same v2
+protocol it validates. Finally, an organic unprotected Jackdaw seed-4002 trace
+bought Magic Trick, reached its generated playing-card offer, and exposed a
+candidate bookkeeping omission: the card entered the deck but the permanent
+deck count stayed stale. The wrapper now verifies the bought object occurs in
+exactly one owned pile and synchronizes the permanent count. The regression
+requires the existing indexed RPC, exact money delta, +1 deck size, matching
+public deck composition, and one removed shop offer.
