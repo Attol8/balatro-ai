@@ -16,7 +16,9 @@ from balatro_ai_v2.actions import (
     LeaveShop,
     PlayCards,
     OpenedPackSlot,
+    ReorderConsumables,
     ReorderHand,
+    ReorderJokers,
     RerollBoss,
     SelectBlind,
     SellJoker,
@@ -373,6 +375,49 @@ def test_reorder_generator_exposes_only_adjacent_swaps() -> None:
         observation,
         ReorderHand((HandSlot(2), HandSlot(1), HandSlot(0))),
     )
+
+
+def test_smods_pack_does_not_imply_unproved_inventory_reorder_permission() -> None:
+    raw = state("SELECTING_HAND")
+    raw["state"] = "SMODS_BOOSTER_OPENED"
+    raw["pack_choices_remaining"] = 1
+    raw["pack"] = {
+        "cards": [item_card("c_mercury", card_id=30, kind="PLANET")],
+        "count": 1,
+        "highlighted_limit": 1,
+        "limit": 2,
+    }
+    raw["jokers"] = {
+        "cards": [
+            item_card("j_joker", card_id=31, kind="JOKER"),
+            item_card("j_greedy_joker", card_id=32, kind="JOKER"),
+        ],
+        "count": 2,
+        "highlighted_limit": 1,
+        "limit": 5,
+    }
+    raw["consumables"] = {
+        "cards": [
+            item_card("c_mercury", card_id=33, kind="PLANET"),
+            item_card("c_uranus", card_id=34, kind="PLANET"),
+        ],
+        "count": 2,
+        "highlighted_limit": 1,
+        "limit": 2,
+    }
+    observation = to_public_observation(raw)
+    reorders = (
+        ReorderHand((HandSlot(1), HandSlot(0), HandSlot(2))),
+        ReorderJokers((JokerSlot(1), JokerSlot(0))),
+        ReorderConsumables((ConsumableSlot(1), ConsumableSlot(0))),
+    )
+
+    assert observation.pack_kind == "SMODS"
+    assert not any(
+        isinstance(action, (ReorderHand, ReorderJokers, ReorderConsumables))
+        for action in iter_legal_actions(observation)
+    )
+    assert all(not is_legal(observation, action) for action in reorders)
 
 
 def test_eternal_joker_cannot_be_sold() -> None:

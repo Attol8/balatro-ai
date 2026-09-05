@@ -315,7 +315,7 @@ def iter_legal_actions(observation: PublicObservation) -> Iterator[PublicAction]
                 if is_legal(observation, use):
                     yield use
 
-    if phase in _REORDER_PHASES or observation.pack_kind == "SMODS":
+    if phase in _REORDER_PHASES:
         if _reorder_phase_legal(observation, "hand") and len(observation.hand) > 1:
             yield from (
                 ReorderHand(order)
@@ -487,8 +487,8 @@ def _valid_hand_selection(observation: PublicObservation, cards: tuple[HandSlot,
 
 def _reorder_phase_legal(observation: PublicObservation, area: str) -> bool:
     if area == "hand":
-        return observation.phase == Phase.SELECTING_HAND or observation.pack_kind == "SMODS"
-    return observation.phase in _REORDER_PHASES or observation.pack_kind == "SMODS"
+        return observation.phase == Phase.SELECTING_HAND
+    return observation.phase in _REORDER_PHASES
 
 
 def _adjacent_orders(wrapper: type, size: int) -> Iterator[tuple]:
