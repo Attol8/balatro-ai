@@ -4473,3 +4473,62 @@ that run showed active Python rational arithmetic, consistent with the measured
 exact-`Fraction` scorer bottleneck rather than a worker or IPC stall. Batch 05
 will remain untouched until the learner preregistration is committed; it can
 complete the frozen evidence family but cannot change this calibration verdict.
+
+### Route-terminal v1 completes and the learner rejects (2026-09-05)
+
+Batch 05 on development seeds 2391--2410 completed 20/20 from the unchanged
+frozen collection revision. It produced no wins, 4.25 mean antes cleared, eight
+runs reaching Ante 6, and a maximum of eight antes cleared. All 168 scheduled
+anchors completed with zero rejected, censored, unavailable, unsupported,
+fallback, or action-affecting work. The source search completed 1,215 strategic
+decisions and 1,170,650 rollout steps.
+
+Independent validation authenticated all 20 HMAC origin families, reproduced
+route coverage exactly, and matched dataset SHA-256
+`76d40ca88719657eec345d95ae7b7a0242879408fe671e5d1ece79109141ea60`
+and report SHA-256
+`7c50d1027c523439d536a5e069ac3da6f8aee741d95f9066841bc50bc7171579`.
+The component has 168 rows, 13 route-diverse rows across 12 groups, and 105
+exact same-action route pairs: 86 played-retrigger, 18 held-retrigger, and one
+consumable-duplication pair. Scalar utility is sensitive in 58 pairs (21
+positive, 37 negative); next-Boss outcome is sensitive in 23 (five positive,
+18 negative). It contains no win or Endless row. The slowest anchor had 203
+roots, 406 terminal sample evaluations, 23,426 steps, and 303.6 seconds.
+
+The exact five-component merger then authenticated all original bytes and
+published 825 records from 99 record-bearing groups covering 100 complete
+source runs. The merged dataset SHA-256 is
+`352fc74495974cb9c98e056691f1af01c0b8c5d85ad8b6e995fcdf5bf540dc2f`
+and its report SHA-256 is
+`d950b292a11eddc0e21a1683eca13c766ad2dcc6f746557d6227407671d2c6b5`.
+Coverage includes all three strategic phases, 18 Endless rows, 90
+route-diverse rows across 59 groups, 405 exact route pairs, 241 scalar-sensitive
+pairs, a 367-root maximum, and zero subsets, rejections, or censored samples.
+
+The preregistered one-shot trainer rejected before constructing a model. Train
+and holdout admission passed, but batch 04 calibration had zero resolved pairs
+for both `endless_ante` and `log_score`, producing exactly
+`minimum_endless_ante_calibration_pairs` and
+`minimum_log_score_calibration_pairs`. The report SHA-256 is
+`8b7cca18be6c58c4d366cd2ad5791cfacc3f5ce8267280f328bb7a81aa29db9f`;
+it records `training.started=false`, zero epochs, and no model artifact. No
+threshold, split, target, or architecture was changed after labels were read.
+
+Across the full cohort, the retained search won four of 100 runs, averaged 4.30
+antes cleared, and reached Ante 6 in 37 runs. Pair or Two Pair remained the
+terminal primary hand in 88 of 96 losses. Seventy-one losses ended with at least
+$10 and both ordinary consumable slots empty. The route specialist challenged
+the Victory identity 1,208 times but overrode only ten, while all search work
+consumed 5,862,711 rollout steps. The corpus therefore diagnoses an action,
+inventory, persistent-build, and rare-route coverage ceiling; collecting more
+of the same one-Ante continuation would reinforce it rather than create an
+elite policy.
+
+The Arcana performance tail is exact legal combinatorics, not an invalid root
+explosion. In the first four batches, 13 Arcana anchors with at least 100 roots
+accounted for 2,017 of 6,982 stored roots. The 367-root maximum was the complete
+set of legal Tarot target combinations over nine visible hand cards. Future
+speed work must first attribute clone, initial root step, continuation/scoring,
+and allocation/GC time, then preserve byte-identical root order, labels,
+endpoints, actions, outcomes, steps, and failures on matched development
+replays. Root capping, target pruning, and horizon reduction are not eligible.

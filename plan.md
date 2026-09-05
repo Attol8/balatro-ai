@@ -1354,6 +1354,43 @@ same full frozen batch path. Reject traversal and sibling/name-only matches. Thi
 allows an immutable bundle to be audited in a second clean checkout without
 rewriting signed report bytes or weakening component authentication.
 
+Route-terminal v1 outcome: the frozen five-batch collection completed all 100
+source runs and merged 825 records from 99 record-bearing groups, but the
+one-shot learner is rejected before model construction. Batch 04 calibration
+contains zero jointly resolved non-Victory/ordinary pairs for both
+`endless_ante` and `log_score`, so the preregistered per-target admission guard
+fails exactly as intended. Batch 05 holdout cannot repair calibration and was
+not inspected to alter the split. The rejection report contains no training
+epochs and no model artifact. Preserve this corpus as negative evidence; do not
+impute targets, rebalance batches, train a partial-head model, or recollect the
+same behavior under new seeds.
+
+The complete cohort also resolves the next direction. It won only four of 100
+runs; Pair or Two Pair was the terminal primary hand in 88 of 96 losses; 71
+losses ended with at least $10 and both ordinary consumable slots empty; and
+the route specialist overrode 1,208 challenges only ten times. This is a
+capability/continuation failure, not a reason to increase the same search
+budget. Before another teacher cohort, close the action/state surface, add a
+persistent typed build plan, and seed rare route/pivot coverage from validated
+public expert trajectories before paired-search correction.
+
+Immediate post-freeze action-contract design: remove the unproved rule that a
+generic `SMODS` pack permits hand, Joker, or consumable reordering. Normal
+`SELECTING_HAND` hand reorders and `SELECTING_HAND`/`SHOP` Joker/consumable
+reorders remain unchanged. A synthetic SMODS pack with at least two entries in
+each area must generate none of the three reorder actions and must reject each
+direct action through `is_legal`. This is a fail-closed correction only; do not
+enable buy-and-use or pack-phase inventory operations until BalatroBot,
+Jackdaw, and an organic authority trace establish each exact contract.
+
+After that correction, instrument clone, root-step, continuation/scoring, and
+allocation/GC time at terminal-teacher anchors. The Arcana tail is valid
+exhaustive targeting: 13 decisions with at least 100 roots account for 2,017 of
+the first four batches' 6,982 roots. Do not cap targets, roots, samples, or the
+terminal horizon. Any memo or batching optimization must retain exact root
+identity/order, actions, targets, endpoints, steps, labels, outcomes, and
+failure counters on a matched nonprotected replay before a throughput claim.
+
 ## Active development loop
 
 The two disjoint 30-seed screens are enough to retain one-ante strategic
