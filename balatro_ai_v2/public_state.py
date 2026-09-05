@@ -294,7 +294,7 @@ class PublicObservation:
         )
         if hidden_jokers:
             amber_active = (
-                self.phase == Phase.SELECTING_HAND
+                self.phase in {Phase.SELECTING_HAND, Phase.GAME_OVER}
                 and any(
                     blind.kind == "BOSS"
                     and blind.status == "CURRENT"

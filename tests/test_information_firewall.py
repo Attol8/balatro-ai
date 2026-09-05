@@ -18,6 +18,7 @@ from balatro_ai_v2.public_state import (
     HiddenHandCard,
     HiddenJokerSlot,
     OBSCURED_CARD_ATTRIBUTE,
+    Phase,
     PublicObservation,
     PublicShopPlayingCard,
 )
@@ -187,6 +188,38 @@ def test_amber_acorn_jokers_are_anonymous_and_not_selectable_by_identity() -> No
     assert any(isinstance(action, PlayCards) for action in actions)
     assert not any(isinstance(action, SellJoker | ReorderJokers) for action in actions)
     assert "j_" not in observation.canonical_json()
+
+
+def test_amber_acorn_loss_keeps_terminal_jokers_anonymous() -> None:
+    raw = _amber_state()
+    raw["state"] = "GAME_OVER"
+
+    observation = to_public_observation(raw)
+
+    assert observation.phase == Phase.GAME_OVER
+    assert observation.jokers == (HiddenJokerSlot(), HiddenJokerSlot())
+    assert "j_" not in observation.canonical_json()
+
+
+@pytest.mark.parametrize(
+    ("phase", "boss_update"),
+    (
+        ("SHOP", {}),
+        ("GAME_OVER", {"disabled": True}),
+        ("GAME_OVER", {"name": "The Head"}),
+        ("GAME_OVER", {"status": "DEFEATED"}),
+    ),
+)
+def test_anonymous_jokers_outside_live_amber_hand_or_loss_fail_closed(
+    phase: str,
+    boss_update: dict[str, object],
+) -> None:
+    raw = _amber_state()
+    raw["state"] = phase
+    raw["blinds"]["boss"].update(boss_update)
+
+    with pytest.raises(ValueError, match="anonymous Joker slots"):
+        to_public_observation(raw)
 
 
 @pytest.mark.parametrize("baseline_name", PUBLIC_BASELINE_NAMES)

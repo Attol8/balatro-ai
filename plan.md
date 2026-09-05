@@ -920,6 +920,19 @@ rollouts, and rollout steps per second. If no specialized route is selected or
 the paired outcomes regress, diagnose the decision records before widening the
 panel or collecting trajectories. Preserve seeds `1975-2274` untouched.
 
+The control arm exposed a public-state lifecycle defect on seed `2277` and
+published no report. Retire the entire observed block `2275-2286`. The terminal
+play lost while Amber Acorn was still the current enabled Boss, so Jackdaw
+correctly retained face-down anonymous Joker slots but `PublicObservation`
+admitted them only during `SELECTING_HAND` and rejected the `GAME_OVER` state.
+Repair the contract narrowly: anonymous slots remain valid during terminal game
+over only when every Joker is anonymous and the current enabled Boss is Amber
+Acorn. Keep non-Amber, disabled, mixed, and nonterminal out-of-hand states fail
+closed. Add adapter/public-codec and organic Jackdaw loss-transition regression
+coverage, run the full suite, commit the repair, then preregister a disjoint
+replacement behavior screen; do not infer route performance from the 11 surfaced
+control outcomes.
+
 The retired v11 design remains a pre-win/early-Endless continuation increment,
 not the complete high-score policy. Its useful continuation machinery is retained
 inside the broader program above, while its collection protocol remains retired.

@@ -4063,3 +4063,22 @@ Verification after the corrected adversarial review: 922 repository tests and
 Ruff pass, `git diff --check` is clean, and the focused route/search/model suite
 passes 155 tests. The independent review found all seven earlier blockers
 resolved and no remaining fairness, identity, or schema blocker.
+
+### Terminal Amber firewall lifecycle repair (2026-09-05)
+
+The preregistered v15 behavior-screen control on development seeds `2275-2286`
+published no report. Eleven run completions surfaced before seed `2277` lost its
+last hand to an enabled current Amber Acorn and public projection rejected the
+terminal observation. The seed block is retired and none of those outcomes is
+used as route-performance evidence.
+
+The simulator state was correct: on an Amber loss, the Boss remains current and
+the Joker row remains face down beneath the game-over overlay. The public
+validator was too narrow because it allowed anonymous Joker slots only during
+`SELECTING_HAND`. It now admits them during `GAME_OVER` under the same strict
+conditions: current enabled Amber and every Joker anonymous. Disabled, defeated,
+non-Amber, mixed, and nonterminal out-of-hand states still fail closed. A real
+Jackdaw select/blind/play loss transition reproduces and covers the case without
+revealing the Joker identity. Verification: 928 repository tests and Ruff pass;
+the focused firewall/codec/Jackdaw suite passes 137 tests and `git diff --check`
+is clean.

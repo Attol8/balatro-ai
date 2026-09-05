@@ -625,6 +625,41 @@ def test_bridge_normalization_redacts_amber_jokers_before_public_projection() ->
     assert observation.jokers == (HiddenJokerSlot(), HiddenJokerSlot())
 
 
+def test_candidate_amber_loss_keeps_terminal_jokers_anonymous() -> None:
+    pytest.importorskip("jackdaw")
+    from jackdaw.engine.card_factory import create_joker
+
+    backend = jackdaw.JackdawBackend()
+    try:
+        backend.reset(RunSpec("RED", "WHITE", "91001"))
+        game_state = backend._backend._gs
+        game_state["jokers"].append(create_joker("j_joker"))
+        game_state["blind_on_deck"] = "Boss"
+        game_state["round_resets"]["blind_choices"]["Boss"] = "bl_final_acorn"
+        game_state["round_resets"]["blind_states"].update(
+            Small="Defeated", Big="Defeated", Boss="Select"
+        )
+        backend._current = backend._observation(
+            backend._backend.handle("gamestate", {})
+        )
+
+        selected = backend.step(SelectBlind())
+        assert selected.status == "accepted"
+        assert backend.current_public is not None
+        assert backend.current_public.jokers == (HiddenJokerSlot(),)
+
+        game_state["current_round"]["hands_left"] = 1
+        lost = backend.step(PlayCards((HandSlot(0),)))
+
+        assert lost.status == "accepted"
+        assert backend.current_public is not None
+        assert backend.current_public.phase.value == "GAME_OVER"
+        assert backend.current_public.jokers == (HiddenJokerSlot(),)
+        assert "j_joker" not in backend.current_public.canonical_json()
+    finally:
+        backend.close()
+
+
 def test_bridge_normalization_exposes_cerulean_forced_slot_from_empty_card_state() -> (
     None
 ):
