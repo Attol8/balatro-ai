@@ -952,6 +952,12 @@ forced-selection rule must not persist. Add a regression from a genuine
 Cerulean-before-play / Round Eval / cash-out history, verify the full suite, and
 commit before preregistering another disjoint screen.
 
+Before consuming a third fresh block, replay retired seed `2288` once from the
+repair commit with the identical ordinary-root control settings and one worker,
+publishing only a post-fix diagnostic under `runs/experiments/elite-route-screen/`.
+Ignore its outcome; require a complete trajectory with no forced-slot policy
+error. Only that causal replay authorizes a new disjoint paired screen.
+
 The retired v11 design remains a pre-win/early-Endless continuation increment,
 not the complete high-score policy. Its useful continuation machinery is retained
 inside the broader program above, while its collection protocol remains retired.
