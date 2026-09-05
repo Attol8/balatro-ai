@@ -3,7 +3,9 @@ from __future__ import annotations
 from dataclasses import replace
 
 import pytest
+from state_factory import hidden_joker_slot, state
 
+from balatro_ai_v2 import public_scoring
 from balatro_ai_v2.actions import HandSlot
 from balatro_ai_v2.balatrobot.adapter import to_public_observation
 from balatro_ai_v2.public_scoring import score_play
@@ -13,7 +15,6 @@ from balatro_ai_v2.public_state import (
     PublicJokerRuntime,
     VisiblePlayingCard,
 )
-from state_factory import hidden_joker_slot, state
 
 
 def test_exact_score_is_unavailable_for_amber_joker_order() -> None:
@@ -115,3 +116,51 @@ def test_one_play_runtime_jokers_use_the_public_current_counter(
     )
 
     assert score == expected
+
+
+def test_prepared_passes_filter_irrelevant_jokers_without_copying_bloodstone() -> None:
+    observation = replace(
+        to_public_observation(state("SELECTING_HAND")),
+        jokers=(
+            PublicItem("j_photograph", "Photograph", "JOKER"),
+            PublicItem("j_brainstorm", "Brainstorm", "JOKER"),
+            PublicItem("j_joker", "Joker", "JOKER"),
+            PublicItem("j_bloodstone", "Bloodstone", "JOKER"),
+            PublicItem("j_blueprint", "Blueprint", "JOKER"),
+            PublicItem("j_bloodstone", "Bloodstone", "JOKER"),
+        ),
+    )
+
+    context = public_scoring._prepare_score_context(observation)
+
+    assert tuple(joker.key for joker in context.played_individual_jokers) == (
+        "j_photograph",
+        "j_photograph",
+        "j_bloodstone",
+        "j_bloodstone",
+    )
+    assert context.played_retrigger_jokers == ()
+    assert context.held_individual_jokers == ()
+    assert context.held_retrigger_jokers == ()
+
+
+def test_played_addition_and_xmult_keep_source_joker_order() -> None:
+    base = replace(
+        to_public_observation(state("SELECTING_HAND")),
+        hand=(VisiblePlayingCard("A", "H"),),
+        hand_stats=(HandStat("High Card", 1, 5, 1, 0, 0),),
+    )
+    lusty = PublicItem("j_lusty_joker", "Lusty Joker", "JOKER")
+    bloodstone = PublicItem("j_bloodstone", "Bloodstone", "JOKER")
+
+    add_then_multiply, _ = score_play(
+        replace(base, jokers=(lusty, bloodstone)),
+        (HandSlot(0),),
+    )
+    multiply_then_add, _ = score_play(
+        replace(base, jokers=(bloodstone, lusty)),
+        (HandSlot(0),),
+    )
+
+    assert add_then_multiply == 80
+    assert multiply_then_add == 68

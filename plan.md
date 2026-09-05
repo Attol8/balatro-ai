@@ -1489,6 +1489,43 @@ default-disabled report shape. Focused tests pass 98/98 and the full suite
 passes 1,116 tests. Commit this observational slice before producing a clean
 seed-2387 profile.
 
+Profile replan: the evaluator correctly forbids current source from reusing
+the frozen route-teacher seeds 2311--2410 without their exact preregistered
+implementation, so seed 2387 cannot be run under the new profiler and no guard
+will be bypassed. Reserve fresh nonprotected development seeds 2431--2440 for
+one clean timing-enabled screen at the same v17 search and terminal-teacher
+budgets. Use its widest natural Arcana anchor and aggregate buckets for the
+optimization decision. The prior 367-root record remains corpus-shape evidence,
+not a matched runtime baseline. After choosing one optimization, compare
+timing-disabled and timing-enabled final-code runs on the same newly observed
+seed and require exact equality of all non-timing fields.
+
+Fresh profile result: commit `da9cd9d` completed all ten seeds 2431--2440 with
+zero rejected/censored rollouts and 657,046 total rollout steps. The widest
+current anchor is seed 2439's Ante-4 Arcana pack: 186 roots, 372 evaluations,
+19,599 steps, and 156.23 seconds under six-worker contention. Across 82
+terminal anchors, continuation choice consumed 512.40 of 640.17 seconds
+(80.0%); later non-play/play engine steps consumed 80.24/41.02 seconds;
+root steps 2.72, clone 1.57, sample/freeze 0.75, and close 0.15. Actual GC
+consumed 85.63 seconds across 212,480 collections, overlapping those stages.
+Clone/root-shell work is not eligible for optimization.
+
+Scorer optimization design: `_effective_jokers_for_pass` currently retains
+every ordinary active Joker even for played-card, retrigger, and held-card
+passes where its key cannot act. Give those prepared passes an explicit effect
+set while retaining their narrower copyable set: played-individual is the
+existing copyable keys plus ordinary non-copyable Bloodstone; the other three
+effect sets equal their existing copyable keys. Preserve source slot order and
+the current Blueprint/Brainstorm resolution exactly. Within each played-card
+slot, call additive card effects only for their exact keys and x-mult effects
+only for Photograph/Ancient/Triboulet/Bloodstone; apply additions before
+multiplication and skip only literal `+0` and `*1`. Do not touch main-pass
+edition/Baseball semantics or broad Fraction arithmetic. Add regressions for
+irrelevant filtering, allowed copies, non-copyable Bloodstone, Joker ordering,
+and exact supported scores. Retain only if seed 2439 reproduces every non-timing
+field and improves single-worker anchor/runtime throughput by at least 5%
+without higher peak RSS; otherwise revert the slice.
+
 ## Active development loop
 
 The two disjoint 30-seed screens are enough to retain one-ante strategic

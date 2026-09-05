@@ -24,7 +24,6 @@ from balatro_ai_v2.public_state import (
     VisiblePlayingCard,
 )
 
-
 _RANK_CHIPS = {
     "A": 11,
     "K": 10,
@@ -84,6 +83,8 @@ _SUIT_MULT_JOKERS = {
 }
 _FACE_RANKS = {"J", "Q", "K"}
 _FIBONACCI_RANKS = {"A", "2", "3", "5", "8"}
+_THREE_HALVES = Fraction(3, 2)
+_FIVE_FOURTHS = Fraction(5, 4)
 _COPY_JOKERS = frozenset({"j_blueprint", "j_brainstorm"})
 _COPY_MAIN_JOKERS = frozenset(
     {
@@ -108,7 +109,7 @@ _COPY_MAIN_JOKERS = frozenset(
     | frozenset(_TYPE_CHIP_JOKERS)
     | frozenset(_TYPE_XMULT_JOKERS)
 )
-_COPY_PLAYED_INDIVIDUAL_JOKERS = frozenset(
+_PLAYED_INDIVIDUAL_ADDITIVE_JOKERS = frozenset(
     {
         "j_fibonacci",
         "j_even_steven",
@@ -119,11 +120,17 @@ _COPY_PLAYED_INDIVIDUAL_JOKERS = frozenset(
         "j_walkie_talkie",
         "j_arrowhead",
         "j_onyx_agate",
-        "j_photograph",
-        "j_ancient",
-        "j_triboulet",
     }
     | frozenset(_SUIT_MULT_JOKERS)
+)
+_PLAYED_INDIVIDUAL_XMULT_JOKERS = frozenset(
+    {"j_photograph", "j_ancient", "j_triboulet", "j_bloodstone"}
+)
+_PLAYED_INDIVIDUAL_EFFECT_JOKERS = (
+    _PLAYED_INDIVIDUAL_ADDITIVE_JOKERS | _PLAYED_INDIVIDUAL_XMULT_JOKERS
+)
+_COPY_PLAYED_INDIVIDUAL_JOKERS = (
+    _PLAYED_INDIVIDUAL_EFFECT_JOKERS - {"j_bloodstone"}
 )
 _COPY_PLAYED_RETRIGGER_JOKERS = frozenset(
     {"j_hack", "j_sock_and_buskin", "j_hanging_chad", "j_dusk", "j_selzer"}
@@ -166,6 +173,7 @@ def _prepare_score_context(observation: PublicObservation) -> _PreparedScoreCont
         played_individual_jokers=_effective_jokers_for_pass(
             observation.jokers,
             _COPY_PLAYED_INDIVIDUAL_JOKERS,
+            _PLAYED_INDIVIDUAL_EFFECT_JOKERS,
         ),
         played_retrigger_jokers=_effective_jokers_for_pass(
             observation.jokers,
@@ -265,21 +273,27 @@ def _score_play_prepared(
             if card.edition in {"HOLO", "HOLOGRAPHIC"} and not card.debuffed:
                 mult += 10
             if card.edition == "POLYCHROME" and not card.debuffed:
-                mult *= Fraction(3, 2)
+                mult *= _THREE_HALVES
             for joker in context.played_individual_jokers:
-                repeat_chips, repeat_mult = _card_joker_effect(
-                    joker.key,
-                    (card,),
-                    context.active_keys,
-                )
-                chips += repeat_chips
-                mult += repeat_mult
-                mult *= _individual_joker_card_xmult(
-                    observation,
-                    card,
-                    joker.key,
-                    first_face=index == first_face_index,
-                )
+                if joker.key in _PLAYED_INDIVIDUAL_ADDITIVE_JOKERS:
+                    repeat_chips, repeat_mult = _card_joker_effect(
+                        joker.key,
+                        (card,),
+                        context.active_keys,
+                    )
+                    if repeat_chips:
+                        chips += repeat_chips
+                    if repeat_mult:
+                        mult += repeat_mult
+                if joker.key in _PLAYED_INDIVIDUAL_XMULT_JOKERS:
+                    repeat_xmult = _individual_joker_card_xmult(
+                        observation,
+                        card,
+                        joker.key,
+                        first_face=index == first_face_index,
+                    )
+                    if repeat_xmult != 1:
+                        mult *= repeat_xmult
             hiker_bonus += 5 * context.hiker_count
     selected_slots = {slot.value for slot in selected}
     held = tuple(
@@ -312,14 +326,14 @@ def _score_play_prepared(
         )
         for _ in range(held_repeats):
             if card.enhancement == "STEEL":
-                mult *= Fraction(3, 2)
+                mult *= _THREE_HALVES
             for joker in context.held_individual_jokers:
                 if joker.key == "j_raised_fist" and index == lowest_held_index:
                     mult += 2 * _RANK_CHIPS.get(card.rank, 0)
                 elif joker.key == "j_shoot_the_moon" and card.rank == "Q":
                     mult += 13
                 elif joker.key == "j_baron" and card.rank == "K":
-                    mult *= Fraction(3, 2)
+                    mult *= _THREE_HALVES
 
     for source_joker, joker in zip(observation.jokers, context.main_jokers, strict=True):
         if joker is None:
@@ -349,9 +363,9 @@ def _score_play_prepared(
             except KeyError:
                 source_rarity = 0
             if source_rarity == 2:
-                mult *= Fraction(3, 2) ** context.baseball_count
+                mult *= _THREE_HALVES**context.baseball_count
         if source_joker.edition == "POLYCHROME":
-            mult *= Fraction(3, 2)
+            mult *= _THREE_HALVES
     if "v_observatory" in observation.used_vouchers:
         for consumable in observation.consumables:
             if (
@@ -359,7 +373,7 @@ def _score_play_prepared(
                 and consumable.kind.upper() == "PLANET"
                 and planet_hand(consumable.key) == hand_name
             ):
-                mult *= Fraction(3, 2)
+                mult *= _THREE_HALVES
     return chips * mult, hand_name
 
 
@@ -418,12 +432,15 @@ def _effective_joker_for_pass(
 def _effective_jokers_for_pass(
     jokers: tuple[JokerCard, ...],
     copyable_keys: frozenset[str],
+    effect_keys: frozenset[str] | None = None,
 ) -> tuple[PublicItem, ...]:
+    admitted_keys = copyable_keys if effect_keys is None else effect_keys
     return tuple(
         effective
         for index in range(len(jokers))
         if (effective := _effective_joker_for_pass(jokers, index, copyable_keys))
         is not None
+        and effective.key in admitted_keys
     )
 
 
@@ -472,19 +489,19 @@ def _individual_joker_card_xmult(
     joker_key: str,
     *,
     first_face: bool,
-) -> Fraction:
+) -> int | Fraction:
     if card.debuffed:
-        return Fraction(1)
-    multiplier = Fraction(1)
+        return 1
+    multiplier: int | Fraction = 1
     if joker_key == "j_photograph" and first_face:
         multiplier *= 2
     if joker_key == "j_ancient" and observation.round.ancient_suit == card.suit:
-        multiplier *= Fraction(3, 2)
+        multiplier *= _THREE_HALVES
     if joker_key == "j_triboulet" and card.rank in {"K", "Q"}:
         multiplier *= 2
     if joker_key == "j_bloodstone" and card.suit == "H":
         # The heuristic scores the public 1-in-2 trigger by its expectation.
-        multiplier *= Fraction(5, 4)
+        multiplier *= _FIVE_FOURTHS
     return multiplier
 
 
