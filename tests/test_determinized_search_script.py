@@ -9,11 +9,18 @@ from types import SimpleNamespace
 
 import pytest
 
+import balatro_ai_v2.determinized_search as search_module
 from balatro_ai_v2.actions import LeaveShop, RerollShop, iter_legal_actions
 from balatro_ai_v2.balatrobot.adapter import to_public_observation
-from balatro_ai_v2.determinized_search import SearchCounters, SearchDecision
-from balatro_ai_v2.strategy_engine import RunGoal, RunRoute
-from balatro_ai_v2.strategy_options import StrategyIntent
+from balatro_ai_v2.determinized_search import (
+    DeterminizedSearchPolicy,
+    RolloutOutcome,
+    SearchCounters,
+    SearchDecision,
+    SuccessTeacherBudget,
+)
+from balatro_ai_v2.strategy_engine import GoalUtility, RunGoal, RunRoute
+from balatro_ai_v2.strategy_options import StrategyCandidateRoot, StrategyIntent
 from balatro_ai_v2.strategy_teacher import (
     StrategyRolloutTarget,
     StrategyTargetEndpoint,
@@ -163,6 +170,8 @@ def test_complete_run_drafts_receive_opaque_groups_and_terminal_labels() -> None
         ),
         selected_index=0,
         baseline_index=0,
+        ordinary_index=0,
+        behavior_index=0,
         goal=RunGoal.VICTORY,
         teacher_config_digest="2" * 64,
     )
@@ -217,6 +226,220 @@ def test_rejected_rollout_discards_the_entire_teacher_panel() -> None:
     assert not records
     assert status == "discarded_rejected_panel"
     assert all("_teacher_drafts" not in row for row in rows)
+
+
+def _route_teacher_row(module) -> dict[str, object]:
+    observation = to_public_observation(state("SHOP", money=10))
+    samples = (
+        StrategyRolloutTarget(1, 1, 0, 4, 2, search_utility=1),
+        StrategyRolloutTarget(1, 1, 0, 5, 3, search_utility=2),
+    )
+    draft = StrategyTeacherDraft(
+        observation=observation,
+        candidates=(
+            StrategyTeacherCandidate(LeaveShop(), None, samples),
+            StrategyTeacherCandidate(
+                RerollShop(),
+                StrategyIntent.HELD_RETRIGGER_ENGINE,
+                samples,
+                route=RunRoute.HELD_RETRIGGER,
+            ),
+        ),
+        selected_index=1,
+        baseline_index=0,
+        ordinary_index=0,
+        behavior_index=1,
+        goal=RunGoal.VICTORY,
+        teacher_config_digest="2" * 64,
+        candidate_space_size=2,
+    )
+    ordinary = module._teacher_candidate_identity(draft.candidates[0])
+    specialist = module._teacher_candidate_identity(draft.candidates[1])
+    return {
+        "seed": 42,
+        "complete": True,
+        "won": False,
+        "antes_cleared": 4,
+        "best_hand_score": 100,
+        "search": {
+            "rejected_rollouts": 0,
+            "unavailable": 0,
+            "success_anchors_attempted": 1,
+            "success_anchors_completed": 1,
+            "success_anchor_fallbacks": 0,
+            "success_anchor_unavailable": 0,
+            "success_anchor_unsupported": 0,
+            "success_teacher_rejected_rollouts": 0,
+            "success_teacher_censored_rollouts": 0,
+            "strategy_specialist_unavailable": 0,
+        },
+        "search_failure_reasons": {},
+        "success_teacher_decisions": [
+            {
+                "phase": observation.phase.value,
+                "ante": observation.ante,
+                "goal": RunGoal.VICTORY.value,
+                "roots": 2,
+                "initial_samples": 2,
+                "max_samples_used": 2,
+                "sample_evaluations": 4,
+                "ordinary_index": 0,
+                "behavior_index": 1,
+                "teacher_selected_index": 1,
+                "executed_index": 1,
+                "ordinary": ordinary,
+                "behavior": specialist,
+                "teacher_selected": specialist,
+                "executed": specialist,
+                "fallback_reason": None,
+                "affects_actions": False,
+                "unavailable": False,
+                "unsupported": False,
+                "identity_override": False,
+                "rejected_rollouts": 0,
+                "censored_rollouts": 0,
+            }
+        ],
+        "_teacher_drafts": (draft,),
+    }
+
+
+def test_route_teacher_finalizer_authenticates_action_inert_report() -> None:
+    module = _load_script()
+    rows = [_route_teacher_row(module)]
+
+    records, status = module._finalize_teacher_records(
+        rows,
+        enabled=True,
+        origin_key=b"k" * 32,
+        mode="route_terminal_paired_utility",
+    )
+
+    assert status == "written"
+    assert len(records) == 1
+    assert records[0].ordinary_index == records[0].baseline_index == 0
+    assert records[0].behavior_index == records[0].selected_index == 1
+    expected_group = hmac.new(b"k" * 32, b"42", hashlib.sha256).hexdigest()[:32]
+    assert records[0].run_group == f"origin-{expected_group}"
+    assert "_teacher_drafts" not in rows[0]
+
+
+def test_route_teacher_finalizer_accepts_collector_emitted_draft(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_script()
+
+    class Sample:
+        def close(self) -> None:
+            pass
+
+    class Frozen:
+        def clone(self):
+            return SimpleNamespace(close=lambda: None)
+
+    monkeypatch.setattr(search_module, "sample_candidate", lambda *args: Sample())
+    monkeypatch.setattr(search_module, "freeze_backend", lambda sample: Frozen())
+    monkeypatch.setattr(
+        search_module, "_teacher_config_digest", lambda policy: "1" * 64
+    )
+
+    def rollout(self, clone, observation, history, root, **kwargs):
+        del self, clone, observation, history, root
+        won = kwargs.get("route") == RunRoute.HELD_RETRIGGER
+        return RolloutOutcome(
+            value=float(won),
+            steps=1,
+            rejected=False,
+            goal_utility=GoalUtility(float(won), 1, 1),
+            endpoint=(
+                StrategyTargetEndpoint.VICTORY
+                if won
+                else StrategyTargetEndpoint.DEATH
+            ),
+        )
+
+    monkeypatch.setattr(DeterminizedSearchPolicy, "_rollout", rollout)
+    observation = to_public_observation(state("SHOP", money=10))
+    roots = (
+        StrategyCandidateRoot(LeaveShop(), None),
+        StrategyCandidateRoot(
+            RerollShop(),
+            StrategyIntent.HELD_RETRIGGER_ENGINE,
+            route=RunRoute.HELD_RETRIGGER,
+        ),
+    )
+    policy = DeterminizedSearchPolicy(
+        backend=None,  # type: ignore[arg-type]
+        continuation=None,  # type: ignore[arg-type]
+        success_teacher=SuccessTeacherBudget(samples=2),
+    )
+    assert (
+        policy._collect_success_teacher(  # noqa: SLF001
+            observation,
+            (),
+            roots,
+            behavior_index=1,
+            ordinary_index=0,
+            intent_aware=True,
+            engine_goal=RunGoal.VICTORY,
+        )
+        == 1
+    )
+    assert policy.teacher_drafts[0].candidate_space_size == len(roots)
+    row = {
+        "seed": 43,
+        "complete": True,
+        "won": False,
+        "antes_cleared": 4,
+        "best_hand_score": 100,
+        "search": policy.counters.as_dict(),
+        "search_failure_reasons": {},
+        "success_teacher_decisions": [
+            decision.as_dict() for decision in policy.success_decisions
+        ],
+        "_teacher_drafts": tuple(policy.teacher_drafts),
+    }
+
+    records, status = module._finalize_teacher_records(
+        [row],
+        enabled=True,
+        origin_key=b"k" * 32,
+        mode="route_terminal_paired_utility",
+    )
+
+    assert status == "written"
+    assert len(records) == 1
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("ordinary", {"action": {"type": "reroll_shop"}, "intent": None, "route": None}),
+        ("executed_index", 0),
+        ("affects_actions", True),
+        ("identity_override", True),
+    ],
+)
+def test_route_teacher_finalizer_rejects_tampered_report(
+    field: str,
+    value: object,
+) -> None:
+    module = _load_script()
+    rows = [_route_teacher_row(module)]
+    decisions = rows[0]["success_teacher_decisions"]
+    assert isinstance(decisions, list) and isinstance(decisions[0], dict)
+    decisions[0][field] = value
+
+    records, status = module._finalize_teacher_records(
+        rows,
+        enabled=True,
+        origin_key=b"k" * 32,
+        mode="route_terminal_paired_utility",
+    )
+
+    assert not records
+    assert status == "discarded_invalid_route_teacher_panel"
+    assert "_teacher_drafts" not in rows[0]
 
 
 def test_shadow_diagnostics_derive_action_agreement_from_current_schema(
@@ -356,11 +579,12 @@ def test_success_teacher_coverage_requires_distinct_winning_groups() -> None:
                 LeaveShop(),
                 None,
                 (StrategyRolloutTarget(1, 0, None, None, None),),
-                route=RunRoute.VICTORY,
             ),
         ),
         selected_index=0,
         baseline_index=0,
+        ordinary_index=0,
+        behavior_index=0,
         goal=RunGoal.VICTORY,
         teacher_config_digest="2" * 64,
     )
@@ -382,7 +606,7 @@ def test_success_teacher_coverage_requires_distinct_winning_groups() -> None:
     assert coverage["winning_source_groups"] == 5
     assert coverage["losing_source_groups"] == 5
     assert not coverage["training_coverage_passed"]
-    assert coverage["dense_paired_utility"]["route_roots"] == {"victory": 10}
+    assert coverage["dense_paired_utility"]["route_roots"] == {"none": 10}
     assert coverage["dense_paired_utility"]["route_diverse_rows"] == 0
 
 
@@ -433,6 +657,8 @@ def test_route_terminal_coverage_matches_seed2309_style_paired_residuals() -> No
         ),
         selected_index=0,
         baseline_index=0,
+        ordinary_index=0,
+        behavior_index=0,
         goal=RunGoal.VICTORY,
         teacher_config_digest="4" * 64,
         candidate_space_size=5,
@@ -529,6 +755,8 @@ def test_route_terminal_coverage_all_null_routes_have_zero_support() -> None:
         ),
         selected_index=0,
         baseline_index=0,
+        ordinary_index=0,
+        behavior_index=0,
         goal=RunGoal.VICTORY,
         teacher_config_digest="5" * 64,
     ).finalize(
@@ -910,6 +1138,8 @@ def test_contextual_first_100_gate_requires_two_clean_passing_reports(tmp_path) 
                 ),
                 selected_index=1,
                 baseline_index=0,
+                ordinary_index=0,
+                behavior_index=1,
                 goal=RunGoal.VICTORY,
                 teacher_config_digest="3" * 64,
                 candidate_space_size=len(actions),
@@ -1068,6 +1298,8 @@ def test_contextual_bundle_publishes_teacher_and_report_together(
         ),
         selected_index=0,
         baseline_index=0,
+        ordinary_index=0,
+        behavior_index=0,
         goal=RunGoal.VICTORY,
         teacher_config_digest="2" * 64,
     ).finalize(

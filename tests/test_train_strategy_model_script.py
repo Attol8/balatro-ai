@@ -41,7 +41,7 @@ def _record(index: int):
         candidates=(
             StrategyTeacherCandidate(
                 LeaveShop(),
-                StrategyIntent.STABILIZE,
+                None,
                 (StrategyRolloutTarget(0, 0, 0, observation.antes_cleared, 1),),
             ),
             StrategyTeacherCandidate(
@@ -52,6 +52,8 @@ def _record(index: int):
         ),
         selected_index=index % 2,
         baseline_index=0,
+        ordinary_index=0,
+        behavior_index=index % 2,
         goal=goal,
         teacher_config_digest="3" * 64,
     )

@@ -80,6 +80,8 @@ def _record(seed: int, key: bytes):
         candidates=candidates,
         selected_index=selected_index,
         baseline_index=baseline_index,
+        ordinary_index=baseline_index,
+        behavior_index=selected_index,
         goal=RunGoal.VICTORY,
         teacher_config_digest="3" * 64,
         candidate_space_size=len(candidates),

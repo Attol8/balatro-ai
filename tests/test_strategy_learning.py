@@ -40,7 +40,7 @@ def _record(group: int, *, selected: int = 1, endless: bool = False):
         candidates=(
             StrategyTeacherCandidate(
                 LeaveShop(),
-                StrategyIntent.STABILIZE,
+                None,
                 (StrategyRolloutTarget(0, 0, 0, observation.antes_cleared, 1),),
             ),
             StrategyTeacherCandidate(
@@ -59,6 +59,8 @@ def _record(group: int, *, selected: int = 1, endless: bool = False):
         ),
         selected_index=selected,
         baseline_index=0,
+        ordinary_index=0,
+        behavior_index=selected,
         goal=goal,
         teacher_config_digest="1" * 64,
     )
@@ -115,6 +117,20 @@ def test_complete_runs_are_split_atomically_and_deterministically() -> None:
         len(first.manifest()[key]) == 64
         for key in ("train_digest", "calibration_digest", "holdout_digest")
     )
+
+
+def test_behavior_index_is_provenance_only_for_training_targets() -> None:
+    record = _record(1, selected=1)
+    changed_behavior = replace(record, behavior_index=0)
+    model = _model()
+
+    original_loss, original_metrics = strategy_training_loss(model, (record,))
+    changed_loss, changed_metrics = strategy_training_loss(
+        model, (changed_behavior,)
+    )
+
+    assert torch.equal(original_loss, changed_loss)
+    assert original_metrics == changed_metrics
 
 
 def test_training_loss_is_finite_and_masks_endless_heads() -> None:

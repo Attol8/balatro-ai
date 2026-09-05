@@ -62,6 +62,7 @@ from balatro_ai_v2.strategy_options import (
     build_strategy_candidates,
 )
 from balatro_ai_v2.strategy_teacher import (
+    STRATEGY_TEACHER_SCHEMA_VERSION,
     StrategyRolloutTarget,
     StrategyTargetEndpoint,
     StrategyTeacherCandidate,
@@ -278,9 +279,13 @@ class SuccessTeacherDecision:
     action_kind_counts: tuple[tuple[str, int], ...]
     intent_counts: tuple[tuple[str, int], ...]
     route_counts: tuple[tuple[str, int], ...]
+    ordinary_index: int
     behavior_index: int
     teacher_selected_index: int
     executed_index: int
+    ordinary_action: PublicAction
+    ordinary_intent: StrategyIntent | None
+    ordinary_route: RunRoute | None
     behavior_action: PublicAction
     behavior_intent: StrategyIntent | None
     behavior_route: RunRoute | None
@@ -320,9 +325,19 @@ class SuccessTeacherDecision:
             "action_kind_counts": dict(self.action_kind_counts),
             "intent_counts": dict(self.intent_counts),
             "route_counts": dict(self.route_counts),
+            "ordinary_index": self.ordinary_index,
             "behavior_index": self.behavior_index,
             "teacher_selected_index": self.teacher_selected_index,
             "executed_index": self.executed_index,
+            "ordinary": {
+                "action": action_to_data(self.ordinary_action),
+                "intent": self.ordinary_intent.value
+                if self.ordinary_intent is not None
+                else None,
+                "route": self.ordinary_route.value
+                if self.ordinary_route is not None
+                else None,
+            },
             "behavior": {
                 "action": action_to_data(self.behavior_action),
                 "intent": self.behavior_intent.value
@@ -709,6 +724,8 @@ class DeterminizedSearchPolicy:
                     ),
                     selected_index=teacher_indexes.index(selected_index),
                     baseline_index=teacher_indexes.index(baseline_index),
+                    ordinary_index=teacher_indexes.index(baseline_index),
+                    behavior_index=teacher_indexes.index(selected_index),
                     goal=engine.goal,
                     teacher_config_digest=_teacher_config_digest(self),
                     candidate_space_size=len(roots),
@@ -765,6 +782,11 @@ class DeterminizedSearchPolicy:
                     route_aware=route_aware,
                     engine=engine,
                 )
+                if candidates and candidates[0].route == RunRoute.VICTORY:
+                    candidates = (
+                        StrategyCandidateRoot(candidates[0].action, None),
+                        *candidates[1:],
+                    )
                 self.last_strategy_candidates = candidates
                 self.last_strategy_selected_index = 0
                 if len(candidates) > 1:
@@ -773,6 +795,7 @@ class DeterminizedSearchPolicy:
                         history,
                         candidates,
                         behavior_index=0,
+                        ordinary_index=0,
                         intent_aware=intent_aware,
                         engine_goal=engine.goal,
                     )
@@ -1171,6 +1194,8 @@ class DeterminizedSearchPolicy:
                     ),
                     selected_index=selected_index,
                     baseline_index=ordinary_index,
+                    ordinary_index=ordinary_index,
+                    behavior_index=selected_index,
                     goal=engine.goal,
                     teacher_config_digest=_teacher_config_digest(self),
                 )
@@ -1250,6 +1275,7 @@ class DeterminizedSearchPolicy:
                 history,
                 tuple(roots),
                 behavior_index=selected_index,
+                ordinary_index=ordinary_index,
                 intent_aware=intent_aware,
                 engine_goal=engine.goal,
                 execution_admissible=tuple(
@@ -1356,9 +1382,13 @@ class DeterminizedSearchPolicy:
             action_kind_counts=((action_kind, 1),),
             intent_counts=((root.intent.value if root.intent else "none", 1),),
             route_counts=((root.route.value if root.route else "none", 1),),
+            ordinary_index=0,
             behavior_index=0,
             teacher_selected_index=0,
             executed_index=0,
+            ordinary_action=root.action,
+            ordinary_intent=root.intent,
+            ordinary_route=root.route,
             behavior_action=root.action,
             behavior_intent=root.intent,
             behavior_route=root.route,
@@ -1404,6 +1434,7 @@ class DeterminizedSearchPolicy:
         roots: Sequence[StrategyCandidateRoot],
         *,
         behavior_index: int,
+        ordinary_index: int,
         intent_aware: bool,
         engine_goal: RunGoal,
         execution_admissible: Sequence[bool] | None = None,
@@ -1413,6 +1444,9 @@ class DeterminizedSearchPolicy:
         budget = self.success_teacher
         if budget is None:  # pragma: no cover - caller guard
             return behavior_index
+        reference_index = ordinary_index
+        if not 0 <= reference_index < len(roots):
+            raise ValueError("success teacher ordinary index is out of range")
         teacher_started = time.perf_counter()
         outcomes: list[list[RolloutOutcome]] = [[] for _ in roots]
         root_steps = [0 for _ in roots]
@@ -1457,6 +1491,7 @@ class DeterminizedSearchPolicy:
             if action_budget is not None and fallback_reason is not None:
                 self.counters.success_anchor_fallbacks += 1
             behavior_root = roots[behavior_index]
+            ordinary_root = roots[reference_index]
             teacher_root = roots[teacher_index]
             executed_root = roots[executed_index]
             if action_budget is not None and executed_index != behavior_index:
@@ -1489,9 +1524,13 @@ class DeterminizedSearchPolicy:
                 action_kind_counts=tuple(sorted(action_kind_counts.items())),
                 intent_counts=tuple(sorted(intent_counts.items())),
                 route_counts=tuple(sorted(route_counts.items())),
+                ordinary_index=reference_index,
                 behavior_index=behavior_index,
                 teacher_selected_index=teacher_index,
                 executed_index=executed_index,
+                ordinary_action=ordinary_root.action,
+                ordinary_intent=ordinary_root.intent,
+                ordinary_route=ordinary_root.route,
                 behavior_action=behavior_root.action,
                 behavior_intent=behavior_root.intent,
                 behavior_route=behavior_root.route,
@@ -1621,7 +1660,7 @@ class DeterminizedSearchPolicy:
         if action_budget is None:
             selected_index = _select_goal_root(
                 typed_utilities,
-                baseline_index=behavior_index,
+                baseline_index=reference_index,
                 goal=engine_goal,
                 override_z=self.budget.override_z,
             )
@@ -1659,9 +1698,12 @@ class DeterminizedSearchPolicy:
                         for root, row in zip(roots, outcomes, strict=True)
                     ),
                     selected_index=selected_index,
-                    baseline_index=behavior_index,
+                    baseline_index=reference_index,
+                    ordinary_index=reference_index,
+                    behavior_index=behavior_index,
                     goal=engine_goal,
                     teacher_config_digest=_teacher_config_digest(self),
+                    candidate_space_size=len(roots),
                 )
             )
             return finish(
@@ -2424,6 +2466,7 @@ def _teacher_config_digest(policy: DeterminizedSearchPolicy) -> str:
     )
     payload = {
         "search_version": SEARCH_VERSION,
+        "teacher_schema_version": STRATEGY_TEACHER_SCHEMA_VERSION,
         "budget": policy.budget.canonical(),
         "nonce": policy.nonce,
         "strategy_options": policy.enable_strategy_options,

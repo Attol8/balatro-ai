@@ -1141,8 +1141,19 @@ also compares against `ordinary_index`. `behavior_index` records the root that
 generated the factual trajectory and does not label sibling outcomes. A
 route-terminal record is valid only when the accompanying success decision proves
 `executed_index == behavior_index` and `affects_actions=false`. Schema-10 records
-remain readable only as their historical non-route type and cannot enter the new
-protocol.
+remain frozen diagnostic evidence and the active reader rejects them; they cannot
+enter the new protocol.
+
+Collection/report checkpoint: schema 11 and the action-inert route finalizer are
+implemented locally. Every draft now carries mandatory ordinary, behavior, and
+teacher-selected indexes; the ordinary root must have null intent and route. The
+success-decision report carries all four root identities, and publication rejects
+the whole panel unless counters, sample cardinality, uncensored endpoints,
+complete candidate space, exact triples, `executed == behavior`, and action
+inertness agree. The schema number is part of the teacher configuration digest.
+An end-to-end test authenticates a real collector-emitted draft. This is not yet
+a collection authorization: the distinct preregistration, merger, and numerical
+route-support gates in steps 2-3 remain next.
 
 The retired v11 design remains a pre-win/early-Endless continuation increment,
 not the complete high-score policy. Its useful continuation machinery is retained

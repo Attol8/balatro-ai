@@ -34,7 +34,7 @@ from balatro_ai_v2.strategy_engine import RunGoal, RunRoute, derive_engine_state
 from balatro_ai_v2.strategy_options import StrategyIntent
 
 
-STRATEGY_TEACHER_SCHEMA_VERSION = 10
+STRATEGY_TEACHER_SCHEMA_VERSION = 11
 _RUN_GROUP = re.compile(r"origin-[0-9a-f]{32}")
 _SHA256 = re.compile(r"[0-9a-f]{64}")
 
@@ -106,6 +106,8 @@ class StrategyTeacherDraft:
     candidates: tuple[StrategyTeacherCandidate, ...]
     selected_index: int
     baseline_index: int
+    ordinary_index: int
+    behavior_index: int
     goal: RunGoal
     teacher_config_digest: str
     context: PublicStrategyContext = PublicStrategyContext()
@@ -124,6 +126,8 @@ class StrategyTeacherDraft:
             self.candidates,
             self.selected_index,
             self.baseline_index,
+            self.ordinary_index,
+            self.behavior_index,
             self.goal,
         )
         _validate_digest(self.teacher_config_digest)
@@ -151,6 +155,8 @@ class StrategyTeacherDraft:
             candidates=self.candidates,
             selected_index=self.selected_index,
             baseline_index=self.baseline_index,
+            ordinary_index=self.ordinary_index,
+            behavior_index=self.behavior_index,
             goal=self.goal,
             teacher_config_digest=self.teacher_config_digest,
             context=self.context,
@@ -169,6 +175,8 @@ class StrategyTeacherRecord:
     candidates: tuple[StrategyTeacherCandidate, ...]
     selected_index: int
     baseline_index: int
+    ordinary_index: int
+    behavior_index: int
     goal: RunGoal
     teacher_config_digest: str
     run_won: bool
@@ -193,6 +201,8 @@ class StrategyTeacherRecord:
             self.candidates,
             self.selected_index,
             self.baseline_index,
+            self.ordinary_index,
+            self.behavior_index,
             self.goal,
         )
         _validate_digest(self.teacher_config_digest)
@@ -249,6 +259,8 @@ def teacher_record_to_data(record: StrategyTeacherRecord) -> dict[str, object]:
         ],
         "selected_index": record.selected_index,
         "baseline_index": record.baseline_index,
+        "ordinary_index": record.ordinary_index,
+        "behavior_index": record.behavior_index,
         "goal": record.goal.value,
         "teacher_config_digest": record.teacher_config_digest,
         "run_outcome": {
@@ -270,6 +282,8 @@ def teacher_record_from_data(data: object) -> StrategyTeacherRecord:
         "candidates",
         "selected_index",
         "baseline_index",
+        "ordinary_index",
+        "behavior_index",
         "goal",
         "teacher_config_digest",
         "run_outcome",
@@ -278,6 +292,16 @@ def teacher_record_from_data(data: object) -> StrategyTeacherRecord:
         raise ValueError("strategy teacher record has invalid fields")
     if data["schema_version"] != STRATEGY_TEACHER_SCHEMA_VERSION:
         raise ValueError("strategy teacher schema version is unsupported")
+    for name in (
+        "decision_index",
+        "candidate_space_size",
+        "selected_index",
+        "baseline_index",
+        "ordinary_index",
+        "behavior_index",
+    ):
+        if isinstance(data[name], bool) or not isinstance(data[name], int):
+            raise ValueError(f"strategy teacher {name} must be an integer")
     raw_candidates = data["candidates"]
     if not isinstance(raw_candidates, list):
         raise ValueError("strategy teacher candidates must be an array")
@@ -402,6 +426,8 @@ def teacher_record_from_data(data: object) -> StrategyTeacherRecord:
             candidates=tuple(candidates),
             selected_index=int(data["selected_index"]),
             baseline_index=int(data["baseline_index"]),
+            ordinary_index=int(data["ordinary_index"]),
+            behavior_index=int(data["behavior_index"]),
             goal=goal,
             teacher_config_digest=str(data["teacher_config_digest"]),
             run_won=outcome["won"],
@@ -510,14 +536,25 @@ def _validate_decision(
     candidates: tuple[StrategyTeacherCandidate, ...],
     selected_index: int,
     baseline_index: int,
+    ordinary_index: int,
+    behavior_index: int,
     goal: RunGoal,
 ) -> None:
     if not candidates:
         raise ValueError("strategy teacher decision needs candidates")
-    if not 0 <= selected_index < len(candidates) or not 0 <= baseline_index < len(
-        candidates
+    indexes = (selected_index, baseline_index, ordinary_index, behavior_index)
+    if any(
+        isinstance(index, bool)
+        or not isinstance(index, int)
+        or not 0 <= index < len(candidates)
+        for index in indexes
     ):
         raise ValueError("strategy teacher candidate index is out of range")
+    if baseline_index != ordinary_index:
+        raise ValueError("strategy teacher baseline must be the ordinary comparator")
+    ordinary = candidates[ordinary_index]
+    if ordinary.intent is not None or ordinary.route is not None:
+        raise ValueError("strategy teacher ordinary comparator must be unconditioned")
     if derive_engine_state(observation).goal != goal:
         raise ValueError("strategy teacher goal disagrees with public state")
     sample_counts = {len(candidate.samples) for candidate in candidates}

@@ -32,6 +32,7 @@ from balatro_ai_v2.actions import (
     ReorderConsumables,
     ReorderHand,
     ReorderJokers,
+    action_to_data,
     iter_legal_actions,
 )
 from balatro_ai_v2.balatrobot.runner import AuthorityRunner
@@ -69,6 +70,7 @@ from balatro_ai_v2.strategy_model import (
 )
 from balatro_ai_v2.strategy_shadow import ShadowStrategyPolicy
 from balatro_ai_v2.strategy_teacher import (
+    STRATEGY_TEACHER_SCHEMA_VERSION,
     StrategyTargetEndpoint,
     StrategyTeacherCandidate,
     StrategyTeacherDraft,
@@ -825,6 +827,7 @@ def _verify_contextual_freeze(
 
 def main() -> None:
     args = build_parser().parse_args()
+    teacher_mode = _teacher_dataset_mode(args)
     try:
         panel_validation = validate_seed_panel(
             args.seed_start, args.seeds, args.seed_provenance
@@ -1149,6 +1152,7 @@ def main() -> None:
             results,
             enabled=args.teacher_jsonl is not None,
             origin_key=origin_key,
+            mode=teacher_mode,
         )
         teacher_digest = (
             teacher_records_digest(teacher_records) if teacher_records else None
@@ -1329,7 +1333,8 @@ def main() -> None:
                 "groups": len({record.run_group for record in teacher_records}),
                 "contains_game_seeds": False,
                 "complete_runs_only": True,
-                "mode": _teacher_dataset_mode(args),
+                "mode": teacher_mode,
+                "schema_version": STRATEGY_TEACHER_SCHEMA_VERSION,
                 "teacher_config_digest": (
                     teacher_records[0].teacher_config_digest
                     if teacher_records
@@ -1807,6 +1812,7 @@ def _finalize_teacher_records(
     *,
     enabled: bool,
     origin_key: bytes | None = None,
+    mode: str = "legacy",
 ) -> tuple[tuple[StrategyTeacherRecord, ...], str]:
     """Attach public terminal labels only after every originating run completes."""
 
@@ -1830,10 +1836,22 @@ def _finalize_teacher_records(
         for row in results:
             row.pop("_teacher_drafts", None)
         return (), "discarded_unavailable_panel"
+    if mode not in {
+        "legacy",
+        "dense_paired_utility",
+        "route_terminal_paired_utility",
+    }:
+        raise ValueError("teacher dataset mode is unsupported")
     for row in results:
         drafts = row.get("_teacher_drafts", ())
         searched = int(row["search"].get("searched", -1))
-        if origin_key is not None and (
+        if mode == "route_terminal_paired_utility" and not _valid_route_teacher_row(
+            row, drafts
+        ):
+            for result in results:
+                result.pop("_teacher_drafts", None)
+            return (), "discarded_invalid_route_teacher_panel"
+        if origin_key is not None and mode == "dense_paired_utility" and (
             not isinstance(drafts, tuple)
             or not all(isinstance(draft, StrategyTeacherDraft) for draft in drafts)
             or searched != len(drafts)
@@ -1851,6 +1869,10 @@ def _finalize_teacher_records(
                 for draft in drafts
             )
         ):
+            for result in results:
+                result.pop("_teacher_drafts", None)
+            return (), "discarded_invalid_teacher_panel"
+        if origin_key is not None and mode == "legacy":
             for result in results:
                 result.pop("_teacher_drafts", None)
             return (), "discarded_invalid_teacher_panel"
@@ -1891,6 +1913,90 @@ def _finalize_teacher_records(
         return (), "discarded_no_eligible_decisions"
     secrets.SystemRandom().shuffle(records)
     return tuple(records), "written"
+
+
+def _valid_route_teacher_row(row: dict[str, object], drafts: object) -> bool:
+    """Authenticate one action-inert v16 route-terminal source run."""
+
+    search = row.get("search")
+    decisions = row.get("success_teacher_decisions")
+    if (
+        not isinstance(search, dict)
+        or not isinstance(drafts, tuple)
+        or not all(isinstance(draft, StrategyTeacherDraft) for draft in drafts)
+        or not isinstance(decisions, list)
+        or len(decisions) != len(drafts)
+        or search.get("success_anchors_attempted") != len(drafts)
+        or search.get("success_anchors_completed") != len(drafts)
+        or search.get("success_anchor_fallbacks") != 0
+        or search.get("success_anchor_unavailable") != 0
+        or search.get("success_anchor_unsupported") != 0
+        or search.get("success_teacher_rejected_rollouts") != 0
+        or search.get("success_teacher_censored_rollouts") != 0
+        or search.get("strategy_specialist_unavailable") != 0
+        or row.get("search_failure_reasons") != {}
+    ):
+        return False
+    for draft, decision in zip(drafts, decisions, strict=True):
+        if not isinstance(decision, dict):
+            return False
+        sample_count = len(draft.candidates[0].samples)
+        if (
+            draft.candidate_space_size != len(draft.candidates)
+            or draft.baseline_index != draft.ordinary_index
+            or draft.candidates[draft.ordinary_index].intent is not None
+            or draft.candidates[draft.ordinary_index].route is not None
+            or any(
+                candidate.route == RunRoute.VICTORY
+                or len(candidate.samples) != sample_count
+                or any(
+                    sample.endpoint == StrategyTargetEndpoint.CENSORED
+                    for sample in candidate.samples
+                )
+                for candidate in draft.candidates
+            )
+            or decision.get("phase") != draft.observation.phase.value
+            or decision.get("ante") != draft.observation.ante
+            or decision.get("goal") != draft.goal.value
+            or decision.get("roots") != len(draft.candidates)
+            or decision.get("initial_samples") != sample_count
+            or decision.get("max_samples_used") != sample_count
+            or decision.get("sample_evaluations")
+            != len(draft.candidates) * sample_count
+            or decision.get("ordinary_index") != draft.ordinary_index
+            or decision.get("behavior_index") != draft.behavior_index
+            or decision.get("teacher_selected_index") != draft.selected_index
+            or decision.get("executed_index") != draft.behavior_index
+            or decision.get("affects_actions") is not False
+            or decision.get("identity_override") is not False
+            or decision.get("fallback_reason") is not None
+            or decision.get("unavailable") is not False
+            or decision.get("unsupported") is not False
+            or decision.get("rejected_rollouts") != 0
+            or decision.get("censored_rollouts") != 0
+        ):
+            return False
+        for name, index in (
+            ("ordinary", draft.ordinary_index),
+            ("behavior", draft.behavior_index),
+            ("teacher_selected", draft.selected_index),
+            ("executed", draft.behavior_index),
+        ):
+            if decision.get(name) != _teacher_candidate_identity(
+                draft.candidates[index]
+            ):
+                return False
+    return True
+
+
+def _teacher_candidate_identity(
+    candidate: StrategyTeacherCandidate,
+) -> dict[str, object]:
+    return {
+        "action": action_to_data(candidate.action),
+        "intent": candidate.intent.value if candidate.intent is not None else None,
+        "route": candidate.route.value if candidate.route is not None else None,
+    }
 
 
 def _shadow_summary(results: list[dict[str, object]]) -> dict[str, object]:

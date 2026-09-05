@@ -5,7 +5,7 @@ from dataclasses import replace
 
 import pytest
 
-from balatro_ai_v2.actions import LeaveShop
+from balatro_ai_v2.actions import LeaveShop, RerollShop
 from balatro_ai_v2.balatrobot.adapter import to_public_observation
 from balatro_ai_v2.strategy_context import PublicStrategyContext
 from balatro_ai_v2.strategy_engine import RunGoal, RunRoute
@@ -30,13 +30,21 @@ def _draft():
         candidates=(
             StrategyTeacherCandidate(
                 action=LeaveShop(),
+                intent=None,
+                route=None,
+                samples=(StrategyRolloutTarget(1, 1, 0, 1, 2.5),),
+            ),
+            StrategyTeacherCandidate(
+                action=LeaveShop(),
                 intent=StrategyIntent.STABILIZE,
                 route=RunRoute.HELD_RETRIGGER,
                 samples=(StrategyRolloutTarget(1, 1, 0, 1, 2.5),),
             ),
         ),
-        selected_index=0,
+        selected_index=1,
         baseline_index=0,
+        ordinary_index=0,
+        behavior_index=1,
         goal=RunGoal.VICTORY,
         teacher_config_digest="1" * 64,
         context=PublicStrategyContext(
@@ -66,6 +74,9 @@ def test_teacher_record_round_trips_without_seed_or_private_state(tmp_path) -> N
     assert "seed" not in encoded.casefold()
     assert "rng" not in encoded.casefold()
     assert "private" not in encoded.casefold()
+    assert data["schema_version"] == 11
+    assert data["ordinary_index"] == record.baseline_index
+    assert data["behavior_index"] == record.selected_index
     assert teacher_record_from_data(data) == record
 
 
@@ -95,11 +106,66 @@ def test_teacher_reader_rejects_extra_or_unknown_fields() -> None:
     extra["seed"] = "PRIVATE"
     bad_intent = deepcopy(data)
     bad_intent["candidates"][0]["intent"] = "future_strategy"
+    missing_ordinary = deepcopy(data)
+    missing_ordinary.pop("ordinary_index")
+    old_schema = deepcopy(data)
+    old_schema["schema_version"] = 10
 
     with pytest.raises(ValueError, match="invalid fields"):
         teacher_record_from_data(extra)
     with pytest.raises(ValueError, match="intent is unsupported"):
         teacher_record_from_data(bad_intent)
+    with pytest.raises(ValueError, match="invalid fields"):
+        teacher_record_from_data(missing_ordinary)
+    with pytest.raises(ValueError, match="schema version is unsupported"):
+        teacher_record_from_data(old_schema)
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        ("ordinary_index", True, "must be an integer"),
+        ("behavior_index", 2, "record is invalid"),
+    ],
+)
+def test_teacher_reader_rejects_invalid_route_identity_indexes(
+    field: str,
+    value: object,
+    message: str,
+) -> None:
+    record = _draft().finalize(
+        run_group="origin-00000000000000000000000000000000",
+        decision_index=0,
+        run_complete=True,
+        run_won=False,
+        terminal_ante=1,
+        best_hand_score=100,
+    )
+    data = teacher_record_to_data(record)
+    data[field] = value
+
+    with pytest.raises(ValueError, match=message):
+        teacher_record_from_data(data)
+
+
+def test_teacher_requires_baseline_to_equal_ordinary_comparator() -> None:
+    observation = to_public_observation(state("SHOP", money=10))
+    samples = (StrategyRolloutTarget(1, 1, 0, 1, 2.5),)
+
+    with pytest.raises(ValueError, match="baseline must be the ordinary"):
+        StrategyTeacherDraft(
+            observation=observation,
+            candidates=(
+                StrategyTeacherCandidate(LeaveShop(), None, samples),
+                StrategyTeacherCandidate(RerollShop(), None, samples),
+            ),
+            selected_index=1,
+            baseline_index=0,
+            ordinary_index=1,
+            behavior_index=1,
+            goal=RunGoal.VICTORY,
+            teacher_config_digest="1" * 64,
+        )
 
 
 def test_hidden_private_twins_produce_identical_teacher_data() -> None:
@@ -111,12 +177,14 @@ def test_hidden_private_twins_produce_identical_teacher_data() -> None:
         card["id"] += 10_000
 
     left_record = StrategyTeacherDraft(
-        to_public_observation(left),
-        _draft().candidates,
-        0,
-        0,
-        RunGoal.VICTORY,
-        "1" * 64,
+        observation=to_public_observation(left),
+        candidates=_draft().candidates,
+        selected_index=1,
+        baseline_index=0,
+        ordinary_index=0,
+        behavior_index=1,
+        goal=RunGoal.VICTORY,
+        teacher_config_digest="1" * 64,
     ).finalize(
         run_group="origin-00000000000000000000000000000000",
         decision_index=0,
@@ -126,12 +194,14 @@ def test_hidden_private_twins_produce_identical_teacher_data() -> None:
         best_hand_score=500,
     )
     right_record = StrategyTeacherDraft(
-        to_public_observation(right),
-        _draft().candidates,
-        0,
-        0,
-        RunGoal.VICTORY,
-        "1" * 64,
+        observation=to_public_observation(right),
+        candidates=_draft().candidates,
+        selected_index=1,
+        baseline_index=0,
+        ordinary_index=0,
+        behavior_index=1,
+        goal=RunGoal.VICTORY,
+        teacher_config_digest="1" * 64,
     ).finalize(
         run_group="origin-00000000000000000000000000000000",
         decision_index=0,

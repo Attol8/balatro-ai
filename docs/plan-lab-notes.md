@@ -4267,3 +4267,34 @@ action sensitivity. No numerical cohort gate is frozen yet; the next schema
 increment must first separate ordinary, factual behavior, and terminal-teacher
 indexes so the paired comparator remains authenticated after any specialist
 override.
+
+### Authenticated route-teacher schema checkpoint (2026-09-05)
+
+Teacher schema 11 now makes the comparator and factual trajectory explicit.
+`ordinary_index`, `behavior_index`, and terminal `selected_index` are mandatory;
+the historical `baseline_index` must equal the ordinary index, whose candidate
+has null intent and route. Success-teacher diagnostics separately serialize the
+ordinary, behavior, teacher-selected, and executed exact action/intent/route
+triples. Terminal root selection is paired against ordinary even when online v16
+selected a specialist, while action-inert collection executes the behavior root.
+Schema 10 is deliberately rejected by the active reader rather than silently
+upgraded, and the schema version enters the teacher configuration digest.
+
+The route finalizer is a separate mode, not a relaxation of the frozen dense
+teacher path. It rejects the whole panel on incomplete anchors, fallbacks,
+unavailability, unsupported state, specialist construction failure, rejected or
+censored rollouts, incomplete candidate spaces, unequal sample counts, mismatched
+decision metadata or exact triples, any terminal action influence, or any factual
+execution other than the behavior root. Opaque origin groups remain HMAC-derived
+when a preregistered key is present. Unit coverage includes report tampering and
+an end-to-end collector-draft-to-finalizer path; no fresh route data has yet been
+authorized or collected.
+
+An exact audit of the expensive 154-root pack found that its breadth is real, not
+mostly duplicate work: 146 ordinary actions plus eight same-action route variants
+are identity-unique. Only 36 first transitions are redundant (eight route siblings
+and 28 idempotent Sun targets), worth about 72 of 14,401 terminal steps, or 0.5%.
+Prefix deduplication is therefore rejected as needless complexity. Safe future
+speed work should target content-addressed score memoization shared by cloned
+states; whole-rollout suffix caching remains invalid while continuation can read
+full public history.

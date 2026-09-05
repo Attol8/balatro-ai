@@ -511,12 +511,109 @@ def test_dense_teacher_reuses_paired_ordinary_search_without_changing_selection(
     draft = policy.teacher_drafts[0]
     assert draft.candidates[draft.selected_index].action == selected
     assert draft.candidates[draft.baseline_index].action != selected
+    assert draft.ordinary_index == draft.baseline_index
+    assert draft.behavior_index == draft.selected_index
     assert all(len(candidate.samples) == 2 for candidate in draft.candidates)
     assert {
         sample.search_utility
         for candidate in draft.candidates
         for sample in candidate.samples
     } == {1.0, 2.0}
+
+
+def test_route_terminal_teacher_separates_ordinary_behavior_and_selected_indexes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class Sample:
+        def close(self) -> None:
+            pass
+
+    class Frozen:
+        def clone(self):
+            return SimpleNamespace(close=lambda: None)
+
+    monkeypatch.setattr(search_module, "sample_candidate", lambda *args: Sample())
+    monkeypatch.setattr(search_module, "freeze_backend", lambda sample: Frozen())
+    monkeypatch.setattr(
+        search_module, "_teacher_config_digest", lambda policy: "1" * 64
+    )
+
+    def rollout(self, clone, observation, history, root, **kwargs):
+        del self, clone, observation, history, root
+        route = kwargs.get("route")
+        return _terminal_outcome(won=route == RunRoute.PLAYED_RETRIGGER)
+
+    monkeypatch.setattr(DeterminizedSearchPolicy, "_rollout", rollout)
+    selected_baselines: list[int] = []
+    select_goal_root = search_module._select_goal_root
+
+    def capture_baseline(utilities, baseline_index, goal, override_z, admissible=None):
+        selected_baselines.append(baseline_index)
+        return select_goal_root(
+            utilities,
+            baseline_index,
+            goal,
+            override_z,
+            admissible,
+        )
+
+    monkeypatch.setattr(search_module, "_select_goal_root", capture_baseline)
+    observation = replace(
+        to_public_observation(state("SHOP", money=10)),
+        ante=4,
+        antes_cleared=3,
+    )
+    roots = (
+        StrategyCandidateRoot(LeaveShop(), None),
+        StrategyCandidateRoot(
+            RerollShop(),
+            StrategyIntent.HELD_RETRIGGER_ENGINE,
+            route=RunRoute.HELD_RETRIGGER,
+        ),
+        StrategyCandidateRoot(
+            RerollShop(),
+            StrategyIntent.PLAYED_RETRIGGER_ENGINE,
+            route=RunRoute.PLAYED_RETRIGGER,
+        ),
+    )
+    policy = DeterminizedSearchPolicy(
+        backend=None,  # type: ignore[arg-type]
+        continuation=PublicStrategicPolicy(),
+        success_teacher=SuccessTeacherBudget(samples=2),
+    )
+
+    executed = policy._collect_success_teacher(  # noqa: SLF001
+        observation,
+        (),
+        roots,
+        behavior_index=1,
+        ordinary_index=0,
+        intent_aware=True,
+        engine_goal=RunGoal.VICTORY,
+    )
+
+    assert executed == 1
+    assert len(policy.teacher_drafts) == 1
+    draft = policy.teacher_drafts[0]
+    assert draft.baseline_index == draft.ordinary_index == 0
+    assert draft.behavior_index == 1
+    assert draft.selected_index == 2
+    assert draft.candidate_space_size == len(roots)
+    assert draft.candidates[draft.ordinary_index].route is None
+    assert draft.candidates[draft.behavior_index].route == RunRoute.HELD_RETRIGGER
+    assert draft.candidates[draft.selected_index].route == RunRoute.PLAYED_RETRIGGER
+    assert policy.last_success_decision is not None
+    assert selected_baselines == [0]
+    assert not policy.last_success_decision.affects_actions
+    assert policy.last_success_decision.ordinary_index == 0
+    assert policy.last_success_decision.behavior_index == 1
+    assert policy.last_success_decision.teacher_selected_index == 2
+    assert policy.last_success_decision.executed_index == 1
+    assert policy.last_success_decision.as_dict()["ordinary"] == {
+        "action": {"type": "leave_shop"},
+        "intent": None,
+        "route": None,
+    }
 
 
 def test_dense_teacher_requires_the_complete_root_set_within_bound() -> None:
@@ -1404,7 +1501,7 @@ def test_terminal_same_action_override_commits_distinct_route(
     assert policy.active_route.route == RunRoute.HELD_RETRIGGER
     assert policy.last_success_decision is not None
     assert policy.last_success_decision.identity_override
-    assert policy.last_success_decision.behavior_route == RunRoute.VICTORY
+    assert policy.last_success_decision.behavior_route is None
     assert policy.last_success_decision.executed_route == RunRoute.HELD_RETRIGGER
     assert policy.counters.success_action_overrides == 0
     assert policy.counters.success_intent_only_overrides == 0
@@ -1491,6 +1588,7 @@ def test_terminal_action_selector_requires_root_adjusted_paired_dominance(
         (),
         roots,
         behavior_index=0,
+        ordinary_index=0,
         intent_aware=False,
         engine_goal=RunGoal.VICTORY,
     )
@@ -1534,6 +1632,7 @@ def test_terminal_selector_cannot_bypass_scalar_specialist_gate(
         (),
         roots,
         behavior_index=0,
+        ordinary_index=0,
         intent_aware=True,
         engine_goal=RunGoal.VICTORY,
         execution_admissible=(True, False),
@@ -1610,6 +1709,7 @@ def test_terminal_action_selector_counts_same_action_intent_override(
         (),
         roots,
         behavior_index=0,
+        ordinary_index=0,
         intent_aware=True,
         engine_goal=RunGoal.VICTORY,
     )
@@ -1644,6 +1744,7 @@ def test_terminal_action_selector_falls_back_on_nonterminal_dead_end(
         (),
         roots,
         behavior_index=0,
+        ordinary_index=0,
         intent_aware=False,
         engine_goal=RunGoal.VICTORY,
     )
@@ -1683,6 +1784,7 @@ def test_terminal_action_selector_keeps_early_anchor_inert(
             (),
             roots,
             behavior_index=0,
+            ordinary_index=0,
             intent_aware=False,
             engine_goal=RunGoal.VICTORY,
         )
@@ -1721,6 +1823,7 @@ def test_terminal_action_selector_enforces_compute_root_bound_without_sampling(
         (),
         roots,
         behavior_index=0,
+        ordinary_index=0,
         intent_aware=True,
         engine_goal=RunGoal.VICTORY,
     )
@@ -1762,6 +1865,7 @@ def test_terminal_action_selector_skips_unattainable_statistical_bound(
         (),
         roots,
         behavior_index=0,
+        ordinary_index=0,
         intent_aware=True,
         engine_goal=RunGoal.VICTORY,
     )
@@ -1806,6 +1910,7 @@ def test_terminal_determinization_unavailable_is_not_a_rejected_rollout(
         (),
         roots,
         behavior_index=0,
+        ordinary_index=0,
         intent_aware=True,
         engine_goal=RunGoal.VICTORY,
     )
