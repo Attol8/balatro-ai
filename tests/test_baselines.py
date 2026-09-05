@@ -7,6 +7,7 @@ from fractions import Fraction
 import pytest
 
 from balatro_ai_v2.actions import (
+    BuyMode,
     BuyPack,
     BuyShopCard,
     BuyVoucher,
@@ -2634,6 +2635,24 @@ def test_extended_coverage_uses_held_planet() -> None:
     )
 
     assert action == UseConsumable(ConsumableSlot(0))
+
+
+def test_planet_use_coverage_prioritizes_visible_shop_planet() -> None:
+    raw = state("SHOP", money=10)
+    raw["shop"] = {
+        "cards": [item_card("c_mercury", card_id=30, kind="PLANET", buy=3)],
+        "count": 1,
+        "highlighted_limit": 1,
+        "limit": 2,
+    }
+    observation = to_public_observation(raw)
+    policy = DeterministicCoveragePolicy(coverage_mode="planet_use")
+
+    action = policy.choose_action(
+        observation, lambda: iter_legal_actions(observation), ()
+    )
+
+    assert action == BuyShopCard(ShopSlot(0), BuyMode.USE)
 
 
 def test_explicit_pack_lanes_skip_or_pick_safe_visible_offer() -> None:

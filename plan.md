@@ -1420,6 +1420,19 @@ promoted evidence. Next commit this vertical slice, then capture a natural
 public-policy shop Planet on fresh nonprotected development seeds and require
 an exact authority/candidate transition before calling it certified.
 
+Organic coverage protocol: reserve development seeds 2411--2430 as one ordered
+authority scan. Add a deterministic `planet_use` coverage mode that never skips
+a blind, takes the existing public tactical play/discard path, selects the first
+legal `BuyShopCard(mode=use)` in shop order, and otherwise rerolls while its
+ordinary per-shop action budget remains before leaving. It may inspect only the
+legal public action list and visible history. Report `buy_shop_card_use`
+separately and require at least one accepted instance; do not select seeds from
+candidate offers. Replay every completed authority trace from the beginning and
+stop at the first mismatch. The first attempted seed-2420 trace is diagnostic
+only: authority exposed no Planet use and replay mismatched at transition zero
+on deck-composition edition representation, so repair that independent parity
+defect before promotion.
+
 After that correction, instrument clone, root-step, continuation/scoring, and
 allocation/GC time at terminal-teacher anchors. The Arcana tail is valid
 exhaustive targeting: 13 decisions with at least 100 roots account for 2,017 of

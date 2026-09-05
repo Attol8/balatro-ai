@@ -16,6 +16,7 @@ from itertools import combinations, islice
 from typing import Literal
 
 from balatro_ai_v2.actions import (
+    BuyMode,
     BuyPack,
     BuyShopCard,
     BuyVoucher,
@@ -767,12 +768,12 @@ class DeterministicCoveragePolicy:
     policy_seed: str = "coverage-v1"
     max_shop_actions: int = 3
     pack_strategy: Literal["mixed", "skip", "pick"] = "mixed"
-    coverage_mode: Literal["default", "extended"] = "default"
+    coverage_mode: Literal["default", "extended", "planet_use"] = "default"
 
     def __post_init__(self) -> None:
         if self.max_shop_actions < 0:
             raise ValueError("max_shop_actions must be non-negative")
-        if self.coverage_mode not in {"default", "extended"}:
+        if self.coverage_mode not in {"default", "extended", "planet_use"}:
             raise ValueError(f"unsupported coverage mode {self.coverage_mode!r}")
 
     def choose_action(
@@ -784,7 +785,11 @@ class DeterministicCoveragePolicy:
         if observation.phase == Phase.BLIND_SELECT:
             actions = _bounded_actions(legal_actions())
             skips = [action for action in actions if isinstance(action, SkipBlind)]
-            if skips and self._number(observation, history, "blind") % 5 == 0:
+            if (
+                self.coverage_mode != "planet_use"
+                and skips
+                and self._number(observation, history, "blind") % 5 == 0
+            ):
                 return skips[0]
             return next(action for action in actions if isinstance(action, SelectBlind))
 
@@ -811,6 +816,20 @@ class DeterministicCoveragePolicy:
                     action for action in actions if isinstance(action, LeaveShop)
                 )
             rerolls = [action for action in actions if isinstance(action, RerollShop)]
+            if self.coverage_mode == "planet_use":
+                buy_and_use = [
+                    action
+                    for action in actions
+                    if isinstance(action, BuyShopCard)
+                    and action.mode == BuyMode.USE
+                ]
+                if buy_and_use:
+                    return buy_and_use[0]
+                if rerolls:
+                    return rerolls[0]
+                return next(
+                    action for action in actions if isinstance(action, LeaveShop)
+                )
             if self.coverage_mode == "extended" and rerolls and shop_steps == 0:
                 return rerolls[0]
             planet = _held_planet_action(observation)

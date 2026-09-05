@@ -212,7 +212,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--max-shop-actions", type=int, default=3)
     parser.add_argument("--pack-strategy", choices=("mixed", "skip", "pick"), default="mixed")
-    parser.add_argument("--coverage-mode", choices=("default", "extended"), default="default")
+    parser.add_argument(
+        "--coverage-mode",
+        choices=("default", "extended", "planet_use"),
+        default="default",
+    )
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=12346)
     parser.add_argument("--deck", default="RED")
@@ -278,11 +282,15 @@ def summarize_trace_coverage(
         if isinstance(action, dict):
             family = str(action.get("type") or "unknown")
             accepted_counts[family] += 1
+            if family == "buy_shop_card" and action.get("mode") == "use":
+                accepted_counts["buy_shop_card_use"] += 1
         public_after = row.get("public_after")
         current_public = public_after if isinstance(public_after, dict) else None
 
     required = set(_BASELINE_REQUIRED_ACTIONS)
-    if pack_strategy == "skip":
+    if coverage_mode == "planet_use":
+        required.update({"reroll_shop", "buy_shop_card_use"})
+    elif pack_strategy == "skip":
         required.update({"buy_pack", "skip_pack"})
     elif pack_strategy == "pick":
         required.update({"buy_pack", "choose_pack_card"})
@@ -292,7 +300,7 @@ def summarize_trace_coverage(
         raise ValueError(f"unsupported pack strategy {pack_strategy!r}")
     if coverage_mode == "extended":
         required.update({"reroll_shop", "use_consumable"})
-    elif coverage_mode != "default":
+    elif coverage_mode not in {"default", "planet_use"}:
         raise ValueError(f"unsupported coverage mode {coverage_mode!r}")
 
     return {

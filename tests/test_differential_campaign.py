@@ -93,6 +93,34 @@ def test_extended_coverage_requires_reroll_and_consumable_use(tmp_path: Path) ->
     assert coverage["opportunity_counts"]["action:use_consumable"] >= 1
 
 
+def test_planet_use_coverage_requires_explicit_buy_mode(tmp_path: Path) -> None:
+    trace_path = tmp_path / "trace.jsonl"
+    states = _baseline_states(pack_card={"kind": "PLANET"})
+    _write_trace(
+        trace_path,
+        states[0],
+        [
+            ("select_blind", states[1]),
+            ("discard_cards", states[2]),
+            ("play_cards", states[3]),
+            ("cash_out", states[4]),
+            ("reroll_shop", states[4]),
+            ({"type": "buy_shop_card", "card": 0, "mode": "use"}, states[4]),
+            ("leave_shop", states[7]),
+        ],
+    )
+
+    coverage = summarize_trace_coverage(
+        trace_path,
+        pack_strategy="mixed",
+        coverage_mode="planet_use",
+    )
+
+    assert coverage["coverage_complete"] is True
+    assert coverage["accepted_action_counts"]["buy_shop_card_use"] == 1
+    assert coverage["required_action_counts"]["buy_shop_card_use"] == 1
+
+
 def _baseline_states(*, pack_card: dict[str, object]) -> list[dict[str, object]]:
     return [
         _public("BLIND_SELECT", blinds=[{"status": "SELECT"}]),
@@ -132,7 +160,7 @@ def _public(
 def _write_trace(
     path: Path,
     initial_public: dict[str, object],
-    transitions: list[tuple[str, dict[str, object]]],
+    transitions: list[tuple[str | dict[str, object], dict[str, object]]],
 ) -> None:
     rows: list[dict[str, object]] = [
         {
@@ -148,7 +176,9 @@ def _write_trace(
         {
             "event": "transition",
             "status": "accepted",
-            "action": {"type": action_type},
+            "action": (
+                action_type if isinstance(action_type, dict) else {"type": action_type}
+            ),
             "public_after": public_after,
         }
         for action_type, public_after in transitions
