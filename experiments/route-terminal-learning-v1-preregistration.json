@@ -1,0 +1,165 @@
+{
+  "admission": {
+    "minimum_calibration_pairs_by_target": {
+      "ante8_win": 1,
+      "current_blind_clear": 1,
+      "endless_ante": 1,
+      "log_score": 1,
+      "next_boss_clear": 1,
+      "search_utility": 1
+    },
+    "minimum_positive_and_negative_by_split": true,
+    "minimums": {
+      "calibration": {
+        "groups": 4,
+        "matched_pairs": 20,
+        "rows": 40,
+        "sensitive_pairs": 2
+      },
+      "holdout": {
+        "groups": 4,
+        "matched_pairs": 20,
+        "rows": 40,
+        "sensitive_pairs": 2
+      },
+      "train": {
+        "groups": 12,
+        "matched_pairs": 60,
+        "rows": 120,
+        "sensitive_pairs": 6
+      }
+    }
+  },
+  "artifact": {
+    "action_influence": false,
+    "base_model_schema_digest": "08e9d348dfbd247ab5aeb86cf650686c9e28538b6e29ec07dc5fd9ddc1965e88",
+    "certificate_required": true,
+    "format_version": 1,
+    "influence_mode": "shadow_only",
+    "rollout_authority": false
+  },
+  "calibration": {
+    "bias_estimator": "weighted-mean-target-minus-raw",
+    "canonical_order": [
+      "run_group",
+      "decision_index",
+      "specialist_index",
+      "sample_index"
+    ],
+    "empirical_only": true,
+    "full_rank_tie": "no-recommendation",
+    "ordinary_anchor": "zero-after-candidate-difference",
+    "pair_label_admission": "all-paired-samples-jointly-resolved",
+    "radius_estimator": "maximum-nonnegative-corrected-overprediction",
+    "safety_lcb_tie": "zero-is-admissible",
+    "scalar_lcb_tie": "not-positive-no-recommendation",
+    "weighting": "run-decision-pair-sample-equal-by-head"
+  },
+  "collection_mode": "route_terminal_paired_utility",
+  "collection_preregistration_sha256": "0b505826dbc62303cd0dc222f4d93d455936d2f4875a1161d035664fffbbf54d",
+  "collection_protocol_id": "route-terminal-development-v1",
+  "collection_schema_version": 11,
+  "comparator": "same_action_null_route_v1",
+  "expected_source_digest": "99a693b0411f1da8e18e33395bc02b79b19b4d6a15cdbfa222fd16075c443175",
+  "holdout_gate": {
+    "all_overprediction_within_calibration_radii": true,
+    "balanced_sensitive_sign_accuracy_strictly_above": 0.5,
+    "current_blind_residual_mae_diagnostic_only": true,
+    "endless_ante_non_regression": true,
+    "endless_log_score_non_regression": true,
+    "minimum_safe_recommendation_groups": 2,
+    "minimum_safe_recommendations": 2,
+    "next_boss_residual_mae_beats_zero": true,
+    "recommendations_positive_utility": true,
+    "scalar_residual_mae_beats_zero": true,
+    "victory_ante8_non_regression": true,
+    "zero_regret_against_safe_specialist": true,
+    "zero_rejected_roots": true,
+    "zero_survival_regressions": true,
+    "zero_ties": true,
+    "zero_victory_routes": true
+  },
+  "implementation_revision": "2809c75c38aa3e22448aa0a569084ce41da4a420",
+  "merger_expected_source_digest": "99a693b0411f1da8e18e33395bc02b79b19b4d6a15cdbfa222fd16075c443175",
+  "merger_implementation_revision": "2809c75c38aa3e22448aa0a569084ce41da4a420",
+  "model": {
+    "attention_heads": 4,
+    "attention_layers": 2,
+    "dropout": 0.0,
+    "feedforward_size": 128,
+    "hidden_size": 64,
+    "max_actions": 512,
+    "max_entities": 256
+  },
+  "objective": {
+    "behavior_index_target": false,
+    "comparator": "same_action_null_route_v1",
+    "factual_outcome_on_siblings": false,
+    "name": "paired_route_residual_v1",
+    "selected_index_target": false,
+    "target_reduction": "arithmetic-mean-before-loss-and-ordering",
+    "weighting": "paired-sample-mean-then-run-decision-pair-equal",
+    "weights": {
+      "ante8_win": 1.0,
+      "current_blind_clear": 1.0,
+      "endless_ante": 0.5,
+      "log_score": 0.5,
+      "next_boss_clear": 1.0,
+      "ordering": 0.25,
+      "search_utility": 1.0
+    }
+  },
+  "optimizer": {
+    "epochs": 30,
+    "learning_rate": 0.0003,
+    "max_gradient_norm": 1.0,
+    "name": "AdamW",
+    "training_seed": 20260905,
+    "weight_decay": 0.0001
+  },
+  "protocol_id": "route-terminal-learning-v1",
+  "split": {
+    "calibration_batches": [
+      "batch-04"
+    ],
+    "calibration_groups": 4,
+    "calibration_pairs": 20,
+    "calibration_rows": 40,
+    "calibration_sensitive_pairs": 2,
+    "holdout_batches": [
+      "batch-05"
+    ],
+    "holdout_groups": 4,
+    "holdout_pairs": 20,
+    "holdout_rows": 40,
+    "holdout_sensitive_pairs": 2,
+    "nonce": "route-learning-split-v1-predeclared",
+    "train_batches": [
+      "batch-01",
+      "batch-02",
+      "batch-03"
+    ],
+    "train_groups": 12,
+    "train_pairs": 60,
+    "train_rows": 120,
+    "train_sensitive_pairs": 6
+  },
+  "status": "reserved",
+  "support_cell_contract": {
+    "minimum_calibration_groups": 1,
+    "minimum_calibration_pairs": 2,
+    "minimum_holdout_groups": 1,
+    "minimum_holdout_pairs": 2,
+    "minimum_train_groups": 2,
+    "minimum_train_pairs": 4,
+    "mixed_signs_before_holdout": true,
+    "no_independent_field_lists": true,
+    "safe_positive_holdout_recommendation": true,
+    "tuple_fields": [
+      "route",
+      "goal",
+      "phase",
+      "ante"
+    ]
+  }
+}
