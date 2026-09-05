@@ -76,6 +76,7 @@ def test_search_evaluator_keeps_strategy_mode_disabled_by_default() -> None:
 
     assert not args.strategy_options
     assert not args.include_reorders
+    assert not args.profile_search_timing
     assert args.seed_provenance == "development"
     assert args.seed_start == 901
 
@@ -533,6 +534,55 @@ def test_search_summary_aggregates_route_identity_diagnostics() -> None:
     assert summary["strategy_route_transitions"] == {
         "held_retrigger->held_retrigger": 1,
         "held_retrigger->victory": 1,
+    }
+
+
+def test_search_timing_summary_merges_only_opt_in_rows() -> None:
+    module = _load_script()
+    profile = {
+        "schema_version": 1,
+        "clock": "perf_counter_ns",
+        "buckets": {
+            "success_teacher.clone": {
+                "count": 2,
+                "seconds": 0.2,
+                "max_seconds": 0.12,
+            }
+        },
+        "allocation": {
+            "metric": "net_allocated_blocks",
+            "terminal_anchors": 1,
+            "net_blocks": 7,
+            "max_positive_anchor_net_blocks": 7,
+        },
+        "gc": {
+            "collections_by_generation": {"0": 3},
+            "seconds": 0.03,
+            "max_seconds": 0.02,
+        },
+    }
+
+    summary = module._search_timing_summary(  # noqa: SLF001
+        [
+            {"search_timing": profile},
+            {"search_timing": profile},
+            {"search": {}},
+        ]
+    )
+
+    assert summary["profiled_runs"] == 2
+    assert summary["buckets"]["success_teacher.clone"] == {
+        "count": 4,
+        "seconds": 0.4,
+        "max_seconds": 0.12,
+    }
+    assert summary["allocation"]["terminal_anchors"] == 2
+    assert summary["allocation"]["net_blocks"] == 14
+    assert summary["allocation"]["max_positive_anchor_net_blocks"] == 7
+    assert summary["gc"] == {
+        "collections_by_generation": {"0": 6},
+        "seconds": 0.06,
+        "max_seconds": 0.02,
     }
 
 

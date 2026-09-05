@@ -12,13 +12,16 @@ Sampled states never leave this module.
 
 from __future__ import annotations
 
+import gc
 import json
 import hashlib
 import math
+import sys
 import time
 from collections import Counter
+from contextlib import contextmanager
 from copy import deepcopy
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 from dataclasses import asdict, dataclass, field, is_dataclass
 
 from balatro_ai_v2.actions import (
@@ -74,6 +77,124 @@ SEARCH_VERSION = "determinized-search-v17"
 _REORDER_TYPES = (ReorderHand, ReorderJokers, ReorderConsumables)
 _DENSE_TEACHER_MAX_ROOTS = 512
 STRATEGY_SPECIALIST_MAX_ROOTS = 128
+
+
+@dataclass(slots=True)
+class _TimingBucket:
+    count: int = 0
+    total_ns: int = 0
+    max_ns: int = 0
+
+    def add(self, elapsed_ns: int) -> None:
+        self.count += 1
+        self.total_ns += elapsed_ns
+        self.max_ns = max(self.max_ns, elapsed_ns)
+
+    def as_dict(self) -> dict[str, int | float]:
+        return {
+            "count": self.count,
+            "seconds": self.total_ns / 1_000_000_000,
+            "max_seconds": self.max_ns / 1_000_000_000,
+        }
+
+
+@dataclass(slots=True)
+class SearchTimingCollector:
+    """Opt-in evaluator timing that never enters search or teacher semantics."""
+
+    buckets: dict[str, _TimingBucket] = field(default_factory=dict)
+    terminal_anchor_count: int = 0
+    terminal_anchor_net_allocated_blocks: int = 0
+    terminal_anchor_max_positive_net_allocated_blocks: int = 0
+    gc_collections: Counter[int] = field(default_factory=Counter)
+    gc_total_ns: int = 0
+    gc_max_ns: int = 0
+
+    def reset(self) -> None:
+        self.buckets.clear()
+        self.terminal_anchor_count = 0
+        self.terminal_anchor_net_allocated_blocks = 0
+        self.terminal_anchor_max_positive_net_allocated_blocks = 0
+        self.gc_collections.clear()
+        self.gc_total_ns = 0
+        self.gc_max_ns = 0
+
+    def record(self, path: str, stage: str, elapsed_ns: int) -> None:
+        if elapsed_ns < 0:
+            raise ValueError("search timing duration cannot be negative")
+        self.buckets.setdefault(f"{path}.{stage}", _TimingBucket()).add(elapsed_ns)
+
+    @contextmanager
+    def terminal_anchor(self) -> Iterator[None]:
+        """Observe one terminal anchor without forcing or rescheduling GC."""
+
+        anchor_started = time.perf_counter_ns()
+        blocks_started = (
+            sys.getallocatedblocks() if hasattr(sys, "getallocatedblocks") else None
+        )
+        gc_started: dict[int, int] = {}
+
+        def observe_gc(phase: str, info: dict[str, int]) -> None:
+            generation = int(info.get("generation", -1))
+            if phase == "start":
+                gc_started[generation] = time.perf_counter_ns()
+            elif phase == "stop":
+                started = gc_started.pop(generation, None)
+                if started is not None:
+                    elapsed = time.perf_counter_ns() - started
+                    self.gc_collections[generation] += 1
+                    self.gc_total_ns += elapsed
+                    self.gc_max_ns = max(self.gc_max_ns, elapsed)
+
+        gc.callbacks.append(observe_gc)
+        try:
+            yield
+        finally:
+            if observe_gc in gc.callbacks:
+                gc.callbacks.remove(observe_gc)
+            blocks_finished = (
+                sys.getallocatedblocks()
+                if blocks_started is not None and hasattr(sys, "getallocatedblocks")
+                else None
+            )
+            if blocks_started is not None and blocks_finished is not None:
+                delta = blocks_finished - blocks_started
+                self.terminal_anchor_net_allocated_blocks += delta
+                self.terminal_anchor_max_positive_net_allocated_blocks = max(
+                    self.terminal_anchor_max_positive_net_allocated_blocks,
+                    delta,
+                )
+            self.terminal_anchor_count += 1
+            self.record(
+                "success_teacher",
+                "anchor_total",
+                time.perf_counter_ns() - anchor_started,
+            )
+
+    def as_dict(self) -> dict[str, object]:
+        return {
+            "schema_version": 1,
+            "clock": "perf_counter_ns",
+            "buckets": {
+                name: bucket.as_dict() for name, bucket in sorted(self.buckets.items())
+            },
+            "allocation": {
+                "metric": "net_allocated_blocks",
+                "terminal_anchors": self.terminal_anchor_count,
+                "net_blocks": self.terminal_anchor_net_allocated_blocks,
+                "max_positive_anchor_net_blocks": (
+                    self.terminal_anchor_max_positive_net_allocated_blocks
+                ),
+            },
+            "gc": {
+                "collections_by_generation": {
+                    str(generation): count
+                    for generation, count in sorted(self.gc_collections.items())
+                },
+                "seconds": self.gc_total_ns / 1_000_000_000,
+                "max_seconds": self.gc_max_ns / 1_000_000_000,
+            },
+        }
 
 
 @dataclass(frozen=True, slots=True)
@@ -463,6 +584,7 @@ class DeterminizedSearchPolicy:
     include_reorders: bool = False
     success_teacher: SuccessTeacherBudget | None = None
     success_terminal_actions: SuccessTerminalActionBudget | None = None
+    timing: SearchTimingCollector | None = None
     last_decision: SearchDecision | None = None
     counters: SearchCounters = field(default_factory=SearchCounters)
     decisions: list[SearchDecision] = field(default_factory=list)
@@ -497,6 +619,8 @@ class DeterminizedSearchPolicy:
         self.last_strategy_selected_index = None
         self._success_shop_antes = set()
         self._success_pack_antes = set()
+        if self.timing is not None:
+            self.timing.reset()
 
     def choose_action(
         self,
@@ -632,7 +756,7 @@ class DeterminizedSearchPolicy:
         try:
             for frozen_sample in frozen_samples:
                 for index, root in enumerate(roots):
-                    clone = frozen_sample.clone()
+                    clone = self._clone_for_rollout(frozen_sample, "ordinary")
                     try:
                         outcome = self._rollout(
                             clone,
@@ -640,9 +764,10 @@ class DeterminizedSearchPolicy:
                             history,
                             root,
                             prefix_best_hand_score=prefix_best_hand_score,
+                            timing_path="ordinary",
                         )
                     finally:
-                        clone.close()
+                        self._close_rollout_clone(clone, "ordinary")
                     values[index].append(outcome.value)
                     outcomes[index].append(outcome)
                     steps += outcome.steps
@@ -956,7 +1081,9 @@ class DeterminizedSearchPolicy:
         try:
             for frozen_sample in frozen_samples:
                 for index, root in enumerate(ordinary_roots):
-                    clone = frozen_sample.clone()
+                    clone = self._clone_for_rollout(
+                        frozen_sample, "strategy_ordinary"
+                    )
                     try:
                         outcome = self._rollout(
                             clone,
@@ -964,9 +1091,10 @@ class DeterminizedSearchPolicy:
                             history,
                             root.action,
                             prefix_best_hand_score=prefix_best_hand_score,
+                            timing_path="strategy_ordinary",
                         )
                     finally:
-                        clone.close()
+                        self._close_rollout_clone(clone, "strategy_ordinary")
                     retain_outcome(index, outcome)
         except DeterminizationUnavailable as exc:
             self.counters.unavailable += 1
@@ -1094,7 +1222,9 @@ class DeterminizedSearchPolicy:
                 for frozen_sample in frozen_samples:
                     for index in range(ordinary_count, len(roots)):
                         root = roots[index]
-                        clone = frozen_sample.clone()
+                        clone = self._clone_for_rollout(
+                            frozen_sample, "strategy_specialist"
+                        )
                         try:
                             outcome = self._rollout(
                                 clone,
@@ -1105,9 +1235,12 @@ class DeterminizedSearchPolicy:
                                 route=root.route,
                                 isolate_continuation=True,
                                 prefix_best_hand_score=prefix_best_hand_score,
+                                timing_path="strategy_specialist",
                             )
                         finally:
-                            clone.close()
+                            self._close_rollout_clone(
+                                clone, "strategy_specialist"
+                            )
                         retain_outcome(index, outcome)
             except DeterminizationUnavailable:
                 specialist_unavailable_reason = "specialist_determinization_unavailable"
@@ -1439,6 +1572,41 @@ class DeterminizedSearchPolicy:
         engine_goal: RunGoal,
         execution_admissible: Sequence[bool] | None = None,
     ) -> int:
+        if self.timing is None:
+            return self._collect_success_teacher_inner(
+                observation,
+                history,
+                roots,
+                behavior_index=behavior_index,
+                ordinary_index=ordinary_index,
+                intent_aware=intent_aware,
+                engine_goal=engine_goal,
+                execution_admissible=execution_admissible,
+            )
+        with self.timing.terminal_anchor():
+            return self._collect_success_teacher_inner(
+                observation,
+                history,
+                roots,
+                behavior_index=behavior_index,
+                ordinary_index=ordinary_index,
+                intent_aware=intent_aware,
+                engine_goal=engine_goal,
+                execution_admissible=execution_admissible,
+            )
+
+    def _collect_success_teacher_inner(
+        self,
+        observation: PublicObservation,
+        history: tuple[PublicHistoryStep, ...],
+        roots: Sequence[StrategyCandidateRoot],
+        *,
+        behavior_index: int,
+        ordinary_index: int,
+        intent_aware: bool,
+        engine_goal: RunGoal,
+        execution_admissible: Sequence[bool] | None = None,
+    ) -> int:
         """Evaluate a sparse terminal anchor and return the public root to execute."""
 
         budget = self.success_teacher
@@ -1573,23 +1741,34 @@ class DeterminizedSearchPolicy:
             )
 
         def evaluate_sample(sample_index: int, root_indexes: Sequence[int]) -> None:
-            sample = sample_candidate(
-                self.backend,
-                observation,
-                history,
-                sample_seed(
-                    observation,
-                    f"{self.nonce}:success-terminal-v1",
-                    sample_index,
-                ),
+            sample_started = (
+                time.perf_counter_ns() if self.timing is not None else None
             )
             try:
-                frozen_sample = freeze_backend(sample)
+                sample = sample_candidate(
+                    self.backend,
+                    observation,
+                    history,
+                    sample_seed(
+                        observation,
+                        f"{self.nonce}:success-terminal-v1",
+                        sample_index,
+                    ),
+                )
+                try:
+                    frozen_sample = freeze_backend(sample)
+                finally:
+                    sample.close()
             finally:
-                sample.close()
+                if sample_started is not None and self.timing is not None:
+                    self.timing.record(
+                        "success_teacher",
+                        "sample_and_freeze",
+                        time.perf_counter_ns() - sample_started,
+                    )
             for root_index in root_indexes:
                 root = roots[root_index]
-                clone = frozen_sample.clone()
+                clone = self._clone_for_rollout(frozen_sample, "success_teacher")
                 try:
                     outcome = self._rollout(
                         clone,
@@ -1607,9 +1786,10 @@ class DeterminizedSearchPolicy:
                         ),
                         endless_horizon_antes=budget.endless_horizon_antes,
                         prefix_best_hand_score=prefix_best_hand_score,
+                        timing_path="success_teacher",
                     )
                 finally:
-                    clone.close()
+                    self._close_rollout_clone(clone, "success_teacher")
                 outcomes[root_index].append(outcome)
                 root_steps[root_index] += outcome.steps
                 endpoint_counts[outcome.endpoint.value] += 1
@@ -1835,6 +2015,41 @@ class DeterminizedSearchPolicy:
             adverse_discordances=adverse[selected_index],
         )
 
+    def _clone_for_rollout(
+        self,
+        frozen_sample: FrozenJackdawBackend,
+        timing_path: str,
+    ) -> JackdawBackend:
+        if self.timing is None:
+            return frozen_sample.clone()
+        started = time.perf_counter_ns()
+        try:
+            return frozen_sample.clone()
+        finally:
+            self.timing.record(
+                timing_path,
+                "clone",
+                time.perf_counter_ns() - started,
+            )
+
+    def _close_rollout_clone(
+        self,
+        clone: JackdawBackend,
+        timing_path: str,
+    ) -> None:
+        if self.timing is None:
+            clone.close()
+            return
+        started = time.perf_counter_ns()
+        try:
+            clone.close()
+        finally:
+            self.timing.record(
+                timing_path,
+                "close",
+                time.perf_counter_ns() - started,
+            )
+
     def _rollout(
         self,
         clone: JackdawBackend,
@@ -1849,6 +2064,7 @@ class DeterminizedSearchPolicy:
         max_steps: int | None = None,
         endless_horizon_antes: int = 2,
         prefix_best_hand_score: int | None = None,
+        timing_path: str | None = None,
     ) -> RolloutOutcome:
         if route == RunRoute.VICTORY:
             intent = None
@@ -1936,6 +2152,11 @@ class DeterminizedSearchPolicy:
                     "fork_lost_intent_capability",
                 )
         while True:
+            step_started = (
+                time.perf_counter_ns()
+                if timing_path is not None and self.timing is not None
+                else None
+            )
             try:
                 result = clone.step(action)
             except Exception as exc:
@@ -1947,6 +2168,24 @@ class DeterminizedSearchPolicy:
                     _goal_utility(current, value, best_hand_score, alive=False),
                     _exception_reason("step_exception", exc),
                 )
+            finally:
+                if (
+                    step_started is not None
+                    and timing_path is not None
+                    and self.timing is not None
+                ):
+                    stage = (
+                        "root_step"
+                        if steps == 0
+                        else "continuation_step_play"
+                        if isinstance(action, PlayCards)
+                        else "continuation_step_other"
+                    )
+                    self.timing.record(
+                        timing_path,
+                        stage,
+                        time.perf_counter_ns() - step_started,
+                    )
             steps += 1
             if result.status != "accepted" or result.after is None:
                 value = _progress_value(current, start_rounds)
@@ -2017,6 +2256,11 @@ class DeterminizedSearchPolicy:
                     if truncated
                     else StrategyTargetEndpoint.HORIZON,
                 )
+            choose_started = (
+                time.perf_counter_ns()
+                if timing_path is not None and self.timing is not None
+                else None
+            )
             try:
                 choose_for_strategy = getattr(
                     continuation, "choose_action_for_strategy", None
@@ -2065,6 +2309,17 @@ class DeterminizedSearchPolicy:
                     _goal_utility(current, value, best_hand_score, alive=False),
                     _exception_reason("continuation_exception", exc),
                 )
+            finally:
+                if (
+                    choose_started is not None
+                    and timing_path is not None
+                    and self.timing is not None
+                ):
+                    self.timing.record(
+                        timing_path,
+                        "continuation_choose",
+                        time.perf_counter_ns() - choose_started,
+                    )
 
     def _record_strategy(
         self,

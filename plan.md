@@ -1464,6 +1464,31 @@ terminal horizon. Any memo or batching optimization must retain exact root
 identity/order, actions, targets, endpoints, steps, labels, outcomes, and
 failure counters on a matched nonprotected replay before a throughput claim.
 
+Terminal-teacher timing design: add one opt-in evaluator flag whose collector
+is absent by default and never enters the policy wire, root builder, selector,
+teacher record, or model. With `perf_counter_ns`, aggregate count/total/max for
+sample-and-freeze, frozen clone, first/root engine step, continuation choice,
+later play engine steps, later non-play engine steps, and clone teardown,
+separately for ordinary, strategy-ordinary, strategy-specialist, and
+success-teacher lanes. Around each success-teacher anchor only, attach a
+non-forcing GC callback and snapshot `sys.getallocatedblocks()` before/after;
+report actual collection count/time and clearly named net block deltas. Never
+call `gc.collect()`, alter thresholds, reset peaks, or enable `tracemalloc`.
+Emit opt-in per-run and aggregate diagnostics outside authenticated teacher
+content. Unit tests must reconcile timing counts to a synthetic rollout and
+prove the disabled report shape is unchanged. First profile reused development
+seed 2387, whose frozen batch-04 run contains the complete 367-root Arcana
+anchor, then compare all non-timing action, root, endpoint, step, failure, and
+terminal fields against its frozen report before choosing an optimization.
+
+Implementation status: the opt-in timing collector and evaluator report path
+are built. Synthetic rollouts reconcile clone, root-step, continuation-choice,
+later-step, and close counts; GC callbacks are removed after each anchor and
+worker summaries merge timing/allocation/GC fields without changing the
+default-disabled report shape. Focused tests pass 98/98 and the full suite
+passes 1,116 tests. Commit this observational slice before producing a clean
+seed-2387 profile.
+
 ## Active development loop
 
 The two disjoint 30-seed screens are enough to retain one-ante strategic

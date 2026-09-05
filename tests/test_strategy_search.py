@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import gc
 from dataclasses import replace
 from types import SimpleNamespace
 
@@ -21,6 +22,7 @@ from balatro_ai_v2.determinized_search import (
     DeterminizedSearchPolicy,
     RolloutBudget,
     RolloutOutcome,
+    SearchTimingCollector,
     SuccessTeacherBudget,
     SuccessTerminalActionBudget,
     _dense_teacher_indexes,
@@ -414,6 +416,89 @@ def test_rollout_fails_closed_when_clone_omits_public_projection() -> None:
     assert outcome.rejection_reason == "missing_public_projection"
     assert outcome.goal_utility is not None
     assert outcome.goal_utility.alive_probability == 0
+
+
+def test_opt_in_search_timing_reconciles_synthetic_rollout_stages() -> None:
+    before = to_public_observation(state("BLIND_SELECT"))
+    terminal = to_public_observation(state("GAME_OVER"))
+
+    class TwoStepClone:
+        def __init__(self) -> None:
+            self.current_public = before
+            self.calls = 0
+            self.closed = False
+
+        def step(self, action):
+            del action
+            self.calls += 1
+            if self.calls == 2:
+                self.current_public = terminal
+            return SimpleNamespace(status="accepted", after=SimpleNamespace())
+
+        def close(self) -> None:
+            self.closed = True
+
+    class Frozen:
+        def __init__(self) -> None:
+            self.clone_instance = TwoStepClone()
+
+        def clone(self):
+            return self.clone_instance
+
+    class Continuation:
+        def choose_action(self, observation, legal_actions, history):
+            del observation, legal_actions, history
+            return SelectBlind()
+
+    timing = SearchTimingCollector()
+    policy = DeterminizedSearchPolicy(
+        backend=None,  # type: ignore[arg-type]
+        continuation=Continuation(),  # type: ignore[arg-type]
+        timing=timing,
+    )
+    frozen = Frozen()
+    clone = policy._clone_for_rollout(  # noqa: SLF001
+        frozen,  # type: ignore[arg-type]
+        "success_teacher",
+    )
+    outcome = policy._rollout(  # noqa: SLF001
+        clone,  # type: ignore[arg-type]
+        before,
+        (),
+        SelectBlind(),
+        timing_path="success_teacher",
+    )
+    policy._close_rollout_clone(  # noqa: SLF001
+        clone,  # type: ignore[arg-type]
+        "success_teacher",
+    )
+
+    assert not outcome.rejected
+    assert outcome.steps == 2
+    assert frozen.clone_instance.closed
+    buckets = timing.as_dict()["buckets"]
+    assert isinstance(buckets, dict)
+    assert buckets["success_teacher.clone"]["count"] == 1
+    assert buckets["success_teacher.root_step"]["count"] == 1
+    assert buckets["success_teacher.continuation_choose"]["count"] == 1
+    assert buckets["success_teacher.continuation_step_other"]["count"] == 1
+    assert buckets["success_teacher.close"]["count"] == 1
+    assert "success_teacher.continuation_step_play" not in buckets
+
+
+def test_terminal_timing_observes_allocation_and_does_not_leak_gc_callback() -> None:
+    timing = SearchTimingCollector()
+    callbacks_before = tuple(gc.callbacks)
+
+    with timing.terminal_anchor():
+        allocation = [object() for _ in range(16)]
+
+    assert len(allocation) == 16
+    assert tuple(gc.callbacks) == callbacks_before
+    report = timing.as_dict()
+    assert report["allocation"]["terminal_anchors"] == 1
+    assert report["allocation"]["metric"] == "net_allocated_blocks"
+    assert report["buckets"]["success_teacher.anchor_total"]["count"] == 1
 
 
 def test_success_anchor_schedule_is_sparse_per_public_ante() -> None:

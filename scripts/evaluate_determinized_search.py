@@ -44,6 +44,7 @@ from balatro_ai_v2.determinized_search import (
     DeterminizedSearchPolicy,
     RolloutBudget,
     SearchDecision,
+    SearchTimingCollector,
     SuccessTeacherBudget,
     SuccessTerminalActionBudget,
 )
@@ -197,6 +198,11 @@ def _init_worker(args_dict: dict[str, object]) -> None:
             if bool(args_dict["success_terminal_actions"])
             else None
         ),
+        timing=(
+            SearchTimingCollector()
+            if bool(args_dict["profile_search_timing"])
+            else None
+        ),
     )
     shadow: ShadowStrategyPolicy | None = None
     runner_policy = policy
@@ -298,6 +304,8 @@ def _run_seed(seed_number: int) -> dict[str, object]:
     }
     if bool(args_dict["collect_teacher"]):
         row["_teacher_drafts"] = tuple(policy.teacher_drafts)
+    if policy.timing is not None:
+        row["search_timing"] = policy.timing.as_dict()
     return row
 
 
@@ -1444,6 +1452,7 @@ def main() -> None:
         "success_terminal_max_samples": args.success_terminal_max_samples,
         "success_terminal_max_roots": args.success_terminal_max_roots,
         "success_terminal_family_alpha": args.success_terminal_family_alpha,
+        "profile_search_timing": args.profile_search_timing,
     }
     seeds = list(range(args.seed_start, args.seed_start + args.seeds))
     started = time.perf_counter()
@@ -1522,6 +1531,8 @@ def main() -> None:
             results, elapsed=elapsed, terminal_reasons=terminal_reasons
         )
         summary["search"] = _search_summary(results)
+        if args.profile_search_timing:
+            summary["search_timing"] = _search_timing_summary(results)
         summary["success_teacher_profile"] = _success_teacher_profile(
             results,
             mode=(
@@ -1723,6 +1734,16 @@ def main() -> None:
             "results": results,
             "summary": summary,
         }
+        if args.profile_search_timing:
+            search_protocol_payload = payload["search_protocol"]
+            assert isinstance(search_protocol_payload, dict)
+            search_protocol_payload["timing_profile"] = {
+                "schema_version": 1,
+                "clock": "perf_counter_ns",
+                "behavioral_influence": False,
+                "gc_forced": False,
+                "allocation_metric": "net_allocated_blocks",
+            }
         encoded = json.dumps(payload, sort_keys=True)
         print(json.dumps({"summary": summary}, sort_keys=True))
         publication_manifest = build_manifest(
@@ -2142,6 +2163,80 @@ def _success_teacher_profile(
             "seconds_match": math.isclose(
                 total_seconds, counter_seconds, rel_tol=1e-12, abs_tol=1e-9
             ),
+        },
+    }
+
+
+def _search_timing_summary(results: list[dict[str, object]]) -> dict[str, object]:
+    buckets: dict[str, dict[str, int | float]] = {}
+    allocation = {
+        "terminal_anchors": 0,
+        "net_blocks": 0,
+        "max_positive_anchor_net_blocks": 0,
+    }
+    gc_collections: Counter[str] = Counter()
+    gc_seconds = 0.0
+    gc_max_seconds = 0.0
+    profiled_runs = 0
+    for row in results:
+        timing = row.get("search_timing")
+        if not isinstance(timing, dict):
+            continue
+        profiled_runs += 1
+        raw_buckets = timing.get("buckets")
+        if isinstance(raw_buckets, dict):
+            for name, raw_bucket in raw_buckets.items():
+                if not isinstance(name, str) or not isinstance(raw_bucket, dict):
+                    continue
+                bucket = buckets.setdefault(
+                    name,
+                    {"count": 0, "seconds": 0.0, "max_seconds": 0.0},
+                )
+                bucket["count"] = int(bucket["count"]) + int(
+                    raw_bucket.get("count", 0)
+                )
+                bucket["seconds"] = float(bucket["seconds"]) + float(
+                    raw_bucket.get("seconds", 0.0)
+                )
+                bucket["max_seconds"] = max(
+                    float(bucket["max_seconds"]),
+                    float(raw_bucket.get("max_seconds", 0.0)),
+                )
+        raw_allocation = timing.get("allocation")
+        if isinstance(raw_allocation, dict):
+            allocation["terminal_anchors"] += int(
+                raw_allocation.get("terminal_anchors", 0)
+            )
+            allocation["net_blocks"] += int(raw_allocation.get("net_blocks", 0))
+            allocation["max_positive_anchor_net_blocks"] = max(
+                allocation["max_positive_anchor_net_blocks"],
+                int(raw_allocation.get("max_positive_anchor_net_blocks", 0)),
+            )
+        raw_gc = timing.get("gc")
+        if isinstance(raw_gc, dict):
+            raw_collections = raw_gc.get("collections_by_generation")
+            if isinstance(raw_collections, dict):
+                gc_collections.update(
+                    {
+                        str(generation): int(count)
+                        for generation, count in raw_collections.items()
+                    }
+                )
+            gc_seconds += float(raw_gc.get("seconds", 0.0))
+            gc_max_seconds = max(
+                gc_max_seconds,
+                float(raw_gc.get("max_seconds", 0.0)),
+            )
+    return {
+        "schema_version": 1,
+        "clock": "perf_counter_ns",
+        "profiled_runs": profiled_runs,
+        "buckets": dict(sorted(buckets.items())),
+        "allocation": {"metric": "net_allocated_blocks", **allocation},
+        "gc": {
+            "collections_by_generation": dict(sorted(gc_collections.items())),
+            "seconds": gc_seconds,
+            "max_seconds": gc_max_seconds,
         },
     }
 
@@ -2640,6 +2735,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--workers", type=int, default=1)
     parser.add_argument("--tuning-json", default=StrategyTuning().canonical_json())
     parser.add_argument("--record-decisions", action="store_true")
+    parser.add_argument("--profile-search-timing", action="store_true")
     parser.add_argument("--strategy-shadow-model", type=Path)
     parser.add_argument("--strategy-continuation-model", type=Path)
     parser.add_argument("--strategy-continuation-certificate", type=Path)
