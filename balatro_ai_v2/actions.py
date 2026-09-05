@@ -16,6 +16,7 @@ from balatro_ai_v2.consumable_rules import (
     public_consumable_is_usable,
 )
 from balatro_ai_v2.public_state import (
+    HiddenJokerSlot,
     Phase,
     PublicItem,
     PublicObservation,
@@ -289,6 +290,8 @@ def iter_legal_actions(observation: PublicObservation) -> Iterator[PublicAction]
 
     if phase in _SELL_USE_PHASES:
         for index, item in enumerate(observation.jokers):
+            if isinstance(item, HiddenJokerSlot):
+                continue
             action = SellJoker(JokerSlot(index))
             if is_legal(observation, action):
                 yield action
@@ -310,7 +313,14 @@ def iter_legal_actions(observation: PublicObservation) -> Iterator[PublicAction]
                 ReorderHand(order)
                 for order in _adjacent_orders(HandSlot, len(observation.hand))
             )
-        if _reorder_phase_legal(observation, "jokers") and len(observation.jokers) > 1:
+        if (
+            _reorder_phase_legal(observation, "jokers")
+            and len(observation.jokers) > 1
+            and not any(
+                isinstance(joker, HiddenJokerSlot)
+                for joker in observation.jokers
+            )
+        ):
             yield from (
                 ReorderJokers(order)
                 for order in _adjacent_orders(JokerSlot, len(observation.jokers))
@@ -370,6 +380,9 @@ def is_legal(observation: PublicObservation, action: PublicAction) -> bool:
         return (
             phase in _SELL_USE_PHASES
             and action.joker.value < len(observation.jokers)
+            and not isinstance(
+                observation.jokers[action.joker.value], HiddenJokerSlot
+            )
             and not observation.jokers[action.joker.value].eternal
         )
     if isinstance(action, SellConsumable):
@@ -405,8 +418,13 @@ def is_legal(observation: PublicObservation, action: PublicAction) -> bool:
             action.order, len(observation.hand)
         )
     if isinstance(action, ReorderJokers):
-        return _reorder_phase_legal(observation, "jokers") and _is_adjacent_order(
-            action.order, len(observation.jokers)
+        return (
+            _reorder_phase_legal(observation, "jokers")
+            and not any(
+                isinstance(joker, HiddenJokerSlot)
+                for joker in observation.jokers
+            )
+            and _is_adjacent_order(action.order, len(observation.jokers))
         )
     if isinstance(action, ReorderConsumables):
         return _reorder_phase_legal(observation, "consumables") and _is_adjacent_order(
@@ -476,6 +494,7 @@ def _can_spend(observation: PublicObservation, cost: int | None) -> bool:
     active_credit_cards = sum(
         item.key == "j_credit_card" and not item.debuffed
         for item in observation.jokers
+        if not isinstance(item, HiddenJokerSlot)
     )
     floor = -20 * active_credit_cards
     return observation.money - cost >= floor

@@ -398,7 +398,7 @@ class JackdawBackend:
         self.metadata = BackendMetadata(
             backend_name="Jackdaw",
             backend_version=f"0.1.0+{JACKDAW_REVISION}",
-            adapter_version="3",
+            adapter_version="4",
             game_version="Balatro-1.0.1o-model",
             runtime_version="Python",
             capabilities=BackendCapabilities(
@@ -1744,7 +1744,9 @@ def _normalize_jackdaw_bridge(
                 area["limit"] = pack_card_limit
             else:
                 area["limit"] = 0
-        for card, private_card in zip(area["cards"], private_cards, strict=True):
+        for card_index, (card, private_card) in enumerate(
+            zip(area["cards"], private_cards, strict=True)
+        ):
             if not isinstance(card, dict):
                 continue
             modifier = card.get("modifier")
@@ -1779,6 +1781,15 @@ def _normalize_jackdaw_bridge(
                 semantic_state["forced_selection"] = True
             if area_name in {"cards", "discard"}:
                 semantic_state["hidden"] = True
+            if area_name == "jokers" and semantic_state.get("hidden") is True:
+                # Amber Acorn shuffles face-down Jokers.  Their identities,
+                # modifiers, costs, and runtime state are private; only the
+                # occupied array position remains public.
+                area["cards"][card_index] = {
+                    "set": "JOKER",
+                    "state": {"hidden": True},
+                }
+                continue
             card["state"] = semantic_state or []
             value = card.get("value")
             if isinstance(value, dict):

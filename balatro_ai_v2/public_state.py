@@ -72,6 +72,13 @@ HandCard: TypeAlias = VisiblePlayingCard | HiddenHandCard
 
 
 @dataclass(frozen=True, slots=True)
+class HiddenJokerSlot:
+    """An anonymous occupied Joker position while its card is face down."""
+
+    pass
+
+
+@dataclass(frozen=True, slots=True)
 class DeckCardCount:
     card: VisiblePlayingCard
     count: int
@@ -122,6 +129,7 @@ class PublicItem:
 
 
 PublicOffer: TypeAlias = PublicItem | VisiblePlayingCard
+JokerCard: TypeAlias = PublicItem | HiddenJokerSlot
 
 
 @dataclass(frozen=True, slots=True)
@@ -202,7 +210,7 @@ class PublicObservation:
     draw_count: int
     deck_size: int
     hand_stats: tuple[HandStat, ...]
-    jokers: tuple[PublicItem, ...]
+    jokers: tuple[JokerCard, ...]
     joker_limit: int
     consumables: tuple[PublicItem, ...]
     consumable_limit: int
@@ -218,7 +226,34 @@ class PublicObservation:
     won: bool
 
     def __post_init__(self) -> None:
-        _validate_item_zone("jokers", self.jokers, _JOKER_KINDS)
+        visible_jokers = tuple(
+            joker for joker in self.jokers if isinstance(joker, PublicItem)
+        )
+        if any(
+            not isinstance(joker, (PublicItem, HiddenJokerSlot))
+            for joker in self.jokers
+        ):
+            raise ValueError("jokers must contain visible items or anonymous slots")
+        _validate_item_zone("jokers", visible_jokers, _JOKER_KINDS)
+        hidden_jokers = sum(
+            isinstance(joker, HiddenJokerSlot) for joker in self.jokers
+        )
+        if hidden_jokers:
+            amber_active = (
+                self.phase == Phase.SELECTING_HAND
+                and any(
+                    blind.kind == "BOSS"
+                    and blind.status == "CURRENT"
+                    and blind.name == "Amber Acorn"
+                    and not blind.disabled
+                    for blind in self.blinds
+                )
+            )
+            if not amber_active or hidden_jokers != len(self.jokers):
+                raise ValueError(
+                    "anonymous Joker slots require every Joker to be hidden "
+                    "by active Amber Acorn"
+                )
         _validate_item_zone("consumables", self.consumables, _CONSUMABLE_KINDS)
         _validate_item_zone("vouchers", self.vouchers, _VOUCHER_KINDS)
         _validate_item_zone("packs", self.packs, _BOOSTER_KINDS)

@@ -24,8 +24,8 @@ from balatro_ai_v2.actions import (
 from balatro_ai_v2.backend import RunSpec
 from balatro_ai_v2.balatrobot.adapter import to_public_observation
 from balatro_ai_v2.balatrobot.tracing import read_verified_trace
-from balatro_ai_v2.public_state import PublicShopPlayingCard
-from state_factory import state
+from balatro_ai_v2.public_state import HiddenJokerSlot, PublicShopPlayingCard
+from state_factory import item_card, state
 
 
 def test_candidate_module_is_lazy_and_revision_is_pinned() -> None:
@@ -496,6 +496,41 @@ def test_bridge_normalization_preserves_candidate_round_timing() -> None:
     assert normalized["round"]["hands_left"] == 0
     assert normalized["used_vouchers"] == {"v_grabber": ""}
     assert "Flush Five" in normalized["hands"]
+
+
+def test_bridge_normalization_redacts_amber_jokers_before_public_projection() -> None:
+    raw = state("SELECTING_HAND")
+    raw["blinds"]["small"]["status"] = "DEFEATED"
+    raw["blinds"]["boss"].update(name="Amber Acorn", status="CURRENT")
+    raw["jokers"]["cards"] = [
+        item_card("j_blueprint", card_id=70, kind="JOKER"),
+        item_card("j_brainstorm", card_id=71, kind="JOKER"),
+    ]
+    raw["jokers"]["count"] = 2
+    for card in raw["jokers"]["cards"]:
+        card["state"] = {"hidden": True}
+    private = {
+        "blind": SimpleNamespace(name="Amber Acorn", disabled=False),
+        "deck": [SimpleNamespace(ability={"x_mult": 1}) for _ in raw["cards"]["cards"]],
+        "discard_pile": [],
+        "hand": [SimpleNamespace(ability={"x_mult": 1}) for _ in raw["hand"]["cards"]],
+        "jokers": [
+            SimpleNamespace(ability={"x_mult": 1}),
+            SimpleNamespace(ability={"x_mult": 1}),
+        ],
+        "consumables": [],
+        "current_round": {},
+        "round": 1,
+    }
+
+    normalized = jackdaw._normalize_jackdaw_bridge(raw, private)
+    observation = to_public_observation(normalized)
+
+    assert normalized["jokers"]["cards"] == [
+        {"set": "JOKER", "state": {"hidden": True}},
+        {"set": "JOKER", "state": {"hidden": True}},
+    ]
+    assert observation.jokers == (HiddenJokerSlot(), HiddenJokerSlot())
 
 
 def test_bridge_normalization_exposes_cerulean_forced_slot_from_empty_card_state() -> (

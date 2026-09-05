@@ -57,6 +57,7 @@ from balatro_ai_v2.consumable_rules import public_consumable_rule
 from balatro_ai_v2.joker_catalog import JOKER_CATALOG
 from balatro_ai_v2.public_state import (
     HiddenHandCard,
+    HiddenJokerSlot,
     OBSCURED_CARD_ATTRIBUTE,
     PublicItem,
     PublicObservation,
@@ -68,7 +69,7 @@ from balatro_ai_v2.strategy_context import PublicStrategyContext
 from balatro_ai_v2.strategy_options import StrategyIntent
 
 
-STRATEGY_MODEL_FORMAT_VERSION: Final = 5
+STRATEGY_MODEL_FORMAT_VERSION: Final = 6
 
 
 class StrategyModelError(RuntimeError):
@@ -327,6 +328,7 @@ _IDENTITY_TOKENS = (
     "<global>",
     "<visible-card>",
     "<hidden-card>",
+    "<hidden-joker>",
     "<deck-card>",
     "<small-blind>",
     "<big-blind>",
@@ -469,6 +471,7 @@ def _model_schema_digest() -> str:
         ),
         "public_shop_offer_contract": "item_or_structured_playing_card_v1",
         "public_blind_contract": "required_disabled_v1",
+        "public_joker_contract": "visible_item_or_anonymous_hidden_slot_v1",
         "calibration_fields": (
             "policy_temperature",
             "current_blind_bias",
@@ -1253,12 +1256,21 @@ class PublicStrategyTensorizer:
         entities: list[_Entity],
         locations: dict[tuple[str, int], int],
         zone: str,
-        items: tuple[PublicItem, ...],
+        items: tuple[PublicItem | HiddenJokerSlot, ...],
         kind: EntityKind,
     ) -> None:
         for index, item in enumerate(items):
             locations[(zone, index)] = len(entities)
-            entities.append(self._item_entity(item, kind, index, len(items)))
+            if isinstance(item, HiddenJokerSlot):
+                if zone != "joker" or kind != EntityKind.JOKER:
+                    raise StrategyModelError(
+                        "anonymous hidden slots are valid only in the Joker area"
+                    )
+                entities.append(
+                    _entity(kind, "<hidden-joker>", _features(), index, len(items))
+                )
+            else:
+                entities.append(self._item_entity(item, kind, index, len(items)))
 
     def _append_shop_offers(
         self,

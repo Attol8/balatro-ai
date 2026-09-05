@@ -12,8 +12,8 @@ from balatro_ai_v2.public_codec import (
     public_observation_from_data,
     public_observation_to_data,
 )
-from balatro_ai_v2.public_state import PublicItem
-from state_factory import playing_card, state
+from balatro_ai_v2.public_state import HiddenJokerSlot, PublicItem
+from state_factory import hidden_joker_slot, playing_card, state
 
 
 @pytest.mark.parametrize(
@@ -25,6 +25,34 @@ def test_public_observation_codec_round_trips_every_public_phase(phase: str) -> 
     observation = to_public_observation(raw)
 
     assert public_observation_from_data(public_observation_to_data(observation)) == observation
+
+
+def test_codec_round_trips_only_anonymous_joker_slots_in_amber_area() -> None:
+    raw = state("SELECTING_HAND")
+    raw["blinds"]["small"]["status"] = "DEFEATED"
+    raw["blinds"]["boss"].update({"name": "Amber Acorn", "status": "CURRENT"})
+    raw["jokers"] = {
+        "cards": [hidden_joker_slot(), hidden_joker_slot()],
+        "count": 2,
+        "highlighted_limit": 1,
+        "limit": 5,
+    }
+    observation = to_public_observation(raw)
+    data = public_observation_to_data(observation)
+
+    assert data["jokers"] == [{}, {}]
+    assert public_observation_from_data(data) == observation
+    assert observation.jokers == (HiddenJokerSlot(), HiddenJokerSlot())
+
+    partial = deepcopy(data)
+    partial["jokers"][0] = {"kind": "JOKER"}
+    with pytest.raises(PublicCodecError, match="fields differ"):
+        public_observation_from_data(partial)
+
+    wrong_zone = deepcopy(data)
+    wrong_zone["consumables"] = [{}]
+    with pytest.raises(PublicCodecError, match="fields differ"):
+        public_observation_from_data(wrong_zone)
 
 
 def test_public_observation_codec_rejects_unknown_and_missing_fields() -> None:

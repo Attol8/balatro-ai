@@ -413,6 +413,7 @@ def _supports_shop_rollout(observation: PublicObservation) -> bool:
     cards = tuple(entry.card for entry in observation.remaining_deck)
     return (
         not observation.consumables
+        and all(isinstance(joker, PublicItem) for joker in observation.jokers)
         and all(joker.key in PREBLIND_EXACT_JOKERS for joker in observation.jokers)
         and exact_joker_multiplicity(observation.jokers)
         and all(joker.edition in {None, "FOIL"} and not joker.debuffed for joker in observation.jokers)

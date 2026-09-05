@@ -37,9 +37,9 @@ from balatro_ai_v2.strategy_teacher import (
 )
 
 
-_BATCH_STARTS = tuple(range(1675, 1975, 50))
+_BATCH_STARTS = tuple(range(1975, 2275, 50))
 _BATCH_SIZE = 50
-_EXPECTED_SEEDS = set(range(1675, 1975))
+_EXPECTED_SEEDS = set(range(1975, 2275))
 _EXPECTED_BUDGET = {
     "samples": 6,
     "horizon_antes": 1,
@@ -47,9 +47,9 @@ _EXPECTED_BUDGET = {
     "override_z": 1.0,
 }
 _REORDER_ACTIONS = (ReorderHand, ReorderJokers, ReorderConsumables)
-_PROTOCOL_ID = "contextual-continuation-development-v3"
-_NONCE = "contextual-continuation-v11-frozen"
-_SEARCH_VERSION = "determinized-search-v11"
+_PROTOCOL_ID = "contextual-continuation-development-v4"
+_NONCE = "contextual-continuation-v12-frozen"
+_SEARCH_VERSION = "determinized-search-v12"
 _EXPECTED_SEARCH = {
     **_EXPECTED_BUDGET,
     "max_decisions": 1200,
@@ -392,7 +392,7 @@ def _validate_source_freeze(
         ).stdout.splitlines()
     except (OSError, subprocess.CalledProcessError) as exc:
         raise SystemExit("cannot verify teacher implementation ancestry") from exc
-    if set(changed) != {"experiments/contextual-continuation-v11-preregistration.json"}:
+    if set(changed) != {"experiments/contextual-continuation-v12-preregistration.json"}:
         raise SystemExit("teacher collection revision changed implementation source")
 
 
@@ -403,7 +403,7 @@ def _load_preregistration(
     repository_root: Path,
 ) -> tuple[dict[str, object], str, bytes]:
     expected_path = (
-        repository_root / "experiments/contextual-continuation-v11-preregistration.json"
+        repository_root / "experiments/contextual-continuation-v12-preregistration.json"
     ).resolve()
     if path.resolve() != expected_path:
         raise SystemExit("contextual preregistration path is not frozen")
@@ -420,11 +420,11 @@ def _load_preregistration(
             "seed_start": seed_start,
             "seeds": _BATCH_SIZE,
             "teacher_jsonl": (
-                "runs/experiments/contextual-continuation-v11/"
+                "runs/experiments/contextual-continuation-v12/"
                 f"batch-{index:02d}/teacher.jsonl"
             ),
             "report_json": (
-                "runs/experiments/contextual-continuation-v11/"
+                "runs/experiments/contextual-continuation-v12/"
                 f"batch-{index:02d}/report.json"
             ),
         }
@@ -446,7 +446,7 @@ def _load_preregistration(
         or not isinstance(origin, dict)
         or origin.get("algorithm") != "hmac-sha256-truncated-128"
         or origin.get("key_path")
-        != "runs/secrets/contextual-continuation-v11-origin.key"
+        != "runs/secrets/contextual-continuation-v12-origin.key"
     ):
         raise SystemExit("contextual preregistration changed the frozen protocol")
     for field, length in (

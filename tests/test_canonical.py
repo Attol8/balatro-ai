@@ -6,7 +6,7 @@ import pytest
 
 from balatro_ai_v2.canonical import BalatroBotCanonicalizer, CanonicalizationError
 from balatro_ai_v2.balatrobot.adapter import to_public_observation
-from state_factory import state
+from state_factory import hidden_joker_slot, item_card, state
 
 
 def test_raw_ids_and_presentation_text_do_not_affect_semantic_state() -> None:
@@ -101,6 +101,34 @@ def test_unknown_authority_schema_fails_closed() -> None:
 
     with pytest.raises(CanonicalizationError, match="unknown top-level"):
         BalatroBotCanonicalizer().canonicalize(raw)
+
+
+def test_anonymous_hidden_joker_slots_are_canonical_without_entity_ids() -> None:
+    left = state("SELECTING_HAND")
+    left["jokers"] = {
+        "cards": [hidden_joker_slot(), hidden_joker_slot()],
+        "count": 2,
+        "highlighted_limit": 1,
+        "limit": 5,
+    }
+    right = deepcopy(left)
+    right["jokers"]["cards"].reverse()
+
+    left_state = BalatroBotCanonicalizer().canonicalize(left)
+    right_state = BalatroBotCanonicalizer().canonicalize(right)
+
+    assert left_state.canonical_digest == right_state.canonical_digest
+    assert left_state.canonical["jokers"]["cards"] == [
+        {"set": "JOKER", "state": {"hidden": True}},
+        {"set": "JOKER", "state": {"hidden": True}},
+    ]
+
+    leaked = deepcopy(left)
+    full = item_card("j_blueprint", card_id=99, kind="JOKER")
+    full["state"] = {"hidden": True}
+    leaked["jokers"]["cards"][0] = full
+    with pytest.raises(CanonicalizationError, match="exposed private fields"):
+        BalatroBotCanonicalizer().canonicalize(leaked)
 
 
 @pytest.mark.parametrize("value", [None, 0, 1, "false"])

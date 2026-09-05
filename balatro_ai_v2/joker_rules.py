@@ -8,7 +8,12 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
-from balatro_ai_v2.public_state import PublicItem, VisiblePlayingCard
+from balatro_ai_v2.public_state import (
+    HiddenJokerSlot,
+    JokerCard,
+    PublicItem,
+    VisiblePlayingCard,
+)
 
 
 TACTICAL_EXACT_JOKERS = frozenset(
@@ -86,7 +91,7 @@ _FACE_RANKS = frozenset({"J", "Q", "K"})
 
 
 def faceless_discard_reward(
-    jokers: Iterable[PublicItem],
+    jokers: Iterable[JokerCard],
     discarded: Iterable[VisiblePlayingCard],
 ) -> int:
     """Return the public money reward for one discard action."""
@@ -94,7 +99,9 @@ def faceless_discard_reward(
     if sum(card.rank in _FACE_RANKS and not card.debuffed for card in discarded) < 3:
         return 0
     active_copies = sum(
-        joker.key == "j_faceless" and not joker.debuffed for joker in jokers
+        joker.key == "j_faceless" and not joker.debuffed
+        for joker in jokers
+        if isinstance(joker, PublicItem)
     )
     return 5 * active_copies
 
@@ -110,7 +117,12 @@ def purchased_discard_bonus(joker: PublicItem | None) -> int:
     )
 
 
-def exact_joker_multiplicity(jokers: Iterable[PublicItem]) -> bool:
+def exact_joker_multiplicity(jokers: Iterable[JokerCard]) -> bool:
     """Reject duplicate mechanics not yet covered by organic differentials."""
 
-    return sum(joker.key == "j_credit_card" for joker in jokers) <= 1
+    materialized = tuple(jokers)
+    return not any(isinstance(joker, HiddenJokerSlot) for joker in materialized) and sum(
+        joker.key == "j_credit_card"
+        for joker in materialized
+        if isinstance(joker, PublicItem)
+    ) <= 1

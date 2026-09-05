@@ -685,7 +685,7 @@ exercise an organic Jackdaw shop-card purchase transition before freezing v10,
 checking the indexed action, price, deck growth, shop removal, and resulting
 public round trip. Synthetic adapter/RPC tests alone are not sufficient.
 
-### Contextual v10 failure and v11 recovery (active 2026-09-05)
+### Contextual v10/v11 failure and v12 recovery (active 2026-09-05)
 
 The preregistered first-100 checkpoint fails and retires the entire v10 seed
 reservation `1375-1674`. Batch 1 completed cleanly, but batch 2 encountered 63
@@ -699,7 +699,7 @@ but the public adapter infers that Cerulean remains enabled from name/status
 alone and requires a forced slot. The missing value is the player-visible boss
 disabled state, not a search threshold or a rollout exception policy.
 
-V11 recovery design:
+V11 recovery design, completed before collection:
 
 1. Add a required boolean disabled state to `PublicBlind`. Project it from the
    candidate blind and the authority observation contract. Cerulean requires
@@ -737,11 +737,105 @@ V11 recovery design:
    development seeds `1675-1974` with a new origin key. Protected panels
    `1-200`, `501-700`, `701-900`, and evaluator-secret authority remain sealed.
 
-V11 remains a pre-win/early-Endless continuation increment, not the complete
-high-score policy. After it resolves, add the missing public boss-reroll action,
-audited visible Joker targets/counters, and proven pack-time consumable actions;
-then collect dedicated post-win options with deck conversion, consumable
-sequences, copy/reorder timing, and nonlinear engine growth.
+V11 is now retired before publishing any batch. A read-only authority audit
+found that Amber Acorn flips and shuffles the Joker area, BalatroBot marks each
+card hidden but still serialized its private key/order, and the Python adapter
+dropped the hidden bit while constructing normal `PublicItem` values. Search
+failed closed, but baseline and model policies could still observe the shuffled
+identities. This violates the information firewall even if no completed v11
+seed happened to exploit it. The interrupted batch published no artifact; none
+of seeds `1675-1974` may be reused or spliced.
+
+V12 firewall design:
+
+1. Add a dedicated anonymous `HiddenJokerSlot` public value. It contains no
+   identity, label, effect, runtime, edition, sticker, cost, or raw object ID;
+   its tuple position is the only selectable fact. Joker zones admit either a
+   visible `PublicItem` or this anonymous slot. Hidden values are invalid in
+   every other area.
+2. Strip hidden Joker payloads in the BalatroBot Lua extractor itself and
+   independently require the minimal anonymous shape in the Python adapter.
+   Normalize Jackdaw to the identical shape. A hidden flag attached to a full
+   Joker payload must never reach policy state.
+3. Preserve safe play under Amber Acorn: ordinary hand actions remain legal,
+   but selling a hidden slot and any score/capacity/search path that requires
+   its identity fail closed. Reordering may address anonymous slot positions
+   only if both backends prove that action legal. Stateful belief may retain
+   the previously observed Joker multiset but must sample all post-shuffle
+   identity-to-slot permutations; that is a later capability, not part of this
+   repair.
+4. Add adversarial private twins that vary every hidden Joker identity,
+   ordering, ability, edition, sticker, cost, and object ID while requiring
+   byte-identical public observations, policy/model tensors, legal actions, and
+   history. Add malformed-zone/payload tests plus an organic candidate Amber
+   transition. Audit every other `state.hidden` area and reject any identity
+   leak at the shared adapter boundary.
+5. Advance observation, environment, policy, teacher, search, and model schema
+   digests. Regenerate the authority-readiness patch, verify it against a clean
+   upstream tree, run the full suite and source-fidelity checks, then commit the
+   implementation separately from a v12 preregistration.
+6. Reserve unused development seeds `1975-2274` for six immutable 50-run v12
+   batches with a new origin key and the same collection/search gates. Do not
+   begin collection until the committed source and runtime hashes agree.
+
+Implementation status: the anonymous Joker type, authority/Jackdaw redaction,
+adapter validation, conservative legal-action behavior, exact-model fail-closed
+paths, schema advances, and adversarial regression tests are complete. The full
+repository suite and lint pass, and the authority patch applies to a clean
+BalatroBot archive with the installed serializer/schema files matching exactly.
+The live BalatroBot test launcher does not expose its debug state-construction
+endpoints, so a naturally reached Amber Acorn remains required authority evidence
+before the firewall can be called organically certified.
+
+Do not preregister or collect the reserved v12 cohort yet. It would certify the
+same one-ante survival behavior that already cleared the 60-seed screen without
+raising the strategic ceiling. Keep `1975-2274` unused while the stronger policy
+artifact below is built; assign its final version and nonce only after behavior is
+frozen.
+
+### Post-firewall high-score capability program (active 2026-09-05)
+
+The next artifact must optimize for a complete run and then Endless growth, not
+only the next blind. Elite play converges on a small set of multiplicative engines:
+held-card retriggers (Baron/Mime with red-seal steel Kings), played-card retriggers
+(Idol or Triboulet with concentrated enhanced ranks), and consumable duplication
+(Perkeo with Cryptid or Observatory). Those routes require deliberate deck
+concentration, copying/reordering, boss control, and inventory choreography before
+Ante 8. Implement in this order:
+
+1. Close public action/state gaps that block real elite lines: boss-blind rerolls;
+   buy-and-use consumables; consumable sale/use while a pack is open; legal
+   inventory rearrangement around pack choices; full publicly inspectable deck
+   composition; and visible runtime targets/counters used by Joker decisions.
+   Every new action must round-trip through Jackdaw and authoritative Balatro.
+2. Add a run-goal selector that commits from public evidence to victory,
+   held-retrigger, played-retrigger, or consumable-duplication routes. Route state
+   must value prerequisites and transitions rather than treating Jokers as an
+   independent static tier list. It must preserve an escape path when the shop
+   never supplies a route's key components.
+3. Expand strategic candidates and continuation behavior for route-conditioned
+   buys, rerolls, skips, deck destruction/conversion, seals, editions, copying,
+   Joker order, hand order, and consumable timing. Preserve the ordinary baseline
+   as a legal fallback for every decision.
+4. Learn from good public trajectories only after the action/state surface can
+   express those decisions. Ingest expert or high-performing self-play as
+   observation/action sequences, label route and pivot decisions, behavior-clone
+   for coverage, then use determinized search corrections and outcome targets to
+   exceed the demonstrations. Never import seed, hidden draw order, or private
+   Joker ordering.
+5. Remove search bottlenecks before broad evidence collection. Profile scorer and
+   clone costs, replace exact `Fraction` arithmetic with an equivalent integer or
+   common-denominator representation where proven, cache repeated public score
+   contexts, batch shared determinization prefixes, and add behavior-equivalence
+   tests before accepting any optimization.
+6. Freeze the improved artifact, then preregister unused development seeds and
+   measure victory rate, Ante reached, log best-hand score, route completion, and
+   search cost. Only an artifact that advances both survival and upper-tail score
+   proceeds to protected authority evaluation.
+
+The retired v11 design remains a pre-win/early-Endless continuation increment,
+not the complete high-score policy. Its useful continuation machinery is retained
+inside the broader program above, while its collection protocol remains retired.
 
 ## Active development loop
 

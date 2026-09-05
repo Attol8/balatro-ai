@@ -22,13 +22,14 @@ from balatro_ai_v2.public_scoring import score_play
 from balatro_ai_v2.public_state import (
     DeckCardCount,
     HiddenHandCard,
+    HiddenJokerSlot,
     Phase,
     PublicObservation,
     VisiblePlayingCard,
 )
 
 
-CAPACITY_MODEL_VERSION = 2
+CAPACITY_MODEL_VERSION = 3
 CAPACITY_SAMPLE_METHOD = "public-digest-monte-carlo-without-replacement-v1"
 _SAMPLED_PHASES = frozenset({Phase.BLIND_SELECT, Phase.ROUND_EVAL, Phase.SHOP, Phase.PACK})
 _UNSUPPORTED_CAPACITY_BOSS_CONSTRAINTS = frozenset(
@@ -232,6 +233,15 @@ def project_capacity(
     if not current.available:
         return CapacityProjection(False, current.unavailable_reason, current, rounds, None, None)
     for joker in observation.jokers:
+        if isinstance(joker, HiddenJokerSlot):
+            return CapacityProjection(
+                False,
+                "face-down Jokers are unsupported",
+                current,
+                rounds,
+                None,
+                None,
+            )
         try:
             scaling = get_joker_profile(joker.key).primary_role == "scaling"
         except KeyError:
@@ -288,6 +298,8 @@ def _unsupported_reason(
         isinstance(card, HiddenHandCard) for card in observation.hand
     ):
         return "hidden hand cards are unsupported"
+    if any(isinstance(joker, HiddenJokerSlot) for joker in observation.jokers):
+        return "face-down Jokers are unsupported"
     if observation.phase == Phase.SELECTING_HAND:
         current = next(
             (blind for blind in observation.blinds if blind.status == "CURRENT"),
@@ -504,7 +516,11 @@ def _future_discards(observation: PublicObservation, rule: BossRule) -> int:
             for voucher in observation.used_vouchers
         )
         - sum(voucher == "v_petroglyph" for voucher in observation.used_vouchers)
-        + sum(joker.key == "j_drunkard" for joker in observation.jokers),
+        + sum(
+            joker.key == "j_drunkard"
+            for joker in observation.jokers
+            if not isinstance(joker, HiddenJokerSlot)
+        ),
     )
 
 

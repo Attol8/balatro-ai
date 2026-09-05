@@ -35,6 +35,7 @@ from balatro_ai_v2.public_state import (
     HandCard,
     HandStat,
     HiddenHandCard,
+    HiddenJokerSlot,
     OBSCURED_CARD_ATTRIBUTE,
     Phase,
     PublicBlind,
@@ -125,6 +126,14 @@ def to_public_observation(raw: Mapping[str, Any]) -> PublicObservation:
     deck_area = _area(raw, "cards")
     hand = tuple(_hand_card(card) for card in hand_area["cards"])
     deck_cards = [_playing_card(card, respect_hidden=False) for card in deck_area["cards"]]
+    # Balatro's public Remaining view combines the draw pile with face-down
+    # hand cards.  Keeping only the exact draw-pile multiset would let a policy
+    # subtract it from the known deck and recover the hidden hand identities.
+    deck_cards.extend(
+        _playing_card(raw_card, respect_hidden=False)
+        for raw_card, public_card in zip(hand_area["cards"], hand, strict=True)
+        if isinstance(public_card, HiddenHandCard)
+    )
     deck_counts = Counter(deck_cards)
 
     round_raw = _required_mapping(raw, "round")
@@ -170,12 +179,12 @@ def to_public_observation(raw: Mapping[str, Any]) -> PublicObservation:
             DeckCardCount(card=card, count=count)
             for card, count in sorted(deck_counts.items(), key=lambda pair: _playing_card_sort_key(pair[0]))
         ),
-        draw_count=_required_int(deck_area, "count"),
+        draw_count=len(deck_cards),
         deck_size=_required_int(deck_area, "limit"),
         hand_stats=tuple(
             sorted((_hand_stat(name, value) for name, value in hands_raw.items()), key=lambda hand: hand.name)
         ),
-        jokers=tuple(_item(card) for card in joker_area["cards"]),
+        jokers=tuple(_joker_card(card) for card in joker_area["cards"]),
         joker_limit=_required_int(joker_area, "limit"),
         consumables=tuple(_item(card) for card in consumable_area["cards"]),
         consumable_limit=_required_int(consumable_area, "limit"),
@@ -272,7 +281,10 @@ def _offers_from_optional_area(raw: Mapping[str, Any], name: str) -> tuple[Publi
     area = _optional_area(raw, name)
     if area is None:
         return ()
-    return tuple(_playing_card(card, respect_hidden=False) if _is_playing(card) else _item(card) for card in area["cards"])
+    return tuple(
+        _playing_card(card, respect_hidden=True) if _is_playing(card) else _item(card)
+        for card in area["cards"]
+    )
 
 
 def _shop_offers_from_optional_area(
@@ -309,15 +321,39 @@ def _shop_offers_from_optional_area(
 
 def _hand_card(raw: Mapping[str, Any]) -> HandCard:
     state = raw.get("state")
-    if isinstance(state, Mapping) and bool(state.get("hidden")):
-        return HiddenHandCard()
+    if isinstance(state, Mapping) and "hidden" in state:
+        hidden = state["hidden"]
+        if not isinstance(hidden, bool):
+            raise ObservationError("hand hidden state must be boolean")
+        if hidden:
+            return HiddenHandCard()
     return _playing_card(raw, respect_hidden=True)
+
+
+def _joker_card(raw: Mapping[str, Any]) -> PublicItem | HiddenJokerSlot:
+    state = raw.get("state")
+    if isinstance(state, Mapping) and "hidden" in state and not isinstance(
+        state["hidden"], bool
+    ):
+        raise ObservationError("Joker hidden state must be boolean")
+    hidden = isinstance(state, Mapping) and state.get("hidden") is True
+    if not hidden:
+        return _item(raw)
+    if set(raw) != {"set", "state"} or raw.get("set") != "JOKER" or set(state) != {
+        "hidden"
+    }:
+        raise ObservationError("hidden Joker payload exposed private fields")
+    return HiddenJokerSlot()
 
 
 def _playing_card(raw: Mapping[str, Any], *, respect_hidden: bool) -> VisiblePlayingCard:
     state = raw.get("state")
-    if respect_hidden and isinstance(state, Mapping) and bool(state.get("hidden")):
-        raise ObservationError("hidden card identity reached playing-card adapter")
+    if isinstance(state, Mapping) and "hidden" in state:
+        hidden = state["hidden"]
+        if not isinstance(hidden, bool):
+            raise ObservationError("playing-card hidden state must be boolean")
+        if respect_hidden and hidden:
+            raise ObservationError("hidden card identity reached playing-card adapter")
     value = _required_mapping(raw, "value")
     modifiers = _modifier_table(raw)
     enhancement = _named_modifier(modifiers, "enhancement", _ENHANCEMENTS)
@@ -347,6 +383,12 @@ def _item(raw: Mapping[str, Any]) -> PublicItem:
     rental = modifiers.get("rental", False)
     perishable = modifiers.get("perishable")
     state = raw.get("state")
+    if isinstance(state, Mapping) and "hidden" in state:
+        hidden = state["hidden"]
+        if not isinstance(hidden, bool):
+            raise ObservationError("item hidden state must be boolean")
+        if hidden:
+            raise ObservationError("hidden item identity reached public adapter")
     if not isinstance(eternal, bool) or not isinstance(rental, bool):
         raise ObservationError("joker eternal/rental modifiers must be boolean")
     if perishable is not None and (isinstance(perishable, bool) or not isinstance(perishable, int) or perishable < 0):

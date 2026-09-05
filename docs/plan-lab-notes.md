@@ -3876,3 +3876,87 @@ Verification before the implementation freeze: 863 repository tests pass,
 Ruff and `git diff --check` pass, and the authority patch passes
 `git apply --check --unidiff-zero` against a clean BalatroBot archive. V10
 artifacts remain retired and unloadable under the new teacher/public schemas.
+
+### Contextual v11 interrupted by Amber Acorn firewall audit (2026-09-05)
+
+V11 batch 1 began on seeds 1675--1724 from the clean preregistration commit,
+but was interrupted after five completed worker results and before atomic
+publication. No v11 output directory or artifact exists. The entire v11 seed
+reservation 1675--1974 is retired rather than reused after observing partial
+outcomes.
+
+The reason is a newly discovered public-information violation, not a strength
+or coverage result. Vanilla Amber Acorn flips every owned Joker face down and
+shuffles the physical Joker list. The installed BalatroBot extractor emitted
+`state.hidden=true` but retained each Joker's key, label, ability/runtime,
+edition/stickers, cost, object ID, and shuffled array position. The Python
+adapter ignored the hidden flag and constructed ordinary visible `PublicItem`
+values. Determinized search refused the private face-down area, but baseline,
+model, history, and action code still received the leaked identities and true
+post-shuffle ordering. Therefore the firewall claim was false and no v11
+evidence can be promoted.
+
+The root repair is a distinct anonymous Joker-slot type and defense in depth at
+both authority and adapter boundaries. BalatroBot must emit only the Joker set,
+`hidden=true`, and array position; the adapter must reject any other hidden
+payload and Jackdaw must normalize to the same representation. Hidden private
+twins must remain identical through canonical state, policy wire, legal roots,
+history, and both model encoders. Identity-dependent scoring, selling, and
+search fail closed until a public-history belief can represent the known
+pre-shuffle multiset and every post-shuffle permutation. Fresh v12 collection
+will use unused development seeds 1975--2274 only after this repair is committed
+and preregistered independently.
+
+### V12 anonymous-Joker firewall implementation (2026-09-05)
+
+The public contract now represents an active Amber Acorn Joker row only as a
+tuple of `HiddenJokerSlot` values. A slot carries no key, label, effect text,
+runtime counter, edition, sticker, cost, or object ID. `PublicObservation`
+accepts these slots only when every Joker is hidden during an enabled current
+Amber Acorn. BalatroBot and Jackdaw emit the same minimal wire value; the Python
+adapter rejects a hidden Joker carrying any extra field and rejects hidden
+items outside the Joker area.
+
+Selling and Joker reordering are unavailable while the row is anonymous.
+Exact scoring, capacity, and determinization explicitly fail closed; ordinary
+hand play continues through a card-only conservative scorer. All six shipped
+public baselines return a legal non-identity action in the adversarial Amber
+fixture. Canonicalization assigns no entity ID to a hidden slot, while the two
+model encoders use a single anonymous token.
+
+The same audit found a second subtraction channel for face-down hand cards:
+exposing the exact draw-pile multiset let a policy compare it with the known
+deck and recover the hidden hand identity. The public `Remaining` view now
+combines the draw pile with face-down hand occupants, matching what a player can
+infer without revealing which card is in the hand slot.
+
+Verification: 878 repository tests pass; Ruff and the non-patch whitespace
+check pass. The authority-readiness patch applies to a clean BalatroBot archive;
+its resulting gamestate serializer, OpenRPC schema, Lua annotations, and existing
+gamestate tests match the installed files exactly. A proposed live synthetic
+Amber test could not run because the BalatroBot test launcher omits the debug
+`set` endpoint; it was removed rather than recorded as evidence. A naturally
+reached authority Amber transition remains an explicit certification gate.
+
+### Elite-play gap audit and collection decision (2026-09-05)
+
+The current search improvement is real but narrow: a one-ante rollout can rescue
+Antes 4--7, yet it does not create the multiplicative engines required for high
+Endless scores. Elite routes rely on held-card retriggers such as Baron/Mime with
+red-seal steel Kings, played-card retriggers such as Idol/Triboulet with a highly
+concentrated deck, or Perkeo-based Cryptid/Observatory multiplication. They also
+depend on copying and ordering, aggressive deck sculpting, boss rerolls, and
+pack/inventory timing. Relevant strategy references include the official
+[1.0.1f balance notes](https://store.steampowered.com/news/app/2379780/view/4208127528883891675),
+the [Balatro University Endless guide](https://www.youtube.com/watch?v=hFnw0vkorrY),
+the [Balatro University Joker-order guide](https://www.youtube.com/watch?v=Fzhbg7rYz1w),
+and [Major League Balatro's DrSpectred profile](https://majorleaguebalatro.com/creator/drspectred).
+
+The planned v12 collection is therefore deferred rather than run immediately.
+Seeds 1975--2274 remain unused. The next artifact first gains elite-route goals,
+missing public actions/state, and scorer/search throughput improvements; only
+then is it frozen for trajectory collection. Good trajectories will be useful
+as public behavior coverage and route/pivot supervision, but they will not be
+treated as an oracle: determinized search corrections and terminal outcome
+targets remain necessary to surpass demonstrations and avoid copying seed- or
+build-specific habits.

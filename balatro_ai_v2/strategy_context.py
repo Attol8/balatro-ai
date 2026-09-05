@@ -7,11 +7,11 @@ from dataclasses import dataclass
 
 from balatro_ai_v2.actions import PlayCards, SellJoker
 from balatro_ai_v2.policy import PublicHistoryStep
-from balatro_ai_v2.public_state import Phase, PublicObservation
+from balatro_ai_v2.public_state import HiddenJokerSlot, Phase, PublicObservation
 from balatro_ai_v2.strategy_options import StrategyIntent
 
 
-STRATEGY_CONTEXT_VERSION = 1
+STRATEGY_CONTEXT_VERSION = 2
 
 
 @dataclass(frozen=True, slots=True)
@@ -103,16 +103,35 @@ def _loyalty_remaining(
     observation: PublicObservation,
     history: tuple[PublicHistoryStep, ...],
 ) -> int | None:
-    if sum(joker.key == "j_loyalty_card" for joker in observation.jokers) != 1:
+    if any(isinstance(joker, HiddenJokerSlot) for joker in observation.jokers):
+        return None
+    if any(
+        isinstance(joker, HiddenJokerSlot)
+        for step in history
+        for seen in (step.before, step.after)
+        for joker in seen.jokers
+    ):
+        return None
+    if sum(
+        joker.key == "j_loyalty_card"
+        for joker in observation.jokers
+        if not isinstance(joker, HiddenJokerSlot)
+    ) != 1:
         return None
     if not history:
         return None
     for index in range(len(history) - 1, -1, -1):
         step = history[index]
         before_count = sum(
-            joker.key == "j_loyalty_card" for joker in step.before.jokers
+            joker.key == "j_loyalty_card"
+            for joker in step.before.jokers
+            if not isinstance(joker, HiddenJokerSlot)
         )
-        after_count = sum(joker.key == "j_loyalty_card" for joker in step.after.jokers)
+        after_count = sum(
+            joker.key == "j_loyalty_card"
+            for joker in step.after.jokers
+            if not isinstance(joker, HiddenJokerSlot)
+        )
         if after_count != 1:
             return None
         if before_count == 0:

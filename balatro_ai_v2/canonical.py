@@ -177,6 +177,8 @@ class BalatroBotCanonicalizer:
     def _assign_new_entities(self, raw: Mapping[str, Any]) -> None:
         unseen: list[tuple[tuple[str, str], str, str]] = []
         for card in _walk_cards(raw):
+            if _is_hidden_joker_payload(card):
+                continue
             raw_id = card.get("id")
             if raw_id is None:
                 raise CanonicalizationError("card is missing id")
@@ -281,6 +283,26 @@ def _validate_state(raw: Mapping[str, Any]) -> None:
             raise CanonicalizationError(f"{area_name}.cards must be a list")
         for index, card_value in enumerate(cards):
             card = _expect_mapping(card_value, f"{area_name}.cards[{index}]")
+            card_state = card.get("state")
+            if (
+                area_name == "jokers"
+                and isinstance(card_state, Mapping)
+                and "hidden" in card_state
+            ):
+                if not isinstance(card_state["hidden"], bool):
+                    raise CanonicalizationError(
+                        f"{area_name}.cards[{index}].state.hidden must be boolean"
+                    )
+                if card_state["hidden"] and not _is_hidden_joker_payload(card):
+                    raise CanonicalizationError(
+                        "hidden Joker payload exposed private fields"
+                    )
+            if _is_hidden_joker_payload(card):
+                if area_name != "jokers":
+                    raise CanonicalizationError(
+                        "anonymous hidden Joker slot is valid only in jokers"
+                    )
+                continue
             _reject_unknown(card, _CARD_FIELDS, f"{area_name}.cards[{index}]")
             cost = _expect_mapping(card.get("cost"), f"{area_name}.cards[{index}].cost")
             _reject_unknown(cost, _COST_FIELDS, f"{area_name}.cards[{index}].cost")
@@ -325,6 +347,15 @@ def _walk_cards(raw: Mapping[str, Any]) -> Sequence[Mapping[str, Any]]:
         if isinstance(values, list):
             cards.extend(card for card in values if isinstance(card, Mapping))
     return cards
+
+
+def _is_hidden_joker_payload(card: Mapping[str, Any]) -> bool:
+    return (
+        set(card) == {"set", "state"}
+        and card.get("set") == "JOKER"
+        and isinstance(card.get("state"), Mapping)
+        and dict(card["state"]) == {"hidden": True}
+    )
 
 
 def _is_presentation_field(path: tuple[str, ...], key: str) -> bool:

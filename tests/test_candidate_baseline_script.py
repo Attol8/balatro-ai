@@ -120,7 +120,7 @@ def test_terminal_projection_persists_public_loss_context() -> None:
     projection = module.terminal_projection(to_public_observation(raw))
 
     assert projection == {
-        "schema_version": 3,
+        "schema_version": 4,
         "phase": "GAME_OVER",
         "won": False,
         "antes_cleared": 2,

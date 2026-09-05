@@ -33,7 +33,7 @@ from balatro_ai_v2.determinized_search import (
 from balatro_ai_v2.jackdaw import JackdawBackend
 from balatro_ai_v2.policy import PublicHistoryStep
 from balatro_ai_v2.public_state import Phase
-from state_factory import state
+from state_factory import hidden_joker_slot, state
 
 
 def _organic_states(seed: str, *, phases: set[Phase], limit: int = 6):
@@ -566,6 +566,25 @@ def test_face_down_hand_cards_fail_closed() -> None:
         hidden = clone.current_public
         with pytest.raises(DeterminizationUnavailable):
             sample_candidate(clone, hidden, history, sample_seed(hidden, "f", 0))
+
+
+def test_face_down_joker_order_fails_before_private_backend_access() -> None:
+    raw = state("SELECTING_HAND")
+    raw["blinds"]["small"]["status"] = "DEFEATED"
+    raw["blinds"]["boss"].update(name="Amber Acorn", status="CURRENT")
+    raw["jokers"] = {
+        "cards": [hidden_joker_slot(), hidden_joker_slot()],
+        "count": 2,
+        "highlighted_limit": 1,
+        "limit": 5,
+    }
+    observation = to_public_observation(raw)
+
+    with pytest.raises(
+        DeterminizationUnavailable,
+        match="face-down Joker order cannot be resampled soundly",
+    ):
+        sample_candidate(object(), observation, (), "unused")  # type: ignore[arg-type]
 
 
 def test_search_policy_returns_legal_actions_and_records_paired_values() -> None:

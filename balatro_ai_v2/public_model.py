@@ -43,6 +43,7 @@ from balatro_ai_v2.actions import (
 )
 from balatro_ai_v2.public_state import (
     HiddenHandCard,
+    HiddenJokerSlot,
     PublicItem,
     PublicObservation,
     PublicShopPlayingCard,
@@ -50,8 +51,8 @@ from balatro_ai_v2.public_state import (
 )
 
 
-MODEL_FORMAT_VERSION: Final = 5
-PUBLIC_MODEL_ACTION_PROPOSAL_SCHEMA: Final = "factorized_tactical_targeted_shop_card_v5"
+MODEL_FORMAT_VERSION: Final = 6
+PUBLIC_MODEL_ACTION_PROPOSAL_SCHEMA: Final = "factorized_tactical_hidden_joker_v6"
 _REORDER_ACTIONS = (ReorderHand, ReorderJokers, ReorderConsumables)
 _ACTION_FAMILIES = {
     SelectBlind: "select_blind",
@@ -738,7 +739,12 @@ def _add_card(
     )
 
 
-def _add_item(vector: _HashedVector, prefix: str, item: PublicItem) -> None:
+def _add_item(
+    vector: _HashedVector, prefix: str, item: PublicItem | HiddenJokerSlot
+) -> None:
+    if isinstance(item, HiddenJokerSlot):
+        vector.add(f"{prefix}.hidden", 1.0)
+        return
     vector.category(f"{prefix}.key", item.key)
     vector.category(f"{prefix}.kind", item.kind)
     vector.category(f"{prefix}.edition", item.edition or "<NONE>")

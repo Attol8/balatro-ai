@@ -12,6 +12,7 @@ from balatro_ai_v2.public_state import (
     HandCard,
     HandStat,
     HiddenHandCard,
+    HiddenJokerSlot,
     Phase,
     PublicBlind,
     PublicItem,
@@ -69,7 +70,9 @@ def public_observation_from_data(data: object) -> PublicObservation:
         hand_stats=tuple(
             _hand_stat(value) for value in _array(raw["hand_stats"], "hand_stats", 32)
         ),
-        jokers=tuple(_item(value) for value in _array(raw["jokers"], "jokers", 32)),
+        jokers=tuple(
+            _joker_card(value) for value in _array(raw["jokers"], "jokers", 32)
+        ),
         joker_limit=_integer(raw["joker_limit"], "joker_limit"),
         consumables=tuple(
             _item(value) for value in _array(raw["consumables"], "consumables", 32)
@@ -138,6 +141,13 @@ def _hand_card(value: object) -> HandCard:
     if not raw:
         return HiddenHandCard()
     return _visible_card(raw)
+
+
+def _joker_card(value: object) -> PublicItem | HiddenJokerSlot:
+    raw = _object(value, "joker")
+    if not raw:
+        return HiddenJokerSlot()
+    return _item(raw)
 
 
 def _visible_card(value: object) -> VisiblePlayingCard:

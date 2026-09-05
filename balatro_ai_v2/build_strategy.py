@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from balatro_ai_v2.joker_catalog import JOKER_CATALOG
-from balatro_ai_v2.public_state import PublicObservation
+from balatro_ai_v2.public_state import HiddenJokerSlot, PublicObservation
 
 
 _STANDARD_HAND_ORDER = (
@@ -93,6 +93,8 @@ def infer_build_plan(observation: PublicObservation) -> BuildPlan:
     votes.update({"Pair": 2, "Two Pair": 2, "Flush": 2, "Straight": 1})
 
     for joker in observation.jokers:
+        if isinstance(joker, HiddenJokerSlot):
+            continue
         profile = JOKER_CATALOG.get(joker.key)
         if profile is None:
             continue

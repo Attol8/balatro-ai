@@ -64,6 +64,12 @@ def item_card(
     }
 
 
+def hidden_joker_slot() -> dict[str, Any]:
+    """Exact authority wire shape for one anonymous Amber Acorn slot."""
+
+    return {"set": "JOKER", "state": {"hidden": True}}
+
+
 def state(
     phase: str = "BLIND_SELECT",
     *,

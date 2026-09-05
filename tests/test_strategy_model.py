@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from copy import deepcopy
 from dataclasses import asdict, fields, replace
 
 import pytest
@@ -535,6 +536,10 @@ def test_hidden_twins_and_display_prose_do_not_change_tensors() -> None:
         card["value"]["rank"] = rank
         card["value"]["suit"] = suit
         card["state"] = {"hidden": True}
+    first_raw["cards"]["cards"][0], second_raw["cards"]["cards"][0] = (
+        deepcopy(second_raw["hand"]["cards"][0]),
+        deepcopy(first_raw["hand"]["cards"][0]),
+    )
     first = to_public_observation(first_raw)
     second = to_public_observation(second_raw)
     assert first == second
@@ -742,7 +747,7 @@ def test_strategy_checkpoint_round_trip_and_digest(tmp_path) -> None:
     assert loaded.calibration == StrategyCalibration()
     assert loaded.provenance == {"training_status": "untrained"}
     payload = torch.load(path, weights_only=True)
-    assert payload["format_version"] == STRATEGY_MODEL_FORMAT_VERSION == 5
+    assert payload["format_version"] == STRATEGY_MODEL_FORMAT_VERSION == 6
     assert set(payload) == {
         "format_version",
         "schema_digest",

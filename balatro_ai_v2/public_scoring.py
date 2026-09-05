@@ -17,6 +17,8 @@ from balatro_ai_v2.joker_catalog import get_joker_profile
 from balatro_ai_v2.public_state import (
     HandStat,
     HiddenHandCard,
+    HiddenJokerSlot,
+    JokerCard,
     PublicItem,
     PublicObservation,
     VisiblePlayingCard,
@@ -148,7 +150,13 @@ class _PreparedScoreContext:
 
 
 def _prepare_score_context(observation: PublicObservation) -> _PreparedScoreContext:
-    active_jokers = tuple(joker for joker in observation.jokers if not joker.debuffed)
+    if any(isinstance(joker, HiddenJokerSlot) for joker in observation.jokers):
+        raise ValueError("exact scoring is unavailable for face-down Jokers")
+    active_jokers = tuple(
+        joker
+        for joker in observation.jokers
+        if isinstance(joker, PublicItem) and not joker.debuffed
+    )
     return _PreparedScoreContext(
         observation=observation,
         current_boss=_current_boss_rule(observation),
@@ -175,7 +183,7 @@ def _prepare_score_context(observation: PublicObservation) -> _PreparedScoreCont
             _effective_joker_for_pass(observation.jokers, index, _COPY_MAIN_JOKERS)
             for index in range(len(observation.jokers))
         ),
-        splash=any(joker.key == "j_splash" for joker in observation.jokers),
+        splash=any(joker.key == "j_splash" for joker in active_jokers),
     )
 
 
@@ -184,6 +192,8 @@ def score_play(
     selected: tuple[HandSlot, ...],
     stats: Mapping[str, HandStat] | None = None,
 ) -> tuple[int | Fraction, str]:
+    if any(isinstance(joker, HiddenJokerSlot) for joker in observation.jokers):
+        raise ValueError("exact scoring is unavailable for face-down Jokers")
     return _score_play_prepared(
         observation,
         selected,
@@ -316,6 +326,8 @@ def _score_play_prepared(
             continue
         # Joker edition chips/Mult score before its main effect. Polychrome
         # scores after it, matching the left-to-right Joker pipeline.
+        if isinstance(source_joker, HiddenJokerSlot):
+            continue
         if source_joker.edition == "FOIL":
             chips += 50
         elif source_joker.edition in {"HOLO", "HOLOGRAPHIC"}:
@@ -352,7 +364,7 @@ def _score_play_prepared(
 
 
 def _effective_joker_for_pass(
-    jokers: tuple[PublicItem, ...],
+    jokers: tuple[JokerCard, ...],
     index: int,
     copyable_keys: frozenset[str],
 ) -> PublicItem | None:
@@ -366,6 +378,8 @@ def _effective_joker_for_pass(
     if index < 0 or index >= len(jokers):
         return None
     source = jokers[index]
+    if isinstance(source, HiddenJokerSlot):
+        return None
     if source.debuffed:
         return None
     if source.key not in _COPY_JOKERS:
@@ -378,6 +392,8 @@ def _effective_joker_for_pass(
             return None
         visited.add(current)
         joker = jokers[current]
+        if isinstance(joker, HiddenJokerSlot):
+            return None
         if joker.debuffed:
             return None
         if joker.key not in _COPY_JOKERS:
@@ -400,7 +416,7 @@ def _effective_joker_for_pass(
 
 
 def _effective_jokers_for_pass(
-    jokers: tuple[PublicItem, ...],
+    jokers: tuple[JokerCard, ...],
     copyable_keys: frozenset[str],
 ) -> tuple[PublicItem, ...]:
     return tuple(
@@ -610,6 +626,7 @@ def _joker_main_effect(
     elif key == "j_stencil" and runtime is None:
         stencil_count = sum(
             item.key == "j_stencil" and not item.debuffed for item in observation.jokers
+            if isinstance(item, PublicItem)
         )
         xmult *= max(
             1, observation.joker_limit - len(observation.jokers) + stencil_count
@@ -618,7 +635,9 @@ def _joker_main_effect(
         mult += sum(
             item.sell_cost or 0
             for item in observation.jokers
-            if item is not joker and not item.debuffed
+            if isinstance(item, PublicItem)
+            and item is not joker
+            and not item.debuffed
         )
     elif (
         key == "j_runner"

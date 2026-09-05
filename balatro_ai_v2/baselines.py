@@ -54,6 +54,7 @@ from balatro_ai_v2.policy import (
 from balatro_ai_v2.public_state import (
     HandStat,
     HiddenHandCard,
+    HiddenJokerSlot,
     Phase,
     PublicItem,
     PublicJokerRuntime,
@@ -620,7 +621,7 @@ def _with_history_derived_joker_runtime(
     loyalty_indexes = [
         index
         for index, joker in enumerate(observation.jokers)
-        if joker.key == "j_loyalty_card"
+        if isinstance(joker, PublicItem) and joker.key == "j_loyalty_card"
     ]
     if not loyalty_indexes:
         return observation
@@ -653,7 +654,20 @@ def _loyalty_remaining_from_history(
 ) -> int | None:
     """Derive whether the next public play is Loyalty Card's sixth hand."""
 
-    if sum(joker.key == "j_loyalty_card" for joker in observation.jokers) != 1:
+    if any(isinstance(joker, HiddenJokerSlot) for joker in observation.jokers):
+        return None
+    if any(
+        isinstance(joker, HiddenJokerSlot)
+        for step in history
+        for seen in (step.before, step.after)
+        for joker in seen.jokers
+    ):
+        return None
+    if sum(
+        joker.key == "j_loyalty_card"
+        for joker in observation.jokers
+        if isinstance(joker, PublicItem)
+    ) != 1:
         return None
     if not history or history[-1].after != observation:
         return None
@@ -666,9 +680,15 @@ def _loyalty_remaining_from_history(
     for index in range(len(history) - 1, -1, -1):
         step = history[index]
         before_count = sum(
-            joker.key == "j_loyalty_card" for joker in step.before.jokers
+            joker.key == "j_loyalty_card"
+            for joker in step.before.jokers
+            if isinstance(joker, PublicItem)
         )
-        after_count = sum(joker.key == "j_loyalty_card" for joker in step.after.jokers)
+        after_count = sum(
+            joker.key == "j_loyalty_card"
+            for joker in step.after.jokers
+            if isinstance(joker, PublicItem)
+        )
         if after_count != 1:
             return None
         if before_count == 0:
@@ -691,7 +711,8 @@ def _without_loyalty_remaining(observation: PublicObservation) -> PublicObservat
             joker,
             runtime=replace(joker.runtime, loyalty_remaining=None),
         )
-        if joker.key == "j_loyalty_card"
+        if isinstance(joker, PublicItem)
+        and joker.key == "j_loyalty_card"
         and joker.runtime is not None
         and joker.runtime.loyalty_remaining is not None
         else joker
@@ -900,7 +921,9 @@ def _boss_eligible_plays(
             _classify(
                 tuple(observation.hand[slot.value] for slot in action.cards),
                 frozenset(
-                    joker.key for joker in observation.jokers if not joker.debuffed
+                    joker.key
+                    for joker in observation.jokers
+                    if isinstance(joker, PublicItem) and not joker.debuffed
                 ),
             ),
         )
@@ -945,7 +968,8 @@ def _todo_list_clear_play(
     targets = {
         joker.runtime.target_hand
         for joker in observation.jokers
-        if not joker.debuffed
+        if isinstance(joker, PublicItem)
+        and not joker.debuffed
         and joker.key == "j_todo_list"
         and joker.runtime is not None
         and joker.runtime.target_hand is not None
@@ -1107,7 +1131,9 @@ def _boss_disable_sale(
         (
             sales[index]
             for index, joker in enumerate(observation.jokers)
-            if joker.key == "j_luchador" and index in sales
+            if isinstance(joker, PublicItem)
+            and joker.key == "j_luchador"
+            and index in sales
         ),
         None,
     )
@@ -1199,6 +1225,12 @@ def _play_score(
     stats: Mapping[str, HandStat] | None = None,
 ) -> tuple[int | Fraction, str]:
     """``score_play`` memoized per observation object; scores are pure in their inputs."""
+
+    if any(isinstance(joker, HiddenJokerSlot) for joker in observation.jokers):
+        # Amber Acorn hides the identity-to-position association.  A legal
+        # public fallback can still rank hands by card-only score, but must not
+        # pretend to know any Joker effect or copied position.
+        observation = replace(observation, jokers=())
 
     entry = _PLAY_SCORE_CACHE.get(id(observation))
     if entry is None or entry[0] is not observation:
@@ -1780,7 +1812,7 @@ def _persisted_shop_score_context(
     if any(
         joker.key in stochastic_keys
         for joker in recent_before.jokers
-        if not joker.debuffed
+        if isinstance(joker, PublicItem) and not joker.debuffed
     ):
         return None
     historical_stats = {stat.name: stat for stat in recent_before.hand_stats}
@@ -1966,6 +1998,8 @@ def _owned_joker_context_value(
     build: BuildPlan | None = None,
 ) -> int:
     item = observation.jokers[index]
+    if isinstance(item, HiddenJokerSlot):
+        return 0
     if item.key not in _COPY_JOKERS:
         return _owned_joker_value(item, observation.ante, build)
     target = _joker_context_target(observation, index)
@@ -2067,7 +2101,11 @@ def _economy_reserve(
         reserve = tuning.reserve_ante_3
     else:
         reserve = interest_cap
-    if any(joker.key in {"j_bull", "j_bootstraps"} for joker in observation.jokers):
+    if any(
+        joker.key in {"j_bull", "j_bootstraps"}
+        for joker in observation.jokers
+        if isinstance(joker, PublicItem)
+    ):
         reserve = max(reserve, interest_cap)
     return reserve
 
@@ -2123,7 +2161,8 @@ def _replacement_sale(
     sellable = [
         (index, item)
         for index, item in enumerate(observation.jokers)
-        if not item.eternal
+        if isinstance(item, PublicItem)
+        and not item.eternal
         and item.edition != "NEGATIVE"
         and item.sell_cost is not None
         and item.sell_cost >= 0
@@ -2138,7 +2177,9 @@ def _replacement_sale(
     )
     if require_score_gain and score_context is None:
         return None
-    owned_keys = {item.key for item in observation.jokers}
+    owned_keys = {
+        item.key for item in observation.jokers if isinstance(item, PublicItem)
+    }
     building_after_sale = len(observation.jokers) - 1 < min(4, observation.joker_limit)
     additive_mult_count = sum(
         _joker_context_supplies_additive_mult(observation, index)
@@ -2246,7 +2287,9 @@ def _coverage_discard(
     if observation.round.discards_left <= 0:
         return None
     if not fish_strong_hand and any(
-        joker.key in {"j_green_joker", "j_ramen"} for joker in observation.jokers
+        joker.key in {"j_green_joker", "j_ramen"}
+        for joker in observation.jokers
+        if isinstance(joker, PublicItem)
     ):
         return None
     weak_hand = hand_name in {"High Card", "Pair", "Two Pair", "Three of a Kind"}
@@ -2267,7 +2310,9 @@ def _coverage_discard(
             kept = _keep_slots_for_hand(observation, target_hand)
             visible_cards = tuple(visible.values())
             active_keys = frozenset(
-                joker.key for joker in observation.jokers if not joker.debuffed
+                joker.key
+                for joker in observation.jokers
+                if isinstance(joker, PublicItem) and not joker.debuffed
             )
             target_made = _hand_matches(
                 visible_cards,

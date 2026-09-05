@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from copy import deepcopy
 from dataclasses import replace
 from pathlib import Path
 
@@ -66,6 +67,10 @@ def test_hidden_twins_have_identical_model_outputs() -> None:
         card["value"]["rank"] = rank
         card["value"]["suit"] = suit
         card["state"] = {"hidden": True}
+    first["cards"]["cards"][0], second["cards"]["cards"][0] = (
+        deepcopy(second["hand"]["cards"][0]),
+        deepcopy(first["hand"]["cards"][0]),
+    )
     first["cards"]["cards"].reverse()
     observation_a = to_public_observation(first)
     observation_b = to_public_observation(second)

@@ -13,7 +13,23 @@ from balatro_ai_v2.public_state import (
     PublicJokerRuntime,
     VisiblePlayingCard,
 )
-from state_factory import state
+from state_factory import hidden_joker_slot, state
+
+
+def test_exact_score_is_unavailable_for_amber_joker_order() -> None:
+    raw = state("SELECTING_HAND")
+    raw["blinds"]["small"]["status"] = "DEFEATED"
+    raw["blinds"]["boss"].update(name="Amber Acorn", status="CURRENT")
+    raw["jokers"] = {
+        "cards": [hidden_joker_slot(), hidden_joker_slot()],
+        "count": 2,
+        "highlighted_limit": 1,
+        "limit": 5,
+    }
+    observation = to_public_observation(raw)
+
+    with pytest.raises(ValueError, match="exact scoring is unavailable"):
+        score_play(observation, (HandSlot(0),))
 
 
 @pytest.mark.parametrize(

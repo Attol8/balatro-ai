@@ -34,6 +34,7 @@ from balatro_ai_v2.belief import PublicDrawBelief
 from balatro_ai_v2.capacity import estimate_capacity, log_margin, project_capacity
 from balatro_ai_v2.policy import ActionSource, PublicHistoryStep, PublicPolicy
 from balatro_ai_v2.public_state import (
+    HiddenJokerSlot,
     Phase,
     PublicBlind,
     PublicItem,
@@ -366,6 +367,8 @@ def _semantic_action_label(
         action_name = "use_consumable"
     elif isinstance(action, SellJoker):
         item = observation.jokers[action.joker.value]
+        if isinstance(item, HiddenJokerSlot):
+            raise ValueError("hidden Joker sale reached semantic labeling")
         action_name = "sell_joker"
     elif isinstance(action, SellConsumable):
         item = observation.consumables[action.consumable.value]

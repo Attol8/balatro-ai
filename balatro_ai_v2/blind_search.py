@@ -36,6 +36,7 @@ from balatro_ai_v2.public_state import (
     HandStat,
     HiddenHandCard,
     Phase,
+    PublicItem,
     PublicObservation,
     VisiblePlayingCard,
 )
@@ -681,7 +682,8 @@ def _supports_rollout(observation: PublicObservation) -> bool:
     except ValueError:
         return False
     return (
-        all(joker.key in TACTICAL_EXACT_JOKERS for joker in observation.jokers)
+        all(isinstance(joker, PublicItem) for joker in observation.jokers)
+        and all(joker.key in TACTICAL_EXACT_JOKERS for joker in observation.jokers)
         and exact_joker_multiplicity(observation.jokers)
         and all(joker.edition in {None, "FOIL"} and not joker.debuffed for joker in observation.jokers)
         and not any("observatory" in voucher.lower() for voucher in observation.used_vouchers)

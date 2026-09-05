@@ -11,7 +11,7 @@ from balatro_ai_v2.strategy_engine import derive_engine_state
 from balatro_ai_v2.strategy_options import PersistentIntent, iter_strategy_options
 
 
-STRATEGY_DIAGNOSTIC_SCHEMA_VERSION = 2
+STRATEGY_DIAGNOSTIC_SCHEMA_VERSION = 3
 
 
 def strategy_snapshot(

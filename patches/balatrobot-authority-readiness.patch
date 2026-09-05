@@ -249,10 +249,12 @@ index e92043c..58731bb 100644
 +  end
 +
 diff --git a/src/lua/utils/gamestate.lua b/src/lua/utils/gamestate.lua
-index 5d9d29f..171031e 100644
 --- a/src/lua/utils/gamestate.lua
 +++ b/src/lua/utils/gamestate.lua
-@@ -321,3 +321,4 @@ local function extract_card_modifier(card)
+@@ -318,9 +318,10 @@ local function extract_card_modifier(card)
+     modifier.eternal = true
+   end
+ 
 -  -- Perishable (from perish_tally - only include if > 0)
 -  if card.ability and card.ability.perish_tally and card.ability.perish_tally > 0 then
 -    modifier.perishable = card.ability.perish_tally
@@ -260,35 +262,173 @@ index 5d9d29f..171031e 100644
 +  -- Perishable is observably different from having no sticker.
 +  if card.ability and card.ability.perishable then
 +    modifier.perishable = card.ability.perish_tally or 0
-@@ -390,0 +391,3 @@ local function extract_card_value(card)
+   end
+ 
+   -- Rental (boolean from ability)
+@@ -388,6 +389,9 @@ local function extract_card_value(card)
+     if card.ability.driver_tally then ab.driver_tally = card.ability.driver_tally end
+     -- Loyalty Card: remaining hands until trigger
+     if card.ability.loyalty_remaining ~= nil then ab.loyalty_remaining = card.ability.loyalty_remaining end
 +    -- To Do List's current target is runtime state, not the prototype's
 +    -- initial `extra.poker_hand`. It is visible in the normal card tooltip.
 +    if card.ability.to_do_poker_hand then ab.poker_hand = card.ability.to_do_poker_hand end
-@@ -420,0 +424,5 @@ local function extract_card_state(card)
+     -- Only include if non-empty
+     if next(ab) ~= nil then
+       value.ability = ab
+@@ -418,6 +422,11 @@ local function extract_card_state(card)
+     state.highlight = true
+   end
+ 
 +  -- Cerulean Bell marks the selected card in the normal hand UI.
 +  if card.ability and card.ability.forced_selection then
 +    state.forced_selection = true
 +  end
 +
-@@ -864,0 +868,5 @@ function gamestate.get_gamestate()
+   return state
+ end
+ 
+@@ -437,8 +446,9 @@ local function extract_card_state(card)
+ 
+ ---Extracts a complete Card object from a game card
+ ---@param card table The game card object
+----@return Card card The Card object
+-local function extract_card(card)
++---@param anonymous_hidden_joker boolean? Redact a hidden occupant of G.jokers
++---@return Card|HiddenJokerSlot card The Card object
++local function extract_card(card, anonymous_hidden_joker)
+   -- Determine set
+   local set = "DEFAULT"
+   if card.ability and card.ability.set then
+@@ -462,6 +472,17 @@ local function extract_card(card)
+     end
+   end
+ 
++  -- A face-down Joker's identity-to-position association is private under
++  -- Amber Acorn.  Expose only an anonymous occupied Joker slot; do not retain
++  -- the key, object id, label, ability/runtime, modifiers, stickers, or cost.
++  local state = extract_card_state(card)
++  if anonymous_hidden_joker and state.hidden then
++    return {
++      set = "JOKER",
++      state = { hidden = true },
++    }
++  end
++
+   -- Extract key (prefer card_key for playing cards, fallback to center_key)
+   local key = ""
+   if card.config then
+@@ -479,7 +500,7 @@ local function extract_card(card)
+     label = card.label or "",
+     value = extract_card_value(card),
+     modifier = extract_card_modifier(card),
+-    state = extract_card_state(card),
++    state = state,
+     cost = extract_card_cost(card),
+   }
+ end
+@@ -490,8 +511,9 @@ local function extract_card(card)
+ 
+ ---Extracts an Area object from a game area (like G.jokers, G.hand, etc.)
+ ---@param area table The game area object
++---@param anonymous_hidden_jokers boolean? Redact hidden occupants as anonymous slots
+ ---@return Area? area_data The Area object
+-local function extract_area(area)
++local function extract_area(area, anonymous_hidden_jokers)
+   if not area then
+     return nil
+   end
+@@ -499,7 +521,7 @@ local function extract_area(area)
+   local cards = {}
+   if area.cards then
+     for i, card in pairs(area.cards) do
+-      cards[i] = extract_card(card)
++      cards[i] = extract_card(card, anonymous_hidden_jokers)
+     end
+   end
+ 
+@@ -724,6 +746,7 @@ function gamestate.get_blinds_info()
+     small = {
+       type = "SMALL",
+       status = "UPCOMING",
++      disabled = false,
+       name = "",
+       effect = "",
+       score = 0,
+@@ -733,6 +756,7 @@ function gamestate.get_blinds_info()
+     big = {
+       type = "BIG",
+       status = "UPCOMING",
++      disabled = false,
+       name = "",
+       effect = "",
+       score = 0,
+@@ -742,6 +766,7 @@ function gamestate.get_blinds_info()
+     boss = {
+       type = "BOSS",
+       status = "UPCOMING",
++      disabled = false,
+       name = "",
+       effect = "",
+       score = 0,
+@@ -835,6 +860,14 @@ function gamestate.get_blinds_info()
+ 
+   -- Boss blind has no tags (tag_name and tag_effect remain empty strings)
+ 
++  -- A disabled boss is visibly crossed out in the ordinary game UI. Export
++  -- the state only on the active blind; future blind prototypes are enabled.
++  for _, blind in pairs(blinds) do
++    if blind.status == "CURRENT" then
++      blind.disabled = G.GAME.blind and G.GAME.blind.disabled == true or false
++    end
++  end
++
+   return blinds
+ end
+ 
+@@ -864,6 +897,11 @@ function gamestate.get_gamestate()
+     state_data.ante_num = (G.GAME.round_resets and G.GAME.round_resets.ante) or 0
+     state_data.money = G.GAME.dollars or 0
+     state_data.won = G.GAME.won
 +    -- Both values are visible at a normal decision boundary: the pack UI
 +    -- shows remaining choices, and The Fool exposes the last Tarot/Planet a
 +    -- player could also remember from public action history.
 +    state_data.pack_choices_remaining = G.GAME.pack_choices or 0
 +    state_data.last_tarot_planet = G.GAME.last_tarot_planet or ""
-@@ -899,0 +903,6 @@ function gamestate.get_gamestate()
+ 
+     -- Deck (optional)
+     if G.GAME.selected_back and G.GAME.selected_back.effect and G.GAME.selected_back.effect.center then
+@@ -897,6 +935,12 @@ function gamestate.get_gamestate()
+     -- Poker hands
+     if G.GAME.hands then
+       state_data.hands = extract_hand_info(G.GAME.hands)
 +      -- LuaJIT's string-table iteration order varies between fresh VMs. Vanilla
 +      -- uses this order for chance pools and a boss-round tie-break bug.
 +      state_data.poker_hand_iteration_order = {}
 +      for hand_name in pairs(G.GAME.hands) do
 +        state_data.poker_hand_iteration_order[#state_data.poker_hand_iteration_order + 1] = hand_name
 +      end
-@@ -917,0 +927,5 @@ function gamestate.get_gamestate()
+     end
+ 
+     -- Round info
+@@ -907,12 +951,17 @@ function gamestate.get_gamestate()
+   end
+ 
+   -- Always available areas
+-  state_data.jokers = extract_area(G.jokers)
++  state_data.jokers = extract_area(G.jokers, true)
+   state_data.consumables = extract_area(G.consumeables) -- Note: typo in game code
+ 
+   -- Cards remaining in deck
+   if G.deck then
+     state_data.cards = extract_area(G.deck)
++  end
++
 +  -- Private discard-pile order affects how cards return to the deck.
 +  if G.discard then
 +    state_data.discard = extract_area(G.discard)
-+  end
-+
+   end
+ 
+   -- Hand (count is 0 during not playing phase)
 diff --git a/src/lua/endpoints/use.lua b/src/lua/endpoints/use.lua
 index 7801ed3..4f265c6 100644
 --- a/src/lua/endpoints/use.lua
@@ -347,43 +487,6 @@ index 7801ed3..4f265c6 100644
 +          G.hand:add_to_highlighted(hand_card, true) -- silent=true
 +        end
 +      end
-diff --git a/src/lua/utils/gamestate.lua b/src/lua/utils/gamestate.lua
-index 171031e..4c11d9f 100644
---- a/src/lua/utils/gamestate.lua
-+++ b/src/lua/utils/gamestate.lua
-@@ -733,6 +733,7 @@ function gamestate.get_blinds_info()
-     small = {
-       type = "SMALL",
-       status = "UPCOMING",
-+      disabled = false,
-       name = "",
-       effect = "",
-       score = 0,
-@@ -742,6 +743,7 @@ function gamestate.get_blinds_info()
-     big = {
-       type = "BIG",
-       status = "UPCOMING",
-+      disabled = false,
-       name = "",
-       effect = "",
-       score = 0,
-@@ -751,6 +753,7 @@ function gamestate.get_blinds_info()
-     boss = {
-       type = "BOSS",
-       status = "UPCOMING",
-+      disabled = false,
-       name = "",
-       effect = "",
-       score = 0,
-@@ -846,0 +850,8 @@ function gamestate.get_blinds_info()
-+  -- A disabled boss is visibly crossed out in the ordinary game UI. Export
-+  -- the state only on the active blind; future blind prototypes are enabled.
-+  for _, blind in pairs(blinds) do
-+    if blind.status == "CURRENT" then
-+      blind.disabled = G.GAME.blind and G.GAME.blind.disabled == true or false
-+    end
-+  end
-+
 diff --git a/src/lua/utils/openrpc.json b/src/lua/utils/openrpc.json
 index 6dafa99..e51b42f 100644
 --- a/src/lua/utils/openrpc.json
@@ -407,6 +510,52 @@ index 6dafa99..e51b42f 100644
            "name",
            "effect",
            "score"
+@@ -1280,7 +1285,14 @@
+             "type": "array",
+             "description": "Array of cards in this area",
+             "items": {
+-              "$ref": "#/components/schemas/Card"
++              "oneOf": [
++                {
++                  "$ref": "#/components/schemas/Card"
++                },
++                {
++                  "$ref": "#/components/schemas/HiddenJokerSlot"
++                }
++              ]
+             }
+           }
+         },
+@@ -1332,6 +1344,29 @@
+           "state",
+           "cost"
+         ]
++      },
++      "HiddenJokerSlot": {
++        "type": "object",
++        "description": "Anonymous occupied Joker position while the card is face down",
++        "additionalProperties": false,
++        "properties": {
++          "set": {
++            "type": "string",
++            "enum": ["JOKER"]
++          },
++          "state": {
++            "type": "object",
++            "additionalProperties": false,
++            "properties": {
++              "hidden": {
++                "type": "boolean",
++                "enum": [true]
++              }
++            },
++            "required": ["hidden"]
++          }
++        },
++        "required": ["set", "state"]
+       },
+       "CardValue": {
+         "type": "object",
 diff --git a/src/lua/utils/types.lua b/src/lua/utils/types.lua
 index 53f43b1..b92e5c6 100644
 --- a/src/lua/utils/types.lua
@@ -419,6 +568,19 @@ index 53f43b1..b92e5c6 100644
  ---@field name string Name of the blind (e.g., "Small", "Big" or the Boss name)
  ---@field effect string Description of the blind's effect
  ---@field score integer Score requirement to beat this blind
+@@ -61,7 +62,11 @@
+ ---@field count integer Current number of cards in this area
+ ---@field limit integer Maximum number of cards allowed in this area
+ ---@field highlighted_limit integer? Maximum number of cards that can be highlighted (hand area only)
+----@field cards Card[] Array of cards in this area
++---@field cards (Card|HiddenJokerSlot)[] Array of cards or anonymous hidden Joker slots
++
++---@class HiddenJokerSlot
++---@field set "JOKER" The containing card set
++---@field state {hidden: true} Proof that this occupied position is anonymous
+ 
+ ---@class Card
+ ---@field id integer Unique identifier for the card (sort_id)
 diff --git a/tests/lua/endpoints/test_gamestate.py b/tests/lua/endpoints/test_gamestate.py
 index 2c26a12..d886f00 100644
 --- a/tests/lua/endpoints/test_gamestate.py

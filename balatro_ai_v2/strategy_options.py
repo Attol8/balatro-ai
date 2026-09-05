@@ -35,6 +35,7 @@ from balatro_ai_v2.actions import (
 from balatro_ai_v2.consumable_rules import public_consumable_rule
 from balatro_ai_v2.joker_catalog import JOKER_CATALOG
 from balatro_ai_v2.public_state import (
+    HiddenJokerSlot,
     PublicItem,
     PublicObservation,
     PublicShopPlayingCard,
@@ -351,6 +352,8 @@ def _classify_action(
         classified.extend(_classify_consumable(item, engine, "use_consumable"))
     elif isinstance(action, SellJoker):
         joker = observation.jokers[action.joker.value]
+        if isinstance(joker, HiddenJokerSlot):
+            raise ValueError("cannot classify a hidden Joker sale")
         if joker.key == "j_luchador":
             classified.append((StrategyIntent.BOSS_PREPARATION, ("disable_current_boss",)))
         classified.append((StrategyIntent.ECONOMY, ("realize_public_sell_value",)))

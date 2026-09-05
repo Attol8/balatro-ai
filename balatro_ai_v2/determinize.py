@@ -34,7 +34,12 @@ from typing import Any
 from balatro_ai_v2.backend import AuthorityObservation
 from balatro_ai_v2.jackdaw import JackdawBackend
 from balatro_ai_v2.policy import PublicHistoryStep
-from balatro_ai_v2.public_state import HiddenHandCard, Phase, PublicObservation
+from balatro_ai_v2.public_state import (
+    HiddenHandCard,
+    HiddenJokerSlot,
+    Phase,
+    PublicObservation,
+)
 
 
 class DeterminizationUnavailable(RuntimeError):
@@ -215,6 +220,10 @@ def _require_supported(observation: PublicObservation) -> None:
         raise DeterminizationUnavailable(f"phase {observation.phase.value} is not determinizable")
     if any(isinstance(card, HiddenHandCard) for card in observation.hand):
         raise DeterminizationUnavailable("face-down hand cards cannot be resampled soundly")
+    if any(isinstance(joker, HiddenJokerSlot) for joker in observation.jokers):
+        raise DeterminizationUnavailable(
+            "face-down Joker order cannot be resampled soundly"
+        )
 
 
 def _require_visible_private_state(game_state: Mapping[str, Any]) -> None:

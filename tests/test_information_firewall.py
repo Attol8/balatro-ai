@@ -5,15 +5,23 @@ from dataclasses import fields
 
 import pytest
 
-from balatro_ai_v2.actions import action_to_data, iter_legal_actions
+from balatro_ai_v2.actions import (
+    PlayCards,
+    ReorderJokers,
+    SellJoker,
+    action_to_data,
+    iter_legal_actions,
+)
 from balatro_ai_v2.balatrobot.adapter import ObservationError, to_public_observation
+from balatro_ai_v2.baselines import PUBLIC_BASELINE_NAMES, build_public_baseline
 from balatro_ai_v2.public_state import (
     HiddenHandCard,
+    HiddenJokerSlot,
     OBSCURED_CARD_ATTRIBUTE,
     PublicObservation,
     PublicShopPlayingCard,
 )
-from state_factory import item_card, playing_card, state
+from state_factory import hidden_joker_slot, item_card, playing_card, state
 
 
 def test_hidden_state_twins_produce_identical_policy_input_and_actions() -> None:
@@ -39,16 +47,22 @@ def test_hidden_state_twins_produce_identical_policy_input_and_actions() -> None
 def test_face_down_card_identity_is_completely_anonymous() -> None:
     left = state("SELECTING_HAND")
     right = deepcopy(left)
-    left["hand"]["cards"][0] = playing_card(
+    left_hidden = playing_card(
         "S_A", card_id=800, hidden=True, modifier=["POLYCHROME"], debuffed=True
     )
-    right["hand"]["cards"][0] = playing_card(
+    right_hidden = playing_card(
         "D_2",
         card_id=999,
         hidden=True,
         modifier=["POLYCHROME"],
         permanent_bonus=25,
     )
+    left["hand"]["cards"][0] = left_hidden
+    right["hand"]["cards"][0] = right_hidden
+    # Preserve the public Remaining multiset while varying which private card
+    # occupies the anonymous hand slot.
+    left["cards"]["cards"][0] = deepcopy(right_hidden)
+    right["cards"]["cards"][0] = deepcopy(left_hidden)
 
     left_public = to_public_observation(left)
     right_public = to_public_observation(right)
@@ -60,10 +74,14 @@ def test_face_down_card_identity_is_completely_anonymous() -> None:
 def test_face_down_edition_does_not_change_aura_observation() -> None:
     plain = state("SELECTING_HAND")
     edited = deepcopy(plain)
-    plain["hand"]["cards"][0] = playing_card("S_A", card_id=800, hidden=True)
-    edited["hand"]["cards"][0] = playing_card(
+    plain_hidden = playing_card("S_A", card_id=800, hidden=True)
+    edited_hidden = playing_card(
         "D_2", card_id=999, hidden=True, modifier=["FOIL"]
     )
+    plain["hand"]["cards"][0] = plain_hidden
+    edited["hand"]["cards"][0] = edited_hidden
+    plain["cards"]["cards"][0] = deepcopy(edited_hidden)
+    edited["cards"]["cards"][0] = deepcopy(plain_hidden)
 
     plain_card = to_public_observation(plain).hand[0]
     edited_card = to_public_observation(edited).hand[0]
@@ -73,6 +91,67 @@ def test_face_down_edition_does_not_change_aura_observation() -> None:
     assert plain_card == HiddenHandCard()
     assert edited_card == HiddenHandCard()
     assert to_public_observation(plain) == to_public_observation(edited)
+
+
+def _amber_state() -> dict[str, object]:
+    raw = state("SELECTING_HAND")
+    raw["blinds"]["small"]["status"] = "DEFEATED"
+    raw["blinds"]["boss"].update(
+        {"name": "Amber Acorn", "status": "CURRENT", "effect": "Flips and shuffles Jokers"}
+    )
+    raw["jokers"] = {
+        "cards": [hidden_joker_slot(), hidden_joker_slot()],
+        "count": 2,
+        "highlighted_limit": 1,
+        "limit": 5,
+    }
+    return raw
+
+
+def test_amber_acorn_jokers_are_anonymous_and_not_selectable_by_identity() -> None:
+    observation = to_public_observation(_amber_state())
+    actions = tuple(iter_legal_actions(observation))
+
+    assert observation.jokers == (HiddenJokerSlot(), HiddenJokerSlot())
+    assert any(isinstance(action, PlayCards) for action in actions)
+    assert not any(isinstance(action, SellJoker | ReorderJokers) for action in actions)
+    assert "j_" not in observation.canonical_json()
+
+
+@pytest.mark.parametrize("baseline_name", PUBLIC_BASELINE_NAMES)
+def test_every_public_baseline_plays_amber_without_joker_identity(
+    baseline_name: str,
+) -> None:
+    observation = to_public_observation(_amber_state())
+    legal = tuple(iter_legal_actions(observation))
+    policy, _ = build_public_baseline(baseline_name, "amber-firewall")
+
+    action = policy.choose_action(observation, lambda: iter(legal), ())
+
+    assert action in legal
+    assert not isinstance(action, SellJoker | ReorderJokers)
+
+
+def test_hidden_joker_full_payload_or_malformed_marker_fails_closed() -> None:
+    full = _amber_state()
+    leaked = item_card("j_blueprint", card_id=999, kind="JOKER")
+    leaked["state"] = {"hidden": True}
+    full["jokers"]["cards"][0] = leaked
+    malformed = _amber_state()
+    malformed["jokers"]["cards"][0]["state"]["hidden"] = 1
+
+    with pytest.raises(ObservationError, match="exposed private fields"):
+        to_public_observation(full)
+    with pytest.raises(ObservationError, match="must be boolean"):
+        to_public_observation(malformed)
+
+
+def test_hidden_marker_outside_joker_area_fails_closed() -> None:
+    raw = state("SHOP")
+    raw["shop"]["cards"][0]["state"] = {"hidden": True}
+
+    with pytest.raises(ObservationError, match="hidden item"):
+        to_public_observation(raw)
 
 
 def test_draw_pile_is_public_composition_but_not_private_order() -> None:

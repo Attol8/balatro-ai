@@ -31,7 +31,7 @@ from balatro_ai_v2.strategy_diagnostics import strategy_snapshot, summarize_stra
 from balatro_ai_v2.strategy_tuning import StrategyTuning
 
 
-TERMINAL_PROJECTION_SCHEMA_VERSION = 3
+TERMINAL_PROJECTION_SCHEMA_VERSION = 4
 
 
 def main() -> None:

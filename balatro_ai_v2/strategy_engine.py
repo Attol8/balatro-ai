@@ -18,7 +18,7 @@ from balatro_ai_v2.boss_rules import BossConstraint, boss_rule
 from balatro_ai_v2.build_strategy import infer_build_plan
 from balatro_ai_v2.consumable_rules import public_consumable_rule
 from balatro_ai_v2.joker_catalog import JOKER_CATALOG, JokerRole
-from balatro_ai_v2.public_state import PublicObservation
+from balatro_ai_v2.public_state import HiddenJokerSlot, PublicObservation
 
 
 class RunGoal(str, Enum):
@@ -224,6 +224,9 @@ def _scoring_engine(observation: PublicObservation) -> ScoringEngine:
     order_sensitive_slots: list[int] = []
     unknown_slots: list[int] = []
     for slot, joker in enumerate(observation.jokers):
+        if isinstance(joker, HiddenJokerSlot):
+            unknown_slots.append(slot)
+            continue
         profile = JOKER_CATALOG.get(joker.key)
         if profile is None:
             unknown_slots.append(slot)
@@ -237,6 +240,8 @@ def _scoring_engine(observation: PublicObservation) -> ScoringEngine:
 
     relations: list[CopyRelation] = []
     for source, joker in enumerate(observation.jokers):
+        if isinstance(joker, HiddenJokerSlot):
+            continue
         target: int | None = None
         kind: CopyKind | None = None
         if joker.key == "j_blueprint" and source + 1 < len(observation.jokers):
@@ -257,6 +262,9 @@ def _scoring_engine(observation: PublicObservation) -> ScoringEngine:
                     publicly_enabled=(
                         source != target
                         and not joker.debuffed
+                        and not isinstance(
+                            observation.jokers[target], HiddenJokerSlot
+                        )
                         and not observation.jokers[target].debuffed
                     ),
                 )
@@ -311,25 +319,34 @@ def _economy(observation: PublicObservation) -> EconomyProfile:
         interest_cap = 10
     else:
         interest_cap = 5
+    visible_jokers = tuple(
+        joker
+        for joker in observation.jokers
+        if not isinstance(joker, HiddenJokerSlot)
+    )
     credit_cards = sum(
-        joker.key == "j_credit_card" and not joker.debuffed for joker in observation.jokers
+        joker.key == "j_credit_card" and not joker.debuffed
+        for joker in visible_jokers
     )
     economy_jokers = sum(
         (profile := JOKER_CATALOG.get(joker.key)) is not None
         and profile.role == "economy"
         and not joker.debuffed
-        for joker in observation.jokers
+        for joker in visible_jokers
     )
     return EconomyProfile(
         cash=observation.money,
         interest_cap=interest_cap,
         interest_units=min(interest_cap, max(0, observation.money) // 5),
         credit_floor=-20 * credit_cards,
-        rental_liability_per_round=3 * sum(joker.rental for joker in observation.jokers),
-        sell_value=sum(joker.sell_cost or 0 for joker in observation.jokers)
+        rental_liability_per_round=3 * sum(joker.rental for joker in visible_jokers),
+        sell_value=sum(joker.sell_cost or 0 for joker in visible_jokers)
         + sum(item.sell_cost or 0 for item in observation.consumables),
         economy_jokers=economy_jokers,
-        free_rerolls=sum(joker.key == "j_chaos" and not joker.debuffed for joker in observation.jokers),
+        free_rerolls=sum(
+            joker.key == "j_chaos" and not joker.debuffed
+            for joker in visible_jokers
+        ),
         unknown_used_vouchers=tuple(
             key for key in observation.used_vouchers if key not in KNOWN_VOUCHERS
         ),

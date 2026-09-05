@@ -9,7 +9,7 @@ from balatro_ai_v2.balatrobot.adapter import to_public_observation
 from balatro_ai_v2.belief import PublicDrawBelief
 from balatro_ai_v2.capacity import estimate_capacity, log_margin, project_capacity
 from balatro_ai_v2.public_state import HiddenHandCard
-from state_factory import item_card, state
+from state_factory import hidden_joker_slot, item_card, state
 
 
 def test_visible_hand_capacity_is_the_best_legal_public_play() -> None:
@@ -97,6 +97,29 @@ def test_hidden_and_unsupported_mechanics_fail_closed() -> None:
     assert hidden_result.mean_best_score is None
     assert not unsupported_result.available
     assert unsupported_result.unavailable_reason == "unsupported Joker state for j_square"
+
+
+def test_amber_joker_order_is_not_treated_as_exact_capacity_state() -> None:
+    raw = state("SELECTING_HAND")
+    raw["blinds"]["small"]["status"] = "DEFEATED"
+    raw["blinds"]["boss"].update(name="Amber Acorn", status="CURRENT")
+    raw["jokers"] = {
+        "cards": [hidden_joker_slot(), hidden_joker_slot()],
+        "count": 2,
+        "highlighted_limit": 1,
+        "limit": 5,
+    }
+    observation = to_public_observation(raw)
+
+    estimate = estimate_capacity(
+        observation,
+        PublicDrawBelief.from_observation(observation),
+        samples=16,
+    )
+
+    assert not estimate.available
+    assert estimate.unavailable_reason == "face-down Jokers are unsupported"
+    assert estimate.mean_best_score is None
 
 
 def test_unknown_boss_and_preblind_riff_raff_fail_closed() -> None:
