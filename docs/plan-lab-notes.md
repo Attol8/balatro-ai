@@ -4588,3 +4588,24 @@ suite passes all 1,113 tests in 50.47 seconds and focused Ruff is clean. The
 trace remains diagnostic because its authority policy never executed the new
 buy-and-use action; certification still requires the ordered `planet_use`
 2411--2430 scan from a fresh checkout.
+
+### Planet buy-and-use organic authority certification (2026-09-05)
+
+Commit `f74e683` ran the preregistered seeds 2411--2430 in order from a clean
+detached checkout with `DeterministicCoveragePolicy:planet-buy-use-organic-v1:
+planet_use`, pinned Jackdaw revision
+`dbedc66255fe594cce7b7cccc188c8a11649d9ec`, and authority patch SHA-256
+`8071d3eb78647010813986b8c4457155cb37522c6e08391944b893fe78763bc9`.
+All 20 authority runs completed and all 846 accepted transitions replayed from
+the beginning with zero observed-state mismatch. Fifteen seeds executed 26
+natural Planet buy-and-use actions spanning nine Planet keys and all nine hand
+families those keys upgrade. Every organic use occurred with an empty 0/2
+consumable tray; the full-tray bypass remains covered by the real-Balatro
+endpoint contract test, not by this organic lane.
+
+The checked traces and a per-file digest manifest live under
+`runs/evidence/planet-buy-use-organic-v1-seeds2411-2430-attempt1/`. Their
+aggregate trace-set SHA-256 is
+`134680fcf001608b392677fa22dd08d5364fb7169e8e62c7eff906759d7a3bbe`.
+This certifies only exact execution of the narrow public Planet action; the
+coverage policy is deliberately weak and its losses are not strength evidence.

@@ -1448,6 +1448,14 @@ seed-2420 diagnostic now replays all 25 transitions exactly, its base/modified
 card regression passes, and the full suite is green at 1,113 tests. Commit this
 repair before constructing the fresh checkout for the ordered coverage scan.
 
+Authority certification status: complete at commit `f74e683`. The clean
+ordered 2411--2430 lane finished 20/20 runs and replayed all 846 transitions
+exactly. It exercised 26 Planet buy-and-use actions on 15 seeds across nine
+Planet keys. The checked trace-set digest is
+`134680fcf001608b392677fa22dd08d5364fb7169e8e62c7eff906759d7a3bbe`.
+The narrow action may now enter public strategy/search; this does not promote
+the coverage policy or establish any strength gain.
+
 After that correction, instrument clone, root-step, continuation/scoring, and
 allocation/GC time at terminal-teacher anchors. The Arcana tail is valid
 exhaustive targeting: 13 decisions with at least 100 roots account for 2,017 of
