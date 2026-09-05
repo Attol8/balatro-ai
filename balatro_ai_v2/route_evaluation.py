@@ -7,10 +7,12 @@ authorize an action or a certificate.
 
 from __future__ import annotations
 
+import hashlib
+import json
 import math
 from collections import Counter, defaultdict
 from copy import deepcopy
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, fields
 from typing import Iterable, Sequence
 
 import torch
@@ -29,12 +31,14 @@ from balatro_ai_v2.route_learning_protocol import (
 from balatro_ai_v2.route_model import RouteResidualCalibration
 from balatro_ai_v2.strategy_engine import RunGoal, RunRoute
 from balatro_ai_v2.strategy_model import (
+    STRATEGY_MODEL_SCHEMA_DIGEST,
     PublicStrategyTensorizer,
     RelationalStrategyPolicyValue,
 )
 from balatro_ai_v2.strategy_teacher import (
     StrategyTargetEndpoint,
     StrategyTeacherRecord,
+    teacher_records_digest,
 )
 
 
@@ -60,12 +64,56 @@ _CALIBRATION_FIELDS = {
 }
 _WEIGHTING = str(CALIBRATION_CONFIG["weighting"])
 _SIGN_WEIGHTING = "run-decision-pair-equal"
+_CALIBRATION_EVIDENCE_KIND = "route_residual_calibration_evidence"
+_CALIBRATION_EVIDENCE_FORMAT = 1
+_CALIBRATION_METRIC_FIELDS = {
+    "bias",
+    "overprediction_radius",
+    "groups",
+    "decisions",
+    "pairs",
+    "eligible_samples",
+    "masked_pairs",
+    "null_mismatch_pairs",
+    "null_mismatch_samples",
+    "both_null_samples",
+    "weighting",
+    "max_overprediction",
+    "empirical_only",
+}
 
 RouteSupportCell = tuple[str, str, str, int]
 
 
 class RouteEvaluationError(ValueError):
     """The route model or its evaluation data cannot be evaluated safely."""
+
+
+@dataclass(frozen=True, slots=True)
+class RouteCalibrationEvidence:
+    """Exact calibration data/model binding emitted by the frozen fitter."""
+
+    calibration_records_sha256: str
+    model_state_sha256: str
+    parameters: dict[str, object]
+    metrics: dict[str, object]
+    kind: str = _CALIBRATION_EVIDENCE_KIND
+    format_version: int = _CALIBRATION_EVIDENCE_FORMAT
+
+    def __post_init__(self) -> None:
+        normalized = _normalize_calibration_evidence(self.to_data())
+        object.__setattr__(self, "parameters", normalized["parameters"])
+        object.__setattr__(self, "metrics", normalized["metrics"])
+
+    def to_data(self) -> dict[str, object]:
+        return {
+            "kind": self.kind,
+            "format_version": self.format_version,
+            "calibration_records_sha256": self.calibration_records_sha256,
+            "model_state_sha256": self.model_state_sha256,
+            "parameters": deepcopy(self.parameters),
+            "metrics": deepcopy(self.metrics),
+        }
 
 
 @dataclass(frozen=True, slots=True)
@@ -80,6 +128,183 @@ class _Atom:
     sample_index: int
     target: float
     weight: float
+
+
+def _exact_equal(left: object, right: object) -> bool:
+    if type(left) is not type(right):
+        return False
+    if isinstance(left, dict):
+        return set(left) == set(right) and all(
+            _exact_equal(left[key], right[key]) for key in left
+        )
+    if isinstance(left, list):
+        return len(left) == len(right) and all(
+            _exact_equal(a, b) for a, b in zip(left, right, strict=True)
+        )
+    return left == right
+
+
+def _json_bytes(value: object) -> bytes:
+    try:
+        return json.dumps(
+            value,
+            sort_keys=True,
+            separators=(",", ":"),
+            allow_nan=False,
+        ).encode()
+    except (TypeError, ValueError) as exc:
+        raise RouteEvaluationError("route evaluation value is not finite JSON") from exc
+
+
+def _validate_split(split: object) -> RouteDatasetSplit:
+    if type(split) is not RouteDatasetSplit:
+        raise RouteEvaluationError("route evaluation requires an exact dataset split")
+    memberships: list[set[str]] = []
+    for name in ("train", "calibration", "holdout"):
+        records = getattr(split, name)
+        declared = getattr(split, f"{name}_groups")
+        if type(records) is not tuple or not all(
+            type(record) is StrategyTeacherRecord for record in records
+        ):
+            raise RouteEvaluationError(f"route {name} records are malformed")
+        if (
+            type(declared) is not tuple
+            or len(set(declared)) != len(declared)
+            or not all(type(group) is str for group in declared)
+        ):
+            raise RouteEvaluationError(f"route {name} group membership is malformed")
+        derived = tuple(sorted({record.run_group for record in records}))
+        if tuple(sorted(declared)) != derived:
+            raise RouteEvaluationError(
+                f"route {name} records disagree with declared groups"
+            )
+        memberships.append(set(derived))
+    if any(
+        memberships[left] & memberships[right]
+        for left, right in ((0, 1), (0, 2), (1, 2))
+    ):
+        raise RouteEvaluationError("route evaluation split groups overlap")
+    return split
+
+
+def _calibration_records_sha256(split: RouteDatasetSplit) -> str:
+    try:
+        return teacher_records_digest(_canonical_records(split.calibration))
+    except (TypeError, ValueError) as exc:
+        raise RouteEvaluationError("route calibration records are invalid") from exc
+
+
+def _model_state_sha256(model: RelationalStrategyPolicyValue) -> str:
+    if not isinstance(model, RelationalStrategyPolicyValue):
+        raise RouteEvaluationError("route evaluation model has the wrong type")
+    header = {
+        "schema_digest": STRATEGY_MODEL_SCHEMA_DIGEST,
+        "config": asdict(model.config),
+        "calibration": asdict(model.calibration),
+        "provenance": deepcopy(model.provenance),
+    }
+    digest = hashlib.sha256(_json_bytes(header))
+    for name, value in sorted(model.state_dict().items()):
+        if (
+            type(name) is not str
+            or not isinstance(value, torch.Tensor)
+            or value.layout != torch.strided
+            or (value.is_floating_point() or value.is_complex())
+            and not torch.isfinite(value).all()
+        ):
+            raise RouteEvaluationError("route evaluation model state is malformed")
+        tensor = value.detach().cpu().contiguous()
+        metadata = {
+            "name": name,
+            "dtype": str(tensor.dtype),
+            "shape": list(tensor.shape),
+        }
+        digest.update(_json_bytes(metadata))
+        digest.update(tensor.view(torch.uint8).numpy().tobytes())
+    return digest.hexdigest()
+
+
+def _normalize_calibration_evidence(value: object) -> dict[str, object]:
+    required = {
+        "kind",
+        "format_version",
+        "calibration_records_sha256",
+        "model_state_sha256",
+        "parameters",
+        "metrics",
+    }
+    if type(value) is not dict or set(value) != required:
+        raise RouteEvaluationError("route calibration evidence fields are invalid")
+    normalized = deepcopy(value)
+    if (
+        type(normalized["kind"]) is not str
+        or normalized["kind"] != _CALIBRATION_EVIDENCE_KIND
+        or type(normalized["format_version"]) is not int
+        or normalized["format_version"] != _CALIBRATION_EVIDENCE_FORMAT
+    ):
+        raise RouteEvaluationError("route calibration evidence identity is invalid")
+    for name in ("calibration_records_sha256", "model_state_sha256"):
+        digest = normalized[name]
+        if (
+            type(digest) is not str
+            or len(digest) != 64
+            or any(character not in "0123456789abcdef" for character in digest)
+        ):
+            raise RouteEvaluationError(f"route calibration {name} is invalid")
+    parameters = normalized["parameters"]
+    parameter_fields = {field.name for field in fields(RouteResidualCalibration)}
+    if type(parameters) is not dict or set(parameters) != parameter_fields:
+        raise RouteEvaluationError("route calibration parameter fields are invalid")
+    try:
+        parsed = RouteResidualCalibration(**parameters)
+    except (TypeError, ValueError) as exc:
+        raise RouteEvaluationError("route calibration parameters are invalid") from exc
+    if (
+        type(parameters["calibrated"]) is not bool
+        or any(
+            type(value) is not float
+            for name, value in parameters.items()
+            if name != "calibrated"
+        )
+    ):
+        raise RouteEvaluationError("route calibration parameter types are invalid")
+    if parsed.calibrated is not True:
+        raise RouteEvaluationError("route calibration evidence is incomplete")
+    metrics = normalized["metrics"]
+    if type(metrics) is not dict or set(metrics) != set(ROUTE_RESIDUAL_HEADS):
+        raise RouteEvaluationError("route calibration metric heads are invalid")
+    for head in ROUTE_RESIDUAL_HEADS:
+        row = metrics[head]
+        if type(row) is not dict or set(row) != _CALIBRATION_METRIC_FIELDS:
+            raise RouteEvaluationError("route calibration metric fields are invalid")
+        for name in (
+            "groups",
+            "decisions",
+            "pairs",
+            "eligible_samples",
+            "masked_pairs",
+            "null_mismatch_pairs",
+            "null_mismatch_samples",
+            "both_null_samples",
+        ):
+            if type(row[name]) is not int or row[name] < 0:
+                raise RouteEvaluationError("route calibration metric count is invalid")
+        bias_field, radius_field = _CALIBRATION_FIELDS[head]
+        for name in ("bias", "overprediction_radius", "max_overprediction"):
+            if type(row[name]) is not float or not math.isfinite(row[name]):
+                raise RouteEvaluationError("route calibration metric value is invalid")
+        if (
+            type(row["weighting"]) is not str
+            or row["weighting"] != _WEIGHTING
+            or type(row["empirical_only"]) is not bool
+            or row["empirical_only"] is not True
+            or not _exact_equal(row["bias"], parameters[bias_field])
+            or not _exact_equal(row["overprediction_radius"], parameters[radius_field])
+            or not _exact_equal(row["max_overprediction"], parameters[radius_field])
+        ):
+            raise RouteEvaluationError("route calibration metrics disagree with parameters")
+    _json_bytes(normalized)
+    return normalized
 
 
 def _canonical_records(
@@ -266,10 +491,12 @@ def _weighted_mean(values: Iterable[tuple[float, float]]) -> float:
 
 def fit_route_residual_calibration(
     model: RelationalStrategyPolicyValue,
-    records: Sequence[StrategyTeacherRecord],
-) -> tuple[RouteResidualCalibration, dict[str, object]]:
+    split: RouteDatasetSplit,
+) -> tuple[RouteResidualCalibration, RouteCalibrationEvidence]:
     """Fit frozen additive biases and empirical one-sided radii."""
 
+    split = _validate_split(split)
+    records = split.calibration
     predictions = _predict_examples(model, records)
     values: dict[str, float | bool] = {"calibrated": True}
     metrics: dict[str, object] = {}
@@ -324,7 +551,13 @@ def fit_route_residual_calibration(
             "empirical_only": True,
         }
     calibration = RouteResidualCalibration(**values)
-    return calibration, metrics
+    evidence = RouteCalibrationEvidence(
+        calibration_records_sha256=_calibration_records_sha256(split),
+        model_state_sha256=_model_state_sha256(model),
+        parameters=asdict(calibration),
+        metrics=metrics,
+    )
+    return calibration, evidence
 
 
 def _cell(example: RoutePairedExample) -> RouteSupportCell:
@@ -525,7 +758,10 @@ def _holdout_head_metrics(
 def _scalar_sign_metrics(
     predictions: Sequence[_Prediction], bias: float
 ) -> dict[str, object]:
-    pair_weights = _pair_weights(predictions, "scalar")
+    pair_weights = _example_weights(
+        tuple(prediction.example for prediction in predictions),
+        scalar_nonzero=True,
+    )
     rows: list[tuple[int, int, float]] = []
     cancelled_sensitive = 0
     zeros = 0
@@ -760,7 +996,6 @@ def _recommendations(
             for row in rows
             if row.example.record.candidates[row.example.specialist_index].action
             == behavior.action
-            and _cell(row.example) in admitted_cells
             and _observed_safe(row)
         ]
         regret = False
@@ -880,12 +1115,33 @@ def evaluate_route_holdout(
     split: RouteDatasetSplit,
     calibration: RouteResidualCalibration,
     *,
-    calibration_metrics: dict[str, object] | None = None,
+    calibration_evidence: RouteCalibrationEvidence | None = None,
 ) -> dict[str, object]:
     """Evaluate the untouched holdout under the frozen conservative rule."""
 
+    split = _validate_split(split)
     if calibration.calibrated is not True:
         raise RouteEvaluationError("route holdout calibration is incomplete")
+    if not isinstance(calibration_evidence, RouteCalibrationEvidence):
+        raise RouteEvaluationError("route holdout calibration evidence is missing")
+    evidence = _normalize_calibration_evidence(calibration_evidence.to_data())
+    if evidence["calibration_records_sha256"] != _calibration_records_sha256(split):
+        raise RouteEvaluationError(
+            "route holdout calibration evidence names the wrong partition"
+        )
+    if evidence["model_state_sha256"] != _model_state_sha256(model):
+        raise RouteEvaluationError("route holdout calibration model digest disagrees")
+    if not _exact_equal(evidence["parameters"], asdict(calibration)):
+        raise RouteEvaluationError("route holdout calibration parameters disagree")
+    expected_calibration, expected_evidence = fit_route_residual_calibration(
+        model, split
+    )
+    if not _exact_equal(asdict(calibration), asdict(expected_calibration)) or not (
+        _exact_equal(evidence, expected_evidence.to_data())
+    ):
+        raise RouteEvaluationError(
+            "route holdout calibration evidence was not emitted by the frozen fit"
+        )
     predictions = _predict_examples(model, split.holdout)
     heads = {
         head: _holdout_head_metrics(predictions, calibration, head)
@@ -956,12 +1212,9 @@ def evaluate_route_holdout(
             row["within_calibration_radius"] is True for row in heads.values()
         ),
     }
-    return {
+    report = {
         "calibration_contract": deepcopy(CALIBRATION_CONFIG),
-        "calibration": {
-            "parameters": asdict(calibration),
-            "metrics": calibration_metrics,
-        },
+        "calibration": evidence,
         "zero_baseline": {
             "residual": 0.0,
             "fitted": False,
@@ -973,9 +1226,12 @@ def evaluate_route_holdout(
         "recommendations": recommendations,
         "gate": {**gate, "passed": all(gate.values())},
     }
+    _json_bytes(report)
+    return report
 
 
 __all__ = [
+    "RouteCalibrationEvidence",
     "RouteEvaluationError",
     "evaluate_route_holdout",
     "fit_route_residual_calibration",

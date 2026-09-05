@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+from copy import deepcopy
 from dataclasses import replace
 
 import pytest
@@ -143,6 +145,11 @@ def _split(train, calibration, holdout) -> RouteDatasetSplit:
     )
 
 
+def _model(seed: int = 7) -> RelationalStrategyPolicyValue:
+    torch.manual_seed(seed)
+    return RelationalStrategyPolicyValue()
+
+
 def _raw_from_targets(example) -> dict[str, float]:
     raw = {
         "scalar": sum(example.targets.scalar) / len(example.targets.scalar),
@@ -283,7 +290,10 @@ def test_calibration_uses_weighted_bias_and_maximum_one_sided_radius(monkeypatch
         (rows[1].run_group, 0, RunRoute.PLAYED_RETRIGGER.value): {"scalar": 4.0},
     }
     _patch_predictions(monkeypatch, overrides)
-    calibration, metrics = evaluation.fit_route_residual_calibration(object(), rows)
+    calibration, evidence = evaluation.fit_route_residual_calibration(
+        _model(), _split((), rows, ())
+    )
+    metrics = evidence.metrics
     assert calibration.scalar_bias == pytest.approx(-2.0)
     assert calibration.scalar_overprediction_radius == pytest.approx(2.0)
     assert metrics["scalar"]["max_overprediction"] == pytest.approx(2.0)
@@ -307,9 +317,10 @@ def test_masked_pair_is_never_partially_admitted(monkeypatch):
         ),
     )
     _patch_predictions(monkeypatch)
-    _, metrics = evaluation.fit_route_residual_calibration(
-        object(), (complete, mismatched)
+    _, evidence = evaluation.fit_route_residual_calibration(
+        _model(), _split((), (complete, mismatched), ())
     )
+    metrics = evidence.metrics
     assert metrics["ante8"]["pairs"] == 1
     assert metrics["ante8"]["eligible_samples"] == 2
     assert metrics["ante8"]["masked_pairs"] == 1
@@ -321,7 +332,9 @@ def test_calibration_fails_when_any_head_has_no_support(monkeypatch):
     row = _record(1, 0, ante8=None)
     _patch_predictions(monkeypatch)
     with pytest.raises(evaluation.RouteEvaluationError, match="ante8 has no support"):
-        evaluation.fit_route_residual_calibration(object(), (row,))
+        evaluation.fit_route_residual_calibration(
+            _model(), _split((), (row,), ())
+        )
 
 
 def test_support_cells_do_not_authorize_cartesian_crosses():
@@ -358,17 +371,23 @@ def test_cancelled_sensitive_pairs_do_not_supply_mixed_signs():
 def test_holdout_beats_literal_zero_and_is_shuffle_deterministic(monkeypatch):
     split = _supported_panel()
     _patch_predictions(monkeypatch)
-    calibration, calibration_metrics = evaluation.fit_route_residual_calibration(
-        object(), split.calibration
+    model = _model()
+    calibration, calibration_evidence = evaluation.fit_route_residual_calibration(
+        model, split
     )
     report = evaluation.evaluate_route_holdout(
-        object(), split, calibration, calibration_metrics=calibration_metrics
+        model, split, calibration, calibration_evidence=calibration_evidence
     )
     shuffled = _split(
-        reversed(split.train), reversed(split.calibration), reversed(split.holdout)
+        tuple(reversed(split.train)),
+        tuple(reversed(split.calibration)),
+        tuple(reversed(split.holdout)),
     )
     assert report == evaluation.evaluate_route_holdout(
-        object(), shuffled, calibration, calibration_metrics=calibration_metrics
+        model,
+        shuffled,
+        calibration,
+        calibration_evidence=calibration_evidence,
     )
     assert report["zero_baseline"]["residual"] == 0.0
     assert report["zero_baseline"]["fitted"] is False
@@ -380,15 +399,150 @@ def test_holdout_beats_literal_zero_and_is_shuffle_deterministic(monkeypatch):
     assert report["recommendations"]["recommendation_groups"] == 2
     assert set(report["gate"]) - {"passed"} == set(HOLDOUT_GATE)
     assert report["gate"]["passed"] is True
+    json.dumps(report, allow_nan=False, sort_keys=True)
+
+
+def test_public_boundaries_reject_malformed_or_leaking_split(monkeypatch):
+    split = _supported_panel()
+    _patch_predictions(monkeypatch)
+    model = _model()
+
+    wrong_membership = replace(
+        split,
+        calibration_groups=(*split.calibration_groups, "origin-ffffffffffffffffffffffffffffffff"),
+    )
+    with pytest.raises(evaluation.RouteEvaluationError, match="declared groups"):
+        evaluation.fit_route_residual_calibration(model, wrong_membership)
+
+    overlapping = _split(split.train, split.train, split.holdout)
+    with pytest.raises(evaluation.RouteEvaluationError, match="groups overlap"):
+        evaluation.fit_route_residual_calibration(model, overlapping)
+
+    malformed = replace(split, calibration=list(split.calibration))
+    with pytest.raises(evaluation.RouteEvaluationError, match="records are malformed"):
+        evaluation.fit_route_residual_calibration(model, malformed)
+
+    calibration, evidence = evaluation.fit_route_residual_calibration(model, split)
+    with pytest.raises(evaluation.RouteEvaluationError, match="declared groups"):
+        evaluation.evaluate_route_holdout(
+            model,
+            wrong_membership,
+            calibration,
+            calibration_evidence=evidence,
+        )
+
+
+def test_holdout_requires_exact_calibration_partition_model_and_parameters(
+    monkeypatch,
+):
+    split = _supported_panel()
+    _patch_predictions(monkeypatch)
+    model = _model()
+    calibration, evidence = evaluation.fit_route_residual_calibration(model, split)
+
+    with pytest.raises(evaluation.RouteEvaluationError, match="evidence is missing"):
+        evaluation.evaluate_route_holdout(model, split, calibration)
+
+    first = split.calibration[0]
+    specialist = first.candidates[1]
+    changed_specialist = replace(
+        specialist,
+        samples=(
+            replace(
+                specialist.samples[0],
+                search_utility=specialist.samples[0].search_utility + 0.25,
+            ),
+            specialist.samples[1],
+        ),
+    )
+    changed_split = replace(
+        split,
+        calibration=(
+            replace(
+                first,
+                candidates=(first.candidates[0], changed_specialist),
+            ),
+            *split.calibration[1:],
+        ),
+    )
+    with pytest.raises(evaluation.RouteEvaluationError, match="wrong partition"):
+        evaluation.evaluate_route_holdout(
+            model,
+            changed_split,
+            calibration,
+            calibration_evidence=evidence,
+        )
+
+    with pytest.raises(evaluation.RouteEvaluationError, match="model digest"):
+        evaluation.evaluate_route_holdout(
+            _model(8),
+            split,
+            calibration,
+            calibration_evidence=evidence,
+        )
+
+    changed_calibration = replace(
+        calibration,
+        scalar_bias=calibration.scalar_bias + 0.25,
+    )
+    with pytest.raises(evaluation.RouteEvaluationError, match="parameters disagree"):
+        evaluation.evaluate_route_holdout(
+            model,
+            split,
+            changed_calibration,
+            calibration_evidence=evidence,
+        )
+
+    forged_metrics = deepcopy(evidence.metrics)
+    forged_metrics["scalar"]["bias"] = changed_calibration.scalar_bias
+    forged_evidence = replace(
+        evidence,
+        parameters={
+            **evidence.parameters,
+            "scalar_bias": changed_calibration.scalar_bias,
+        },
+        metrics=forged_metrics,
+    )
+    with pytest.raises(evaluation.RouteEvaluationError, match="frozen fit"):
+        evaluation.evaluate_route_holdout(
+            model,
+            split,
+            changed_calibration,
+            calibration_evidence=forged_evidence,
+        )
+
+
+def test_calibration_evidence_rejects_unknown_or_nonfinite_metrics(monkeypatch):
+    split = _supported_panel()
+    _patch_predictions(monkeypatch)
+    _, evidence = evaluation.fit_route_residual_calibration(_model(), split)
+
+    unknown = deepcopy(evidence.metrics)
+    unknown["scalar"]["unexpected"] = 1
+    with pytest.raises(evaluation.RouteEvaluationError, match="metric fields"):
+        replace(evidence, metrics=unknown)
+
+    nonfinite = deepcopy(evidence.metrics)
+    nonfinite["scalar"]["bias"] = float("nan")
+    with pytest.raises(evaluation.RouteEvaluationError, match="metric value"):
+        replace(evidence, metrics=nonfinite)
+
+    wrong_types = {
+        **evidence.parameters,
+        "scalar_bias": 0,
+    }
+    with pytest.raises(evaluation.RouteEvaluationError, match="parameter types"):
+        replace(evidence, parameters=wrong_types)
 
 
 def test_current_blind_mae_is_diagnostic_when_target_is_constant(monkeypatch):
     split = _supported_panel(current_sensitive=False)
     _patch_predictions(monkeypatch)
-    calibration, _ = evaluation.fit_route_residual_calibration(
-        object(), split.calibration
+    model = _model()
+    calibration, evidence = evaluation.fit_route_residual_calibration(model, split)
+    report = evaluation.evaluate_route_holdout(
+        model, split, calibration, calibration_evidence=evidence
     )
-    report = evaluation.evaluate_route_holdout(object(), split, calibration)
     assert report["holdout_heads"]["current_blind"]["beats_zero"] is False
     assert report["gate"]["current_blind_residual_mae_diagnostic_only"] is True
     assert report["gate"]["passed"] is True
@@ -414,8 +568,11 @@ def test_nonrecommended_root_still_breaks_radius_gate(monkeypatch):
         ): {"scalar": 2.0, "current_blind": -1.0},
     }
     _patch_predictions(monkeypatch, overrides)
-    calibration = RouteResidualCalibration(calibrated=True)
-    report = evaluation.evaluate_route_holdout(object(), split, calibration)
+    model = _model()
+    calibration, evidence = evaluation.fit_route_residual_calibration(model, split)
+    report = evaluation.evaluate_route_holdout(
+        model, split, calibration, calibration_evidence=evidence
+    )
     assert report["holdout_heads"]["scalar"]["radius_violations"] == 2
     assert report["gate"]["all_overprediction_within_calibration_radii"] is False
 
@@ -497,6 +654,33 @@ def test_balanced_sign_requires_both_classes_and_treats_predicted_zero_wrong(
     assert metrics["passes"] is False
 
 
+def test_sign_weights_are_recomputed_after_insensitive_pairs(monkeypatch):
+    first = _record(1, 0)
+    insensitive = _record(
+        1,
+        0,
+        scalar=(0.0, 0.0),
+        route=RunRoute.HELD_RETRIGGER,
+    ).candidates[1]
+    first = replace(
+        first,
+        candidates=(*first.candidates, insensitive),
+        candidate_space_size=3,
+    )
+    second = _record(2, 0)
+    _patch_predictions(
+        monkeypatch,
+        {
+            (second.run_group, 0, RunRoute.PLAYED_RETRIGGER.value): {
+                "scalar": -1.0
+            }
+        },
+    )
+    predictions = evaluation._predict_examples(object(), (first, second))
+    metrics = evaluation._scalar_sign_metrics(predictions, 0.0)
+    assert metrics["positive_recall"] == 0.5
+
+
 def test_unsafe_high_terminal_value_is_excluded_from_regret(monkeypatch):
     ordinary = _record(1, 0)
     unsafe = _record(
@@ -528,6 +712,43 @@ def test_unsafe_high_terminal_value_is_excluded_from_regret(monkeypatch):
     assert report["recommendations"] == 1
     assert report["regrets"] == 0
     assert report["traces"][0]["route"] == RunRoute.PLAYED_RETRIGGER.value
+
+
+def test_regret_compares_observed_safe_same_action_outside_admitted_cells(monkeypatch):
+    ordinary = _record(
+        1,
+        0,
+        goal=RunGoal.ENDLESS,
+        ante8=None,
+        endless=(1.0, 1.0),
+        score=(1.0, 1.0),
+    )
+    better = _record(
+        1,
+        0,
+        goal=RunGoal.ENDLESS,
+        ante8=None,
+        endless=(3.0, 3.0),
+        score=(3.0, 3.0),
+        route=RunRoute.HELD_RETRIGGER,
+    ).candidates[1]
+    row = replace(
+        ordinary,
+        candidates=(*ordinary.candidates, better),
+        candidate_space_size=3,
+    )
+    _patch_predictions(monkeypatch)
+    predictions = evaluation._predict_examples(object(), (row,))
+    played_cell = evaluation._cell(predictions[0].example)
+    report, _ = evaluation._recommendations(
+        predictions,
+        RouteResidualCalibration(calibrated=True),
+        {played_cell},
+    )
+    assert report["recommendations"] == 1
+    assert report["regrets"] == 1
+    assert report["safe_positive_recommendations"] == 0
+    assert report["traces"][0]["best_safe_candidate_index"] == 2
 
 
 def test_recommendation_aggregation_is_group_equal(monkeypatch):
