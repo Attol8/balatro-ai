@@ -9,6 +9,7 @@ from balatro_ai_v2.actions import LeaveShop, iter_legal_actions
 from balatro_ai_v2.balatrobot.adapter import to_public_observation
 from balatro_ai_v2.route_learning import (
     RouteLearningDataError,
+    route_split_admission_report,
     _example_weights,
     reconstruct_route_split,
     route_pair_coverage,
@@ -208,6 +209,19 @@ def test_ordering_weighting_ignores_insensitive_pairs():
     weights = _example_weights((example_a, insensitive, example_b), scalar_nonzero=True)
     assert weights[0] == weights[2]
     assert weights[1] == 0.0
+
+
+def test_split_admission_report_is_json_safe_and_fail_closed():
+    class Split:
+        train = (_record(1),)
+        calibration = ("malformed",)
+        holdout = ()
+
+    report = route_split_admission_report(Split())
+    assert report["passed"] is False
+    assert report["splits"]["calibration"]["counts"]["matched_pairs"] == 0
+    assert "malformed_pairs" in report["splits"]["calibration"]["failures"]
+    assert "minimum_groups" in report["splits"]["holdout"]["failures"]
 
 
 def test_null_mismatch_masks_only_the_affected_head():

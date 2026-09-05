@@ -11,6 +11,7 @@ import torch.nn.functional as F
 from torch import Tensor
 
 from balatro_ai_v2.route_learning_protocol import (
+    ADMISSION_CONFIG,
     OBJECTIVE_CONFIG,
     SPLIT_CONFIG,
 )
@@ -241,6 +242,54 @@ def route_pair_coverage(records: Sequence[StrategyTeacherRecord]) -> dict[str, o
             head: sum(not all(example.targets.masks[head]) for example in examples)
             for head in HEADS
         },
+    }
+
+
+def route_split_admission_report(split: object) -> dict[str, object]:
+    """Audit frozen train/calibration/holdout admission minima."""
+
+    sections = {}
+    for name in ("train", "calibration", "holdout"):
+        records = getattr(split, name, None)
+        failures: list[str] = []
+        if not isinstance(records, tuple):
+            failures.append("malformed_records")
+            records = ()
+        try:
+            examples = route_paired_examples(records)
+        except (AttributeError, RouteLearningDataError, TypeError, ValueError):
+            examples = ()
+            failures.append("malformed_pairs")
+        groups = {record.run_group for record in records}
+        means = [
+            sum(example.targets.scalar) / len(example.targets.scalar)
+            for example in examples
+        ]
+        minimum = ADMISSION_CONFIG["minimums"][name]
+        counts = {
+            "groups": len(groups),
+            "rows": len(records),
+            "matched_pairs": len(examples),
+            "sensitive_pairs": sum(mean != 0.0 for mean in means),
+            "positive_mean_pairs": sum(mean > 0.0 for mean in means),
+            "negative_mean_pairs": sum(mean < 0.0 for mean in means),
+        }
+        for field in ("groups", "rows", "matched_pairs", "sensitive_pairs"):
+            if counts[field] < minimum[field]:
+                failures.append(f"minimum_{field}")
+        if ADMISSION_CONFIG["minimum_positive_and_negative_by_split"]:
+            if counts["positive_mean_pairs"] < 1:
+                failures.append("minimum_positive_mean_pairs")
+            if counts["negative_mean_pairs"] < 1:
+                failures.append("minimum_negative_mean_pairs")
+        sections[name] = {
+            "counts": counts,
+            "failures": failures,
+            "passed": not failures,
+        }
+    return {
+        "splits": sections,
+        "passed": all(section["passed"] for section in sections.values()),
     }
 
 
