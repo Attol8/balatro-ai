@@ -241,6 +241,8 @@ def _validate_components(
         )
         if (
             not isinstance(search_protocol, dict)
+            or search_protocol.get("version") != "determinized-search-v16"
+            or search_protocol.get("continuation") != "PublicStrategicPolicy"
             or not isinstance(search_protocol.get("budget"), dict)
             or any(
                 search_protocol["budget"].get(k) != ROUTE_TEACHER_SEARCH[k]
@@ -250,7 +252,16 @@ def _validate_components(
             or search_protocol.get("nonce") != ROUTE_TEACHER_SEARCH["nonce"]
             or search_protocol.get("strategy_options") is not True
             or search_protocol.get("include_reorders") is not False
+            or search_protocol.get("phases") != ["BLIND_SELECT", "PACK", "SHOP"]
             or not isinstance(success_protocol, dict)
+            or success_protocol.get("enabled") is not True
+            or success_protocol.get("mode") != "collect"
+            or success_protocol.get("emits_teacher_rows") is not True
+            or success_protocol.get("terminal_action_budget") is not None
+            or success_protocol.get("terminal_action_selector") is not None
+            or success_protocol.get("root_builder") != "determinized-search-v16"
+            or success_protocol.get("sample_nonce_stream")
+            != f"{search_protocol['nonce']}:success-terminal-v1"
             or any(
                 success_protocol.get(k) != v
                 for k, v in ROUTE_TEACHER_TERMINAL.items()
@@ -261,6 +272,13 @@ def _validate_components(
             or report.get("strategy_tuning") != spec.get("strategy_tuning")
             or manifest.get("backend") != spec.get("backend")
             or manifest.get("source_digest") != spec.get("expected_source_digest")
+            or manifest.get("max_decisions") != 1200
+            or manifest.get("max_antes_cleared") != 20
+            or manifest.get("profile_mode") != "all_unlocked"
+            or manifest.get("run", {}).get("deck") != "RED"
+            or manifest.get("run", {}).get("stake") != "WHITE"
+            or manifest.get("run", {}).get("seed")
+            != f"{binding.get('seed_start')}:{ROUTE_TEACHER_BATCH_SIZE}"
         ):
             raise SystemExit(f"route component violates frozen protocol: {dataset}")
         if fixed is None:
