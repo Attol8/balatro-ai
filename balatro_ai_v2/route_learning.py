@@ -260,7 +260,11 @@ def route_split_admission_report(split: object) -> dict[str, object]:
         except (AttributeError, RouteLearningDataError, TypeError, ValueError):
             examples = ()
             failures.append("malformed_pairs")
-        groups = {record.run_group for record in records}
+        groups = {
+            record.run_group
+            for record in records
+            if isinstance(record, StrategyTeacherRecord)
+        }
         means = [
             sum(example.targets.scalar) / len(example.targets.scalar)
             for example in examples
