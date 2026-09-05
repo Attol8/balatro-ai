@@ -237,7 +237,7 @@ def _route_teacher_row(module) -> dict[str, object]:
     draft = StrategyTeacherDraft(
         observation=observation,
         candidates=(
-            StrategyTeacherCandidate(LeaveShop(), None, samples),
+            StrategyTeacherCandidate(RerollShop(), None, samples),
             StrategyTeacherCandidate(
                 RerollShop(),
                 StrategyIntent.HELD_RETRIGGER_ENGINE,
@@ -362,6 +362,7 @@ def test_route_teacher_finalizer_accepts_collector_emitted_draft(
     observation = to_public_observation(state("SHOP", money=10))
     roots = (
         StrategyCandidateRoot(LeaveShop(), None),
+        StrategyCandidateRoot(RerollShop(), None),
         StrategyCandidateRoot(
             RerollShop(),
             StrategyIntent.HELD_RETRIGGER_ENGINE,
@@ -378,12 +379,12 @@ def test_route_teacher_finalizer_accepts_collector_emitted_draft(
             observation,
             (),
             roots,
-            behavior_index=1,
+            behavior_index=2,
             ordinary_index=0,
             intent_aware=True,
             engine_goal=RunGoal.VICTORY,
         )
-        == 1
+        == 2
     )
     assert policy.teacher_drafts[0].candidate_space_size == len(roots)
     row = {
@@ -414,7 +415,7 @@ def test_route_teacher_finalizer_accepts_collector_emitted_draft(
 @pytest.mark.parametrize(
     ("field", "value"),
     [
-        ("ordinary", {"action": {"type": "reroll_shop"}, "intent": None, "route": None}),
+        ("ordinary", {"action": {"type": "leave_shop"}, "intent": None, "route": None}),
         ("executed_index", 0),
         ("affects_actions", True),
         ("identity_override", True),
@@ -1331,3 +1332,433 @@ def test_contextual_bundle_publishes_teacher_and_report_together(
     assert teacher.is_file()
     assert report.read_text(encoding="utf-8") == '{"complete":true}\n'
     assert {path.name for path in tmp_path.iterdir()} == {"batch-01"}
+
+
+def _route_preregistration_args(tmp_path: Path, module):
+    preregistration = tmp_path / module.ROUTE_TEACHER_PREREGISTRATION
+    preregistration.parent.mkdir(parents=True)
+    origin_key = b"r" * 32
+    origin_path = tmp_path / module.ROUTE_TEACHER_ORIGIN_KEY
+    origin_path.parent.mkdir(parents=True)
+    origin_path.write_bytes(origin_key)
+    batch = module.ROUTE_TEACHER_BATCHES[0]
+    teacher_path = tmp_path / batch["teacher_jsonl"]
+    report_path = tmp_path / batch["report_json"]
+    spec = {
+        "protocol_id": module.ROUTE_TEACHER_PROTOCOL_ID,
+        "status": "reserved",
+        "immutable_batches": True,
+        "collection_only": True,
+        "training_authorized": False,
+        "schema_version": 11,
+        "implementation_revision": "a" * 40,
+        "expected_source_digest": "b" * 64,
+        "seed_provenance": "development",
+        "deck": "RED",
+        "stake": "WHITE",
+        "candidate_runtime": {"revision": "candidate"},
+        "backend": {"backend_name": "Jackdaw"},
+        "strategy_tuning": json.loads(StrategyTuning().canonical_json()),
+        "search": module.ROUTE_TEACHER_SEARCH,
+        "terminal_teacher": module.ROUTE_TEACHER_TERMINAL,
+        "origin_mapping": {
+            "algorithm": "hmac-sha256-truncated-128",
+            "key_path": module.ROUTE_TEACHER_ORIGIN_KEY,
+            "key_sha256": hashlib.sha256(origin_key).hexdigest(),
+        },
+        "batches": list(module.ROUTE_TEACHER_BATCHES),
+        "pilot_gate": module.ROUTE_TEACHER_PILOT_GATE,
+        "coverage_gate": module.ROUTE_TEACHER_COVERAGE_GATE,
+    }
+    preregistration.write_text(json.dumps(spec), encoding="utf-8")
+    search = module.ROUTE_TEACHER_SEARCH
+    terminal = module.ROUTE_TEACHER_TERMINAL
+    args = module.build_parser().parse_args(
+        [
+            "--seed-start",
+            str(batch["seed_start"]),
+            "--seeds",
+            str(batch["seeds"]),
+            "--deck",
+            "RED",
+            "--stake",
+            "WHITE",
+            "--seed-provenance",
+            "development",
+            "--samples",
+            str(search["samples"]),
+            "--horizon-antes",
+            str(search["horizon_antes"]),
+            "--max-steps",
+            str(search["max_steps"]),
+            "--override-z",
+            str(search["override_z"]),
+            "--max-decisions",
+            str(search["max_decisions"]),
+            "--ante-cap",
+            str(search["ante_cap"]),
+            "--workers",
+            str(search["workers"]),
+            "--nonce",
+            str(search["nonce"]),
+            "--continuation",
+            str(search["continuation"]),
+            "--policy-seed",
+            str(search["policy_seed"]),
+            "--strategy-options",
+            "--success-teacher",
+            "--success-teacher-samples",
+            str(terminal["samples"]),
+            "--success-teacher-start-ante",
+            str(terminal["prewin_start_ante"]),
+            "--success-teacher-endless-antes",
+            str(terminal["endless_horizon_antes"]),
+            "--success-teacher-max-steps",
+            str(terminal["max_steps"]),
+            "--teacher-jsonl",
+            str(teacher_path),
+            "--report-json",
+            str(report_path),
+            "--origin-key-file",
+            str(origin_path),
+            "--route-terminal-preregistration-json",
+            str(preregistration),
+        ]
+    )
+    return args, spec
+
+
+def test_route_preregistration_binds_exact_action_inert_batch(tmp_path) -> None:
+    module = _load_script()
+    args, spec = _route_preregistration_args(tmp_path, module)
+
+    binding = module._validate_route_terminal_preregistration(
+        args, StrategyTuning(), repository_root=tmp_path
+    )
+
+    assert binding["protocol_id"] == module.ROUTE_TEACHER_PROTOCOL_ID
+    assert binding["batch_id"] == "batch-01"
+    assert binding["schema_version"] == 11
+    assert binding["collection_only"] is True
+    assert binding["training_authorized"] is False
+    assert binding["expected_source_digest"] == spec["expected_source_digest"]
+
+
+def test_route_preregistration_rejects_action_influence(tmp_path) -> None:
+    module = _load_script()
+    args, _ = _route_preregistration_args(tmp_path, module)
+    args.success_terminal_actions = True
+
+    with pytest.raises(SystemExit, match="isolated collection"):
+        module._validate_route_terminal_preregistration(
+            args, StrategyTuning(), repository_root=tmp_path
+        )
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("seed_provenance", "evaluator_secret"),
+        ("deck", "BLUE"),
+        ("stake", "GOLD"),
+    ],
+)
+def test_route_preregistration_binds_actual_panel_identity(
+    tmp_path: Path, field: str, value: str
+) -> None:
+    module = _load_script()
+    args, _ = _route_preregistration_args(tmp_path, module)
+    setattr(args, field, value)
+
+    with pytest.raises(SystemExit, match="frozen protocol"):
+        module._validate_route_terminal_preregistration(
+            args, StrategyTuning(), repository_root=tmp_path
+        )
+
+
+def test_reserved_route_seeds_require_preregistration() -> None:
+    module = _load_script()
+    args = module.build_parser().parse_args(
+        ["--seed-start", "2311", "--seeds", "1"]
+    )
+
+    with pytest.raises(SystemExit, match="require --route-terminal"):
+        module._validate_route_terminal_preregistration(
+            args, StrategyTuning(), repository_root=Path.cwd()
+        )
+
+
+def test_reserved_route_seeds_fail_before_backend_work(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_script()
+    monkeypatch.setattr(
+        module.sys,
+        "argv",
+        ["evaluate_determinized_search.py", "--seed-start", "2311", "--seeds", "20"],
+    )
+    monkeypatch.setattr(
+        module,
+        "verify_jackdaw_runtime",
+        lambda: pytest.fail("backend verification must not run"),
+    )
+
+    with pytest.raises(SystemExit, match="require --route-terminal"):
+        module.main()
+
+
+def test_later_route_batch_requires_pilot_gate(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _load_script()
+    args, _ = _route_preregistration_args(tmp_path, module)
+    batch = module.ROUTE_TEACHER_BATCHES[1]
+    args.seed_start = batch["seed_start"]
+    args.seeds = batch["seeds"]
+    args.teacher_jsonl = tmp_path / batch["teacher_jsonl"]
+    args.report_json = tmp_path / batch["report_json"]
+    called = []
+    monkeypatch.setattr(
+        module,
+        "_validate_route_terminal_pilot",
+        lambda *args, **kwargs: called.append((args, kwargs)),
+    )
+
+    binding = module._validate_route_terminal_preregistration(
+        args, StrategyTuning(), repository_root=tmp_path
+    )
+
+    assert binding["batch_id"] == "batch-02"
+    assert len(called) == 1
+
+
+def test_route_pilot_reauthenticates_dataset_report_and_support_gate(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _load_script()
+    batch = module.ROUTE_TEACHER_BATCHES[0]
+    origin_key = b"r" * 32
+    rows = []
+    for seed in range(
+        int(batch["seed_start"]), int(batch["seed_start"]) + int(batch["seeds"])
+    ):
+        row = _route_teacher_row(module)
+        row.update(
+            seed=seed,
+            terminal_reason="game_over",
+            terminal_error=None,
+            rejected_decisions=0,
+        )
+        rows.append(row)
+    records, status = module._finalize_teacher_records(
+        rows,
+        enabled=True,
+        origin_key=origin_key,
+        mode="route_terminal_paired_utility",
+    )
+    assert status == "written"
+    teacher_path = tmp_path / batch["teacher_jsonl"]
+    report_path = tmp_path / batch["report_json"]
+    teacher_digest = write_teacher_records(teacher_path, records)
+    preregistration_digest = "d" * 64
+    candidate_runtime = {"revision": "candidate"}
+    backend = {"backend_name": "Jackdaw"}
+    spec = {
+        "implementation_revision": "a" * 40,
+        "expected_source_digest": "b" * 64,
+        "candidate_runtime": candidate_runtime,
+        "backend": backend,
+        "origin_mapping": {
+            "key_sha256": hashlib.sha256(origin_key).hexdigest(),
+        },
+    }
+    binding = {
+        "protocol_id": module.ROUTE_TEACHER_PROTOCOL_ID,
+        "sha256": preregistration_digest,
+        "batch_id": batch["batch_id"],
+        "seed_start": batch["seed_start"],
+        "seeds": batch["seeds"],
+        "immutable_batches": True,
+        "collection_only": True,
+        "training_authorized": False,
+        "schema_version": 11,
+        "implementation_revision": spec["implementation_revision"],
+        "expected_source_digest": spec["expected_source_digest"],
+        "candidate_runtime": candidate_runtime,
+        "backend": backend,
+        "origin_key_sha256": spec["origin_mapping"]["key_sha256"],
+    }
+    coverage = module._teacher_coverage(records, rows)
+    report = {
+        "candidate_runtime": candidate_runtime,
+        "manifest": {
+            "repository_dirty": False,
+            "source_digest": spec["expected_source_digest"],
+            "backend": backend,
+        },
+        "search_protocol": {
+            "version": module.SEARCH_VERSION,
+            "budget": {
+                key: module.ROUTE_TEACHER_SEARCH[key]
+                for key in ("samples", "horizon_antes", "max_steps", "override_z")
+            },
+            "nonce": module.ROUTE_TEACHER_SEARCH["nonce"],
+            "continuation": "PublicStrategicPolicy",
+            "policy_seed": module.ROUTE_TEACHER_SEARCH["policy_seed"],
+            "strategy_options": True,
+            "include_reorders": False,
+            "success_teacher": {
+                "mode": "collect",
+                "affects_actions": False,
+                "samples": module.ROUTE_TEACHER_TERMINAL["samples"],
+                "prewin_start_ante": module.ROUTE_TEACHER_TERMINAL[
+                    "prewin_start_ante"
+                ],
+                "endless_horizon_antes": module.ROUTE_TEACHER_TERMINAL[
+                    "endless_horizon_antes"
+                ],
+                "max_steps": module.ROUTE_TEACHER_TERMINAL["max_steps"],
+                "anchor_schedule": module.ROUTE_TEACHER_TERMINAL[
+                    "anchor_schedule"
+                ],
+            },
+        },
+        "route_terminal_teacher_preregistration": binding,
+        "strategy_teacher_dataset": {
+            "status": "written",
+            "mode": "route_terminal_paired_utility",
+            "schema_version": 11,
+            "sha256": teacher_digest,
+            "records": len(records),
+            "groups": len({record.run_group for record in records}),
+            "complete_runs_only": True,
+            "contains_game_seeds": False,
+            "teacher_config_digest": records[0].teacher_config_digest,
+            "coverage": coverage,
+        },
+        "results": rows,
+    }
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    report_path.write_text(json.dumps(report), encoding="utf-8")
+    monkeypatch.setattr(
+        module,
+        "ROUTE_TEACHER_PILOT_GATE",
+        {
+            "source_runs": 20,
+            "minimum_record_groups": 20,
+            "minimum_records": 20,
+            "required_route_phases": ["SHOP"],
+            "minimum_route_diverse_groups": 20,
+            "minimum_route_diverse_rows": 20,
+            "minimum_matched_pairs": 20,
+            "minimum_search_utility_sensitive_pairs": 0,
+            "sample_count": 2,
+            "maximum_stored_roots": 2,
+            "maximum_subset_rows": 0,
+            "rejected_or_censored": 0,
+        },
+    )
+
+    module._validate_route_terminal_pilot(
+        spec,
+        preregistration_digest=preregistration_digest,
+        origin_key=origin_key,
+        repository_root=tmp_path,
+    )
+    report["strategy_teacher_dataset"]["coverage"] = None
+    report_path.write_text(json.dumps(report), encoding="utf-8")
+    with pytest.raises(SystemExit, match="violates its frozen protocol"):
+        module._validate_route_terminal_pilot(
+            spec,
+            preregistration_digest=preregistration_digest,
+            origin_key=origin_key,
+            repository_root=tmp_path,
+        )
+
+
+def test_route_freeze_allows_only_preregistration_commit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _load_script()
+    binding = {
+        "implementation_revision": "a" * 40,
+        "expected_source_digest": "b" * 64,
+        "candidate_runtime": {"revision": "runtime"},
+        "backend": {"backend_name": "Jackdaw"},
+    }
+
+    def run(command, **kwargs):
+        del kwargs
+        output = (
+            module.ROUTE_TEACHER_PREREGISTRATION + "\n"
+            if "--name-only" in command
+            else ""
+        )
+        return SimpleNamespace(stdout=output)
+
+    monkeypatch.setattr(module.subprocess, "run", run)
+    module._verify_route_terminal_freeze(
+        binding,
+        repository_revision="c" * 40,
+        source_digest="b" * 64,
+        repository_dirty=False,
+        candidate_runtime={"revision": "runtime"},
+        backend={"backend_name": "Jackdaw"},
+        repository_root=tmp_path,
+    )
+    with pytest.raises(SystemExit, match="clean source"):
+        module._verify_route_terminal_freeze(
+            binding,
+            repository_revision="c" * 40,
+            source_digest="b" * 64,
+            repository_dirty=True,
+            candidate_runtime={"revision": "runtime"},
+            backend={"backend_name": "Jackdaw"},
+            repository_root=tmp_path,
+        )
+
+
+def test_route_bundle_uses_route_specific_atomic_boundary(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _load_script()
+    row = _route_teacher_row(module)
+    records, status = module._finalize_teacher_records(
+        [row],
+        enabled=True,
+        origin_key=b"k" * 32,
+        mode="route_terminal_paired_utility",
+    )
+    assert status == "written"
+    runtime = {"revision": "runtime"}
+    monkeypatch.setattr(module, "source_snapshot", lambda _root: ("r", False, "s"))
+    monkeypatch.setattr(module, "verify_jackdaw_runtime", lambda: runtime)
+    teacher = tmp_path / "route-batch/teacher.jsonl"
+    report = tmp_path / "route-batch/report.json"
+
+    module._publish_route_terminal_bundle(
+        teacher,
+        report,
+        records,
+        expected_teacher_digest=module.teacher_records_digest(records),
+        encoded_report='{"complete":true}\n',
+        expected_manifest=SimpleNamespace(repository_revision="r", source_digest="s"),
+        expected_runtime=runtime,
+        repository_root=tmp_path,
+    )
+
+    assert teacher.is_file()
+    assert report.is_file()
+    with pytest.raises(SystemExit, match="refusing to overwrite"):
+        module._publish_route_terminal_bundle(
+            teacher,
+            report,
+            records,
+            expected_teacher_digest=module.teacher_records_digest(records),
+            encoded_report='{"complete":true}\n',
+            expected_manifest=SimpleNamespace(
+                repository_revision="r", source_digest="s"
+            ),
+            expected_runtime=runtime,
+            repository_root=tmp_path,
+        )

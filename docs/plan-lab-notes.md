@@ -4298,3 +4298,37 @@ Prefix deduplication is therefore rejected as needless complexity. Safe future
 speed work should target content-addressed score memoization shared by cloned
 states; whole-rollout suffix caching remains invalid while continuation can read
 full public history.
+
+### Route-terminal collection v1 implementation (2026-09-05)
+
+The collection protocol is now a separate evidence family. It reserves five
+20-seed development bundles over 2311-2410 with the exact control-preserving v16
+search (six paired one-ante samples) and an action-inert two-sample terminal
+teacher from Ante 4 through a two-ante Endless horizon. Dense collection,
+reorders, terminal action influence, learned continuations, and model shadows are
+forbidden. The preregistration binds schema 11, tuning, nonce, budgets, paths,
+source/runtime/backend commitments, and a distinct HMAC origin key. None of these
+seeds is authorized until the implementation commit and a following
+preregistration-only commit exist.
+
+Batch 01 is explicitly a collection pilot, not a strength screen. Batches 02-05
+cannot start unless its bytes and report independently reconstruct every
+record-bearing source family and clear predeclared support minima: at least three
+record and route-diverse groups, 20 rows, five route-diverse rows, ten exact
+same-action pairs, one scalar-sensitive pair, and route support in SHOP and PACK,
+with exactly two samples, no subset, no censor/reject/fallback/unavailability,
+and no root set above 512. The full 100-run support gate is also frozen but still
+does not authorize training: at least 20 record groups, 200 rows, 15 route-diverse
+groups, 40 route-diverse rows, 100 matched pairs, ten scalar-sensitive pairs
+including at least two positive and two negative, both Victory and Endless rows,
+all three strategic phases, and the same integrity bounds.
+
+Route coverage now lives in shared public-only code and reports phase, ante,
+goal, route roots/groups, route-diverse phase/ante support, matched pairs/groups
+and all six residual metrics both overall and per route. The component validator
+requires unique exact triples, one matching unconditioned action for every
+specialist, contiguous decisions, exact run labels, and the HMAC mapping; rows
+from complete runs that never reached an anchor remain visible in the report but
+correctly have no dataset family. The evaluator rechecks the frozen source before
+work, after work, and before atomic publication. An independent adversarial pass
+found no remaining collection-path blocker. No pilot outcome exists yet.

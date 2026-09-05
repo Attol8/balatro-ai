@@ -1178,6 +1178,19 @@ committed may the preregistration file bind its revision/digest and reserve the
 pilot. The separate merger follows in the next commit and must reconstruct every
 HMAC origin family and factual behavior/report identity before merging.
 
+Collection implementation checkpoint: the shared coverage/component validator,
+route v1 constants, exact preregistration parser, first-batch kill gate, three
+source-freeze checks, distinct report binding, and route-labelled atomic bundle
+publisher are implemented and locally exercised. The component validator
+reconstructs record-bearing HMAC families from the source rows, preserves
+zero-anchor completed runs in the report, requires contiguous decision indexes,
+and reauthenticates outcomes plus all four root identities. Every specialist must
+have exactly one same-action null-intent/null-route sibling. The pilot gate is
+support-only and cannot authorize training. Next: full regression and commit;
+then create the preregistration/key against that clean implementation revision,
+commit only the preregistration, and run batch 01. Build the separate merger while
+that immutable pilot runs.
+
 The retired v11 design remains a pre-win/early-Endless continuation increment,
 not the complete high-score policy. Its useful continuation machinery is retained
 inside the broader program above, while its collection protocol remains retired.

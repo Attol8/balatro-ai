@@ -565,6 +565,7 @@ def test_route_terminal_teacher_separates_ordinary_behavior_and_selected_indexes
     )
     roots = (
         StrategyCandidateRoot(LeaveShop(), None),
+        StrategyCandidateRoot(RerollShop(), None),
         StrategyCandidateRoot(
             RerollShop(),
             StrategyIntent.HELD_RETRIGGER_ENGINE,
@@ -586,18 +587,18 @@ def test_route_terminal_teacher_separates_ordinary_behavior_and_selected_indexes
         observation,
         (),
         roots,
-        behavior_index=1,
+        behavior_index=2,
         ordinary_index=0,
         intent_aware=True,
         engine_goal=RunGoal.VICTORY,
     )
 
-    assert executed == 1
+    assert executed == 2
     assert len(policy.teacher_drafts) == 1
     draft = policy.teacher_drafts[0]
     assert draft.baseline_index == draft.ordinary_index == 0
-    assert draft.behavior_index == 1
-    assert draft.selected_index == 2
+    assert draft.behavior_index == 2
+    assert draft.selected_index == 3
     assert draft.candidate_space_size == len(roots)
     assert draft.candidates[draft.ordinary_index].route is None
     assert draft.candidates[draft.behavior_index].route == RunRoute.HELD_RETRIGGER
@@ -606,9 +607,9 @@ def test_route_terminal_teacher_separates_ordinary_behavior_and_selected_indexes
     assert selected_baselines == [0]
     assert not policy.last_success_decision.affects_actions
     assert policy.last_success_decision.ordinary_index == 0
-    assert policy.last_success_decision.behavior_index == 1
-    assert policy.last_success_decision.teacher_selected_index == 2
-    assert policy.last_success_decision.executed_index == 1
+    assert policy.last_success_decision.behavior_index == 2
+    assert policy.last_success_decision.teacher_selected_index == 3
+    assert policy.last_success_decision.executed_index == 2
     assert policy.last_success_decision.as_dict()["ordinary"] == {
         "action": {"type": "leave_shop"},
         "intent": None,

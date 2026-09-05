@@ -68,6 +68,24 @@ from balatro_ai_v2.strategy_model import (
     StrategyModelError,
     load_strategy_model,
 )
+from balatro_ai_v2.route_teacher import (
+    RouteTeacherValidationError,
+    route_teacher_coverage_gate_failures,
+    route_terminal_teacher_coverage,
+    validate_route_teacher_component,
+)
+from balatro_ai_v2.route_teacher_protocol import (
+    ROUTE_TEACHER_BATCHES,
+    ROUTE_TEACHER_BATCH_SIZE,
+    ROUTE_TEACHER_BATCH_STARTS,
+    ROUTE_TEACHER_COVERAGE_GATE,
+    ROUTE_TEACHER_ORIGIN_KEY,
+    ROUTE_TEACHER_PILOT_GATE,
+    ROUTE_TEACHER_PREREGISTRATION,
+    ROUTE_TEACHER_PROTOCOL_ID,
+    ROUTE_TEACHER_SEARCH,
+    ROUTE_TEACHER_TERMINAL,
+)
 from balatro_ai_v2.strategy_shadow import ShadowStrategyPolicy
 from balatro_ai_v2.strategy_teacher import (
     STRATEGY_TEACHER_SCHEMA_VERSION,
@@ -375,6 +393,270 @@ def _validate_terminal_preregistration(
     }
 
 
+def _validate_route_terminal_preregistration(
+    args: argparse.Namespace,
+    tuning: StrategyTuning,
+    *,
+    repository_root: Path,
+) -> dict[str, object] | None:
+    reserved = range(
+        ROUTE_TEACHER_BATCH_STARTS[0],
+        ROUTE_TEACHER_BATCH_STARTS[-1] + ROUTE_TEACHER_BATCH_SIZE,
+    )
+    requested = range(args.seed_start, args.seed_start + args.seeds)
+    overlaps_reserved = (
+        requested.start < reserved.stop and reserved.start < requested.stop
+    )
+    path = args.route_terminal_preregistration_json
+    if path is None:
+        if overlaps_reserved:
+            raise SystemExit(
+                "route-terminal seeds 2311-2410 require "
+                "--route-terminal-preregistration-json"
+            )
+        return None
+    expected_path = (repository_root / ROUTE_TEACHER_PREREGISTRATION).resolve()
+    if path.resolve() != expected_path:
+        raise SystemExit("route-terminal preregistration path is not frozen")
+    try:
+        raw = path.read_bytes()
+        spec = json.loads(raw)
+    except (OSError, json.JSONDecodeError) as exc:
+        raise SystemExit(f"invalid route-terminal preregistration: {exc}") from exc
+    if not isinstance(spec, dict):
+        raise SystemExit("route-terminal preregistration root must be an object")
+    if (
+        spec.get("protocol_id") != ROUTE_TEACHER_PROTOCOL_ID
+        or spec.get("status") != "reserved"
+        or spec.get("immutable_batches") is not True
+        or spec.get("collection_only") is not True
+        or spec.get("training_authorized") is not False
+        or spec.get("schema_version") != STRATEGY_TEACHER_SCHEMA_VERSION
+        or spec.get("seed_provenance") != "development"
+        or spec.get("deck") != "RED"
+        or spec.get("stake") != "WHITE"
+        or spec.get("search") != ROUTE_TEACHER_SEARCH
+        or spec.get("terminal_teacher") != ROUTE_TEACHER_TERMINAL
+        or spec.get("pilot_gate") != ROUTE_TEACHER_PILOT_GATE
+        or spec.get("coverage_gate") != ROUTE_TEACHER_COVERAGE_GATE
+        or spec.get("batches") != list(ROUTE_TEACHER_BATCHES)
+        or spec.get("strategy_tuning") != json.loads(tuning.canonical_json())
+        or args.seed_provenance != spec.get("seed_provenance")
+        or args.deck != spec.get("deck")
+        or args.stake != spec.get("stake")
+    ):
+        raise SystemExit("route-terminal preregistration changed the frozen protocol")
+    expected_search = {
+        "samples": args.samples,
+        "horizon_antes": args.horizon_antes,
+        "max_steps": args.max_steps,
+        "override_z": args.override_z,
+        "max_decisions": args.max_decisions,
+        "ante_cap": args.ante_cap,
+        "workers": args.workers,
+        "nonce": args.nonce,
+        "continuation": args.continuation,
+        "policy_seed": args.policy_seed,
+        "strategy_options": args.strategy_options,
+        "include_reorders": args.include_reorders,
+        "dense_teacher": args.dense_teacher,
+    }
+    expected_terminal = {
+        "samples": args.success_teacher_samples,
+        "prewin_start_ante": args.success_teacher_start_ante,
+        "endless_horizon_antes": args.success_teacher_endless_antes,
+        "max_steps": args.success_teacher_max_steps,
+        "affects_actions": args.success_terminal_actions,
+        "anchor_schedule": ROUTE_TEACHER_TERMINAL["anchor_schedule"],
+    }
+    if (
+        expected_search != ROUTE_TEACHER_SEARCH
+        or expected_terminal != ROUTE_TEACHER_TERMINAL
+        or not args.success_teacher
+        or args.success_terminal_actions
+        or args.dense_teacher
+        or not args.strategy_options
+        or args.include_reorders
+        or args.strategy_shadow_model is not None
+        or args.strategy_continuation_model is not None
+        or args.record_shadow_decisions
+        or args.teacher_jsonl is None
+        or args.report_json is None
+    ):
+        raise SystemExit("route-terminal preregistration requires isolated collection")
+    origin = spec.get("origin_mapping")
+    if (
+        not isinstance(origin, dict)
+        or origin.get("algorithm") != "hmac-sha256-truncated-128"
+        or origin.get("key_path") != ROUTE_TEACHER_ORIGIN_KEY
+        or not isinstance(origin.get("key_sha256"), str)
+        or len(origin["key_sha256"]) != 64
+        or args.origin_key_file is None
+        or args.origin_key_file.resolve()
+        != (repository_root / ROUTE_TEACHER_ORIGIN_KEY).resolve()
+    ):
+        raise SystemExit("route-terminal preregistration origin mapping mismatch")
+    try:
+        origin_key = args.origin_key_file.read_bytes()
+    except OSError as exc:
+        raise SystemExit("route-terminal origin key is unreadable") from exc
+    if (
+        len(origin_key) != 32
+        or hashlib.sha256(origin_key).hexdigest() != origin["key_sha256"]
+        or not isinstance(spec.get("candidate_runtime"), dict)
+        or not isinstance(spec.get("backend"), dict)
+    ):
+        raise SystemExit("route-terminal preregistration provenance is invalid")
+    matches = [
+        batch
+        for batch in ROUTE_TEACHER_BATCHES
+        if batch["seed_start"] == args.seed_start and batch["seeds"] == args.seeds
+    ]
+    if len(matches) != 1:
+        raise SystemExit("route-terminal preregistration has no unique requested batch")
+    batch = matches[0]
+    for key, actual in (
+        ("teacher_jsonl", args.teacher_jsonl),
+        ("report_json", args.report_json),
+    ):
+        if actual.resolve() != (repository_root / str(batch[key])).resolve():
+            raise SystemExit(f"route-terminal preregistration mismatch: {key}")
+    digest = hashlib.sha256(raw).hexdigest()
+    if batch["batch_id"] != ROUTE_TEACHER_BATCHES[0]["batch_id"]:
+        _validate_route_terminal_pilot(
+            spec,
+            preregistration_digest=digest,
+            origin_key=origin_key,
+            repository_root=repository_root,
+        )
+    return {
+        "protocol_id": spec["protocol_id"],
+        "sha256": digest,
+        "batch_id": batch["batch_id"],
+        "seed_start": args.seed_start,
+        "seeds": args.seeds,
+        "immutable_batches": True,
+        "collection_only": True,
+        "training_authorized": False,
+        "schema_version": STRATEGY_TEACHER_SCHEMA_VERSION,
+        "implementation_revision": spec.get("implementation_revision"),
+        "expected_source_digest": spec.get("expected_source_digest"),
+        "candidate_runtime": spec.get("candidate_runtime"),
+        "backend": spec.get("backend"),
+        "origin_key_sha256": origin["key_sha256"],
+    }
+
+
+def _validate_route_terminal_pilot(
+    spec: dict[str, object],
+    *,
+    preregistration_digest: str,
+    origin_key: bytes,
+    repository_root: Path,
+) -> None:
+    batch = ROUTE_TEACHER_BATCHES[0]
+    try:
+        teacher_path = repository_root / str(batch["teacher_jsonl"])
+        report_path = repository_root / str(batch["report_json"])
+        teacher_bytes = teacher_path.read_bytes()
+        report = json.loads(report_path.read_bytes())
+        records = teacher_records_from_bytes(teacher_bytes)
+    except (OSError, json.JSONDecodeError, ValueError) as exc:
+        raise SystemExit("route-terminal pilot artifacts are incomplete") from exc
+    if not isinstance(report, dict):
+        raise SystemExit("route-terminal pilot report is invalid")
+    teacher = report.get("strategy_teacher_dataset")
+    binding = report.get("route_terminal_teacher_preregistration")
+    manifest = report.get("manifest")
+    search = report.get("search_protocol")
+    success = search.get("success_teacher") if isinstance(search, dict) else None
+    coverage = route_terminal_teacher_coverage(records)
+    reported_coverage = (
+        teacher.get("coverage") if isinstance(teacher, dict) else None
+    )
+    expected_binding = {
+        "protocol_id": ROUTE_TEACHER_PROTOCOL_ID,
+        "sha256": preregistration_digest,
+        "batch_id": batch["batch_id"],
+        "seed_start": batch["seed_start"],
+        "seeds": batch["seeds"],
+        "immutable_batches": True,
+        "collection_only": True,
+        "training_authorized": False,
+        "schema_version": STRATEGY_TEACHER_SCHEMA_VERSION,
+        "implementation_revision": spec.get("implementation_revision"),
+        "expected_source_digest": spec.get("expected_source_digest"),
+        "candidate_runtime": spec.get("candidate_runtime"),
+        "backend": spec.get("backend"),
+        "origin_key_sha256": spec["origin_mapping"]["key_sha256"],
+    }
+    if (
+        binding != expected_binding
+        or not isinstance(teacher, dict)
+        or teacher.get("status") != "written"
+        or teacher.get("mode") != "route_terminal_paired_utility"
+        or teacher.get("schema_version") != STRATEGY_TEACHER_SCHEMA_VERSION
+        or teacher.get("sha256") != hashlib.sha256(teacher_bytes).hexdigest()
+        or teacher.get("records") != len(records)
+        or teacher.get("groups") != len({record.run_group for record in records})
+        or teacher.get("complete_runs_only") is not True
+        or teacher.get("contains_game_seeds") is not False
+        or {record.teacher_config_digest for record in records}
+        != {teacher.get("teacher_config_digest")}
+        or not isinstance(reported_coverage, dict)
+        or reported_coverage.get("route_terminal_paired_utility") != coverage
+        or not isinstance(manifest, dict)
+        or manifest.get("repository_dirty") is not False
+        or manifest.get("source_digest") != spec.get("expected_source_digest")
+        or manifest.get("backend") != spec.get("backend")
+        or report.get("candidate_runtime") != spec.get("candidate_runtime")
+        or not isinstance(search, dict)
+        or search.get("version") != SEARCH_VERSION
+        or search.get("budget")
+        != {
+            key: ROUTE_TEACHER_SEARCH[key]
+            for key in ("samples", "horizon_antes", "max_steps", "override_z")
+        }
+        or search.get("nonce") != ROUTE_TEACHER_SEARCH["nonce"]
+        or search.get("continuation") != "PublicStrategicPolicy"
+        or search.get("policy_seed") != ROUTE_TEACHER_SEARCH["policy_seed"]
+        or search.get("strategy_options") is not True
+        or search.get("include_reorders") is not False
+        or not isinstance(success, dict)
+        or success.get("mode") != "collect"
+        or success.get("affects_actions") is not False
+        or success.get("samples") != ROUTE_TEACHER_TERMINAL["samples"]
+        or success.get("prewin_start_ante")
+        != ROUTE_TEACHER_TERMINAL["prewin_start_ante"]
+        or success.get("endless_horizon_antes")
+        != ROUTE_TEACHER_TERMINAL["endless_horizon_antes"]
+        or success.get("max_steps") != ROUTE_TEACHER_TERMINAL["max_steps"]
+        or success.get("anchor_schedule")
+        != ROUTE_TEACHER_TERMINAL["anchor_schedule"]
+    ):
+        raise SystemExit("route-terminal pilot violates its frozen protocol")
+    try:
+        validate_route_teacher_component(
+            records,
+            report.get("results"),
+            origin_key=origin_key,
+            expected_seed_start=int(batch["seed_start"]),
+            expected_seed_count=int(batch["seeds"]),
+            sample_count=int(ROUTE_TEACHER_TERMINAL["samples"]),
+        )
+    except RouteTeacherValidationError as exc:
+        raise SystemExit(f"route-terminal pilot is invalid: {exc}") from exc
+    failures = route_teacher_coverage_gate_failures(
+        coverage,
+        ROUTE_TEACHER_PILOT_GATE,
+        source_runs=int(batch["seeds"]),
+    )
+    if failures:
+        raise SystemExit(
+            "route-terminal pilot support gate failed: " + ",".join(failures)
+        )
+
+
 def _verify_terminal_freeze(
     binding: dict[str, object] | None,
     *,
@@ -437,6 +719,65 @@ def _verify_terminal_freeze(
     if set(changed) != {"experiments/terminal-actions-v6-preregistration.json"}:
         raise SystemExit(
             "terminal preregistration commit changed implementation source"
+        )
+
+
+def _verify_route_terminal_freeze(
+    binding: dict[str, object] | None,
+    *,
+    repository_revision: str,
+    source_digest: str,
+    repository_dirty: bool,
+    candidate_runtime: dict[str, object],
+    backend: dict[str, object],
+    repository_root: Path,
+) -> None:
+    if binding is None:
+        return
+    implementation_revision = binding.get("implementation_revision")
+    expected_source_digest = binding.get("expected_source_digest")
+    if (
+        not isinstance(implementation_revision, str)
+        or len(implementation_revision) != 40
+        or not isinstance(expected_source_digest, str)
+        or len(expected_source_digest) != 64
+    ):
+        raise SystemExit("route-terminal preregistration source freeze is incomplete")
+    if repository_dirty or source_digest != expected_source_digest:
+        raise SystemExit("route-terminal run does not match preregistered clean source")
+    if candidate_runtime != binding.get("candidate_runtime"):
+        raise SystemExit("route-terminal run changed preregistered candidate runtime")
+    if backend != binding.get("backend"):
+        raise SystemExit("route-terminal run changed preregistered backend")
+    if repository_revision == implementation_revision:
+        raise SystemExit(
+            "route-terminal preregistration was not committed after implementation"
+        )
+    try:
+        subprocess.run(
+            ["git", "merge-base", "--is-ancestor", implementation_revision, repository_revision],
+            cwd=repository_root,
+            check=True,
+            capture_output=True,
+        )
+        changed = subprocess.run(
+            [
+                "git",
+                "diff",
+                "--name-only",
+                implementation_revision,
+                repository_revision,
+            ],
+            cwd=repository_root,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.splitlines()
+    except (OSError, subprocess.CalledProcessError) as exc:
+        raise SystemExit("cannot verify route-terminal implementation ancestry") from exc
+    if set(changed) != {ROUTE_TEACHER_PREREGISTRATION}:
+        raise SystemExit(
+            "route-terminal preregistration commit changed implementation source"
         )
 
 
@@ -996,8 +1337,16 @@ def main() -> None:
     contextual_preregistration = _validate_contextual_preregistration(
         args, tuning, repository_root=root
     )
+    route_terminal_preregistration = _validate_route_terminal_preregistration(
+        args, tuning, repository_root=root
+    )
+    if contextual_preregistration is not None and route_terminal_preregistration is not None:
+        raise SystemExit("teacher collection preregistrations are mutually exclusive")
     origin_key = (
-        args.origin_key_file.read_bytes() if contextual_preregistration else None
+        args.origin_key_file.read_bytes()
+        if contextual_preregistration is not None
+        or route_terminal_preregistration is not None
+        else None
     )
     _, continuation_name = build_public_baseline(
         args.continuation, args.policy_seed, tuning
@@ -1137,6 +1486,15 @@ def main() -> None:
             backend=asdict(metadata_backend.metadata),
             repository_root=root,
         )
+        _verify_route_terminal_freeze(
+            route_terminal_preregistration,
+            repository_revision=preflight_manifest.repository_revision,
+            source_digest=preflight_manifest.source_digest,
+            repository_dirty=preflight_manifest.repository_dirty,
+            candidate_runtime=candidate_runtime,
+            backend=asdict(metadata_backend.metadata),
+            repository_root=root,
+        )
         if args.workers == 1:
             _init_worker(worker_args)
             results = [_run_seed(seed) for seed in seeds]
@@ -1205,6 +1563,15 @@ def main() -> None:
         )
         _verify_contextual_freeze(
             contextual_preregistration,
+            repository_revision=manifest.repository_revision,
+            source_digest=manifest.source_digest,
+            repository_dirty=manifest.repository_dirty,
+            candidate_runtime=candidate_runtime,
+            backend=asdict(metadata_backend.metadata),
+            repository_root=root,
+        )
+        _verify_route_terminal_freeze(
+            route_terminal_preregistration,
             repository_revision=manifest.repository_revision,
             source_digest=manifest.source_digest,
             repository_dirty=manifest.repository_dirty,
@@ -1307,6 +1674,9 @@ def main() -> None:
             "strategy_tuning": json.loads(tuning.canonical_json()),
             "terminal_action_preregistration": terminal_preregistration,
             "contextual_teacher_preregistration": contextual_preregistration,
+            "route_terminal_teacher_preregistration": (
+                route_terminal_preregistration
+            ),
             "strategy_model_shadow": {
                 "enabled": shadow_digest is not None,
                 "artifact_digest": shadow_digest,
@@ -1398,7 +1768,29 @@ def main() -> None:
             backend=asdict(metadata_backend.metadata),
             repository_root=root,
         )
-        if contextual_preregistration is not None:
+        _verify_route_terminal_freeze(
+            route_terminal_preregistration,
+            repository_revision=publication_manifest.repository_revision,
+            source_digest=publication_manifest.source_digest,
+            repository_dirty=publication_manifest.repository_dirty,
+            candidate_runtime=publication_runtime,
+            backend=asdict(metadata_backend.metadata),
+            repository_root=root,
+        )
+        if route_terminal_preregistration is not None:
+            if args.teacher_jsonl is None or args.report_json is None:
+                raise RuntimeError("route-terminal artifact paths disappeared")
+            _publish_route_terminal_bundle(
+                args.teacher_jsonl,
+                args.report_json,
+                teacher_records,
+                expected_teacher_digest=teacher_digest,
+                encoded_report=encoded + "\n",
+                expected_manifest=manifest,
+                expected_runtime=route_terminal_preregistration["candidate_runtime"],
+                repository_root=root,
+            )
+        elif contextual_preregistration is not None:
             if args.teacher_jsonl is None or args.report_json is None:
                 raise RuntimeError("contextual artifact paths disappeared")
             _publish_contextual_bundle(
@@ -1468,9 +1860,36 @@ def _publish_contextual_bundle(
 ) -> None:
     """Publish a contextual batch with one crash-atomic directory rename."""
 
+    _publish_teacher_bundle(
+        teacher_path,
+        report_path,
+        records,
+        expected_teacher_digest=expected_teacher_digest,
+        encoded_report=encoded_report,
+        expected_manifest=expected_manifest,
+        expected_runtime=expected_runtime,
+        repository_root=repository_root,
+        protocol_label="contextual",
+    )
+
+
+def _publish_teacher_bundle(
+    teacher_path: Path,
+    report_path: Path,
+    records: tuple[StrategyTeacherRecord, ...],
+    *,
+    expected_teacher_digest: str | None,
+    encoded_report: str,
+    expected_manifest: object,
+    expected_runtime: object,
+    repository_root: Path,
+    protocol_label: str,
+) -> None:
+    """Publish one teacher/report pair through a crash-atomic directory rename."""
+
     final_directory = teacher_path.parent.resolve()
     if report_path.parent.resolve() != final_directory:
-        raise SystemExit("contextual outputs must share one batch directory")
+        raise SystemExit(f"{protocol_label} outputs must share one batch directory")
     if final_directory.exists():
         raise SystemExit(f"refusing to overwrite existing batch: {final_directory}")
     final_directory.parent.mkdir(parents=True, exist_ok=True)
@@ -1498,7 +1917,9 @@ def _publish_contextual_bundle(
             or source_digest != getattr(expected_manifest, "source_digest", None)
             or verify_jackdaw_runtime() != expected_runtime
         ):
-            raise SystemExit("contextual source changed before bundle publication")
+            raise SystemExit(
+                f"{protocol_label} source changed before bundle publication"
+            )
         os.rename(staged, final_directory)
     except BaseException:
         staged_teacher.unlink(missing_ok=True)
@@ -1508,6 +1929,32 @@ def _publish_contextual_bundle(
         except OSError:
             pass
         raise
+
+
+def _publish_route_terminal_bundle(
+    teacher_path: Path,
+    report_path: Path,
+    records: tuple[StrategyTeacherRecord, ...],
+    *,
+    expected_teacher_digest: str | None,
+    encoded_report: str,
+    expected_manifest: object,
+    expected_runtime: object,
+    repository_root: Path,
+) -> None:
+    """Publish a preregistered route batch with the same atomic boundary."""
+
+    _publish_teacher_bundle(
+        teacher_path,
+        report_path,
+        records,
+        expected_teacher_digest=expected_teacher_digest,
+        encoded_report=encoded_report,
+        expected_manifest=expected_manifest,
+        expected_runtime=expected_runtime,
+        repository_root=repository_root,
+        protocol_label="route-terminal",
+    )
 
 
 def _distribution(values: list[float]) -> dict[str, float]:
@@ -1826,13 +2273,18 @@ def _finalize_teacher_records(
         return (), "discarded_incomplete_panel"
     if any(
         not isinstance(row.get("search"), dict)
-        or int(row["search"].get("rejected_rollouts", 0)) != 0
+        or type(row["search"].get("rejected_rollouts")) is not int
+        or row["search"].get("rejected_rollouts") != 0
         for row in results
     ):
         for row in results:
             row.pop("_teacher_drafts", None)
         return (), "discarded_rejected_panel"
-    if any(int(row["search"].get("unavailable", 0)) != 0 for row in results):
+    if any(
+        type(row["search"].get("unavailable", 0)) is not int
+        or row["search"].get("unavailable", 0) != 0
+        for row in results
+    ):
         for row in results:
             row.pop("_teacher_drafts", None)
         return (), "discarded_unavailable_panel"
@@ -1844,7 +2296,6 @@ def _finalize_teacher_records(
         raise ValueError("teacher dataset mode is unsupported")
     for row in results:
         drafts = row.get("_teacher_drafts", ())
-        searched = int(row["search"].get("searched", -1))
         if mode == "route_terminal_paired_utility" and not _valid_route_teacher_row(
             row, drafts
         ):
@@ -1854,7 +2305,8 @@ def _finalize_teacher_records(
         if origin_key is not None and mode == "dense_paired_utility" and (
             not isinstance(drafts, tuple)
             or not all(isinstance(draft, StrategyTeacherDraft) for draft in drafts)
-            or searched != len(drafts)
+            or type(row["search"].get("searched")) is not int
+            or row["search"].get("searched") != len(drafts)
             or any(
                 draft.candidate_space_size != len(draft.candidates)
                 or any(
@@ -1920,20 +2372,28 @@ def _valid_route_teacher_row(row: dict[str, object], drafts: object) -> bool:
 
     search = row.get("search")
     decisions = row.get("success_teacher_decisions")
+    zero_counters = (
+        "success_anchor_fallbacks",
+        "success_anchor_unavailable",
+        "success_anchor_unsupported",
+        "success_teacher_rejected_rollouts",
+        "success_teacher_censored_rollouts",
+        "strategy_specialist_unavailable",
+    )
     if (
         not isinstance(search, dict)
         or not isinstance(drafts, tuple)
         or not all(isinstance(draft, StrategyTeacherDraft) for draft in drafts)
         or not isinstance(decisions, list)
         or len(decisions) != len(drafts)
+        or type(search.get("success_anchors_attempted")) is not int
         or search.get("success_anchors_attempted") != len(drafts)
+        or type(search.get("success_anchors_completed")) is not int
         or search.get("success_anchors_completed") != len(drafts)
-        or search.get("success_anchor_fallbacks") != 0
-        or search.get("success_anchor_unavailable") != 0
-        or search.get("success_anchor_unsupported") != 0
-        or search.get("success_teacher_rejected_rollouts") != 0
-        or search.get("success_teacher_censored_rollouts") != 0
-        or search.get("strategy_specialist_unavailable") != 0
+        or any(
+            type(search.get(name)) is not int or search.get(name) != 0
+            for name in zero_counters
+        )
         or row.get("search_failure_reasons") != {}
     ):
         return False
@@ -1941,14 +2401,45 @@ def _valid_route_teacher_row(row: dict[str, object], drafts: object) -> bool:
         if not isinstance(decision, dict):
             return False
         sample_count = len(draft.candidates[0].samples)
+        identities = tuple(
+            (candidate.action, candidate.intent, candidate.route)
+            for candidate in draft.candidates
+        )
+        ordinary_by_action = Counter(
+            candidate.action
+            for candidate in draft.candidates
+            if candidate.intent is None and candidate.route is None
+        )
+        expected_counts = {
+            "ante": draft.observation.ante,
+            "roots": len(draft.candidates),
+            "initial_samples": sample_count,
+            "max_samples_used": sample_count,
+            "sample_evaluations": len(draft.candidates) * sample_count,
+            "ordinary_index": draft.ordinary_index,
+            "behavior_index": draft.behavior_index,
+            "teacher_selected_index": draft.selected_index,
+            "executed_index": draft.behavior_index,
+            "rejected_rollouts": 0,
+            "censored_rollouts": 0,
+        }
         if (
             draft.candidate_space_size != len(draft.candidates)
             or draft.baseline_index != draft.ordinary_index
             or draft.candidates[draft.ordinary_index].intent is not None
             or draft.candidates[draft.ordinary_index].route is not None
+            or len(set(identities)) != len(identities)
             or any(
                 candidate.route == RunRoute.VICTORY
                 or len(candidate.samples) != sample_count
+                or (
+                    candidate.route is None
+                    and candidate.intent is not None
+                )
+                or (
+                    candidate.route is not None
+                    and ordinary_by_action[candidate.action] != 1
+                )
                 or any(
                     sample.endpoint == StrategyTargetEndpoint.CENSORED
                     for sample in candidate.samples
@@ -1956,24 +2447,17 @@ def _valid_route_teacher_row(row: dict[str, object], drafts: object) -> bool:
                 for candidate in draft.candidates
             )
             or decision.get("phase") != draft.observation.phase.value
-            or decision.get("ante") != draft.observation.ante
             or decision.get("goal") != draft.goal.value
-            or decision.get("roots") != len(draft.candidates)
-            or decision.get("initial_samples") != sample_count
-            or decision.get("max_samples_used") != sample_count
-            or decision.get("sample_evaluations")
-            != len(draft.candidates) * sample_count
-            or decision.get("ordinary_index") != draft.ordinary_index
-            or decision.get("behavior_index") != draft.behavior_index
-            or decision.get("teacher_selected_index") != draft.selected_index
-            or decision.get("executed_index") != draft.behavior_index
+            or any(
+                type(decision.get(name)) is not int
+                or decision.get(name) != expected
+                for name, expected in expected_counts.items()
+            )
             or decision.get("affects_actions") is not False
             or decision.get("identity_override") is not False
             or decision.get("fallback_reason") is not None
             or decision.get("unavailable") is not False
             or decision.get("unsupported") is not False
-            or decision.get("rejected_rollouts") != 0
-            or decision.get("censored_rollouts") != 0
         ):
             return False
         for name, index in (
@@ -2122,18 +2606,8 @@ def _teacher_coverage(
             "postwin_rows": len(endless_rows),
             "postwin_origin_groups": endless_groups,
         },
-        "route_terminal_paired_utility": _route_terminal_teacher_coverage(records),
+        "route_terminal_paired_utility": route_terminal_teacher_coverage(records),
     }
-
-
-_ROUTE_TERMINAL_TARGETS = (
-    "search_utility",
-    "current_blind_clear",
-    "next_boss_clear",
-    "ante8_win",
-    "endless_ante",
-    "log_score",
-)
 
 
 def _teacher_dataset_mode(args: argparse.Namespace) -> str:
@@ -2146,133 +2620,6 @@ def _teacher_dataset_mode(args: argparse.Namespace) -> str:
     ):
         return "route_terminal_paired_utility"
     return "legacy"
-
-
-def _route_terminal_teacher_coverage(
-    records: tuple[StrategyTeacherRecord, ...],
-) -> dict[str, object]:
-    phase_rows: Counter[str] = Counter()
-    goal_rows: Counter[str] = Counter()
-    route_roots: Counter[str] = Counter()
-    route_diverse_groups: set[str] = set()
-    sample_count_roots: Counter[int] = Counter()
-    matched_pairs = 0
-    matched_pair_samples: list[int] = []
-    route_diverse_rows = 0
-    censored_rows = 0
-    censored_samples = 0
-    sample_count_mismatch_rows = 0
-    pair_metrics = {
-        target: {
-            "sensitive_pairs": 0,
-            "positive_pairs": 0,
-            "negative_pairs": 0,
-            "zero_pairs": 0,
-            "null_mismatch_pairs": 0,
-        }
-        for target in _ROUTE_TERMINAL_TARGETS
-    }
-
-    for record in records:
-        phase_rows[record.observation.phase.value] += 1
-        goal_rows[record.goal.value] += 1
-        row_routes = {candidate.route for candidate in record.candidates}
-        non_victory_routes = {
-            route
-            for route in row_routes
-            if route is not None and route != RunRoute.VICTORY
-        }
-        if non_victory_routes and len(row_routes) > 1:
-            route_diverse_rows += 1
-            route_diverse_groups.add(record.run_group)
-
-        sample_counts = {len(candidate.samples) for candidate in record.candidates}
-        sample_count_mismatch_rows += int(len(sample_counts) > 1)
-        row_censored = False
-        ordinary_by_action: dict[object, list[StrategyTeacherCandidate]] = {}
-        for candidate in record.candidates:
-            sample_count_roots[len(candidate.samples)] += 1
-            if candidate.route is not None and candidate.route != RunRoute.VICTORY:
-                route_roots[candidate.route.value] += 1
-            elif candidate.route is None and candidate.intent is None:
-                ordinary_by_action.setdefault(candidate.action, []).append(candidate)
-            candidate_censored = sum(
-                sample.endpoint == StrategyTargetEndpoint.CENSORED
-                for sample in candidate.samples
-            )
-            censored_samples += candidate_censored
-            row_censored |= bool(candidate_censored)
-        censored_rows += int(row_censored)
-
-        for specialist in record.candidates:
-            if specialist.route is None or specialist.route == RunRoute.VICTORY:
-                continue
-            for ordinary in ordinary_by_action.get(specialist.action, ()):
-                matched_pairs += 1
-                matched_pair_samples.append(len(specialist.samples))
-                for target in _ROUTE_TERMINAL_TARGETS:
-                    deltas: list[float] = []
-                    null_mismatch = False
-                    for specialist_sample, ordinary_sample in zip(
-                        specialist.samples, ordinary.samples, strict=True
-                    ):
-                        specialist_value = getattr(specialist_sample, target)
-                        ordinary_value = getattr(ordinary_sample, target)
-                        if (specialist_value is None) != (ordinary_value is None):
-                            null_mismatch = True
-                        elif specialist_value is not None:
-                            deltas.append(
-                                float(specialist_value) - float(ordinary_value)
-                            )
-                    metric = pair_metrics[target]
-                    assert isinstance(metric, dict)
-                    sensitive = null_mismatch or any(delta != 0.0 for delta in deltas)
-                    metric["sensitive_pairs"] += int(sensitive)
-                    metric["null_mismatch_pairs"] += int(null_mismatch)
-                    signed_delta = sum(deltas)
-                    if signed_delta > 0.0:
-                        metric["positive_pairs"] += 1
-                    elif signed_delta < 0.0:
-                        metric["negative_pairs"] += 1
-                    else:
-                        metric["zero_pairs"] += 1
-
-    return {
-        "records": len(records),
-        "groups": len({record.run_group for record in records}),
-        "phase_rows": dict(sorted(phase_rows.items())),
-        "goal_rows": dict(sorted(goal_rows.items())),
-        "roots_by_non_victory_route": dict(sorted(route_roots.items())),
-        "route_diverse_rows": route_diverse_rows,
-        "route_diverse_groups": len(route_diverse_groups),
-        "matched_pairs": matched_pairs,
-        "pair_contract": (
-            "nonvictory_route_minus_exact_action_null_intent_null_route;"
-            "sample_order_paired;null_mismatch_sensitive;"
-            "sign=sum_jointly_resolved_deltas"
-        ),
-        "pair_metrics": pair_metrics,
-        "stored_root_max": max(
-            (len(record.candidates) for record in records), default=0
-        ),
-        "candidate_space_max": max(
-            (record.candidate_space_size for record in records), default=0
-        ),
-        "subset_rows": sum(
-            record.candidate_space_size > len(record.candidates)
-            for record in records
-        ),
-        "censored_rows": censored_rows,
-        "censored_samples": censored_samples,
-        "sample_count_roots": {
-            str(count): roots for count, roots in sorted(sample_count_roots.items())
-        },
-        "sample_count_min": min(sample_count_roots, default=0),
-        "sample_count_max": max(sample_count_roots, default=0),
-        "sample_count_mismatch_rows": sample_count_mismatch_rows,
-        "matched_pair_sample_count_min": min(matched_pair_samples, default=0),
-        "matched_pair_sample_count_max": max(matched_pair_samples, default=0),
-    }
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -2311,6 +2658,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--success-terminal-family-alpha", type=float, default=0.05)
     parser.add_argument("--terminal-preregistration-json", type=Path)
     parser.add_argument("--contextual-preregistration-json", type=Path)
+    parser.add_argument("--route-terminal-preregistration-json", type=Path)
     parser.add_argument("--origin-key-file", type=Path)
     parser.add_argument("--strategy-options", action="store_true")
     parser.add_argument("--include-reorders", action="store_true")
