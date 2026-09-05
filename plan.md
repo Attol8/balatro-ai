@@ -1608,6 +1608,34 @@ window. Do not reinterpret the positive mean or tune the gate. Diagnose and
 enforce the declared shop-action budget at the root-action domain before any
 new late-shop experiment.
 
+Root-domain replan: do **not** enforce `max_shop_actions=6` in determinized
+search. The audit found an existing seven-action shop in the retained control
+as well as the candidate. More importantly, six is a
+`PublicStrategicPolicy` continuation-loop heuristic, not a declared search
+budget: it is absent from the manifest inference budget and command, while the
+v17 root contract explicitly admits every legal non-reorder action. A root cap
+would silently shrink strength, alter teacher targets, and contradict the
+frozen search protocol. The v1 candidate remains rejected because its written
+gate cannot be changed after outcomes, but the mistaken gate must not become
+architecture.
+
+Late-shop v2 preregistration: repeat the unchanged one-line continuation
+hypothesis on fresh development seeds 2461--2500, never reusing v1 outcomes in
+the verdict. Control is the restored commit `9fc3cc8`; nonce
+`late-shop-engine-v2`; Red/White; 40 seeds; six samples; one-Ante horizon; 200
+rollout steps; `z=1`; strategic continuation/options; 1,200 total decisions;
+six workers; recorded search decisions; outputs under
+`runs/experiments/late-shop-engine-v2/`. Root search retains every legal
+non-reorder action and may exceed the continuation's six-action preference;
+the actual hard guards are public legality and the global decision/rollout
+budgets. Require 40/40 complete in both panels, zero rejected/unavailable
+roots, at least ten independent-seed direct-intervention lower-bound cases
+(identical played strategic action sequence and final observation but changed
+deterministic rollout steps), wins and Ante-6 survivors no lower, strictly
+positive paired mean antes and log-best-hand deltas, more positive-ante seeds
+than negative-ante seeds, and no reduction in combined final xMult/scaling
+roles across trajectory-divergent seeds. Any failure restores `< 3` again.
+
 ## Active development loop
 
 The two disjoint 30-seed screens are enough to retain one-ante strategic

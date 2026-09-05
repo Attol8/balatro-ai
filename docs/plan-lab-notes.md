@@ -4686,3 +4686,13 @@ overrode the continuation's forced-leave baseline twice, exposing that
 root domain. The control also contains pre-existing over-budget search shops.
 Commit `d251484` is therefore diagnostic only; the `< 3` reroll window is
 restored. Reports remain under `runs/experiments/late-shop-engine-v1/`.
+
+The subsequent contract audit rejects the proposed root-cap repair. The same
+seven-action pattern already occurs once in the control (seed 2456, Ante 8),
+and `max_shop_actions=6` is not part of the determinized-search inference
+budget. It bounds only the baseline continuation's proposal loop. Search v17
+deliberately evaluates every legal non-reorder root and may override that
+proposal; forcing `LeaveShop` would delete legal roots, change teacher targets,
+and be a new weaker protocol. The v1 outcome remains rejected because its gate
+was frozen, but no root cap will be implemented. A fresh v2 experiment may
+test the unchanged reroll hypothesis under the actual search contract.
