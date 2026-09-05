@@ -3345,6 +3345,46 @@ def test_shop_score_context_survives_current_shop_reroll_only() -> None:
     )
 
 
+def test_shop_score_projection_drops_prior_cerulean_forced_slot() -> None:
+    raw = state("SELECTING_HAND")
+    raw["blinds"]["small"]["status"] = "DEFEATED"
+    raw["blinds"]["boss"].update(name="Cerulean Bell", status="CURRENT")
+    raw["hand"]["cards"][0]["state"] = {
+        "highlight": True,
+        "forced_selection": True,
+    }
+    observation = to_public_observation(raw)
+    selected = (HandSlot(0),)
+    stats = {stat.name: stat for stat in observation.hand_stats}
+    score = _play_score(observation, selected, stats)[0]
+    assert score.denominator == 1
+    evaluated = replace(
+        observation,
+        phase=Phase.ROUND_EVAL,
+        required_hand_slots=(),
+        round=replace(observation.round, chips=int(score)),
+    )
+    next_blinds = tuple(
+        replace(blind, status="UPCOMING", disabled=False)
+        for blind in observation.blinds
+    )
+    shop = replace(
+        evaluated,
+        phase=Phase.SHOP,
+        blinds=next_blinds,
+        hand=(),
+    )
+    history = (
+        PublicHistoryStep(observation, PlayCards(selected), evaluated),
+        PublicHistoryStep(evaluated, CashOut(), shop),
+    )
+
+    context = _persisted_shop_score_context(shop, history)
+
+    assert context is not None
+    assert context[2].required_hand_slots == ()
+
+
 def test_public_score_recovers_displayed_runtime_xmult_from_float_noise() -> None:
     observation = replace(
         to_public_observation(state("SELECTING_HAND")),

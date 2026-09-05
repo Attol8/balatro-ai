@@ -940,6 +940,18 @@ ordinary-root control must finish and publish before the route-conditioned arm
 starts. Apply the same completion, reconciliation, progression, route-diversity,
 and normalized-cost analysis; never combine these rows with the retired block.
 
+The replacement control published an invalid 11/12-complete report and exited
+2; retire seeds `2287-2298` and do not start its candidate arm. Seed `2288`
+cleared a live Cerulean Bell, entered the next shop, then the baseline's
+history-derived score probe copied the prior hand's forced slot into a projected
+future hand whose new blind row no longer contained a current Cerulean Bell.
+This is a heuristic projection bug, not an observation leak or simulator error.
+Clear `required_hand_slots` when constructing the next-blind scoring projection;
+the selected cards remain the observed representative hand, but a prior Boss's
+forced-selection rule must not persist. Add a regression from a genuine
+Cerulean-before-play / Round Eval / cash-out history, verify the full suite, and
+commit before preregistering another disjoint screen.
+
 The retired v11 design remains a pre-win/early-Endless continuation increment,
 not the complete high-score policy. Its useful continuation machinery is retained
 inside the broader program above, while its collection protocol remains retired.

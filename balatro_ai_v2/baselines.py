@@ -1882,6 +1882,7 @@ def _persisted_shop_score_context(
         blinds=observation.blinds,
         hand_stats=reset_stats,
         jokers=observation.jokers,
+        required_hand_slots=(),
     )
     stats = {stat.name: stat for stat in reset_stats}
     current_score, _ = _play_score(projection, selected, stats)

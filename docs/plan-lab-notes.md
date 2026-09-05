@@ -4082,3 +4082,23 @@ Jackdaw select/blind/play loss transition reproduces and covers the case without
 revealing the Joker identity. Verification: 928 repository tests and Ruff pass;
 the focused firewall/codec/Jackdaw suite passes 137 tests and `git diff --check`
 is clean.
+
+### Cerulean score-projection lifecycle repair (2026-09-05)
+
+The disjoint replacement control on development seeds `2287-2298` published an
+invalid report at
+`runs/experiments/elite-route-screen/v15-control-seeds2287-2298.json` and exited
+2 because only 11/12 runs were complete. The route candidate was not started and
+the whole block is retired. Seed `2288` had legitimately beaten an enabled
+Cerulean Bell and entered the next shop; the strategic baseline then failed while
+building its history-derived scoring probe.
+
+That probe reuses the last observed hand to compare current and offered Jokers
+under next-blind conditions. It replaced the blind row but accidentally retained
+Cerulean's prior `required_hand_slots`, creating an internally inconsistent
+synthetic observation. The projection now clears that transient constraint while
+retaining the representative cards and score-verified public history. A regression
+constructs the complete Cerulean play, Round Eval, cash-out, and new-shop history
+and verifies that the score context remains available with no forced slot.
+Verification: 929 repository tests and Ruff pass; the focused baseline/firewall/
+codec suite passes 289 tests and `git diff --check` is clean.
