@@ -2088,28 +2088,33 @@ def _jackdaw_deck_composition(
                 permanent_bonus,
             )
         ] += 1
-    return [
-        {
+    composition: list[dict[str, object]] = []
+    for (rank, suit, enhancement, edition, seal, permanent_bonus), count in sorted(
+        counts.items(),
+        key=lambda pair: (
+            pair[0][0],
+            pair[0][1],
+            pair[0][2] or "",
+            pair[0][3] or "",
+            pair[0][4] or "",
+            pair[0][5],
+        ),
+    ):
+        entry: dict[str, object] = {
             "rank": rank,
             "suit": suit,
-            "enhancement": enhancement,
-            "edition": edition,
-            "seal": seal,
             "permanent_bonus": permanent_bonus,
             "count": count,
         }
-        for (rank, suit, enhancement, edition, seal, permanent_bonus), count in sorted(
-            counts.items(),
-            key=lambda pair: (
-                pair[0][0],
-                pair[0][1],
-                pair[0][2] or "",
-                pair[0][3] or "",
-                pair[0][4] or "",
-                pair[0][5],
-            ),
-        )
-    ]
+        for modifier_field, value in (
+            ("enhancement", enhancement),
+            ("edition", edition),
+            ("seal", seal),
+        ):
+            if value is not None:
+                entry[modifier_field] = value
+        composition.append(entry)
+    return composition
 
 
 def _empty_shop_areas(raw: Mapping[str, Any]) -> dict[str, dict[str, Any]]:

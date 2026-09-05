@@ -1433,6 +1433,21 @@ only: authority exposed no Planet use and replay mismatched at transition zero
 on deck-composition edition representation, so repair that independent parity
 defect before promotion.
 
+Parity-repair design: Balatro's JSON wire format omits unset optional
+`enhancement`, `edition`, and `seal` fields from permanent-deck rows, while the
+Jackdaw projection currently emits them as null. Emit a sparse candidate row
+with the four required fields always present and each optional field only when
+set; preserve those fields for modified cards. Pin both cases in the Jackdaw
+bridge tests, replay the seed-2420 diagnostic to transition equality, and run
+the full suite before committing. Then restart the ordered 2411--2430 scan from
+a fresh checkout at that commit under `planet_use`; never reuse or normalize
+the failed trace.
+
+Implementation status: the sparse wire repair is complete. The immutable
+seed-2420 diagnostic now replays all 25 transitions exactly, its base/modified
+card regression passes, and the full suite is green at 1,113 tests. Commit this
+repair before constructing the fresh checkout for the ordered coverage scan.
+
 After that correction, instrument clone, root-step, continuation/scoring, and
 allocation/GC time at terminal-teacher anchors. The Arcana tail is valid
 exhaustive targeting: 13 decisions with at least 100 roots account for 2,017 of

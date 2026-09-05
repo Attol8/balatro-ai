@@ -152,6 +152,38 @@ def test_candidate_deck_composition_repairs_stale_private_count() -> None:
     assert sum(entry.count for entry in backend.current_public.full_deck) == 50
 
 
+def test_candidate_deck_composition_matches_sparse_authority_wire_shape() -> None:
+    pytest.importorskip("jackdaw")
+    from jackdaw.engine.card_factory import create_playing_card
+    from jackdaw.engine.data.enums import Rank, Suit
+
+    base = create_playing_card(Suit.CLUBS, Rank.TWO)
+    modified = create_playing_card(
+        Suit.SPADES,
+        Rank.ACE,
+        enhancement="m_steel",
+        edition={"foil": True},
+        seal="Red",
+    )
+
+    composition = jackdaw._jackdaw_deck_composition(
+        {"deck": [base, modified], "hand": [], "discard_pile": [], "play": []}
+    )
+
+    assert composition == [
+        {"rank": "2", "suit": "C", "permanent_bonus": 0, "count": 1},
+        {
+            "rank": "A",
+            "suit": "S",
+            "enhancement": "STEEL",
+            "edition": "FOIL",
+            "seal": "RED",
+            "permanent_bonus": 0,
+            "count": 1,
+        },
+    ]
+
+
 def test_candidate_pack_capacity_survives_selections_and_resets() -> None:
     backend = object.__new__(jackdaw.JackdawBackend)
     backend._active_pack_cards = None

@@ -4574,3 +4574,17 @@ against the installed tree both pass. After the final adversarial fixes, the
 main project suite passes all 1,110 tests and Ruff plus both repository diff
 checks are clean. Organic authority/candidate lockstep remains required before
 the action is authority-certified.
+
+### Sparse permanent-deck parity repair (2026-09-05)
+
+The first natural seed-2420 diagnostic stopped at transition zero because
+Balatro's JSON authority omits unset permanent-card `enhancement`, `edition`,
+and `seal` fields, while the Jackdaw bridge emitted explicit nulls. This was a
+candidate representation defect, not a trace-normalization opportunity. The
+bridge now emits the same sparse shape while retaining every set optional
+field; a constructed STEEL/FOIL/RED card pins the latter contract. Replaying
+the original immutable trace now matches all 25 transitions exactly. The full
+suite passes all 1,113 tests in 50.47 seconds and focused Ruff is clean. The
+trace remains diagnostic because its authority policy never executed the new
+buy-and-use action; certification still requires the ordered `planet_use`
+2411--2430 scan from a fresh checkout.
