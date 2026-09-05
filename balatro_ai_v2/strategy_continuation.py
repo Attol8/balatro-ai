@@ -21,12 +21,19 @@ from balatro_ai_v2.actions import (
 )
 from balatro_ai_v2.policy import ActionSource, PublicHistoryStep, PublicPolicy
 from balatro_ai_v2.public_state import Phase, PublicObservation
+from balatro_ai_v2.strategy_engine import RunRoute, derive_engine_state
 from balatro_ai_v2.strategy_context import derive_public_strategy_context
 from balatro_ai_v2.strategy_model import (
     STRATEGY_MODEL_SCHEMA_DIGEST,
     PublicStrategyTensorizer,
     RelationalStrategyPolicyValue,
     load_strategy_model,
+)
+from balatro_ai_v2.strategy_options import (
+    PersistentIntent,
+    PersistentRoute,
+    StrategyIntent,
+    build_strategy_candidates,
 )
 
 
@@ -155,18 +162,46 @@ class CertifiedUtilityContinuationPolicy:
         legal_actions: ActionSource,
         history: tuple[PublicHistoryStep, ...],
     ) -> PublicAction:
+        return self._choose_action(observation, legal_actions, history, None, None)
+
+    def choose_action_for_strategy(
+        self,
+        observation: PublicObservation,
+        legal_actions: ActionSource,
+        history: tuple[PublicHistoryStep, ...],
+        intent: StrategyIntent | None,
+        route: RunRoute,
+    ) -> PublicAction:
+        """Score legal actions with the admitted public strategy identity."""
+
+        return self._choose_action(observation, legal_actions, history, intent, route)
+
+    def _choose_action(
+        self,
+        observation: PublicObservation,
+        legal_actions: ActionSource,
+        history: tuple[PublicHistoryStep, ...],
+        intent: StrategyIntent | None,
+        route: RunRoute | None,
+    ) -> PublicAction:
         supplied = tuple(legal_actions())
-        baseline = self.control.choose_action(
-            observation,
-            lambda: iter(supplied),
-            history,
-        )
+        choose_for_strategy = getattr(self.control, "choose_action_for_strategy", None)
+        if route is not None and callable(choose_for_strategy):
+            baseline = choose_for_strategy(
+                observation, lambda: iter(supplied), history, intent, route
+            )
+        else:
+            baseline = self.control.choose_action(
+                observation,
+                lambda: iter(supplied),
+                history,
+            )
         if observation.phase.value not in self.certificate.support_phases:
             return baseline
         try:
             if baseline not in supplied:
                 raise ValueError("control action is absent from supplied legal actions")
-            candidates = tuple(
+            legal_candidates = tuple(
                 sorted(
                     (
                         action
@@ -180,18 +215,65 @@ class CertifiedUtilityContinuationPolicy:
                     ),
                 )
             )
-            if baseline not in candidates or len(candidates) <= 1:
+            if baseline not in legal_candidates or len(legal_candidates) <= 1:
                 return baseline
-            if len(set(candidates)) != len(candidates):
+            if len(set(legal_candidates)) != len(legal_candidates):
                 raise ValueError("supplied legal actions contain duplicates")
-            context = derive_public_strategy_context(observation, history)
+            if route is None:
+                candidates = legal_candidates
+                candidate_intents = (None,) * len(candidates)
+                candidate_routes = (None,) * len(candidates)
+                baseline_index = candidates.index(baseline)
+            else:
+                engine = derive_engine_state(observation)
+                active_intent = (
+                    PersistentIntent(intent, engine.goal, engine.ante, 1, ())
+                    if intent is not None
+                    else None
+                )
+                active_route = PersistentRoute(
+                    route,
+                    engine.route(route).stage,
+                    engine.ante,
+                    1,
+                    0,
+                    (),
+                )
+                roots = tuple(
+                    root
+                    for root in build_strategy_candidates(
+                        observation,
+                        supplied,
+                        baseline,
+                        active_intent=active_intent,
+                        active_route=active_route,
+                        include_reorders=False,
+                        intent_aware=True,
+                        route_aware=True,
+                        engine=engine,
+                    )
+                    if root.route == route and not isinstance(root.action, _REORDERS)
+                )
+                if not roots or roots[0].action != baseline:
+                    raise ValueError("route candidate space omitted its baseline")
+                candidates = tuple(root.action for root in roots)
+                candidate_intents = tuple(root.intent for root in roots)
+                candidate_routes = tuple(root.route for root in roots)
+                baseline_index = 0
+            context = derive_public_strategy_context(
+                observation,
+                history,
+                incoming_intent=intent,
+                incoming_route=route,
+            )
             if self.tensorizer is None:  # pragma: no cover - initialized above
                 raise AssertionError("continuation tensorizer is unavailable")
             batch = self.tensorizer.tensorize(
-                (observation,),
-                (candidates,),
-                ((None,) * len(candidates),),
-                (context,),
+                observations=(observation,),
+                legal_actions=(candidates,),
+                action_intents=(candidate_intents,),
+                contexts=(context,),
+                action_routes=(candidate_routes,),
             )
             with torch.no_grad():
                 logits = self.model(batch).policy_logits
@@ -199,7 +281,6 @@ class CertifiedUtilityContinuationPolicy:
                 raise ValueError("continuation model emitted invalid utility scores")
             row = logits[0]
             preferred_index = int(torch.argmax(row).item())
-            baseline_index = candidates.index(baseline)
             predicted_gain = float(
                 (row[preferred_index] - row[baseline_index]).detach().cpu().item()
             )
@@ -212,7 +293,11 @@ class CertifiedUtilityContinuationPolicy:
             return baseline
         return baseline
 
-    def fork_for_rollout(self, _intent=None) -> CertifiedUtilityContinuationPolicy:
+    def fork_for_rollout(
+        self,
+        _intent: StrategyIntent | None = None,
+        _route: RunRoute | None = None,
+    ) -> CertifiedUtilityContinuationPolicy:
         """Return an independent wrapper; the model and fallback are stateless."""
 
         control = deepcopy(self.control)

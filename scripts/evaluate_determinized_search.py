@@ -248,7 +248,9 @@ def _run_seed(seed_number: int) -> dict[str, object]:
         },
         "best_hand_score": result.best_hand_score,
         "strategy": (
-            strategy_snapshot(result.final_observation, policy.active_intent)
+            strategy_snapshot(
+                result.final_observation, policy.active_intent, policy.active_route
+            )
             if result.final_observation is not None
             else None
         ),
@@ -969,6 +971,19 @@ def main() -> None:
         tuning = StrategyTuning.from_json(args.tuning_json)
     except ValueError as exc:
         raise SystemExit(f"invalid --tuning-json: {exc}") from exc
+    if args.strategy_continuation_model is not None:
+        fallback, _ = build_public_baseline(
+            args.continuation, args.policy_seed, tuning
+        )
+        try:
+            CertifiedUtilityContinuationPolicy.from_artifacts(
+                control=fallback,
+                model_path=args.strategy_continuation_model,
+                certificate_path=args.strategy_continuation_certificate,
+                training_report_path=args.strategy_continuation_training_report,
+            )
+        except (OSError, RuntimeError, ValueError) as exc:
+            raise SystemExit(f"invalid rollout continuation artifact: {exc}") from exc
     terminal_preregistration = _validate_terminal_preregistration(
         args, tuning, repository_root=root
     )
@@ -1547,6 +1562,7 @@ def _success_teacher_profile(
             )
     decisions = [record[2] for record in records]
     endpoints: Counter[str] = Counter()
+    routes: Counter[str] = Counter()
     fallback_reasons: Counter[str] = Counter()
     for decision in decisions:
         raw_endpoints = decision.get("endpoint_counts")
@@ -1555,6 +1571,15 @@ def _success_teacher_profile(
                 {
                     str(key): int(value)
                     for key, value in raw_endpoints.items()
+                    if isinstance(value, int | float)
+                }
+            )
+        raw_routes = decision.get("route_counts")
+        if isinstance(raw_routes, dict):
+            routes.update(
+                {
+                    str(key): int(value)
+                    for key, value in raw_routes.items()
                     if isinstance(value, int | float)
                 }
             )
@@ -1607,6 +1632,7 @@ def _success_teacher_profile(
             ]
         ),
         "endpoint_counts": dict(endpoints),
+        "route_counts": dict(sorted(routes.items())),
         "fallback_reasons": dict(fallback_reasons),
         "slowest": (
             {
@@ -1636,8 +1662,10 @@ def _success_teacher_profile(
     }
 
 
-def _search_summary(results: list[dict[str, object]]) -> dict[str, float]:
+def _search_summary(results: list[dict[str, object]]) -> dict[str, object]:
     totals: Counter[str] = Counter()
+    route_selections: Counter[str] = Counter()
+    route_transitions: Counter[str] = Counter()
     for row in results:
         search = row["search"]
         assert isinstance(search, dict)
@@ -1645,6 +1673,7 @@ def _search_summary(results: list[dict[str, object]]) -> dict[str, float]:
             "strategic_decisions",
             "searched",
             "changed",
+            "strategy_identity_changes",
             "unavailable",
             "rollout_steps",
             "rejected_rollouts",
@@ -1661,16 +1690,28 @@ def _search_summary(results: list[dict[str, object]]) -> dict[str, float]:
             "success_teacher_censored_rollouts",
             "success_action_overrides",
             "success_intent_only_overrides",
+            "success_route_only_overrides",
         ):
             totals[key] += float(search[key])
+        for name, count in dict(search["strategy_route_selections"]).items():
+            route_selections[str(name)] += int(count)
+        for name, count in dict(search["strategy_route_transitions"]).items():
+            route_transitions[str(name)] += int(count)
     runs = max(1, len(results))
     return {
         **{key: totals[key] for key in totals},
+        "strategy_route_selections": dict(sorted(route_selections.items())),
+        "strategy_route_transitions": dict(sorted(route_transitions.items())),
         "mean_run_seconds": totals["run_seconds"] / runs,
         "steps_per_second": (totals["rollout_steps"] / totals["seconds"])
         if totals["seconds"] > 0
         else 0.0,
         "changed_fraction": (totals["changed"] / totals["searched"])
+        if totals["searched"] > 0
+        else 0.0,
+        "strategy_identity_changed_fraction": (
+            totals["strategy_identity_changes"] / totals["searched"]
+        )
         if totals["searched"] > 0
         else 0.0,
         "unavailable_fraction": (
@@ -1695,6 +1736,7 @@ def _shadow_run_diagnostics(
         decision.unavailable_reason is None
         and decision.preferred_action == decision.control_action
         and decision.preferred_intent == decision.control_intent
+        and decision.preferred_route == decision.control_route
         for decision in shadow.decisions
     )
     margin_signals = sum(
@@ -1876,13 +1918,19 @@ def _teacher_coverage(
     dense_sensitive_rows = 0
     phase_rows: Counter[str] = Counter()
     action_roots: Counter[str] = Counter()
+    route_roots: Counter[str] = Counter()
+    route_diverse_rows = 0
     observed_victory_groups: set[str] = set()
     for record in records:
         phase_rows[record.observation.phase.value] += 1
         baseline = record.candidates[record.baseline_index].samples
         sensitive = False
+        row_routes: set[str] = set()
         for candidate in record.candidates:
             action_roots[type(candidate.action).__name__] += 1
+            route = candidate.route.value if candidate.route is not None else "none"
+            route_roots[route] += 1
+            row_routes.add(route)
             if any(sample.ante8_win == 1.0 for sample in candidate.samples):
                 observed_victory_groups.add(record.run_group)
             delta = sum(
@@ -1891,6 +1939,7 @@ def _teacher_coverage(
             ) / len(candidate.samples)
             sensitive |= abs(delta) > 1e-12
         dense_sensitive_rows += int(sensitive)
+        route_diverse_rows += int(len(row_routes) > 1)
     return {
         "winning_source_groups": winning_groups,
         "losing_source_groups": losing_groups,
@@ -1906,6 +1955,8 @@ def _teacher_coverage(
             ),
             "phase_rows": dict(sorted(phase_rows.items())),
             "action_roots": dict(sorted(action_roots.items())),
+            "route_roots": dict(sorted(route_roots.items())),
+            "route_diverse_rows": route_diverse_rows,
             "stored_root_max": max(
                 (len(record.candidates) for record in records), default=0
             ),

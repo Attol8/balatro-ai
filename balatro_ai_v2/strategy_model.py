@@ -65,12 +65,12 @@ from balatro_ai_v2.public_state import (
     PublicShopPlayingCard,
     VisiblePlayingCard,
 )
-from balatro_ai_v2.strategy_engine import CopyKind, derive_engine_state
+from balatro_ai_v2.strategy_engine import CopyKind, RunRoute, derive_engine_state
 from balatro_ai_v2.strategy_context import PublicStrategyContext
 from balatro_ai_v2.strategy_options import StrategyIntent
 
 
-STRATEGY_MODEL_FORMAT_VERSION: Final = 8
+STRATEGY_MODEL_FORMAT_VERSION: Final = 9
 
 
 class StrategyModelError(RuntimeError):
@@ -223,6 +223,7 @@ _TAGS = (
     "Skip Tag",
 )
 _INTENT_VALUES = ("<none>", *(intent.value for intent in StrategyIntent))
+_ROUTE_VALUES = ("<none>", *(route.value for route in RunRoute))
 
 _CONSUMABLE_KEYS = frozenset(
     {
@@ -366,6 +367,10 @@ _SCALARS = (
     "selection_limit",
     "draw_count",
     "deck_size",
+    "remaining_deck_count",
+    "remaining_deck_distinct",
+    "full_deck_count",
+    "full_deck_distinct",
     "joker_count",
     "joker_limit",
     "consumable_count",
@@ -431,6 +436,7 @@ _FEATURE_NAMES = (
     *(f"target_hand:{value}" for value in _HAND_NAMES),
     *(f"tag:{value}" for value in _TAGS),
     *(f"intent:{value}" for value in _INTENT_VALUES),
+    *(f"route:{value}" for value in _ROUTE_VALUES),
 )
 if len(_FEATURE_NAMES) != len(set(_FEATURE_NAMES)):
     raise RuntimeError("strategy feature names must be unique")
@@ -472,6 +478,7 @@ def _model_schema_digest() -> str:
         "action_kinds": {kind.name: int(kind) for kind in ActionKind},
         "action_relation_channels": ("involved", "argument_order", "new_position"),
         "strategy_intents": _INTENT_VALUES,
+        "run_routes": _ROUTE_VALUES,
         "output_semantics": (
             "per_candidate_baseline_relative_search_utility_score_and_"
             "five_per_candidate_value_heads_v3"
@@ -479,6 +486,10 @@ def _model_schema_digest() -> str:
         "public_shop_offer_contract": "item_or_structured_playing_card_v1",
         "public_blind_contract": "required_disabled_v1",
         "public_joker_contract": "visible_item_or_anonymous_hidden_slot_v1",
+        "deck_entity_compaction": (
+            "retain_all_targetable_entities_then_balance_remaining_and_full_deck_"
+            "buckets_by_route_salience_then_raw_count_v2"
+        ),
         "calibration_fields": (
             "policy_temperature",
             "current_blind_bias",
@@ -798,6 +809,7 @@ class _Entity:
     kind: EntityKind
     identity: int
     features: tuple[float, ...]
+    retention_priority: tuple[int, int] = (0, 0)
 
 
 class PublicStrategyTensorizer:
@@ -812,6 +824,7 @@ class PublicStrategyTensorizer:
         legal_actions: Sequence[Sequence[PublicAction]],
         action_intents: Sequence[Sequence[StrategyIntent | None]] | None = None,
         contexts: Sequence[PublicStrategyContext] | None = None,
+        action_routes: Sequence[Sequence[RunRoute | None]] | None = None,
     ) -> StrategyTensorBatch:
         if not observations or len(observations) != len(legal_actions):
             raise StrategyModelError(
@@ -821,6 +834,8 @@ class PublicStrategyTensorizer:
             raise StrategyModelError("action intents have the wrong batch size")
         if contexts is not None and len(contexts) != len(observations):
             raise StrategyModelError("public contexts have the wrong batch size")
+        if action_routes is not None and len(action_routes) != len(observations):
+            raise StrategyModelError("action routes have the wrong batch size")
         context_rows = (
             tuple(PublicStrategyContext() for _ in observations)
             if contexts is None
@@ -834,6 +849,7 @@ class PublicStrategyTensorizer:
         rows: list[tuple[list[_Entity], dict[tuple[str, int], int]]] = []
         action_rows: list[tuple[PublicAction, ...]] = []
         intent_rows: list[tuple[StrategyIntent | None, ...]] = []
+        route_rows: list[tuple[RunRoute | None, ...]] = []
         for row, (observation, supplied_actions, context) in enumerate(
             zip(observations, legal_actions, context_rows, strict=True)
         ):
@@ -844,6 +860,11 @@ class PublicStrategyTensorizer:
                 if action_intents is None
                 else tuple(action_intents[row])
             )
+            routes = (
+                (None,) * len(actions)
+                if action_routes is None
+                else tuple(action_routes[row])
+            )
             if not actions:
                 raise StrategyModelError(
                     "each observation needs at least one legal action"
@@ -852,12 +873,23 @@ class PublicStrategyTensorizer:
                 raise StrategyModelError(
                     "every action needs exactly one supplied intent"
                 )
+            if len(routes) != len(actions):
+                raise StrategyModelError(
+                    "every action needs exactly one supplied route"
+                )
             if any(
                 intent is not None and not isinstance(intent, StrategyIntent)
                 for intent in intents
             ):
                 raise StrategyModelError(
                     "action intents must be StrategyIntent values or None"
+                )
+            if any(
+                route is not None and not isinstance(route, RunRoute)
+                for route in routes
+            ):
+                raise StrategyModelError(
+                    "action routes must be RunRoute values or None"
                 )
             if len(entities) > self.config.max_entities:
                 raise StrategyModelError(
@@ -867,21 +899,17 @@ class PublicStrategyTensorizer:
                 raise StrategyModelError(
                     "observation exceeds the configured action limit"
                 )
-            unique_candidates = (
-                tuple(zip(actions, intents, strict=True))
-                if action_intents is not None
-                else actions
+            unique_candidates = tuple(
+                zip(actions, intents, routes, strict=True)
             )
             if len(set(unique_candidates)) != len(actions):
-                qualifier = (
-                    "action/intent pairs"
-                    if action_intents is not None
-                    else "legal actions"
+                raise StrategyModelError(
+                    "action/intent/route candidate triples must be unique"
                 )
-                raise StrategyModelError(f"{qualifier} must be unique")
             rows.append((entities, locations))
             action_rows.append(actions)
             intent_rows.append(intents)
+            route_rows.append(routes)
 
         batch = len(rows)
         entity_width = max(len(entities) for entities, _ in rows)
@@ -904,8 +932,21 @@ class PublicStrategyTensorizer:
             batch, action_width, entity_width, ACTION_RELATION_DIM, dtype=torch.float32
         )
 
-        for row, ((entities, locations), observation, actions, intents) in enumerate(
-            zip(rows, observations, action_rows, intent_rows, strict=True)
+        for row, (
+            (entities, locations),
+            observation,
+            actions,
+            intents,
+            routes,
+        ) in enumerate(
+            zip(
+                rows,
+                observations,
+                action_rows,
+                intent_rows,
+                route_rows,
+                strict=True,
+            )
         ):
             for column, entity in enumerate(entities):
                 entity_features[row, column] = torch.tensor(entity.features)
@@ -916,11 +957,11 @@ class PublicStrategyTensorizer:
                 observation, locations
             ).items():
                 entity_relations[row, source, target] = torch.tensor(relation)
-            for column, (action, intent) in enumerate(
-                zip(actions, intents, strict=True)
+            for column, (action, intent, route) in enumerate(
+                zip(actions, intents, routes, strict=True)
             ):
                 kind, features, relations = self._action(
-                    observation, action, locations, intent
+                    observation, action, locations, intent, route
                 )
                 action_features[row, column] = torch.tensor(features)
                 action_kinds[row, column] = int(kind)
@@ -1004,6 +1045,18 @@ class PublicStrategyTensorizer:
             ("selection_limit", observation.selection_limit, 10),
             ("draw_count", observation.draw_count, 52),
             ("deck_size", observation.deck_size, 104),
+            (
+                "remaining_deck_count",
+                sum(card.count for card in observation.remaining_deck),
+                512,
+            ),
+            ("remaining_deck_distinct", len(observation.remaining_deck), 512),
+            (
+                "full_deck_count",
+                sum(card.count for card in observation.full_deck),
+                512,
+            ),
+            ("full_deck_distinct", len(observation.full_deck), 512),
             ("joker_count", len(observation.jokers), 10),
             ("joker_limit", observation.joker_limit, 10),
             ("consumable_count", len(observation.consumables), 10),
@@ -1052,6 +1105,13 @@ class PublicStrategyTensorizer:
                 "intent",
                 context.incoming_intent.value,
                 _INTENT_VALUES,
+            )
+        if context.incoming_route is not None:
+            _put_category(
+                global_features,
+                "route",
+                context.incoming_route.value,
+                _ROUTE_VALUES,
             )
         _put_category(global_features, "deck", observation.deck, _DECKS)
         _put_category(global_features, "stake", observation.stake, _STAKES)
@@ -1156,6 +1216,9 @@ class PublicStrategyTensorizer:
                     features,
                     index,
                     len(canonical_deck),
+                    retention_priority=_deck_retention_priority(
+                        entry.card, entry.count
+                    ),
                 ),
             )
 
@@ -1183,6 +1246,9 @@ class PublicStrategyTensorizer:
                     features,
                     index,
                     len(canonical_full_deck),
+                    retention_priority=_deck_retention_priority(
+                        entry.card, entry.count
+                    ),
                 ),
             )
 
@@ -1284,7 +1350,65 @@ class PublicStrategyTensorizer:
                 0,
                 _entity(EntityKind.LAST_CONSUMABLE, key, _features(), 0, 1),
             )
-        return entities, locations
+        return self._bounded_entities(entities, locations)
+
+    def _bounded_entities(
+        self,
+        entities: list[_Entity],
+        locations: dict[tuple[str, int], int],
+    ) -> tuple[list[_Entity], dict[tuple[str, int], int]]:
+        """Compact only untargeted deck buckets to the configured hard bound."""
+
+        if len(entities) <= self.config.max_entities:
+            return entities, locations
+        deck_kinds = (EntityKind.DECK_CARD, EntityKind.FULL_DECK_CARD)
+        essential = {
+            index for index, entity in enumerate(entities) if entity.kind not in deck_kinds
+        }
+        budget = self.config.max_entities - len(essential)
+        if budget < 0:
+            raise StrategyModelError(
+                "non-deck observation exceeds the configured entity limit"
+            )
+        groups = [
+            sorted(
+                (
+                    index
+                    for index, entity in enumerate(entities)
+                    if entity.kind == kind
+                ),
+                key=lambda index: (
+                    -entities[index].retention_priority[0],
+                    -entities[index].retention_priority[1],
+                    entities[index].features,
+                ),
+            )
+            for kind in deck_kinds
+        ]
+        retained_deck: list[int] = []
+        group_positions = [0] * len(groups)
+        while len(retained_deck) < budget and any(
+            position < len(group)
+            for position, group in zip(group_positions, groups, strict=True)
+        ):
+            for group_index, group in enumerate(groups):
+                position = group_positions[group_index]
+                if position < len(group) and len(retained_deck) < budget:
+                    retained_deck.append(group[position])
+                    group_positions[group_index] += 1
+        retained = essential | set(retained_deck)
+        old_to_new: dict[int, int] = {}
+        bounded: list[_Entity] = []
+        for old_index, entity in enumerate(entities):
+            if old_index in retained:
+                old_to_new[old_index] = len(bounded)
+                bounded.append(entity)
+        bounded_locations = {
+            location: old_to_new[index]
+            for location, index in locations.items()
+            if index in old_to_new
+        }
+        return bounded, bounded_locations
 
     def _append_items(
         self,
@@ -1415,6 +1539,7 @@ class PublicStrategyTensorizer:
         action: PublicAction,
         locations: dict[tuple[str, int], int],
         intent: StrategyIntent | None,
+        route: RunRoute | None,
     ) -> tuple[ActionKind, tuple[float, ...], dict[int, tuple[float, float, float]]]:
         kind = _ACTION_KIND.get(type(action))
         if kind is None:
@@ -1429,6 +1554,12 @@ class PublicStrategyTensorizer:
             "intent",
             "<none>" if intent is None else intent.value,
             _INTENT_VALUES,
+        )
+        _put_category(
+            features,
+            "route",
+            "<none>" if route is None else route.value,
+            _ROUTE_VALUES,
         )
         relations: dict[int, tuple[float, float, float]] = {}
 
@@ -1750,13 +1881,34 @@ def _entity(
     features: list[float],
     position: int,
     size: int,
+    *,
+    retention_priority: tuple[int, int] = (0, 0),
 ) -> _Entity:
     identity_id = _IDENTITY_TO_ID.get(identity)
     if identity_id is None:
         raise StrategyModelError(f"unsupported public identity {identity!r}")
     _put_scaled(features, "position", position, max(1, size - 1))
     _put_scaled(features, "zone_size", size, 64)
-    return _Entity(kind, identity_id, tuple(features))
+    return _Entity(kind, identity_id, tuple(features), retention_priority)
+
+
+def _deck_retention_priority(
+    card: VisiblePlayingCard,
+    count: int,
+) -> tuple[int, int]:
+    """Keep rare public payloads used by known high-ceiling routes."""
+
+    route_salience = sum(
+        (
+            4 if card.seal == "RED" else 0,
+            3 if card.enhancement in {"STEEL", "GLASS"} else 0,
+            2 if card.rank == "K" else 0,
+            2 if card.seal == "BLUE" else 0,
+            1 if card.enhancement in {"GOLD", "WILD"} else 0,
+            1 if card.edition in {"FOIL", "HOLOGRAPHIC", "POLYCHROME"} else 0,
+        )
+    )
+    return route_salience, count
 
 
 def _card_features(features: list[float], card: VisiblePlayingCard) -> None:

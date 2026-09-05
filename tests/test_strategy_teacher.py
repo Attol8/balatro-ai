@@ -7,7 +7,9 @@ import pytest
 
 from balatro_ai_v2.actions import LeaveShop
 from balatro_ai_v2.balatrobot.adapter import to_public_observation
-from balatro_ai_v2.strategy_engine import RunGoal
+from balatro_ai_v2.strategy_context import PublicStrategyContext
+from balatro_ai_v2.strategy_engine import RunGoal, RunRoute
+from balatro_ai_v2.strategy_options import StrategyIntent
 from balatro_ai_v2.strategy_teacher import (
     StrategyRolloutTarget,
     StrategyTargetEndpoint,
@@ -28,7 +30,8 @@ def _draft():
         candidates=(
             StrategyTeacherCandidate(
                 action=LeaveShop(),
-                intent=None,
+                intent=StrategyIntent.STABILIZE,
+                route=RunRoute.HELD_RETRIGGER,
                 samples=(StrategyRolloutTarget(1, 1, 0, 1, 2.5),),
             ),
         ),
@@ -36,6 +39,10 @@ def _draft():
         baseline_index=0,
         goal=RunGoal.VICTORY,
         teacher_config_digest="1" * 64,
+        context=PublicStrategyContext(
+            incoming_intent=StrategyIntent.STABILIZE,
+            incoming_route=RunRoute.HELD_RETRIGGER,
+        ),
     )
 
 

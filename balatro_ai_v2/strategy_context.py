@@ -8,10 +8,11 @@ from dataclasses import dataclass
 from balatro_ai_v2.actions import PlayCards, SellJoker
 from balatro_ai_v2.policy import PublicHistoryStep
 from balatro_ai_v2.public_state import HiddenJokerSlot, Phase, PublicObservation
+from balatro_ai_v2.strategy_engine import RunRoute
 from balatro_ai_v2.strategy_options import StrategyIntent
 
 
-STRATEGY_CONTEXT_VERSION = 2
+STRATEGY_CONTEXT_VERSION = 3
 
 
 @dataclass(frozen=True, slots=True)
@@ -25,6 +26,7 @@ class PublicStrategyContext:
     loyalty_remaining: int | None = None
     best_hand_log_score: float = 0.0
     incoming_intent: StrategyIntent | None = None
+    incoming_route: RunRoute | None = None
 
     def __post_init__(self) -> None:
         if self.version != STRATEGY_CONTEXT_VERSION:
@@ -43,6 +45,10 @@ class PublicStrategyContext:
             self.incoming_intent, StrategyIntent
         ):
             raise ValueError("incoming strategy intent is unsupported")
+        if self.incoming_route is not None and not isinstance(
+            self.incoming_route, RunRoute
+        ):
+            raise ValueError("incoming run route is unsupported")
 
 
 def derive_public_strategy_context(
@@ -50,6 +56,7 @@ def derive_public_strategy_context(
     history: tuple[PublicHistoryStep, ...],
     *,
     incoming_intent: StrategyIntent | None = None,
+    incoming_route: RunRoute | None = None,
 ) -> PublicStrategyContext:
     """Validate a typed prefix and derive only publicly observable context."""
 
@@ -81,6 +88,7 @@ def derive_public_strategy_context(
         loyalty_remaining=_loyalty_remaining(observation, history),
         best_hand_log_score=math.log10(max(1, best_hand_score)),
         incoming_intent=incoming_intent,
+        incoming_route=incoming_route,
     )
 
 

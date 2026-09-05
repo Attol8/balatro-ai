@@ -876,6 +876,35 @@ unavailable. The next increment makes the route a revisable public-history state
 threads it through candidate identity and the learned context, and retains an
 explicit victory fallback.
 
+Revised implementation design after adversarial review: route identity is a
+first-class public triple `(action, intent, route)` shared by search, teacher
+records, training, shadow inference, and certified rollout continuation. Route is
+long-lived context, not an alias for an action's short-lived intent. While a
+specialized route is active, every admissible strategic action may retain that
+route; an explicit same-action victory sibling is the escape and generic Tarot or
+Planet generation does not by itself start the consumable-duplication route. A
+`PersistentRoute` advances independently of the victory/Endless objective and
+records public pivots. The actual rollout continuation and its fork must preserve
+route capability for route-distinct roots, otherwise the decision fails closed.
+
+The relational tensorizer encodes both incoming and candidate route. Oversized
+Endless decks compact only untargeted remaining/permanent deck buckets after
+retaining rare route payloads such as red-seal Steel Kings and Glass cards; raw
+multiplicity controls retention without scaled-count ties, while bounded total
+and distinct-count summaries remain available. Every targetable entity and
+relation remains exact. Search advances
+to v15, strategy context v3, teacher schema v10, relational model format v9, and
+strategy diagnostics v5. The current checkout does not reinterpret v14/schema-v9
+teacher artifacts; any historical merge must run from its frozen source revision,
+and route-aware collection requires a fresh preregistration and merger contract.
+
+This makes elite routes expressible but does not establish that choosing one
+improves play. The next measurement is a small, fresh development-only behavior
+screen with route diagnostics enabled. It must answer whether specialized routes
+are ever selected, retained, completed, or escaped, and whether their extra root
+fan-out reduces rollout throughput. Do not reserve or consume a new teacher panel
+until that screen shows useful route diversity and no behavior regression.
+
 The retired v11 design remains a pre-win/early-Endless continuation increment,
 not the complete high-score policy. Its useful continuation machinery is retained
 inside the broader program above, while its collection protocol remains retired.

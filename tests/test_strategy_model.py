@@ -9,6 +9,7 @@ import pytest
 
 torch = pytest.importorskip("torch")
 
+import balatro_ai_v2.strategy_model as strategy_model_module  # noqa: E402
 from balatro_ai_v2.actions import (  # noqa: E402
     BuyShopCard,
     ShopSlot,
@@ -20,8 +21,14 @@ from balatro_ai_v2.actions import (  # noqa: E402
     iter_legal_actions,
 )
 from balatro_ai_v2.balatrobot.adapter import to_public_observation  # noqa: E402
-from balatro_ai_v2.public_state import PublicItem, PublicJokerRuntime  # noqa: E402
+from balatro_ai_v2.public_state import (  # noqa: E402
+    DeckCardCount,
+    PublicItem,
+    PublicJokerRuntime,
+    VisiblePlayingCard,
+)
 from balatro_ai_v2.strategy_context import PublicStrategyContext  # noqa: E402
+from balatro_ai_v2.strategy_engine import RunRoute  # noqa: E402
 from balatro_ai_v2.strategy_model import (  # noqa: E402
     EntityKind,
     PublicStrategyTensorizer,
@@ -301,8 +308,30 @@ def test_intent_conditioning_admits_same_action_with_distinct_intents() -> None:
     with torch.no_grad():
         logits = _model()(batch).policy_logits[0]
     assert logits[0] != logits[1]
-    with pytest.raises(StrategyModelError, match="legal actions must be unique"):
+    with pytest.raises(StrategyModelError, match="candidate triples must be unique"):
         tensorizer.tensorize((observation,), (actions,))
+
+
+def test_route_conditioning_admits_same_action_and_intent_on_distinct_routes() -> None:
+    observation = _observation()
+    action = SelectBlind()
+    tensorizer = PublicStrategyTensorizer(_config())
+
+    batch = tensorizer.tensorize(
+        observations=(observation,),
+        legal_actions=((action, action),),
+        action_intents=((StrategyIntent.STABILIZE, StrategyIntent.STABILIZE),),
+        action_routes=((RunRoute.VICTORY, RunRoute.HELD_RETRIGGER),),
+    )
+
+    assert not torch.equal(batch.action_features[0, 0], batch.action_features[0, 1])
+    with pytest.raises(StrategyModelError, match="candidate triples must be unique"):
+        tensorizer.tensorize(
+            observations=(observation,),
+            legal_actions=((action, action),),
+            action_intents=((StrategyIntent.STABILIZE, StrategyIntent.STABILIZE),),
+            action_routes=((RunRoute.VICTORY, RunRoute.VICTORY),),
+        )
 
 
 def test_intent_conditioning_rejects_missing_mismatched_and_unknown_values() -> None:
@@ -748,6 +777,127 @@ def test_strategy_tensor_encodes_unordered_full_deck_composition() -> None:
     assert not torch.equal(original.entity_features, redistributed.entity_features)
 
 
+def test_strategy_tensor_compacts_oversized_endless_decks_deterministically() -> None:
+    observation = _observation()
+    full_deck = tuple(
+        DeckCardCount(
+            VisiblePlayingCard(
+                rank=("2", "3", "4", "5", "6", "7", "8", "9", "T", "J", "Q", "K", "A")[
+                    index % 13
+                ],
+                suit=("S", "H", "D", "C")[index % 4],
+                permanent_bonus=index,
+            ),
+            1,
+        )
+        for index in range(100)
+    )
+    oversized = replace(observation, full_deck=full_deck, deck_size=100)
+    reordered = replace(oversized, full_deck=tuple(reversed(full_deck)))
+    action = tuple(iter_legal_actions(oversized))[0]
+    config = replace(_config(), max_entities=32)
+    tensorizer = PublicStrategyTensorizer(config)
+
+    original = tensorizer.tensorize((oversized,), ((action,),))
+    reversed_result = tensorizer.tensorize((reordered,), ((action,),))
+
+    assert int(original.entity_mask.sum()) == config.max_entities
+    assert torch.equal(original.entity_features, reversed_result.entity_features)
+    assert torch.equal(original.entity_kinds, reversed_result.entity_kinds)
+
+
+def test_endless_compaction_retains_rare_route_payload_in_both_deck_views() -> None:
+    observation = _observation("SHOP")
+    rare = DeckCardCount(
+        VisiblePlayingCard(rank="K", suit="H", enhancement="STEEL", seal="RED"),
+        1,
+    )
+    mundane = tuple(
+        DeckCardCount(
+            VisiblePlayingCard(
+                rank=("2", "3", "4", "5", "6", "7", "8", "9", "T", "J", "Q", "A")[
+                    index % 12
+                ],
+                suit=("S", "H", "D", "C")[index % 4],
+                permanent_bonus=index + 1,
+            ),
+            2,
+        )
+        for index in range(80)
+    )
+    deck = (rare, *mundane)
+    oversized = replace(
+        observation,
+        remaining_deck=deck,
+        full_deck=deck,
+        deck_size=sum(entry.count for entry in deck),
+    )
+    action = BuyShopCard(ShopSlot(0))
+    config = replace(_config(), max_entities=32)
+
+    batch = PublicStrategyTensorizer(config).tensorize(
+        (oversized,), ((action,),)
+    )
+
+    kinds = batch.entity_kinds[0]
+    features = batch.entity_features[0]
+    for kind in (EntityKind.DECK_CARD, EntityKind.FULL_DECK_CARD):
+        rows = torch.nonzero(kinds == int(kind), as_tuple=False).flatten()
+        assert len(rows) > 0
+        assert any(
+            features[row, strategy_model_module._FEATURE_INDEX["rank:K"]] == 1
+            and features[row, strategy_model_module._FEATURE_INDEX["enhancement:STEEL"]]
+            == 1
+            and features[row, strategy_model_module._FEATURE_INDEX["seal:RED"]] == 1
+            for row in rows
+        )
+    shop_row = torch.nonzero(
+        kinds == int(EntityKind.SHOP_ITEM), as_tuple=False
+    ).flatten()[0]
+    assert batch.action_relations[0, 0, shop_row, 0] == 1
+
+
+def test_endless_compaction_orders_saturated_buckets_by_raw_count() -> None:
+    observation = _observation()
+    deck = (
+        DeckCardCount(VisiblePlayingCard(rank="2", suit="S"), 1_041),
+        DeckCardCount(VisiblePlayingCard(rank="3", suit="H"), 1_500),
+        DeckCardCount(VisiblePlayingCard(rank="4", suit="D"), 2_000),
+    )
+    oversized = replace(
+        observation,
+        remaining_deck=deck,
+        full_deck=deck,
+        deck_size=sum(entry.count for entry in deck),
+    )
+    roomy = PublicStrategyTensorizer(replace(_config(), max_entities=256))
+    entities, _ = roomy._entities(  # noqa: SLF001 - compaction contract regression
+        oversized, PublicStrategyContext()
+    )
+    essential = sum(
+        entity.kind not in {EntityKind.DECK_CARD, EntityKind.FULL_DECK_CARD}
+        for entity in entities
+    )
+    tensorizer = PublicStrategyTensorizer(
+        replace(_config(), max_entities=essential + 2)
+    )
+    action = tuple(iter_legal_actions(oversized))[0]
+
+    batch = tensorizer.tensorize((oversized,), ((action,),))
+
+    for kind in (EntityKind.DECK_CARD, EntityKind.FULL_DECK_CARD):
+        row = torch.nonzero(
+            batch.entity_kinds[0] == int(kind), as_tuple=False
+        ).flatten()
+        assert len(row) == 1
+        assert (
+            batch.entity_features[
+                0, row[0], strategy_model_module._FEATURE_INDEX["rank:4"]
+            ]
+            == 1
+        )
+
+
 def test_exact_vanilla_skip_tag_is_admitted() -> None:
     observation = _observation()
     tagged = replace(
@@ -776,7 +926,7 @@ def test_strategy_checkpoint_round_trip_and_digest(tmp_path) -> None:
     assert loaded.calibration == StrategyCalibration()
     assert loaded.provenance == {"training_status": "untrained"}
     payload = torch.load(path, weights_only=True)
-    assert payload["format_version"] == STRATEGY_MODEL_FORMAT_VERSION == 8
+    assert payload["format_version"] == STRATEGY_MODEL_FORMAT_VERSION == 9
     assert set(payload) == {
         "format_version",
         "schema_digest",

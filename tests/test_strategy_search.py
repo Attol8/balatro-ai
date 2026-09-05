@@ -30,9 +30,10 @@ from balatro_ai_v2.determinized_search import (
 )
 from balatro_ai_v2.public_state import PublicItem
 from balatro_ai_v2.policy import NoPublicProgressAction, PublicHistoryStep
-from balatro_ai_v2.strategy_engine import GoalUtility, RunGoal
+from balatro_ai_v2.strategy_engine import GoalUtility, RouteStage, RunGoal, RunRoute
 from balatro_ai_v2.strategy_options import (
     PersistentIntent,
+    PersistentRoute,
     StrategicOption,
     StrategyCandidateRoot,
     StrategyIntent,
@@ -234,6 +235,45 @@ def test_active_intent_controls_intervening_public_decisions() -> None:
 
     assert selected == legal[-1]
     assert continuation.calls == [StrategyIntent.RELIABLE_HAND]
+
+
+def test_active_route_controls_intervening_public_decisions() -> None:
+    class RouteContinuation:
+        calls: list[tuple[StrategyIntent | None, RunRoute]] = []
+
+        def choose_action(self, observation, legal_actions, history):
+            return tuple(legal_actions())[0]
+
+        def choose_action_for_strategy(
+            self, observation, legal_actions, history, intent, route
+        ):
+            self.calls.append((intent, route))
+            return tuple(legal_actions())[-1]
+
+        def fork_for_rollout(self, intent=None, route=None):
+            return RouteContinuation()
+
+    observation = to_public_observation(state("SELECTING_HAND"))
+    legal = tuple(iter_legal_actions(observation))
+    continuation = RouteContinuation()
+    policy = DeterminizedSearchPolicy(
+        backend=None,  # type: ignore[arg-type]
+        continuation=continuation,  # type: ignore[arg-type]
+        enable_strategy_options=True,
+        active_route=PersistentRoute(
+            route=RunRoute.HELD_RETRIGGER,
+            stage=RouteStage.SEEDED,
+            started_ante=1,
+            decisions=1,
+            pivots=0,
+            evidence=(),
+        ),
+    )
+
+    selected = policy.choose_action(observation, lambda: iter(legal), ())
+
+    assert selected == legal[-1]
+    assert continuation.calls == [(None, RunRoute.HELD_RETRIGGER)]
 
 
 def test_public_dead_end_is_a_losing_rollout_not_a_rejected_root() -> None:
@@ -504,6 +544,175 @@ class _IntentTrackingContinuation:
         return _IntentTrackingContinuation()
 
 
+class _RouteOnlyContinuation:
+    def choose_action(self, observation, legal_actions, history):
+        del observation, history
+        actions = tuple(legal_actions())
+        return next(
+            (action for action in actions if isinstance(action, LeaveShop)),
+            actions[0],
+        )
+
+    def choose_action_for_strategy(
+        self, observation, legal_actions, history, intent, route
+    ):
+        del observation, history, intent, route
+        actions = tuple(legal_actions())
+        return next(
+            (action for action in actions if isinstance(action, LeaveShop)),
+            actions[0],
+        )
+
+    def fork_for_rollout(self, intent=None, route=None):
+        del intent, route
+        return _RouteOnlyContinuation()
+
+
+def _install_strategy_root_harness(
+    monkeypatch: pytest.MonkeyPatch,
+    roots: tuple[StrategyCandidateRoot, ...],
+    *,
+    better_index: int,
+) -> dict[str, object]:
+    captured: dict[str, object] = {}
+
+    class Sample:
+        def close(self) -> None:
+            pass
+
+    class Frozen:
+        def clone(self):
+            return SimpleNamespace(close=lambda: None)
+
+    monkeypatch.setattr(search_module, "sample_candidate", lambda *args: Sample())
+    monkeypatch.setattr(search_module, "freeze_backend", lambda sample: Frozen())
+    monkeypatch.setattr(
+        search_module, "_teacher_config_digest", lambda policy: "1" * 64
+    )
+
+    def candidates(*args, **kwargs):
+        captured.update(kwargs)
+        return roots
+
+    monkeypatch.setattr(search_module, "build_strategy_candidates", candidates)
+
+    def rollout(self, clone, observation, history, action, **kwargs):
+        del self, clone, observation, history
+        identity = (action, kwargs.get("intent"), kwargs.get("route"))
+        value = 2.0 if identity == roots[better_index].identity else 1.0
+        return RolloutOutcome(
+            value=value,
+            steps=1,
+            rejected=False,
+            goal_utility=_utility(clear=1, progress=value, ante=1),
+        )
+
+    monkeypatch.setattr(DeterminizedSearchPolicy, "_rollout", rollout)
+    return captured
+
+
+def test_route_only_continuation_preserves_candidate_intent_and_route(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    behavior = StrategyCandidateRoot(LeaveShop(), None, route=RunRoute.VICTORY)
+    option = StrategicOption(
+        StrategyIntent.ECONOMY,
+        RerollShop(),
+        ("retain_route_while_rerolling",),
+        RunRoute.HELD_RETRIGGER,
+    )
+    candidate = StrategyCandidateRoot(
+        option.first_action, option.intent, option, option.route
+    )
+    captured = _install_strategy_root_harness(
+        monkeypatch, (behavior, candidate), better_index=1
+    )
+    observation = to_public_observation(state("SHOP", money=10))
+    legal = tuple(iter_legal_actions(observation))
+    policy = DeterminizedSearchPolicy(
+        backend=None,  # type: ignore[arg-type]
+        continuation=_RouteOnlyContinuation(),  # type: ignore[arg-type]
+        budget=RolloutBudget(samples=1, horizon_antes=1, override_z=0),
+        enable_strategy_options=True,
+    )
+
+    selected = policy.choose_action(observation, lambda: iter(legal), ())
+
+    assert selected == RerollShop()
+    assert captured["intent_aware"] is True
+    assert captured["route_aware"] is True
+    assert policy.active_intent is not None
+    assert policy.active_intent.intent == StrategyIntent.ECONOMY
+    assert policy.active_route is not None
+    assert policy.active_route.route == RunRoute.HELD_RETRIGGER
+
+
+@pytest.mark.parametrize("won", (False, True))
+def test_specialized_route_can_escape_on_same_action_and_records_pivot(
+    monkeypatch: pytest.MonkeyPatch,
+    won: bool,
+) -> None:
+    action = LeaveShop()
+    roots = (
+        StrategyCandidateRoot(action, None, route=RunRoute.HELD_RETRIGGER),
+        StrategyCandidateRoot(action, None, route=RunRoute.VICTORY),
+    )
+    _install_strategy_root_harness(monkeypatch, roots, better_index=1)
+    observation = to_public_observation(state("SHOP", money=10))
+    if won:
+        observation = replace(observation, ante=9, antes_cleared=8, won=True)
+    engine = search_module.derive_engine_state(observation)
+    legal = tuple(iter_legal_actions(observation))
+    policy = DeterminizedSearchPolicy(
+        backend=None,  # type: ignore[arg-type]
+        continuation=_RouteOnlyContinuation(),  # type: ignore[arg-type]
+        budget=RolloutBudget(samples=1, horizon_antes=1, override_z=0),
+        enable_strategy_options=True,
+        active_route=PersistentRoute.start(
+            RunRoute.HELD_RETRIGGER, engine, ("visible_baron",)
+        ),
+    )
+
+    selected = policy.choose_action(observation, lambda: iter(legal), ())
+
+    assert selected == action
+    assert policy.last_strategy_selected_index == 1
+    assert policy.active_intent is None
+    assert policy.active_route is not None
+    assert policy.active_route.route == RunRoute.VICTORY
+    assert policy.active_route.pivots == 1
+    assert policy.counters.changed == 0
+    assert policy.counters.strategy_identity_changes == 1
+    assert policy.counters.strategy_route_transitions == {
+        "held_retrigger->victory": 1
+    }
+
+
+def test_rollout_rejects_fork_that_loses_route_capability() -> None:
+    class LostRouteFork(_RouteOnlyContinuation):
+        def fork_for_rollout(self, intent=None, route=None):
+            del intent, route
+            return _IntentTrackingContinuation()
+
+    observation = to_public_observation(state("SHOP"))
+    policy = DeterminizedSearchPolicy(
+        backend=None,  # type: ignore[arg-type]
+        continuation=LostRouteFork(),  # type: ignore[arg-type]
+    )
+
+    outcome = policy._rollout(  # noqa: SLF001
+        None,  # type: ignore[arg-type]
+        observation,
+        (),
+        LeaveShop(),
+        route=RunRoute.HELD_RETRIGGER,
+        isolate_continuation=True,
+    )
+
+    assert outcome.rejected
+    assert outcome.rejection_reason == "fork_lost_route_capability"
+
+
 def _install_integrated_terminal_harness(
     monkeypatch: pytest.MonkeyPatch,
     roots: tuple[StrategyCandidateRoot, ...],
@@ -538,7 +747,11 @@ def _install_integrated_terminal_harness(
         intent = kwargs.get("intent")
         if kwargs.get("success_goal") is None:
             return _terminal_outcome(won=False)
-        is_candidate = root == roots[1].action and intent == roots[1].intent
+        is_candidate = (
+            root,
+            intent,
+            kwargs.get("route"),
+        ) == roots[1].identity
         if not is_candidate:
             return _terminal_outcome(won=False)
         if candidate_result == "win":
@@ -658,6 +871,38 @@ def test_terminal_same_action_override_commits_distinct_intent(
     assert policy.last_success_decision.executed_intent == StrategyIntent.ECONOMY
     assert policy.counters.success_action_overrides == 0
     assert policy.counters.success_intent_only_overrides == 1
+
+
+def test_terminal_same_action_override_commits_distinct_route(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    action = LeaveShop()
+    behavior = StrategyCandidateRoot(action, None, route=RunRoute.VICTORY)
+    candidate = StrategyCandidateRoot(
+        action, None, route=RunRoute.HELD_RETRIGGER
+    )
+    _install_integrated_terminal_harness(monkeypatch, (behavior, candidate))
+    observation = replace(
+        to_public_observation(state("SHOP", money=10)),
+        ante=4,
+        antes_cleared=3,
+    )
+    legal = tuple(iter_legal_actions(observation))
+    policy = _integrated_terminal_policy(_RouteOnlyContinuation())
+
+    selected = policy.choose_action(observation, lambda: iter(legal), ())
+
+    assert selected == action
+    assert policy.active_intent is None
+    assert policy.active_route is not None
+    assert policy.active_route.route == RunRoute.HELD_RETRIGGER
+    assert policy.last_success_decision is not None
+    assert policy.last_success_decision.identity_override
+    assert policy.last_success_decision.behavior_route == RunRoute.VICTORY
+    assert policy.last_success_decision.executed_route == RunRoute.HELD_RETRIGGER
+    assert policy.counters.success_action_overrides == 0
+    assert policy.counters.success_intent_only_overrides == 0
+    assert policy.counters.success_route_only_overrides == 1
 
 
 @pytest.mark.parametrize(

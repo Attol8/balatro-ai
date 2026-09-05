@@ -11,12 +11,14 @@ from balatro_ai_v2.actions import PublicAction, action_to_data
 from balatro_ai_v2.policy import ActionSource, PublicHistoryStep, PublicPolicy
 from balatro_ai_v2.public_state import Phase, PublicObservation
 from balatro_ai_v2.strategy_context import derive_public_strategy_context
+from balatro_ai_v2.strategy_engine import RunRoute
 from balatro_ai_v2.strategy_model import (
     PublicStrategyTensorizer,
     RelationalStrategyPolicyValue,
 )
 from balatro_ai_v2.strategy_options import (
     PersistentIntent,
+    PersistentRoute,
     StrategyCandidateRoot,
     StrategyIntent,
     build_strategy_candidates,
@@ -30,6 +32,7 @@ _STRATEGIC_PHASES = frozenset({Phase.BLIND_SELECT, Phase.SHOP, Phase.PACK})
 class ShadowCandidateScore:
     action: PublicAction
     intent: StrategyIntent | None
+    route: RunRoute | None
     logit: float
 
 
@@ -38,8 +41,10 @@ class ShadowStrategyDecision:
     phase: str
     control_action: PublicAction
     control_intent: StrategyIntent | None
+    control_route: RunRoute | None
     preferred_action: PublicAction | None
     preferred_intent: StrategyIntent | None
+    preferred_route: RunRoute | None
     baseline_logit: float | None
     preferred_logit: float | None
     baseline_relative_margin: float | None
@@ -62,6 +67,9 @@ class ShadowStrategyDecision:
             "control_intent": (
                 self.control_intent.value if self.control_intent is not None else None
             ),
+            "control_route": (
+                self.control_route.value if self.control_route is not None else None
+            ),
             "preferred": (
                 _label(self.preferred_action)
                 if self.preferred_action is not None
@@ -70,6 +78,11 @@ class ShadowStrategyDecision:
             "preferred_intent": (
                 self.preferred_intent.value
                 if self.preferred_intent is not None
+                else None
+            ),
+            "preferred_route": (
+                self.preferred_route.value
+                if self.preferred_route is not None
                 else None
             ),
             "baseline_logit": self.baseline_logit,
@@ -91,6 +104,9 @@ class ShadowStrategyDecision:
                     "action": _label(candidate.action),
                     "intent": candidate.intent.value
                     if candidate.intent is not None
+                    else None,
+                    "route": candidate.route.value
+                    if candidate.route is not None
                     else None,
                     "logit": candidate.logit,
                 }
@@ -133,6 +149,7 @@ class ShadowStrategyPolicy:
     ) -> PublicAction:
         actions = tuple(legal_actions())
         active_before = getattr(self.control, "active_intent", None)
+        active_route_before = getattr(self.control, "active_route", None)
         control_action = self.control.choose_action(
             observation,
             lambda: iter(actions),
@@ -156,18 +173,24 @@ class ShadowStrategyPolicy:
                     if isinstance(active_before, PersistentIntent)
                     else None
                 ),
+                active_route_before=(
+                    active_route_before
+                    if isinstance(active_route_before, PersistentRoute)
+                    else None
+                ),
             )
-            candidate_actions = tuple(action for action, _ in candidates)
-            candidate_intents = tuple(intent for _, intent in candidates)
+            candidate_actions = tuple(action for action, _, _ in candidates)
+            candidate_intents = tuple(intent for _, intent, _ in candidates)
+            candidate_routes = tuple(route for _, _, route in candidates)
             if (
                 self.tensorizer is None
             ):  # pragma: no cover - established in __post_init__
                 raise AssertionError("shadow tensorizer is unavailable")
             batch = self.tensorizer.tensorize(
-                (observation,),
-                (candidate_actions,),
-                (candidate_intents,),
-                (
+                observations=(observation,),
+                legal_actions=(candidate_actions,),
+                action_intents=(candidate_intents,),
+                contexts=(
                     derive_public_strategy_context(
                         observation,
                         history,
@@ -176,8 +199,14 @@ class ShadowStrategyPolicy:
                             if isinstance(active_before, PersistentIntent)
                             else None
                         ),
+                        incoming_route=(
+                            active_route_before.route
+                            if isinstance(active_route_before, PersistentRoute)
+                            else None
+                        ),
                     ),
                 ),
+                action_routes=(candidate_routes,),
             )
             with torch.no_grad():
                 output = self.model(batch)
@@ -204,7 +233,9 @@ class ShadowStrategyPolicy:
                 for value in value_tensors
             )
             baseline_index = candidates.index(control_pair)
-            preferred_action, preferred_intent = candidates[preferred_index]
+            preferred_action, preferred_intent, preferred_route = candidates[
+                preferred_index
+            ]
             preferred_logit = float(logits[preferred_index].item())
             baseline_logit = float(logits[baseline_index].item())
             margin = preferred_logit - baseline_logit
@@ -217,8 +248,10 @@ class ShadowStrategyPolicy:
                 phase=observation.phase.value,
                 control_action=control_action,
                 control_intent=control_pair[1],
+                control_route=control_pair[2],
                 preferred_action=preferred_action,
                 preferred_intent=preferred_intent,
+                preferred_route=preferred_route,
                 baseline_logit=baseline_logit,
                 preferred_logit=preferred_logit,
                 baseline_relative_margin=margin,
@@ -232,8 +265,10 @@ class ShadowStrategyPolicy:
                 log_score=value_predictions[4],
                 calibrated_heads=calibrated_heads,
                 candidates=tuple(
-                    ShadowCandidateScore(action, intent, float(logit.item()))
-                    for (action, intent), logit in zip(candidates, logits, strict=True)
+                    ShadowCandidateScore(action, intent, route, float(logit.item()))
+                    for (action, intent, route), logit in zip(
+                        candidates, logits, strict=True
+                    )
                 ),
             )
         except Exception as exc:
@@ -241,8 +276,10 @@ class ShadowStrategyPolicy:
                 phase=observation.phase.value,
                 control_action=control_action,
                 control_intent=None,
+                control_route=None,
                 preferred_action=None,
                 preferred_intent=None,
+                preferred_route=None,
                 baseline_logit=None,
                 preferred_logit=None,
                 baseline_relative_margin=None,
@@ -269,9 +306,10 @@ class ShadowStrategyPolicy:
         control_action: PublicAction,
         *,
         active_before: PersistentIntent | None,
+        active_route_before: PersistentRoute | None,
     ) -> tuple[
-        tuple[tuple[PublicAction, StrategyIntent | None], ...],
-        tuple[PublicAction, StrategyIntent | None],
+        tuple[tuple[PublicAction, StrategyIntent | None, RunRoute | None], ...],
+        tuple[PublicAction, StrategyIntent | None, RunRoute | None],
     ]:
         recorded = getattr(self.control, "last_strategy_candidates", ())
         selected_index = getattr(self.control, "last_strategy_selected_index", None)
@@ -294,8 +332,10 @@ class ShadowStrategyPolicy:
             legal_actions,
             control_action,
             active_intent=active_before,
+            active_route=active_route_before,
             include_reorders=self.include_reorders,
             intent_aware=True,
+            route_aware=True,
         )
         return tuple(root.identity for root in roots), roots[0].identity
 

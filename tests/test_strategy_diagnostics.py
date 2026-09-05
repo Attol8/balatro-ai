@@ -4,6 +4,8 @@ import json
 
 from balatro_ai_v2.balatrobot.adapter import to_public_observation
 from balatro_ai_v2.strategy_diagnostics import strategy_snapshot, summarize_strategy_results
+from balatro_ai_v2.strategy_engine import RouteStage, RunRoute
+from balatro_ai_v2.strategy_options import PersistentRoute
 from state_factory import state
 
 
@@ -13,7 +15,7 @@ def test_strategy_snapshot_is_stable_json_and_public_only() -> None:
 
     snapshot = strategy_snapshot(observation)
 
-    assert snapshot["schema_version"] == 4
+    assert snapshot["schema_version"] == 5
     assert set(snapshot["routes"]) == {
         "victory",
         "held_retrigger",
@@ -26,6 +28,25 @@ def test_strategy_snapshot_is_stable_json_and_public_only() -> None:
     assert snapshot["economy"]["cash"] == 12
     assert snapshot["boss"]["name"] == "The Head"
     assert "PRIVATE-SEED" not in encoded
+
+
+def test_strategy_snapshot_revalidates_active_route_stage() -> None:
+    observation = to_public_observation(state("SHOP"))
+    stale = PersistentRoute(
+        route=RunRoute.VICTORY,
+        stage=RouteStage.ABSENT,
+        started_ante=1,
+        decisions=2,
+        pivots=1,
+        evidence=("stale_prior_observation",),
+    )
+
+    snapshot = strategy_snapshot(observation, active_route=stale)
+
+    assert snapshot["active_route"] == "victory"
+    assert snapshot["active_route_stage"] == "online"
+    assert snapshot["active_route_decisions"] == 2
+    assert snapshot["active_route_pivots"] == 1
 
 
 def test_strategy_summary_separates_prewin_boss_and_build_failures() -> None:

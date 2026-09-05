@@ -46,6 +46,8 @@ from balatro_ai_v2.strategy_engine import (
     KNOWN_VOUCHERS,
     PublicEngineState,
     RunGoal,
+    RunRoute,
+    RouteStage,
     derive_engine_state,
 )
 
@@ -67,6 +69,7 @@ class StrategicOption:
     intent: StrategyIntent
     first_action: PublicAction
     evidence: tuple[str, ...]
+    route: RunRoute = RunRoute.VICTORY
 
     def is_legal(self, observation: PublicObservation) -> bool:
         return self.first_action in set(iter_legal_actions(observation))
@@ -106,6 +109,73 @@ class PersistentIntent:
         return PersistentIntent.start(option, engine)
 
 
+@dataclass(frozen=True, slots=True)
+class PersistentRoute:
+    """Revisable public build route, independent from the run objective."""
+
+    route: RunRoute
+    stage: RouteStage
+    started_ante: int
+    decisions: int
+    pivots: int
+    evidence: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.route, RunRoute) or not isinstance(
+            self.stage, RouteStage
+        ):
+            raise ValueError("persistent route has unsupported enum state")
+        if any(
+            isinstance(value, bool) or not isinstance(value, int)
+            for value in (self.started_ante, self.decisions, self.pivots)
+        ) or self.started_ante < 0 or self.decisions < 1 or self.pivots < 0:
+            raise ValueError("persistent route counters are invalid")
+        if not isinstance(self.evidence, tuple) or not all(
+            isinstance(value, str) for value in self.evidence
+        ):
+            raise ValueError("persistent route evidence is invalid")
+
+    @classmethod
+    def start(
+        cls,
+        route: RunRoute,
+        engine: PublicEngineState,
+        evidence: tuple[str, ...],
+        *,
+        prior_pivots: int = 0,
+    ) -> PersistentRoute:
+        return cls(
+            route=route,
+            stage=engine.route(route).stage,
+            started_ante=engine.ante,
+            decisions=1,
+            pivots=prior_pivots,
+            evidence=evidence,
+        )
+
+    def advance(
+        self,
+        route: RunRoute,
+        engine: PublicEngineState,
+        evidence: tuple[str, ...],
+    ) -> PersistentRoute:
+        if route == self.route:
+            return PersistentRoute(
+                route=route,
+                stage=engine.route(route).stage,
+                started_ante=self.started_ante,
+                decisions=self.decisions + 1,
+                pivots=self.pivots,
+                evidence=evidence,
+            )
+        return PersistentRoute.start(
+            route,
+            engine,
+            evidence,
+            prior_pivots=self.pivots + 1,
+        )
+
+
 _REORDER_ACTIONS = (ReorderHand, ReorderJokers, ReorderConsumables)
 
 
@@ -116,16 +186,25 @@ class StrategyCandidateRoot:
     action: PublicAction
     intent: StrategyIntent | None
     option: StrategicOption | None = None
+    route: RunRoute | None = None
 
     def __post_init__(self) -> None:
+        if self.intent is not None and not isinstance(self.intent, StrategyIntent):
+            raise ValueError("strategy candidate intent is unsupported")
+        if self.route is not None and not isinstance(self.route, RunRoute):
+            raise ValueError("strategy candidate route is unsupported")
         if self.option is not None and (
-            self.option.first_action != self.action or self.option.intent != self.intent
+            self.option.first_action != self.action
+            or self.option.intent != self.intent
+            or (self.route is not None and self.option.route != self.route)
         ):
             raise ValueError("strategy candidate disagrees with its option")
 
     @property
-    def identity(self) -> tuple[PublicAction, StrategyIntent | None]:
-        return self.action, self.intent
+    def identity(
+        self,
+    ) -> tuple[PublicAction, StrategyIntent | None, RunRoute | None]:
+        return self.action, self.intent, self.route
 
 
 def build_strategy_candidates(
@@ -134,8 +213,10 @@ def build_strategy_candidates(
     control_action: PublicAction,
     *,
     active_intent: PersistentIntent | None = None,
+    active_route: PersistentRoute | None = None,
     include_reorders: bool = False,
     intent_aware: bool = True,
+    route_aware: bool = True,
     engine: PublicEngineState | None = None,
 ) -> tuple[StrategyCandidateRoot, ...]:
     """Build one ordered action/intent space for every strategy consumer."""
@@ -155,7 +236,7 @@ def build_strategy_candidates(
     )
     if any(option.first_action not in legal_set for option in options):
         raise ValueError("strategy option action is absent from supplied legal actions")
-    baseline_option = next(
+    matched_baseline_option = next(
         (
             option
             for option in all_options
@@ -166,22 +247,73 @@ def build_strategy_candidates(
         ),
         None,
     )
+    baseline_option = (
+        StrategicOption(
+            matched_baseline_option.intent,
+            matched_baseline_option.first_action,
+            matched_baseline_option.evidence,
+            active_route.route,
+        )
+        if matched_baseline_option is not None
+        and route_aware
+        and active_route is not None
+        else matched_baseline_option
+    )
+    baseline_route = (
+        baseline_option.route
+        if route_aware and baseline_option is not None
+        else active_route.route
+        if route_aware and active_route is not None
+        else RunRoute.VICTORY
+        if route_aware
+        else None
+    )
     baseline = StrategyCandidateRoot(
         control_action,
         baseline_option.intent if baseline_option is not None else None,
         baseline_option,
+        baseline_route,
     )
     roots = [baseline]
     seen = {baseline.identity}
-    for option in options:
-        root = StrategyCandidateRoot(
-            option.first_action,
-            option.intent if intent_aware else None,
-            option if intent_aware else None,
+    if route_aware and baseline_route != RunRoute.VICTORY:
+        victory = StrategyCandidateRoot(
+            control_action,
+            None,
+            None,
+            RunRoute.VICTORY,
         )
-        if root.identity not in seen:
-            seen.add(root.identity)
-            roots.append(root)
+        seen.add(victory.identity)
+        roots.append(victory)
+    for option in options:
+        routed_options = [option]
+        if (
+            route_aware
+            and active_route is not None
+            and active_route.route != RunRoute.VICTORY
+            and option.route != active_route.route
+        ):
+            retained = StrategicOption(
+                option.intent,
+                option.first_action,
+                option.evidence,
+                active_route.route,
+            )
+            routed_options = (
+                [retained]
+                if option.route == RunRoute.VICTORY
+                else [retained, option]
+            )
+        for routed_option in routed_options:
+            root = StrategyCandidateRoot(
+                routed_option.first_action,
+                routed_option.intent if intent_aware else None,
+                routed_option if intent_aware else None,
+                routed_option.route if route_aware else None,
+            )
+            if root.identity not in seen:
+                seen.add(root.identity)
+                roots.append(root)
     return tuple(roots)
 
 
@@ -290,7 +422,14 @@ def iter_strategy_options(
             key = (intent, action)
             if key not in seen:
                 seen.add(key)
-                options.append(StrategicOption(intent, action, evidence))
+                options.append(
+                    StrategicOption(
+                        intent,
+                        action,
+                        evidence,
+                        _route_for_option(intent, public_engine),
+                    )
+                )
     return tuple(options)
 
 
@@ -306,6 +445,36 @@ def options_for_intent(
         for option in iter_strategy_options(observation, engine)
         if option.intent == intent
     )
+
+
+def options_for_route(
+    observation: PublicObservation,
+    route: RunRoute,
+    engine: PublicEngineState | None = None,
+) -> tuple[StrategicOption, ...]:
+    """Revalidate a persistent route against the newly observed state."""
+
+    return tuple(
+        option
+        for option in iter_strategy_options(observation, engine)
+        if option.route == route
+    )
+
+
+def _route_for_option(
+    intent: StrategyIntent,
+    engine: PublicEngineState,
+) -> RunRoute:
+    if intent == StrategyIntent.HELD_RETRIGGER_ENGINE:
+        return RunRoute.HELD_RETRIGGER
+    if intent == StrategyIntent.PLAYED_RETRIGGER_ENGINE:
+        return RunRoute.PLAYED_RETRIGGER
+    if (
+        intent == StrategyIntent.CONSUMABLE_GENERATION
+        and engine.route(RunRoute.CONSUMABLE_DUPLICATION).stage != RouteStage.ABSENT
+    ):
+        return RunRoute.CONSUMABLE_DUPLICATION
+    return RunRoute.VICTORY
 
 
 def _classify_action(
@@ -520,10 +689,14 @@ def _classify_consumable(
     result: list[tuple[StrategyIntent, tuple[str, ...]]] = []
     if item.key in _ECONOMY_CONSUMABLES:
         result.append((StrategyIntent.ECONOMY, evidence))
-    if item.key in _GENERATOR_CONSUMABLES:
+    if item.key in _GENERATOR_CONSUMABLES or item.key == "c_cryptid":
         result.append((StrategyIntent.CONSUMABLE_GENERATION, evidence))
     if item.kind.upper() == "PLANET":
         result.append((StrategyIntent.RELIABLE_HAND, evidence))
+        if "v_observatory" in engine.route(
+            RunRoute.CONSUMABLE_DUPLICATION
+        ).enablers:
+            result.append((StrategyIntent.CONSUMABLE_GENERATION, evidence))
     if rule.maximum_targets > 0 or item.kind.upper() == "SPECTRAL":
         result.append((StrategyIntent.DECK_SCULPT, evidence))
     if item.key in _HELD_ENGINE_KEYS:
@@ -628,10 +801,12 @@ def _supports_endless(observation: PublicObservation, action: PublicAction) -> b
 
 __all__ = [
     "PersistentIntent",
+    "PersistentRoute",
     "StrategicOption",
     "StrategyCandidateRoot",
     "StrategyIntent",
     "build_strategy_candidates",
     "iter_strategy_options",
     "options_for_intent",
+    "options_for_route",
 ]

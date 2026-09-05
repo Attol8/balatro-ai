@@ -127,16 +127,20 @@ def strategy_training_loss(
         raise ValueError("strategy training batch is empty")
     tensorizer = PublicStrategyTensorizer(model.config)
     batch = tensorizer.tensorize(
-        tuple(record.observation for record in records),
-        tuple(
+        observations=tuple(record.observation for record in records),
+        legal_actions=tuple(
             tuple(candidate.action for candidate in record.candidates)
             for record in records
         ),
-        tuple(
+        action_intents=tuple(
             tuple(candidate.intent for candidate in record.candidates)
             for record in records
         ),
-        tuple(record.context for record in records),
+        contexts=tuple(record.context for record in records),
+        action_routes=tuple(
+            tuple(candidate.route for candidate in record.candidates)
+            for record in records
+        ),
     )
     output = model(batch)
     device = output.policy_logits.device
@@ -376,16 +380,20 @@ def _predict(
 ) -> dict[str, list]:
     tensorizer = PublicStrategyTensorizer(model.config)
     batch = tensorizer.tensorize(
-        tuple(record.observation for record in records),
-        tuple(
+        observations=tuple(record.observation for record in records),
+        legal_actions=tuple(
             tuple(candidate.action for candidate in record.candidates)
             for record in records
         ),
-        tuple(
+        action_intents=tuple(
             tuple(candidate.intent for candidate in record.candidates)
             for record in records
         ),
-        tuple(record.context for record in records),
+        contexts=tuple(record.context for record in records),
+        action_routes=tuple(
+            tuple(candidate.route for candidate in record.candidates)
+            for record in records
+        ),
     )
     model.eval()
     with torch.no_grad():

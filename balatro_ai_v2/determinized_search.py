@@ -50,11 +50,13 @@ from balatro_ai_v2.strategy_engine import (
     GoalUtility,
     PublicEngineState,
     RunGoal,
+    RunRoute,
     derive_engine_state,
 )
 from balatro_ai_v2.strategy_context import derive_public_strategy_context
 from balatro_ai_v2.strategy_options import (
     PersistentIntent,
+    PersistentRoute,
     StrategyCandidateRoot,
     StrategyIntent,
     build_strategy_candidates,
@@ -67,7 +69,7 @@ from balatro_ai_v2.strategy_teacher import (
 )
 
 
-SEARCH_VERSION = "determinized-search-v14"
+SEARCH_VERSION = "determinized-search-v15"
 _REORDER_TYPES = (ReorderHand, ReorderJokers, ReorderConsumables)
 _DENSE_TEACHER_MAX_ROOTS = 512
 
@@ -177,13 +179,26 @@ class SearchDecision:
     selected: str
     unavailable_reason: str | None = None
     goal: str | None = None
+    baseline_intent: str | None = None
+    baseline_route: str | None = None
     selected_intent: str | None = None
+    selected_route: str | None = None
     goal_values: tuple[tuple[str, tuple[float, ...]], ...] = ()
     rejection_reasons: tuple[tuple[str, int], ...] = ()
 
     @property
     def changed(self) -> bool:
         return self.selected != self.baseline
+
+    @property
+    def identity_changed(self) -> bool:
+        return self.changed or (
+            self.selected_intent,
+            self.selected_route,
+        ) != (
+            self.baseline_intent,
+            self.baseline_route,
+        )
 
     def as_dict(self) -> dict[str, object]:
         return {
@@ -200,7 +215,11 @@ class SearchDecision:
             "changed": self.changed,
             "unavailable_reason": self.unavailable_reason,
             "goal": self.goal,
+            "baseline_intent": self.baseline_intent,
+            "baseline_route": self.baseline_route,
             "selected_intent": self.selected_intent,
+            "selected_route": self.selected_route,
+            "identity_changed": self.identity_changed,
             "goal_values": [[label, list(value)] for label, value in self.goal_values],
             "rejection_reasons": [list(pair) for pair in self.rejection_reasons],
         }
@@ -225,15 +244,19 @@ class SuccessTeacherDecision:
     endpoint_counts: tuple[tuple[str, int], ...]
     action_kind_counts: tuple[tuple[str, int], ...]
     intent_counts: tuple[tuple[str, int], ...]
+    route_counts: tuple[tuple[str, int], ...]
     behavior_index: int
     teacher_selected_index: int
     executed_index: int
     behavior_action: PublicAction
     behavior_intent: StrategyIntent | None
+    behavior_route: RunRoute | None
     teacher_action: PublicAction
     teacher_intent: StrategyIntent | None
+    teacher_route: RunRoute | None
     executed_action: PublicAction
     executed_intent: StrategyIntent | None
+    executed_route: RunRoute | None
     fallback_reason: str | None
     affects_actions: bool
     unavailable: bool = False
@@ -263,6 +286,7 @@ class SuccessTeacherDecision:
             "endpoint_counts": dict(self.endpoint_counts),
             "action_kind_counts": dict(self.action_kind_counts),
             "intent_counts": dict(self.intent_counts),
+            "route_counts": dict(self.route_counts),
             "behavior_index": self.behavior_index,
             "teacher_selected_index": self.teacher_selected_index,
             "executed_index": self.executed_index,
@@ -271,17 +295,26 @@ class SuccessTeacherDecision:
                 "intent": self.behavior_intent.value
                 if self.behavior_intent is not None
                 else None,
+                "route": self.behavior_route.value
+                if self.behavior_route is not None
+                else None,
             },
             "teacher_selected": {
                 "action": action_to_data(self.teacher_action),
                 "intent": self.teacher_intent.value
                 if self.teacher_intent is not None
                 else None,
+                "route": self.teacher_route.value
+                if self.teacher_route is not None
+                else None,
             },
             "executed": {
                 "action": action_to_data(self.executed_action),
                 "intent": self.executed_intent.value
                 if self.executed_intent is not None
+                else None,
+                "route": self.executed_route.value
+                if self.executed_route is not None
                 else None,
             },
             "fallback_reason": self.fallback_reason,
@@ -300,6 +333,9 @@ class SearchCounters:
     strategic_decisions: int = 0
     searched: int = 0
     changed: int = 0
+    strategy_identity_changes: int = 0
+    strategy_route_selections: Counter[str] = field(default_factory=Counter)
+    strategy_route_transitions: Counter[str] = field(default_factory=Counter)
     unavailable: int = 0
     rollout_steps: int = 0
     rejected_rollouts: int = 0
@@ -315,12 +351,20 @@ class SearchCounters:
     success_teacher_censored_rollouts: int = 0
     success_action_overrides: int = 0
     success_intent_only_overrides: int = 0
+    success_route_only_overrides: int = 0
 
     def as_dict(self) -> dict[str, object]:
         return {
             "strategic_decisions": self.strategic_decisions,
             "searched": self.searched,
             "changed": self.changed,
+            "strategy_identity_changes": self.strategy_identity_changes,
+            "strategy_route_selections": dict(
+                sorted(self.strategy_route_selections.items())
+            ),
+            "strategy_route_transitions": dict(
+                sorted(self.strategy_route_transitions.items())
+            ),
             "unavailable": self.unavailable,
             "rollout_steps": self.rollout_steps,
             "rejected_rollouts": self.rejected_rollouts,
@@ -336,6 +380,7 @@ class SearchCounters:
             "success_teacher_censored_rollouts": self.success_teacher_censored_rollouts,
             "success_action_overrides": self.success_action_overrides,
             "success_intent_only_overrides": self.success_intent_only_overrides,
+            "success_route_only_overrides": self.success_route_only_overrides,
             "steps_per_second": (self.rollout_steps / self.seconds)
             if self.seconds > 0
             else 0.0,
@@ -363,6 +408,7 @@ class DeterminizedSearchPolicy:
     success_decisions: list[SuccessTeacherDecision] = field(default_factory=list)
     last_success_decision: SuccessTeacherDecision | None = None
     active_intent: PersistentIntent | None = None
+    active_route: PersistentRoute | None = None
     last_strategy_candidates: tuple[StrategyCandidateRoot, ...] = ()
     last_strategy_selected_index: int | None = None
     _success_shop_antes: set[int] = field(default_factory=set)
@@ -384,6 +430,7 @@ class DeterminizedSearchPolicy:
         self.success_decisions = []
         self.last_success_decision = None
         self.active_intent = None
+        self.active_route = None
         self.last_strategy_candidates = ()
         self.last_strategy_selected_index = None
         self._success_shop_antes = set()
@@ -395,8 +442,30 @@ class DeterminizedSearchPolicy:
         legal_actions: ActionSource,
         history: tuple[PublicHistoryStep, ...],
     ) -> PublicAction:
-        choose_for_intent = getattr(self.continuation, "choose_action_for_intent", None)
-        if self.active_intent is not None and callable(choose_for_intent):
+        choose_for_route = getattr(
+            self.continuation, "choose_action_for_strategy", None
+        )
+        choose_for_intent = getattr(
+            self.continuation, "choose_action_for_intent", None
+        )
+        if self.active_route is not None and callable(choose_for_route):
+            try:
+                baseline = choose_for_route(
+                    observation,
+                    legal_actions,
+                    history,
+                    self.active_intent.intent
+                    if self.active_intent is not None
+                    else None,
+                    self.active_route.route,
+                )
+            except Exception:
+                self.active_intent = None
+                self.active_route = None
+                baseline = self.continuation.choose_action(
+                    observation, legal_actions, history
+                )
+        elif self.active_intent is not None and callable(choose_for_intent):
             try:
                 baseline = choose_for_intent(
                     observation,
@@ -556,6 +625,11 @@ class DeterminizedSearchPolicy:
                             if self.active_intent is not None
                             else None
                         ),
+                        incoming_route=(
+                            self.active_route.route
+                            if self.active_route is not None
+                            else None
+                        ),
                     ),
                     candidates=tuple(
                         StrategyTeacherCandidate(
@@ -607,16 +681,29 @@ class DeterminizedSearchPolicy:
                     unsupported=True,
                 )
             else:
-                intent_aware = callable(
-                    getattr(self.continuation, "choose_action_for_intent", None)
-                ) and callable(getattr(self.continuation, "fork_for_rollout", None))
+                rollout_continuation = self.rollout_continuation or self.continuation
+                route_aware = callable(
+                    getattr(rollout_continuation, "choose_action_for_strategy", None)
+                )
+                intent_aware = (
+                    route_aware
+                    or callable(
+                        getattr(
+                            rollout_continuation, "choose_action_for_intent", None
+                        )
+                    )
+                ) and callable(
+                    getattr(rollout_continuation, "fork_for_rollout", None)
+                )
                 candidates = build_strategy_candidates(
                     observation,
                     captured_legal_actions,
                     selected,
                     active_intent=self.active_intent,
+                    active_route=self.active_route,
                     include_reorders=self.include_reorders,
                     intent_aware=intent_aware,
+                    route_aware=route_aware,
                     engine=engine,
                 )
                 self.last_strategy_candidates = candidates
@@ -648,6 +735,7 @@ class DeterminizedSearchPolicy:
             and selected != baseline
         ):
             self.active_intent = None
+            self.active_route = None
         return selected
 
     def _choose_strategy_option(
@@ -686,13 +774,17 @@ class DeterminizedSearchPolicy:
                     unsupported=True,
                 )
             return baseline
+        rollout_continuation = self.rollout_continuation or self.continuation
         has_intent_chooser = callable(
-            getattr(self.continuation, "choose_action_for_intent", None)
+            getattr(rollout_continuation, "choose_action_for_intent", None)
         )
         has_rollout_fork = callable(
-            getattr(self.continuation, "fork_for_rollout", None)
+            getattr(rollout_continuation, "fork_for_rollout", None)
         )
-        if has_intent_chooser and not has_rollout_fork:
+        has_route_chooser = callable(
+            getattr(rollout_continuation, "choose_action_for_strategy", None)
+        )
+        if (has_intent_chooser or has_route_chooser) and not has_rollout_fork:
             self.counters.unavailable += 1
             started = time.perf_counter()
             root = _SearchRoot(baseline, None)
@@ -705,26 +797,32 @@ class DeterminizedSearchPolicy:
                 0,
                 0,
                 started,
-                "intent_continuation_missing_rollout_fork",
+                "intent_continuation_missing_rollout_fork"
+                if has_intent_chooser
+                else "route_continuation_missing_rollout_fork",
             )
             if success_anchor:
                 self._record_unavailable_success_anchor(
                     observation,
                     root,
                     engine.goal,
-                    "intent_continuation_missing_rollout_fork",
+                    "intent_continuation_missing_rollout_fork"
+                    if has_intent_chooser
+                    else "route_continuation_missing_rollout_fork",
                     unsupported=True,
                 )
             return baseline
-        intent_aware = has_intent_chooser and has_rollout_fork
+        intent_aware = (has_intent_chooser or has_route_chooser) and has_rollout_fork
         legal_actions = tuple(iter_legal_actions(observation))
         roots = build_strategy_candidates(
             observation,
             legal_actions,
             baseline,
             active_intent=self.active_intent,
+            active_route=self.active_route,
             include_reorders=self.include_reorders,
             intent_aware=intent_aware,
+            route_aware=has_route_chooser,
             engine=engine,
         )
         self.last_strategy_candidates = roots
@@ -779,11 +877,8 @@ class DeterminizedSearchPolicy:
             for frozen_sample in frozen_samples:
                 for index, root in enumerate(roots):
                     clone = frozen_sample.clone()
-                    intent = (
-                        root.option.intent
-                        if intent_aware and root.option is not None
-                        else None
-                    )
+                    intent = root.intent if intent_aware else None
+                    route = root.route if has_route_chooser else None
                     try:
                         outcome = self._rollout(
                             clone,
@@ -791,6 +886,7 @@ class DeterminizedSearchPolicy:
                             history,
                             root.action,
                             intent=intent,
+                            route=route,
                             isolate_continuation=True,
                             prefix_best_hand_score=prefix_best_hand_score,
                         )
@@ -854,11 +950,17 @@ class DeterminizedSearchPolicy:
                             if self.active_intent is not None
                             else None
                         ),
+                        incoming_route=(
+                            self.active_route.route
+                            if self.active_route is not None
+                            else None
+                        ),
                     ),
                     candidates=tuple(
                         StrategyTeacherCandidate(
                             action=root.action,
                             intent=root.intent,
+                            route=root.route,
                             samples=tuple(
                                 _teacher_target(
                                     outcome,
@@ -878,6 +980,15 @@ class DeterminizedSearchPolicy:
             )
         self.counters.searched += 1
         self.counters.changed += int(selected != baseline)
+        self.counters.strategy_identity_changes += int(selected_index != 0)
+        baseline_route = roots[0].route.value if roots[0].route is not None else "none"
+        selected_route = (
+            selected_root.route.value if selected_root.route is not None else "none"
+        )
+        self.counters.strategy_route_selections[selected_route] += 1
+        self.counters.strategy_route_transitions[
+            f"{baseline_route}->{selected_route}"
+        ] += 1
         count = len(frozen_samples)
         goal_means = tuple(
             (
@@ -937,6 +1048,20 @@ class DeterminizedSearchPolicy:
             self.active_intent = PersistentIntent.start(root.option, engine)
         else:
             self.active_intent = self.active_intent.advance(root.option, engine)
+        if root.route is not None:
+            evidence = (
+                root.option.evidence
+                if root.option is not None
+                else ("explicit_route_fallback",)
+            )
+            if self.active_route is None:
+                self.active_route = PersistentRoute.start(
+                    root.route, engine, evidence
+                )
+            else:
+                self.active_route = self.active_route.advance(
+                    root.route, engine, evidence
+                )
 
     def _record_unavailable_success_anchor(
         self,
@@ -973,15 +1098,19 @@ class DeterminizedSearchPolicy:
             endpoint_counts=(),
             action_kind_counts=((action_kind, 1),),
             intent_counts=((root.intent.value if root.intent else "none", 1),),
+            route_counts=((root.route.value if root.route else "none", 1),),
             behavior_index=0,
             teacher_selected_index=0,
             executed_index=0,
             behavior_action=root.action,
             behavior_intent=root.intent,
+            behavior_route=root.route,
             teacher_action=root.action,
             teacher_intent=root.intent,
+            teacher_route=root.route,
             executed_action=root.action,
             executed_intent=root.intent,
+            executed_route=root.route,
             fallback_reason=reason,
             affects_actions=self.success_terminal_actions is not None,
             unavailable=True,
@@ -1036,6 +1165,9 @@ class DeterminizedSearchPolicy:
         intent_counts = Counter(
             root.intent.value if root.intent is not None else "none" for root in roots
         )
+        route_counts = Counter(
+            root.route.value if root.route is not None else "none" for root in roots
+        )
         self.counters.success_anchors_attempted += 1
         terminal_objective = (
             observation.won or observation.ante >= budget.prewin_start_ante
@@ -1072,8 +1204,10 @@ class DeterminizedSearchPolicy:
             if action_budget is not None and executed_index != behavior_index:
                 if executed_root.action != behavior_root.action:
                     self.counters.success_action_overrides += 1
-                else:
+                elif executed_root.intent != behavior_root.intent:
                     self.counters.success_intent_only_overrides += 1
+                else:
+                    self.counters.success_route_only_overrides += 1
             decision = SuccessTeacherDecision(
                 phase=observation.phase.value,
                 ante=observation.ante,
@@ -1096,15 +1230,19 @@ class DeterminizedSearchPolicy:
                 endpoint_counts=tuple(sorted(endpoint_counts.items())),
                 action_kind_counts=tuple(sorted(action_kind_counts.items())),
                 intent_counts=tuple(sorted(intent_counts.items())),
+                route_counts=tuple(sorted(route_counts.items())),
                 behavior_index=behavior_index,
                 teacher_selected_index=teacher_index,
                 executed_index=executed_index,
                 behavior_action=behavior_root.action,
                 behavior_intent=behavior_root.intent,
+                behavior_route=behavior_root.route,
                 teacher_action=teacher_root.action,
                 teacher_intent=teacher_root.intent,
+                teacher_route=teacher_root.route,
                 executed_action=executed_root.action,
                 executed_intent=executed_root.intent,
+                executed_route=executed_root.route,
                 fallback_reason=fallback_reason,
                 affects_actions=action_budget is not None,
                 unavailable=unavailable,
@@ -1162,6 +1300,7 @@ class DeterminizedSearchPolicy:
                         history,
                         root.action,
                         intent=root.intent if intent_aware else None,
+                        route=root.route,
                         isolate_continuation=True,
                         success_goal=engine_goal if terminal_objective else None,
                         max_steps=(
@@ -1239,11 +1378,17 @@ class DeterminizedSearchPolicy:
                             if self.active_intent is not None
                             else None
                         ),
+                        incoming_route=(
+                            self.active_route.route
+                            if self.active_route is not None
+                            else None
+                        ),
                     ),
                     candidates=tuple(
                         StrategyTeacherCandidate(
                             action=root.action,
                             intent=root.intent,
+                            route=root.route,
                             samples=tuple(
                                 _teacher_target(
                                     outcome,
@@ -1377,6 +1522,7 @@ class DeterminizedSearchPolicy:
         root: PublicAction,
         *,
         intent: StrategyIntent | None = None,
+        route: RunRoute | None = None,
         isolate_continuation: bool = False,
         success_goal: RunGoal | None = None,
         max_steps: int | None = None,
@@ -1407,7 +1553,12 @@ class DeterminizedSearchPolicy:
             fork = getattr(continuation, "fork_for_rollout", None)
             if callable(fork):
                 try:
-                    continuation = fork(intent)
+                    if route is not None and callable(
+                        getattr(continuation, "choose_action_for_strategy", None)
+                    ):
+                        continuation = fork(intent, route)
+                    else:
+                        continuation = fork(intent)
                 except Exception as exc:
                     value = _progress_value(current, start_rounds)
                     return RolloutOutcome(
@@ -1437,6 +1588,28 @@ class DeterminizedSearchPolicy:
                     True,
                     _goal_utility(current, value, best_hand_score, alive=False),
                     "fork_returned_shared_instance",
+                )
+            if route is not None and not callable(
+                getattr(continuation, "choose_action_for_strategy", None)
+            ):
+                value = _progress_value(current, start_rounds)
+                return RolloutOutcome(
+                    value,
+                    steps,
+                    True,
+                    _goal_utility(current, value, best_hand_score, alive=False),
+                    "fork_lost_route_capability",
+                )
+            if route is None and intent is not None and not callable(
+                getattr(continuation, "choose_action_for_intent", None)
+            ):
+                value = _progress_value(current, start_rounds)
+                return RolloutOutcome(
+                    value,
+                    steps,
+                    True,
+                    _goal_utility(current, value, best_hand_score, alive=False),
+                    "fork_lost_intent_capability",
                 )
         while True:
             try:
@@ -1521,10 +1694,21 @@ class DeterminizedSearchPolicy:
                     else StrategyTargetEndpoint.HORIZON,
                 )
             try:
+                choose_for_strategy = getattr(
+                    continuation, "choose_action_for_strategy", None
+                )
                 choose_for_intent = getattr(
                     continuation, "choose_action_for_intent", None
                 )
-                if intent is not None and callable(choose_for_intent):
+                if route is not None and callable(choose_for_strategy):
+                    action = choose_for_strategy(
+                        current,
+                        lambda: iter_legal_actions(current),
+                        tuple(trajectory),
+                        intent,
+                        route,
+                    )
+                elif intent is not None and callable(choose_for_intent):
                     action = choose_for_intent(
                         current,
                         lambda: iter_legal_actions(current),
@@ -1591,8 +1775,17 @@ class DeterminizedSearchPolicy:
             selected=_label(selected.action),
             unavailable_reason=unavailable_reason,
             goal=engine.goal.value,
+            baseline_intent=(
+                roots[0].intent.value if roots[0].intent is not None else None
+            ),
+            baseline_route=(
+                roots[0].route.value if roots[0].route is not None else None
+            ),
             selected_intent=(
-                selected.option.intent.value if selected.option is not None else None
+                selected.intent.value if selected.intent is not None else None
+            ),
+            selected_route=(
+                selected.route.value if selected.route is not None else None
             ),
             goal_values=tuple(sorted(goal_values)),
             rejection_reasons=rejection_reasons,
@@ -1957,6 +2150,6 @@ def _exception_reason(prefix: str, exc: Exception) -> str:
 
 def _root_label(root: _SearchRoot) -> str:
     label = _label(root.action)
-    if root.option is None:
-        return f"{label}|intent=baseline"
-    return f"{label}|intent={root.option.intent.value}"
+    intent = root.intent.value if root.intent is not None else "baseline"
+    route = root.route.value if root.route is not None else "none"
+    return f"{label}|intent={intent}|route={route}"

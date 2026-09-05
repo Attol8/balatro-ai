@@ -11,7 +11,8 @@ import pytest
 
 from balatro_ai_v2.actions import LeaveShop, iter_legal_actions
 from balatro_ai_v2.balatrobot.adapter import to_public_observation
-from balatro_ai_v2.strategy_engine import RunGoal
+from balatro_ai_v2.determinized_search import SearchCounters
+from balatro_ai_v2.strategy_engine import RunGoal, RunRoute
 from balatro_ai_v2.strategy_teacher import (
     StrategyRolloutTarget,
     StrategyTeacherCandidate,
@@ -227,6 +228,8 @@ def test_shadow_diagnostics_derive_action_agreement_from_current_schema(
         control_action = LeaveShop()
         preferred_intent = None
         control_intent = None
+        preferred_route = None
+        control_route = None
         recommendation_clears_margin = True
         calibrated_heads = ("policy", "next_boss")
 
@@ -251,6 +254,48 @@ def test_shadow_diagnostics_derive_action_agreement_from_current_schema(
         "records": [{"recorded": True}],
     }
 
+    FakeDecision.preferred_route = "held_retrigger"
+    FakeDecision.control_route = "victory"
+
+    route_disagreement = module._shadow_run_diagnostics(
+        FakeShadow(), record_decisions=False
+    )
+
+    assert route_disagreement["agreements"] == 0
+
+
+def test_search_summary_aggregates_route_identity_diagnostics() -> None:
+    module = _load_script()
+    counters = SearchCounters(
+        strategic_decisions=2,
+        searched=2,
+        changed=0,
+        strategy_identity_changes=1,
+        success_route_only_overrides=1,
+    )
+    counters.strategy_route_selections.update(
+        {"held_retrigger": 1, "victory": 1}
+    )
+    counters.strategy_route_transitions.update(
+        {"held_retrigger->held_retrigger": 1, "held_retrigger->victory": 1}
+    )
+
+    summary = module._search_summary(
+        [{"search": {**counters.as_dict(), "run_seconds": 1.0}}]
+    )
+
+    assert summary["strategy_identity_changes"] == 1
+    assert summary["strategy_identity_changed_fraction"] == 0.5
+    assert summary["success_route_only_overrides"] == 1
+    assert summary["strategy_route_selections"] == {
+        "held_retrigger": 1,
+        "victory": 1,
+    }
+    assert summary["strategy_route_transitions"] == {
+        "held_retrigger->held_retrigger": 1,
+        "held_retrigger->victory": 1,
+    }
+
 
 def test_success_teacher_coverage_requires_distinct_winning_groups() -> None:
     module = _load_script()
@@ -262,6 +307,7 @@ def test_success_teacher_coverage_requires_distinct_winning_groups() -> None:
                 LeaveShop(),
                 None,
                 (StrategyRolloutTarget(1, 0, None, None, None),),
+                route=RunRoute.VICTORY,
             ),
         ),
         selected_index=0,
@@ -287,6 +333,8 @@ def test_success_teacher_coverage_requires_distinct_winning_groups() -> None:
     assert coverage["winning_source_groups"] == 5
     assert coverage["losing_source_groups"] == 5
     assert not coverage["training_coverage_passed"]
+    assert coverage["dense_paired_utility"]["route_roots"] == {"victory": 10}
+    assert coverage["dense_paired_utility"]["route_diverse_rows"] == 0
 
 
 def test_search_evaluator_rejects_panel_before_backend_work(
@@ -313,6 +361,46 @@ def test_search_evaluator_rejects_panel_before_backend_work(
     )
 
     with pytest.raises(SystemExit, match="gate panel must be exactly seeds 701-900"):
+        module.main()
+
+
+def test_stale_continuation_artifacts_fail_before_backend_work(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    module = _load_script()
+    model = tmp_path / "model.pt"
+    certificate = tmp_path / "certificate.json"
+    training_report = tmp_path / "training.json"
+    for path in (model, certificate, training_report):
+        path.write_bytes(b"stale")
+    monkeypatch.setattr(
+        module.sys,
+        "argv",
+        [
+            "evaluate_determinized_search.py",
+            "--strategy-continuation-model",
+            str(model),
+            "--strategy-continuation-certificate",
+            str(certificate),
+            "--strategy-continuation-training-report",
+            str(training_report),
+        ],
+    )
+    monkeypatch.setattr(
+        module.CertifiedUtilityContinuationPolicy,
+        "from_artifacts",
+        lambda **kwargs: (_ for _ in ()).throw(ValueError("stale model schema")),
+    )
+    monkeypatch.setattr(
+        module,
+        "verify_jackdaw_runtime",
+        lambda: pytest.fail("backend verification must not run"),
+    )
+
+    with pytest.raises(
+        SystemExit, match="invalid rollout continuation artifact: stale model schema"
+    ):
         module.main()
 
 
@@ -679,6 +767,7 @@ def test_success_teacher_profile_links_slowest_anchor_and_reconciles() -> None:
                     "max_root_cumulative_steps": 5,
                     "seconds": 1.0,
                     "endpoint_counts": {"death": 4},
+                    "route_counts": {"held_retrigger": 2},
                     "fallback_reason": None,
                 },
                 {
@@ -690,6 +779,7 @@ def test_success_teacher_profile_links_slowest_anchor_and_reconciles() -> None:
                     "max_root_cumulative_steps": 8,
                     "seconds": 2.0,
                     "endpoint_counts": {"victory": 6},
+                    "route_counts": {"victory": 3},
                     "fallback_reason": "insufficient_terminal_dominance",
                 },
             ],
@@ -701,6 +791,7 @@ def test_success_teacher_profile_links_slowest_anchor_and_reconciles() -> None:
     assert profile["slowest"]["seed"] == 207
     assert profile["slowest"]["decision_index"] == 1
     assert profile["sample_evaluations"]["max"] == 6
+    assert profile["route_counts"] == {"held_retrigger": 2, "victory": 3}
     assert profile["counter_reconciliation"]["steps_match"]
     assert profile["counter_reconciliation"]["seconds_match"]
 

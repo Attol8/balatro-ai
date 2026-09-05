@@ -83,7 +83,12 @@ from balatro_ai_v2.public_scoring import (
     _score_play_prepared,
 )
 from balatro_ai_v2.strategy_tuning import StrategyTuning
-from balatro_ai_v2.strategy_options import StrategyIntent, options_for_intent
+from balatro_ai_v2.strategy_engine import RunRoute
+from balatro_ai_v2.strategy_options import (
+    StrategyIntent,
+    options_for_intent,
+    options_for_route,
+)
 
 
 _REORDER_TYPES = (ReorderHand, ReorderJokers, ReorderConsumables)
@@ -416,12 +421,46 @@ class PublicStrategicPolicy:
     tuning: StrategyTuning = StrategyTuning()
 
     def fork_for_rollout(
-        self, intent: StrategyIntent | None = None
+        self,
+        intent: StrategyIntent | None = None,
+        route: RunRoute | None = None,
     ) -> PublicStrategicPolicy:
         """Return a distinct stateless continuation for one rollout root."""
 
-        del intent
+        del intent, route
         return replace(self)
+
+    def choose_action_for_strategy(
+        self,
+        observation: PublicObservation,
+        legal_actions: ActionSource,
+        history: tuple[PublicHistoryStep, ...],
+        intent: StrategyIntent | None,
+        route: RunRoute,
+    ) -> PublicAction:
+        """Choose within actions that still express a public route and intent."""
+
+        supplied = tuple(legal_actions())
+        supplied_set = set(supplied)
+        intended = tuple(
+            dict.fromkeys(
+                option.first_action
+                for option in options_for_route(observation, route)
+                if (intent is None or option.intent == intent)
+                and option.first_action in supplied_set
+            )
+        )
+        if not intended:
+            if intent is not None:
+                return self.choose_action_for_intent(
+                    observation, lambda: iter(supplied), history, intent
+                )
+            return self.choose_action(observation, lambda: iter(supplied), history)
+        try:
+            selected = self.choose_action(observation, lambda: iter(intended), history)
+        except Exception:
+            return self.choose_action(observation, lambda: iter(supplied), history)
+        return selected if selected in intended else intended[0]
 
     def choose_action_for_intent(
         self,

@@ -30,11 +30,11 @@ from balatro_ai_v2.public_codec import (
 )
 from balatro_ai_v2.public_state import PublicObservation
 from balatro_ai_v2.strategy_context import PublicStrategyContext
-from balatro_ai_v2.strategy_engine import RunGoal, derive_engine_state
+from balatro_ai_v2.strategy_engine import RunGoal, RunRoute, derive_engine_state
 from balatro_ai_v2.strategy_options import StrategyIntent
 
 
-STRATEGY_TEACHER_SCHEMA_VERSION = 9
+STRATEGY_TEACHER_SCHEMA_VERSION = 10
 _RUN_GROUP = re.compile(r"origin-[0-9a-f]{32}")
 _SHA256 = re.compile(r"[0-9a-f]{64}")
 
@@ -89,10 +89,13 @@ class StrategyTeacherCandidate:
     action: PublicAction
     intent: StrategyIntent | None
     samples: tuple[StrategyRolloutTarget, ...]
+    route: RunRoute | None = None
 
     def __post_init__(self) -> None:
         if not self.samples:
             raise ValueError("teacher candidate needs at least one complete sample")
+        if self.route is not None and not isinstance(self.route, RunRoute):
+            raise ValueError("teacher candidate route is unsupported")
 
 
 @dataclass(frozen=True, slots=True)
@@ -213,6 +216,11 @@ def teacher_record_to_data(record: StrategyTeacherRecord) -> dict[str, object]:
                 if record.context.incoming_intent is not None
                 else None
             ),
+            "incoming_route": (
+                record.context.incoming_route.value
+                if record.context.incoming_route is not None
+                else None
+            ),
         },
         "candidate_space_size": record.candidate_space_size,
         "candidates": [
@@ -220,6 +228,9 @@ def teacher_record_to_data(record: StrategyTeacherRecord) -> dict[str, object]:
                 "action": action_to_data(candidate.action),
                 "intent": candidate.intent.value
                 if candidate.intent is not None
+                else None,
+                "route": candidate.route.value
+                if candidate.route is not None
                 else None,
                 "samples": [
                     {
@@ -275,6 +286,7 @@ def teacher_record_from_data(data: object) -> StrategyTeacherRecord:
         if not isinstance(raw_candidate, dict) or set(raw_candidate) != {
             "action",
             "intent",
+            "route",
             "samples",
         }:
             raise ValueError("strategy teacher candidate has invalid fields")
@@ -285,6 +297,13 @@ def teacher_record_from_data(data: object) -> StrategyTeacherRecord:
             intent = StrategyIntent(raw_intent) if raw_intent is not None else None
         except ValueError as exc:
             raise ValueError("strategy teacher intent is unsupported") from exc
+        raw_route = raw_candidate["route"]
+        if raw_route is not None and not isinstance(raw_route, str):
+            raise ValueError("strategy teacher route must be a string or null")
+        try:
+            route = RunRoute(raw_route) if raw_route is not None else None
+        except ValueError as exc:
+            raise ValueError("strategy teacher route is unsupported") from exc
         raw_samples = raw_candidate["samples"]
         if not isinstance(raw_samples, list):
             raise ValueError("strategy teacher samples must be an array")
@@ -319,6 +338,7 @@ def teacher_record_from_data(data: object) -> StrategyTeacherRecord:
                 action=canonical_action_from_data(raw_candidate["action"]),
                 intent=intent,
                 samples=tuple(samples),
+                route=route,
             )
         )
     outcome = data["run_outcome"]
@@ -339,11 +359,15 @@ def teacher_record_from_data(data: object) -> StrategyTeacherRecord:
         "loyalty_remaining",
         "best_hand_log_score",
         "incoming_intent",
+        "incoming_route",
     }:
         raise ValueError("strategy teacher context has invalid fields")
     raw_incoming_intent = raw_context["incoming_intent"]
     if raw_incoming_intent is not None and not isinstance(raw_incoming_intent, str):
         raise ValueError("incoming strategy intent must be a string or null")
+    raw_incoming_route = raw_context["incoming_route"]
+    if raw_incoming_route is not None and not isinstance(raw_incoming_route, str):
+        raise ValueError("incoming run route must be a string or null")
     for name in ("current_shop_has_joker_sale", "prior_shop_has_joker_sale"):
         if not isinstance(raw_context[name], bool):
             raise ValueError("strategy teacher context flags must be boolean")
@@ -363,6 +387,11 @@ def teacher_record_from_data(data: object) -> StrategyTeacherRecord:
             incoming_intent=(
                 StrategyIntent(raw_incoming_intent)
                 if raw_incoming_intent is not None
+                else None
+            ),
+            incoming_route=(
+                RunRoute(raw_incoming_route)
+                if raw_incoming_route is not None
                 else None
             ),
         )
@@ -494,10 +523,13 @@ def _validate_decision(
     sample_counts = {len(candidate.samples) for candidate in candidates}
     if len(sample_counts) != 1:
         raise ValueError("strategy teacher candidates must use paired sample counts")
-    identities = {(candidate.action, candidate.intent) for candidate in candidates}
+    identities = {
+        (candidate.action, candidate.intent, candidate.route)
+        for candidate in candidates
+    }
     if len(identities) != len(candidates):
         raise ValueError(
-            "strategy teacher candidate action/intent pairs must be unique"
+            "strategy teacher candidate action/intent/route triples must be unique"
         )
     if any(not is_legal(observation, candidate.action) for candidate in candidates):
         raise ValueError("strategy teacher candidate action is not publicly legal")

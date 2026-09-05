@@ -8,15 +8,20 @@ from typing import Mapping, Sequence
 
 from balatro_ai_v2.public_state import PublicObservation
 from balatro_ai_v2.strategy_engine import derive_engine_state
-from balatro_ai_v2.strategy_options import PersistentIntent, iter_strategy_options
+from balatro_ai_v2.strategy_options import (
+    PersistentIntent,
+    PersistentRoute,
+    iter_strategy_options,
+)
 
 
-STRATEGY_DIAGNOSTIC_SCHEMA_VERSION = 4
+STRATEGY_DIAGNOSTIC_SCHEMA_VERSION = 5
 
 
 def strategy_snapshot(
     observation: PublicObservation,
     active_intent: PersistentIntent | None = None,
+    active_route: PersistentRoute | None = None,
 ) -> dict[str, object]:
     """Project engine, goal, intent, boss, deck, and option facts to JSON data."""
 
@@ -28,6 +33,14 @@ def strategy_snapshot(
         "goal": engine.goal.value,
         "active_intent": active_intent.intent.value if active_intent is not None else None,
         "active_intent_decisions": active_intent.decisions if active_intent is not None else 0,
+        "active_route": active_route.route.value if active_route is not None else None,
+        "active_route_stage": (
+            engine.route(active_route.route).stage.value
+            if active_route is not None
+            else None
+        ),
+        "active_route_decisions": active_route.decisions if active_route is not None else 0,
+        "active_route_pivots": active_route.pivots if active_route is not None else 0,
         "option_count": len(options),
         "option_counts_by_intent": dict(sorted(option_counts.items())),
         "routes": {

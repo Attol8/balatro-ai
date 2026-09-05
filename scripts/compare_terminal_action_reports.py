@@ -374,6 +374,7 @@ def _validate_interventions(candidate: dict[str, Any]) -> dict[str, int]:
     evaluated = 0
     action_overrides = 0
     intent_only_overrides = 0
+    route_only_overrides = 0
     for row in results:
         search = row.get("search")
         decisions = row.get("success_teacher_decisions")
@@ -391,6 +392,12 @@ def _validate_interventions(candidate: dict[str, Any]) -> dict[str, int]:
             "action_overrides": "success_action_overrides",
             "intent_only_overrides": "success_intent_only_overrides",
         }
+        if "success_route_only_overrides" in search:
+            counter_fields["route_only_overrides"] = (
+                "success_route_only_overrides"
+            )
+        elif row_counts["route_only_overrides"] != 0:
+            raise ReportError("terminal report omits route-only override counter")
         for derived, counter in counter_fields.items():
             if (
                 _nonnegative_int(search, counter, context="candidate")
@@ -401,7 +408,8 @@ def _validate_interventions(candidate: dict[str, Any]) -> dict[str, int]:
         evaluated += row_counts["evaluated"]
         action_overrides += row_counts["action_overrides"]
         intent_only_overrides += row_counts["intent_only_overrides"]
-    overrides = action_overrides + intent_only_overrides
+        route_only_overrides += row_counts["route_only_overrides"]
+    overrides = action_overrides + intent_only_overrides + route_only_overrides
     if attempted < 20 or evaluated < 10 or overrides < 1:
         raise ReportError("candidate has insufficient terminal intervention coverage")
     return {
@@ -409,6 +417,7 @@ def _validate_interventions(candidate: dict[str, Any]) -> dict[str, int]:
         "evaluated_anchors": evaluated,
         "action_overrides": action_overrides,
         "intent_only_overrides": intent_only_overrides,
+        "route_only_overrides": route_only_overrides,
         "identity_overrides": overrides,
     }
 
@@ -425,6 +434,7 @@ def _recompute_intervention_counts(decisions: list[Any]) -> dict[str, int]:
         "evaluated": 0,
         "action_overrides": 0,
         "intent_only_overrides": 0,
+        "route_only_overrides": 0,
     }
     for decision in decisions:
         if not isinstance(decision, dict) or decision.get("affects_actions") is not True:
@@ -511,8 +521,10 @@ def _recompute_intervention_counts(decisions: list[Any]) -> dict[str, int]:
             assert isinstance(behavior, dict) and isinstance(executed, dict)
             if executed.get("action") != behavior.get("action"):
                 totals["action_overrides"] += 1
-            else:
+            elif executed.get("intent") != behavior.get("intent"):
                 totals["intent_only_overrides"] += 1
+            else:
+                totals["route_only_overrides"] += 1
     return totals
 
 

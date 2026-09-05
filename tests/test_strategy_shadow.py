@@ -101,11 +101,12 @@ def test_shadow_scores_deduplicated_intent_options_but_returns_control() -> None
         "endless_ante": pytest.approx(7.0),
         "log_score": pytest.approx(12.0),
     }
-    pairs = tuple(
-        (candidate.action, candidate.intent) for candidate in decision.candidates
+    triples = tuple(
+        (candidate.action, candidate.intent, candidate.route)
+        for candidate in decision.candidates
     )
-    assert len(pairs) == len(set(pairs))
-    assert (selected, None) in pairs
+    assert len(triples) == len(set(triples))
+    assert any(action == selected and intent is None for action, intent, _ in triples)
     assert decision.unavailable_reason is None
 
 

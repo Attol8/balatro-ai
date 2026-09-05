@@ -9,6 +9,7 @@ import balatro_ai_v2.strategy_options as strategy_options_module
 from balatro_ai_v2.actions import (
     BuyPack,
     BuyShopCard,
+    RerollShop,
     ReorderJokers,
     ShopSlot,
     UseConsumable,
@@ -16,9 +17,10 @@ from balatro_ai_v2.actions import (
 )
 from balatro_ai_v2.balatrobot.adapter import to_public_observation
 from balatro_ai_v2.public_state import PublicItem
-from balatro_ai_v2.strategy_engine import derive_engine_state
+from balatro_ai_v2.strategy_engine import RunRoute, derive_engine_state
 from balatro_ai_v2.strategy_options import (
     PersistentIntent,
+    PersistentRoute,
     StrategyIntent,
     build_strategy_candidates,
     iter_strategy_options,
@@ -108,6 +110,32 @@ def test_blue_seal_generation_option_holds_instead_of_playing_the_seal() -> None
 
     assert plays
     assert all(0 not in {slot.value for slot in action.cards} for action in plays)
+    assert all(option.route == RunRoute.VICTORY for option in generation)
+
+
+def test_consumable_duplication_route_requires_visible_route_evidence() -> None:
+    ordinary_raw = state("SELECTING_HAND")
+    ordinary_raw["hand"]["cards"][0]["modifier"] = ["BLUE"]
+    ordinary = to_public_observation(ordinary_raw)
+    perkeo = replace(
+        to_public_observation(state("SHOP", money=10)),
+        shop=(_joker("j_perkeo"),),
+    )
+
+    ordinary_generation = options_for_intent(
+        ordinary, StrategyIntent.CONSUMABLE_GENERATION
+    )
+    perkeo_generation = options_for_intent(
+        perkeo, StrategyIntent.CONSUMABLE_GENERATION
+    )
+
+    assert ordinary_generation
+    assert all(option.route == RunRoute.VICTORY for option in ordinary_generation)
+    assert any(
+        isinstance(option.first_action, BuyShopCard)
+        and option.route == RunRoute.CONSUMABLE_DUPLICATION
+        for option in perkeo_generation
+    )
 
 
 def test_luchador_purchase_is_a_boss_preparation_option() -> None:
@@ -240,10 +268,82 @@ def test_candidate_contract_preserves_active_intent_and_reorder_scope() -> None:
         include_reorders=True,
     )
 
-    assert without[0].identity == (option.first_action, active.intent)
-    assert not any(isinstance(root.action, ReorderJokers) for root in without[1:])
+    assert without[0].identity == (
+        option.first_action,
+        active.intent,
+        option.route,
+    )
+    assert all(
+        root.action == option.first_action
+        for root in without[1:]
+        if isinstance(root.action, ReorderJokers)
+    )
+    assert any(
+        root.action == option.first_action
+        and root.intent is None
+        and root.route == RunRoute.VICTORY
+        for root in without[1:]
+    )
     assert any(isinstance(root.action, ReorderJokers) for root in with_reorders)
     assert len({root.identity for root in with_reorders}) == len(with_reorders)
+
+
+def test_active_specialized_route_can_retain_generic_shop_actions() -> None:
+    observation = replace(
+        to_public_observation(state("SHOP", money=10)),
+        jokers=(_joker("j_baron"),),
+    )
+    legal = tuple(iter_legal_actions(observation))
+    engine = derive_engine_state(observation)
+    route = PersistentRoute.start(
+        RunRoute.HELD_RETRIGGER, engine, ("visible_baron",)
+    )
+    control = next(action for action in legal if not isinstance(action, RerollShop))
+
+    roots = build_strategy_candidates(
+        observation,
+        legal,
+        control,
+        active_route=route,
+        include_reorders=False,
+        engine=engine,
+    )
+
+    assert any(
+        isinstance(root.action, RerollShop)
+        and root.route == RunRoute.HELD_RETRIGGER
+        for root in roots
+    )
+    assert {
+        root.route for root in roots if isinstance(root.action, RerollShop)
+    } == {RunRoute.HELD_RETRIGGER}
+
+
+def test_persistent_route_survives_goal_change_and_counts_public_pivots() -> None:
+    observation = replace(
+        to_public_observation(state("SHOP")),
+        jokers=(_joker("j_baron"),),
+    )
+    engine = derive_engine_state(observation)
+    route = PersistentRoute.start(
+        RunRoute.HELD_RETRIGGER, engine, ("visible_baron",)
+    )
+    won_engine = derive_engine_state(
+        replace(observation, ante=9, antes_cleared=8, won=True)
+    )
+
+    continued = route.advance(
+        RunRoute.HELD_RETRIGGER, won_engine, ("public_goal_changed",)
+    )
+    pivoted = continued.advance(
+        RunRoute.PLAYED_RETRIGGER, won_engine, ("visible_pivot",)
+    )
+
+    assert continued.decisions == 2
+    assert continued.started_ante == observation.ante
+    assert pivoted.route == RunRoute.PLAYED_RETRIGGER
+    assert pivoted.pivots == 1
+    assert pivoted.decisions == 1
 
 
 def test_candidate_contract_reuses_the_captured_legal_action_tuple(

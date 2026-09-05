@@ -4020,3 +4020,46 @@ A naturally observed real-Balatro View Deck/Idol transition remains required
 authority evidence. The next implementation increment must bound relational
 full-deck entities for very large Endless decks and make route state persistent
 before it can move behavior or score.
+
+### Persistent route and bounded Endless tensor checkpoint (2026-09-05)
+
+Route-conditioned decisions now have one canonical public identity across
+search, teacher data, model training, shadow scoring, and rollout continuation:
+the legal action, optional short-lived intent, and revisable long-lived route.
+The four routes are victory, held retrigger, played retrigger, and consumable
+duplication. Route state is deliberately independent from `RunGoal`, so an
+assembled engine survives the public Ante-8 victory transition; changing route
+increments a public pivot count. A specialized active route always receives a
+same-action victory sibling, preventing persistence from deleting the baseline
+escape path.
+
+Adversarial review rejected the first implementation's route-as-intent alias.
+Generic Tarot generation and Blue Seal holding no longer masquerade as Perkeo
+duplication, and a specialized route can retain generic progress, economy, or
+reroll options instead of pivoting automatically. Route-aware roots are admitted
+only when the actual rollout continuation and its independent fork preserve the
+route API. A learned route continuation scores the canonical candidate triples,
+not every legal action under one copied label. Route-only, intent-only, and
+action overrides are reported separately.
+
+The relational model encodes incoming and candidate routes. Large permanent or
+remaining decks no longer make Endless observations structurally untensorizable:
+all targetable/non-deck entities are retained, the remaining budget alternates
+between remaining-deck and full-deck card buckets while prioritizing rare known
+route payloads and then unsaturated raw multiplicity. Bounded total/distinct
+summaries remain global features. This is deterministic public lossy compression,
+not hidden-state sampling. If non-deck entities alone exceed the configured
+bound, tensorization still fails closed.
+
+Frozen evidence was not reinterpreted. Historical v14/schema-v9 merging is valid
+only from its frozen source checkout; the active search is v15 and emits teacher
+schema v10. A new route-aware collection therefore needs its own preregistration,
+merger contract, and fresh development seeds. The route mechanism is capability
+work only; no score improvement is claimed until a fresh behavior and throughput
+screen measures route selection, retention, completion, escape, and root
+expansion.
+
+Verification after the corrected adversarial review: 922 repository tests and
+Ruff pass, `git diff --check` is clean, and the focused route/search/model suite
+passes 155 tests. The independent review found all seven earlier blockers
+resolved and no remaining fairness, identity, or schema blocker.

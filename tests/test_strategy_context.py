@@ -8,6 +8,7 @@ from balatro_ai_v2.actions import JokerSlot, LeaveShop, SellJoker
 from balatro_ai_v2.balatrobot.adapter import to_public_observation
 from balatro_ai_v2.policy import PublicHistoryStep
 from balatro_ai_v2.strategy_context import derive_public_strategy_context
+from balatro_ai_v2.strategy_engine import RunRoute
 from balatro_ai_v2.strategy_options import StrategyIntent
 from state_factory import state
 
@@ -25,12 +26,14 @@ def test_public_context_summarizes_current_shop_and_incoming_intent() -> None:
         current,
         history,
         incoming_intent=StrategyIntent.ECONOMY,
+        incoming_route=RunRoute.HELD_RETRIGGER,
     )
 
     assert context.current_shop_actions == 2
     assert context.current_shop_has_joker_sale
     assert context.prior_shop_has_joker_sale
     assert context.incoming_intent == StrategyIntent.ECONOMY
+    assert context.incoming_route == RunRoute.HELD_RETRIGGER
 
 
 def test_public_context_rejects_discontinuous_or_future_history() -> None:
