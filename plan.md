@@ -1155,6 +1155,29 @@ An end-to-end test authenticates a real collector-emitted draft. This is not yet
 a collection authorization: the distinct preregistration, merger, and numerical
 route-support gates in steps 2-3 remain next.
 
+Route collection v1 design sketch (before implementation): reserve development
+seeds 2311-2410 as five immutable 20-run bundles. The exact v16 base search uses
+six one-ante samples; the action-inert terminal teacher uses two samples, starts
+at Ante 4, continues two Endless antes, and has a 600-step cap. Strategy options
+are enabled; terminal action influence, dense collection, reorders, learned
+continuations, and shadows are forbidden. A separate
+`route_terminal_teacher_preregistration` binds schema 11, the fixed nonce,
+candidate/runtime/backend/source digests, tuning, HMAC origin key, batch paths,
+and collection-only support gates. The first 20-run bundle is a pilot: later
+bundles cannot start until its report and teacher bytes revalidate and show
+minimum route support. It can authorize more collection, never training or model
+influence.
+
+Move route coverage into one shared public-only module before the evaluator and
+new merger consume it. Report aggregate and per-route support across phase, ante,
+goal, exact same-action/null-route pairs, sample cardinality, and all six target
+residuals. Keep the contextual validator, binding field, merger, gates, and
+trainer unchanged. The route evaluator gets independent validation, source-freeze
+checks, and crash-atomic two-file publication. Only after that implementation is
+committed may the preregistration file bind its revision/digest and reserve the
+pilot. The separate merger follows in the next commit and must reconstruct every
+HMAC origin family and factual behavior/report identity before merging.
+
 The retired v11 design remains a pre-win/early-Endless continuation increment,
 not the complete high-score policy. Its useful continuation machinery is retained
 inside the broader program above, while its collection protocol remains retired.
