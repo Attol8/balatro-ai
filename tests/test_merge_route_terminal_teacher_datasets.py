@@ -97,7 +97,7 @@ def test_route_coverage_exposes_exact_pairs_and_gate_rejects_empty_support():
     assert failures == ()
 
 
-def test_publisher_is_no_overwrite_and_binds_digest(tmp_path):
+def test_publisher_is_no_overwrite_and_binds_digest(tmp_path, monkeypatch):
     module = _module()
     key = b"k" * 32
     records = (_record(1, key),)
@@ -105,10 +105,16 @@ def test_publisher_is_no_overwrite_and_binds_digest(tmp_path):
         "strategy_teacher_dataset": {"sha256": None},
         "manifest": {"source_digest": "s", "repository_revision": "r", "backend": {}},
     }
+    merger_source = {
+        "repository_revision": "m",
+        "repository_dirty": False,
+        "source_digest": "x",
+    }
+    monkeypatch.setattr(module, "_capture_merger_source", lambda *_: merger_source)
     dataset = tmp_path / "bundle/teacher.jsonl"
     output = tmp_path / "bundle/report.json"
     module._publish_bundle(
-        dataset, output, records, report, tmp_path, report["manifest"]
+        dataset, output, records, report, tmp_path, merger_source
     )
     assert dataset.exists() and output.exists()
     assert (
@@ -117,7 +123,7 @@ def test_publisher_is_no_overwrite_and_binds_digest(tmp_path):
     )
     with pytest.raises(SystemExit, match="overwrite"):
         module._publish_bundle(
-            dataset, output, records, report, tmp_path, report["manifest"]
+            dataset, output, records, report, tmp_path, merger_source
         )
 
 
@@ -152,9 +158,72 @@ def test_merged_report_keeps_opaque_component_membership(tmp_path):
         tmp_path / "teacher",
         tmp_path / "report",
         component_report,
-        (record,),
+        (record, record),
         "e" * 64,
     )
-    merged = module._merged_report((component,), (record,), {"records": 1}, "p" * 64)
+    merger_source = {
+        "repository_revision": "m",
+        "repository_dirty": False,
+        "source_digest": "x",
+    }
+    merged = module._merged_report(
+        (component,), (record, record), {"records": 2}, "p" * 64, merger_source
+    )
     assert merged["collection_summary"]["training_authorized"] is False
     assert len(merged["merged_components"][0]["opaque_group_sha256"]) == 64
+    assert merged["merged_components"][0]["opaque_groups"] == [record.run_group]
+    assert merged["merged_components"][0]["opaque_group_sha256"] == hashlib.sha256(
+        record.run_group.encode()
+    ).hexdigest()
+    assert merged["manifest"]["merger_source"] == merger_source
+
+
+def test_components_are_canonicalized_by_frozen_batch_order(tmp_path):
+    module = _module()
+
+    def component(batch_id):
+        return (
+            tmp_path / f"{batch_id}.jsonl",
+            tmp_path / f"{batch_id}.json",
+            {"route_terminal_teacher_preregistration": {"batch_id": batch_id}},
+            (),
+            "d" * 64,
+        )
+
+    ordered = module._canonical_components(
+        (component("batch-05"), component("batch-01"), component("batch-03"))
+    )
+    assert [
+        row[2]["route_terminal_teacher_preregistration"]["batch_id"]
+        for row in ordered
+    ] == ["batch-01", "batch-03", "batch-05"]
+
+
+def test_publisher_discards_stage_if_merger_source_changes(tmp_path, monkeypatch):
+    module = _module()
+    record = _record(1, b"k" * 32)
+    expected = {
+        "repository_revision": "m",
+        "repository_dirty": False,
+        "source_digest": "x",
+    }
+    changed = {**expected, "source_digest": "y"}
+    monkeypatch.setattr(module, "_capture_merger_source", lambda *_: changed)
+    report = {
+        "strategy_teacher_dataset": {"sha256": None},
+        "manifest": {"repository_revision": "c"},
+    }
+    dataset = tmp_path / "bundle/teacher.jsonl"
+    output = tmp_path / "bundle/report.json"
+    with pytest.raises(SystemExit, match="source changed"):
+        module._publish_bundle(
+            dataset, output, (record,), report, tmp_path, expected
+        )
+    assert not dataset.parent.exists()
+
+
+def test_publisher_rejects_identical_dataset_and_report_paths(tmp_path):
+    module = _module()
+    output = tmp_path / "bundle/output.json"
+    with pytest.raises(SystemExit, match="must be distinct"):
+        module._publish_bundle(output, output, (), {}, tmp_path, {})

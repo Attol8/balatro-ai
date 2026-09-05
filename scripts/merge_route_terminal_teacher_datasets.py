@@ -41,6 +41,8 @@ from balatro_ai_v2.strategy_teacher import (
 
 def main() -> None:
     args = build_parser().parse_args()
+    if args.output_jsonl.resolve() == args.output_report.resolve():
+        raise SystemExit("merged dataset and report paths must be distinct")
     if args.output_jsonl.parent.resolve() != args.output_report.parent.resolve():
         raise SystemExit("merged outputs must share one bundle directory")
     if args.output_jsonl.exists() or args.output_report.exists():
@@ -49,10 +51,13 @@ def main() -> None:
     spec, prereg_digest, key = _load_preregistration(
         args.preregistration_json, args.origin_key_file, root
     )
-    components = tuple(
+    components = _canonical_components(
         _load_component(Path(dataset), Path(report)) for dataset, report in args.input
     )
     _validate_components(components, spec, prereg_digest, key, root)
+    merger_source = _capture_merger_source(
+        root, components[0][2]["manifest"]["repository_revision"]
+    )
     records = tuple(record for component in components for record in component[3])
     _tensorization_preflight(records, spec)
     coverage = route_terminal_teacher_coverage(records)
@@ -65,14 +70,16 @@ def main() -> None:
     )
     if failures:
         raise SystemExit("route teacher coverage gate failed: " + ",".join(failures))
-    report = _merged_report(components, records, coverage, prereg_digest)
+    report = _merged_report(
+        components, records, coverage, prereg_digest, merger_source
+    )
     _publish_bundle(
         args.output_jsonl,
         args.output_report,
         records,
         report,
         root,
-        components[0][2]["manifest"],
+        merger_source,
     )
     print(
         json.dumps(
@@ -153,6 +160,24 @@ def _load_component(dataset: Path, report_path: Path):
         records,
         hashlib.sha256(report_bytes).hexdigest(),
     )
+
+
+def _canonical_components(components):
+    order = {
+        batch["batch_id"]: index for index, batch in enumerate(ROUTE_TEACHER_BATCHES)
+    }
+    loaded = tuple(components)
+    try:
+        return tuple(
+            sorted(
+                loaded,
+                key=lambda component: order[
+                    component[2]["route_terminal_teacher_preregistration"]["batch_id"]
+                ],
+            )
+        )
+    except (KeyError, TypeError) as exc:
+        raise SystemExit("route component batch binding is invalid") from exc
 
 
 def _validate_components(
@@ -304,9 +329,26 @@ def _validate_source_freeze(fixed, spec, root: Path) -> None:
         raise SystemExit("cannot verify route collection ancestry") from exc
     if set(changed) != {ROUTE_TEACHER_PREREGISTRATION}:
         raise SystemExit("route collection revision changed implementation source")
+
+
+def _capture_merger_source(root: Path, collection_revision: str) -> dict[str, object]:
     revision, dirty, digest = source_snapshot(root)
-    if dirty or revision != fixed[5] or digest != fixed[3]:
-        raise SystemExit("current checkout differs from route collection source freeze")
+    if dirty:
+        raise SystemExit("route merger checkout is dirty")
+    try:
+        subprocess.run(
+            ["git", "merge-base", "--is-ancestor", collection_revision, revision],
+            cwd=root,
+            check=True,
+            capture_output=True,
+        )
+    except (OSError, subprocess.CalledProcessError) as exc:
+        raise SystemExit("route merger does not descend from the collection source") from exc
+    return {
+        "repository_revision": revision,
+        "repository_dirty": False,
+        "source_digest": digest,
+    }
 
 
 def _tensorization_preflight(records, spec) -> None:
@@ -332,7 +374,7 @@ def _tensorization_preflight(records, spec) -> None:
         batch.validate()
 
 
-def _merged_report(components, records, coverage, prereg_digest):
+def _merged_report(components, records, coverage, prereg_digest, merger_source):
     base = json.loads(json.dumps(components[0][2]))
     base.pop("results", None)
     base["summary"] = {
@@ -340,18 +382,23 @@ def _merged_report(components, records, coverage, prereg_digest):
         "complete": True,
         "merged_component_reports": len(components),
     }
-    base["merged_components"] = [
-        {
-            "batch_id": c[2]["route_terminal_teacher_preregistration"]["batch_id"],
-            "report_sha256": c[4],
-            "dataset_sha256": c[2]["strategy_teacher_dataset"]["sha256"],
-            "opaque_group_sha256": hashlib.sha256(
-                "\n".join(sorted(r.run_group for r in c[3])).encode()
-            ).hexdigest(),
-            "opaque_groups": sorted(r.run_group for r in c[3]),
-        }
-        for c in components
-    ]
+    merged_components = []
+    for component in components:
+        opaque_groups = sorted({record.run_group for record in component[3]})
+        merged_components.append(
+            {
+                "batch_id": component[2][
+                    "route_terminal_teacher_preregistration"
+                ]["batch_id"],
+                "report_sha256": component[4],
+                "dataset_sha256": component[2]["strategy_teacher_dataset"]["sha256"],
+                "opaque_group_sha256": hashlib.sha256(
+                    "\n".join(opaque_groups).encode()
+                ).hexdigest(),
+                "opaque_groups": opaque_groups,
+            }
+        )
+    base["merged_components"] = merged_components
     base["strategy_teacher_dataset"].update(
         {
             "path": None,
@@ -381,13 +428,16 @@ def _merged_report(components, records, coverage, prereg_digest):
         "repository_dirty": False,
         "backend": components[0][2]["manifest"]["backend"],
         "component_count": len(components),
+        "merger_source": merger_source,
     }
     return base
 
 
 def _publish_bundle(
-    dataset: Path, report: Path, records, payload, root: Path, expected_manifest
+    dataset: Path, report: Path, records, payload, root: Path, merger_source
 ) -> None:
+    if dataset.resolve() == report.resolve():
+        raise SystemExit("merged dataset and report paths must be distinct")
     final = dataset.parent.resolve()
     if final.exists():
         raise SystemExit(f"refusing to overwrite existing bundle: {final}")
@@ -402,6 +452,12 @@ def _publish_bundle(
             json.dumps(payload, sort_keys=True, allow_nan=False) + "\n",
             encoding="utf-8",
         )
+        current = _capture_merger_source(
+            root,
+            str(payload["manifest"]["repository_revision"]),
+        )
+        if current != merger_source:
+            raise SystemExit("route merger source changed before bundle publication")
         os.rename(staged, final)
     except BaseException:
         for path in staged.iterdir():
