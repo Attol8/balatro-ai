@@ -4638,3 +4638,32 @@ from 228,933,632 to 228,835,328 bytes. The before/after reports and teacher
 records remain diagnostic under `runs/experiments/profiling/terminal-timing-v1-
 seed2439-{before,after}-single/`; no protected seed was used and no search
 budget, root, action, label, endpoint, or failure behavior changed.
+
+The adjacent boss-filter slice removed hand-family classification for the 24
+boss rules that never use it, after retaining The Psychic's minimum-five-card
+filter. The Eye and The Mouth keep the original classifier and restriction
+logic. Commit `e0d3bb9` passes 1,120 tests. A second isolated seed-2439 replay
+again executed 72,071 rollout steps with exact normalized result fields and
+exact sorted teacher records. Relative to `d380920`, wall time improved from
+344.04 to 318.35 seconds (7.47%), throughput from 210.95 to 228.10 steps/second
+(8.13%), and maximum RSS from 228,835,328 to 222,986,240 bytes. From the
+original `da9cd9d` baseline, the combined exact wall-time reduction is 30.23%.
+The diagnostic report remains under `runs/experiments/profiling/terminal-
+timing-v1-seed2439-after-boss-single/`.
+
+### Late-shop multiplicative-engine hypothesis (2026-09-05)
+
+A descriptive audit of the frozen v9/v10 trajectories finds 340 of 365 losses
+committed to Pair or Two Pair. Of 243 losses with a full Joker row, 192 have no
+xMult Joker; 352 losses have empty consumables, while median terminal cash is
+$17 in v9 and $20 in v10. Among 64 late-shop teacher states across 35 groups
+with at least $20, a full row without xMult/scaling, a legal reroll, and at
+least three current shop actions, the continuation left 47 times and rerolled
+only twice. The v9 corpus and invalid v10 batch 02 are used only descriptively,
+not as promotable evidence.
+
+The smallest causal test is one additional upgrade reroll at shop step three,
+using the already-declared `needs_upgrade`, legality, reserve, and six-action
+budget. This leaves two actions for the intended reroll--sale--purchase line.
+It receives a paired 20-seed fresh-development screen with the kill rules in
+`plan.md`; no result can promote an artifact without the later frozen gate.

@@ -1552,6 +1552,35 @@ still applies without classification, and retain the existing Eye/Mouth
 semantic tests. Retain only with exact matched search behavior and measurable
 same-seed throughput improvement; otherwise revert it as noise.
 
+Boss-filter optimization result: commit `e0d3bb9` passes 1,120 tests. Against
+the retained scorer-only build on the same isolated seed-2439 replay, all
+normalized result fields and all five sorted terminal-teacher records are
+exact. The workload remains 72,071 rollout steps. Wall time fell from 344.04
+to 318.35 seconds (7.47%), throughput rose from 210.95 to 228.10 steps/second
+(8.13%), and maximum RSS fell from 228,835,328 to 222,986,240 bytes. Retain the
+change. Together, the two exact slices reduce the original 456.24-second
+baseline to 318.35 seconds (30.23%) without changing a root, action, endpoint,
+label, or outcome.
+
+Strength replan: throughput is no longer the immediate score ceiling. Across
+the descriptive frozen v9/v10 trajectories, 340 of 365 losses (93.2%) end on
+Pair or Two Pair; 192 of 243 losses with a full Joker row have no xMult, while
+352 losses have empty consumables and terminal cash is commonly substantial.
+In 64 qualifying late shops with at least $20, a full non-scaling row, and a
+legal reroll, the policy left 47 times and rerolled twice. These artifacts are
+diagnostic only where their promotion protocols failed, but the repeated shape
+justifies one narrow development experiment. Preserve the existing
+`needs_upgrade`, legality, and reserve gates; allow exactly the already-budgeted
+step-three upgrade reroll (`shop_steps < max_shop_actions - 2`) so two actions
+remain for sale and purchase. Do not alter Joker values, search roots, samples,
+horizon, shop cap, or economy floor. Compare paired on 20 fresh disjoint
+development seeds. Require all runs complete; zero rejected/unavailable roots;
+at least eight qualifying interventions across five runs; no more than six
+shop actions; no regression in wins or Ante-6 survival; nonnegative paired ante
+delta; positive paired log-best-hand delta; and more xMult/scaling acquisitions
+in affected candidate runs. Insufficient coverage or any survival regression
+kills the slice.
+
 ## Active development loop
 
 The two disjoint 30-seed screens are enough to retain one-ante strategic
