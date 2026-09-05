@@ -68,6 +68,7 @@ class RoutePairTargets:
 
 @dataclass(frozen=True, slots=True)
 class RoutePairedExample:
+    record_index: int
     record: StrategyTeacherRecord
     specialist_index: int
     ordinary_index: int
@@ -117,7 +118,7 @@ def reconstruct_route_split(
         if batch not in {f"batch-{i:02d}" for i in range(1, 6)} or batch in by_batch:
             raise RouteLearningDataError("merged route batch ids are invalid")
         by_batch[batch] = _component_groups(component)
-    if set(by_batch) != {f"batch-{i:02d}" for i in range(1, 6)}:
+    if list(by_batch) != [f"batch-{i:02d}" for i in range(1, 6)]:
         raise RouteLearningDataError("merged route batches are incomplete")
     all_groups = [group for groups in by_batch.values() for group in groups]
     if len(set(all_groups)) != len(all_groups):
@@ -177,7 +178,8 @@ def _targets(specialist, ordinary) -> RoutePairTargets:
             for s, o in zip(specialist.samples, ordinary.samples, strict=True)
         )
         values[name] = paired
-        masks[name] = tuple(value is not None for value in paired)
+        pair_valid = all(value is not None for value in paired)
+        masks[name] = (pair_valid,) * len(paired)
     return RoutePairTargets(scalar, values, masks)
 
 
@@ -185,7 +187,7 @@ def route_paired_examples(
     records: Sequence[StrategyTeacherRecord],
 ) -> tuple[RoutePairedExample, ...]:
     examples: list[RoutePairedExample] = []
-    for record in records:
+    for record_index, record in enumerate(records):
         ordinary_by_action = [
             index
             for index, candidate in enumerate(record.candidates)
@@ -208,6 +210,7 @@ def route_paired_examples(
                 raise RouteLearningDataError("paired route samples are unequal")
             examples.append(
                 RoutePairedExample(
+                    record_index,
                     record,
                     index,
                     ordinary,
@@ -270,19 +273,20 @@ def route_training_loss(
         ),
     )
     output = model(batch)
-    row_for_record = {id(record): index for index, record in enumerate(records)}
-    run_counts = Counter(record.run_group for record in records)
-    pair_counts = Counter(id(example.record) for example in examples)
+    eligible_decisions = Counter(example.record.run_group for example in examples)
+    pair_counts = Counter(example.record_index for example in examples)
     losses: dict[str, list[Tensor]] = {name: [] for name in TARGETS}
     ordering_values: list[Tensor] = []
     ordering_weights: list[float] = []
     weights: dict[str, list[float]] = {name: [] for name in TARGETS}
     for example in examples:
-        row = row_for_record[id(example.record)]
+        row = example.record_index
         specialist = example.specialist_index
         ordinary = example.ordinary_index
         base_weight = (
-            1.0 / run_counts[example.record.run_group] / pair_counts[id(example.record)]
+            1.0
+            / eligible_decisions[example.record.run_group]
+            / pair_counts[example.record_index]
         )
         predictions = {
             "search_utility": output.policy_logits[row, specialist]
@@ -298,36 +302,36 @@ def route_training_loss(
             "log_score": output.log_score[row, specialist]
             - output.log_score[row, ordinary],
         }
-        for sample_index, target in enumerate(example.targets.scalar):
-            weight = base_weight / len(example.targets.scalar)
-            losses["search_utility"].append(
-                F.smooth_l1_loss(
-                    predictions["search_utility"],
-                    predictions["search_utility"].new_tensor(target),
+        weight = base_weight
+        scalar_target = sum(example.targets.scalar) / len(example.targets.scalar)
+        losses["search_utility"].append(
+            F.smooth_l1_loss(
+                predictions["search_utility"],
+                predictions["search_utility"].new_tensor(scalar_target),
+            )
+        )
+        weights["search_utility"].append(weight)
+        if scalar_target:
+            ordering_values.append(
+                F.softplus(
+                    -predictions["search_utility"]
+                    * predictions["search_utility"].new_tensor(
+                        1.0 if scalar_target > 0 else -1.0
+                    )
                 )
             )
-            weights["search_utility"].append(weight)
-            if target:
-                ordering_values.append(
-                    F.softplus(
-                        -predictions["search_utility"]
-                        * predictions["search_utility"].new_tensor(
-                            1.0 if target > 0 else -1.0
-                        )
+            ordering_weights.append(weight)
+        for head in HEADS:
+            if all(example.targets.masks[head]):
+                head_target = sum(example.targets.heads[head]) / len(
+                    example.targets.heads[head]
+                )
+                losses[head].append(
+                    F.smooth_l1_loss(
+                        predictions[head], predictions[head].new_tensor(head_target)
                     )
                 )
-                ordering_weights.append(weight)
-            for head in HEADS:
-                if example.targets.masks[head][sample_index]:
-                    losses[head].append(
-                        F.smooth_l1_loss(
-                            predictions[head],
-                            predictions[head].new_tensor(
-                                example.targets.heads[head][sample_index]
-                            ),
-                        )
-                    )
-                    weights[head].append(weight)
+                weights[head].append(weight)
     result = output.policy_logits.new_zeros(())
     metrics: dict[str, float] = {}
     for name, values in losses.items():

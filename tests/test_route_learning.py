@@ -79,6 +79,24 @@ def test_route_pair_uses_same_action_comparator_not_global_ordinary():
     assert example.targets.scalar == (1.0, 1.0)
 
 
+def test_opposite_sample_deltas_have_zero_mean_and_no_ordering_signal():
+    record = _record(1)
+    specialist = record.candidates[2]
+    samples = tuple(
+        replace(sample, search_utility=value)
+        for sample, value in zip(specialist.samples, (0.0, 2.0), strict=True)
+    )
+    record = replace(
+        record,
+        candidates=(*record.candidates[:2], replace(specialist, samples=samples)),
+    )
+    example = route_paired_examples((record,))[0]
+    assert example.targets.scalar == (-1.0, 1.0)
+    assert sum(example.targets.scalar) / len(example.targets.scalar) == 0.0
+    _, metrics = route_training_loss(RelationalStrategyPolicyValue(), (record,))
+    assert metrics["ordering_loss"] == 0.0
+
+
 def test_victory_route_is_never_a_specialist_and_null_masks_are_head_local():
     record = _record(1, null_ante8=True)
     example = route_paired_examples((record,))[0]
@@ -89,6 +107,20 @@ def test_victory_route_is_never_a_specialist_and_null_masks_are_head_local():
         record, candidates=(record.candidates[0], record.candidates[1], victory)
     )
     assert route_paired_examples((victory_record,)) == ()
+
+
+def test_one_null_sample_masks_the_entire_head_pair():
+    record = _record(1)
+    specialist = record.candidates[2]
+    samples = (replace(specialist.samples[0], ante8_win=None), specialist.samples[1])
+    record = replace(
+        record,
+        candidates=(*record.candidates[:2], replace(specialist, samples=samples)),
+    )
+    assert route_paired_examples((record,))[0].targets.masks["ante8_win"] == (
+        False,
+        False,
+    )
 
 
 def test_loss_ignores_selected_behavior_and_factual_outcome_fields():
@@ -109,6 +141,27 @@ def test_loss_ignores_selected_behavior_and_factual_outcome_fields():
     loss_b, metrics_b = route_training_loss(model_b, (mutated,))
     assert torch.equal(loss_a, loss_b)
     assert metrics_a == metrics_b
+
+
+def test_irrelevant_and_pair_duplication_are_weight_invariant():
+    torch.manual_seed(5)
+    record = _record(1)
+    model_a = RelationalStrategyPolicyValue()
+    model_b = RelationalStrategyPolicyValue()
+    model_b.load_state_dict(model_a.state_dict())
+    loss_a, _ = route_training_loss(model_a, (record,))
+    irrelevant = replace(
+        record,
+        candidates=record.candidates[:2],
+        selected_index=1,
+        behavior_index=1,
+    )
+    loss_b, _ = route_training_loss(model_b, (record, irrelevant))
+    assert torch.equal(loss_a, loss_b)
+    model_c = RelationalStrategyPolicyValue()
+    model_c.load_state_dict(model_a.state_dict())
+    loss_c, _ = route_training_loss(model_c, (record, record))
+    assert torch.equal(loss_a, loss_c)
 
 
 def test_null_mismatch_masks_only_the_affected_head():
@@ -156,6 +209,10 @@ def test_split_reconstructs_opaque_groups_and_rejects_tampering():
     assert len(split.train_groups) == 12
     assert len(split.calibration_groups) == 4
     assert len(split.holdout_groups) == 4
+    with pytest.raises(RouteLearningDataError):
+        reconstruct_route_split(
+            records, {"merged_components": list(reversed(components))}
+        )
     components[4]["opaque_groups"][0] = components[0]["opaque_groups"][0]
     with pytest.raises(RouteLearningDataError):
         reconstruct_route_split(records, {"merged_components": components})
