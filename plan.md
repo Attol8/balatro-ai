@@ -1195,6 +1195,71 @@ The retired v11 design remains a pre-win/early-Endless continuation increment,
 not the complete high-score policy. Its useful continuation machinery is retained
 inside the broader program above, while its collection protocol remains retired.
 
+Route score-cache design sketch (before implementation): the latest profile
+attributes almost all tactical best-play time to exact public scoring, while the
+existing cache is scoped to one `PublicObservation` object and therefore misses
+value-equal observations emitted by independent Jackdaw clones. Retain that
+identity cache as the fast front layer and add one bounded, process-local LRU
+whose collision-free key is the complete canonical public observation, ordered
+selected hand slots, and normalized optional hand statistics. Cache only
+successful immutable results after the existing Amber Acorn conservative
+projection; never key on or retain private engine state. Prove cold and warm
+scores match for every legal ordered selection, preserve order-sensitive and
+custom-stat distinctions, test deterministic eviction and failure non-caching,
+then replay matched search and route-terminal trajectories. Keep the cache only
+if actions, projections, root identities, terminal outcomes, rollout counts, and
+failure counters are identical and the six-sample workload gains at least five
+percent wall-clock throughput. Otherwise delete it as a rejected optimization.
+
+Route learner design sketch (before batch 05 exists): keep the frozen v14
+trainer, model envelope, shadow wrapper, and continuation certificate unchanged.
+The route learner gets its own protocol, loss/evaluation module, artifact
+envelope, exact-root shadow, trainer, and certificate family while reusing only
+the relational network and public tensorizer. Freeze whole authenticated batches
+01--03 as train (60 source runs), batch 04 as calibration (20), and batch 05 as
+untouched holdout (20); never rebalance opaque groups after labels are visible.
+The merger preserves the exact unique opaque-group membership of every canonical
+batch. Minimum admission is respectively 12/4/4 record groups, 120/40/40 rows,
+60/20/20 matched pairs, 6/2/2 scalar-sensitive pairs, and at least one positive
+and one negative pair in every split. A miss produces no model.
+
+Each non-Victory specialist is compared with its unique same-action root whose
+intent and route are both null, even when that comparator is not the decision's
+global `ordinary_index`. Train differences for scalar search utility and the
+five public terminal heads, weighted equally by run, decision, eligible pair,
+and paired sample. Do not train cross-entropy on `selected_index`, use
+`behavior_index` as a target, or apply factual run outcomes to sibling roots.
+Null-mismatched head targets are masked and counted; utilities remain
+lexicographic rather than blended. Freeze a distinct learner preregistration
+before opening batch 05, binding the 3/1/1 split, optimizer, model configuration,
+objective, comparator, collection protocol, and numerical gates.
+
+Calibration uses only batch 04 and fits fixed one-sided overprediction radii.
+Batch 05 must have at least two safe recommendations from distinct groups;
+scalar residual MAE must beat zero, sensitive-pair balanced sign accuracy must
+exceed one half, current-blind and next-Boss residual MAE must each beat zero,
+and every recommendation must have positive observed utility with no tie,
+survival regression, Victory route, rejected root, or regret against the best
+safe same-action specialist. Victory recommendations cannot reduce resolved
+Ante-8 outcome; Endless recommendations cannot reduce resolved Endless ante or
+log score. A certifiable support cell is the exact `(route, goal, phase, ante)`
+tuple with train/calibration/holdout pair and group support, mixed signs before
+holdout, and a safe positive holdout recommendation; independent field lists
+must never authorize an unseen Cartesian product.
+
+Shadow evaluation consumes an immutable snapshot of the exact v16 roots in
+their original order, ordinary count/index, pre-terminal selected index,
+per-root admissibility/rejection, candidate-space size, root cap, and candidate
+contract digest. It never rebuilds candidates. It scores and reports all six
+outputs for every root while executing v16 unchanged; any malformed snapshot,
+unsupported cell, non-finite output, model error, trace mismatch, or over-cap
+root fails closed. The first certificate may change only intent/route identity
+among same-action roots when v16 selected ordinary. It cannot change the current
+action, alter an already-selected specialist, authorize rollout continuation,
+or add a deterministic model value to individual rollout particles. It binds
+the model, merged data/report, learner preregistration, training report, exact
+shadow replay, candidate contract, support cells, caps, and calibration radii.
+
 ## Active development loop
 
 The two disjoint 30-seed screens are enough to retain one-ante strategic
