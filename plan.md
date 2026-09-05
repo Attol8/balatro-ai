@@ -905,6 +905,21 @@ are ever selected, retained, completed, or escaped, and whether their extra root
 fan-out reduces rollout throughput. Do not reserve or consume a new teacher panel
 until that screen shows useful route diversity and no behavior regression.
 
+Preregister the first v15 behavior screen on fresh development seeds `2275-2286`
+from implementation commit `7fa23ab`. Run two complete Red/White panels with the
+same strategic continuation, policy seed `baseline-v1`, nonce
+`elite-route-v15-screen`, six determinization samples, one-ante horizon, 200
+rollout steps, `z=1`, 1,200 decisions, Ante-20 cap, eight workers, no reorders,
+and full decision recording. The control uses ordinary action roots; the
+candidate changes only `--strategy-options`. Publish exclusively under
+`runs/experiments/elite-route-screen/`. Treat this as capability and cost
+evidence, never a protected strength gate. Require 12/12 complete runs in both
+arms, reconcile every seed, report paired progression and best-hand score,
+specialized route selections/transitions/final stages, root expansion, rejected
+rollouts, and rollout steps per second. If no specialized route is selected or
+the paired outcomes regress, diagnose the decision records before widening the
+panel or collecting trajectories. Preserve seeds `1975-2274` untouched.
+
 The retired v11 design remains a pre-win/early-Endless continuation increment,
 not the complete high-score policy. Its useful continuation machinery is retained
 inside the broader program above, while its collection protocol remains retired.
