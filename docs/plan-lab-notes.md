@@ -4667,3 +4667,22 @@ using the already-declared `needs_upgrade`, legality, reserve, and six-action
 budget. This leaves two actions for the intended reroll--sale--purchase line.
 It receives a paired 20-seed fresh-development screen with the kill rules in
 `plan.md`; no result can promote an artifact without the later frozen gate.
+
+The paired development screen on seeds 2441--2460 completed both panels with
+zero rejected or unavailable roots. The candidate moved mean antes cleared
+from 4.35 to 4.45, Ante-6 survivors from seven to eight, and mean log10 best
+hand from 3.9798 to 3.9956. Seed 2441 improved from four to seven antes and
+ended with Baseball plus Throwback; seed 2456 regressed from seven to six while
+remaining an Ante-6 survivor. Fourteen seeds with identical played search
+actions and final observations nevertheless changed deterministic rollout-step
+counts, a conservative lower bound of one direct step-three continuation
+intervention per seed.
+
+The candidate is rejected on its explicit budget gate. Seed 2441's Ante-5 shop
+record contains seven non-leave actions before `LeaveShop`: pack, voucher,
+sale, Joker buy, consumable use, another Joker buy, and another pack. Search
+overrode the continuation's forced-leave baseline twice, exposing that
+`max_shop_actions=6` constrains only the heuristic proposal, not the search
+root domain. The control also contains pre-existing over-budget search shops.
+Commit `d251484` is therefore diagnostic only; the `< 3` reroll window is
+restored. Reports remain under `runs/experiments/late-shop-engine-v1/`.

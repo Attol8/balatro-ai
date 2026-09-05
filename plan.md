@@ -1593,6 +1593,21 @@ control; downstream trajectory changes are consequences, not additional
 qualifying interventions. The predeclared strength and coverage kill rules
 above remain unchanged.
 
+Late-shop screen result: reject commit `d251484` despite promising aggregate
+movement. Both panels completed 20/20 with zero rejected/unavailable roots.
+Mean antes moved 4.35 to 4.45, Ante-6 survivors 7 to 8, and mean log-best-hand
+3.9798 to 3.9956. Seed 2441 improved +3 antes and acquired Baseball/Throwback;
+seed 2456 regressed -1 ante but remained an Ante-6 survivor. Fourteen otherwise
+action/final-state-identical seed trajectories changed deterministic rollout
+step counts, establishing at least one direct expanded-boundary continuation
+intervention in each and clearing the 8-in-5 coverage lower bound. However,
+seed 2441 executed seven non-leave shop actions at Ante 5 before `LeaveShop`.
+This violates the six-action acceptance cap: root search can override the
+continuation's budget-forced `LeaveShop`. Restore the retained `< 3` reroll
+window. Do not reinterpret the positive mean or tune the gate. Diagnose and
+enforce the declared shop-action budget at the root-action domain before any
+new late-shop experiment.
+
 ## Active development loop
 
 The two disjoint 30-seed screens are enough to retain one-ante strategic

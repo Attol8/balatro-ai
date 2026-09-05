@@ -1646,7 +1646,7 @@ def _strategic_shop_action(
     if (
         needs_upgrade
         and rerolls
-        and shop_steps < max_shop_actions - 2
+        and shop_steps < 3
         and observation.round.reroll_cost <= spendable
     ):
         return rerolls[0]
