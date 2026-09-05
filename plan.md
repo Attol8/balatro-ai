@@ -933,6 +933,13 @@ coverage, run the full suite, commit the repair, then preregister a disjoint
 replacement behavior screen; do not infer route performance from the 11 surfaced
 control outcomes.
 
+With the lifecycle repair frozen at commit `83c84ae`, preregister replacement
+development seeds `2287-2298`. Reuse the exact v15 screen settings and report
+contract above, changing only the disjoint seed range and output names. The
+ordinary-root control must finish and publish before the route-conditioned arm
+starts. Apply the same completion, reconciliation, progression, route-diversity,
+and normalized-cost analysis; never combine these rows with the retired block.
+
 The retired v11 design remains a pre-win/early-Endless continuation increment,
 not the complete high-score policy. Its useful continuation machinery is retained
 inside the broader program above, while its collection protocol remains retired.
