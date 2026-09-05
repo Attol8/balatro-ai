@@ -244,6 +244,22 @@ def route_pair_coverage(records: Sequence[StrategyTeacherRecord]) -> dict[str, o
     }
 
 
+def _example_weights(
+    examples: Sequence[RoutePairedExample],
+) -> tuple[float, ...]:
+    eligible_decisions = {
+        (example.record.run_group, example.record_index) for example in examples
+    }
+    decisions_per_run = Counter(run_group for run_group, _ in eligible_decisions)
+    pairs_per_decision = Counter(example.record_index for example in examples)
+    return tuple(
+        1.0
+        / decisions_per_run[example.record.run_group]
+        / pairs_per_decision[example.record_index]
+        for example in examples
+    )
+
+
 def route_training_loss(
     model: RelationalStrategyPolicyValue,
     records: Sequence[StrategyTeacherRecord],
@@ -273,21 +289,15 @@ def route_training_loss(
         ),
     )
     output = model(batch)
-    eligible_decisions = Counter(example.record.run_group for example in examples)
-    pair_counts = Counter(example.record_index for example in examples)
+    example_weights = _example_weights(examples)
     losses: dict[str, list[Tensor]] = {name: [] for name in TARGETS}
     ordering_values: list[Tensor] = []
     ordering_weights: list[float] = []
     weights: dict[str, list[float]] = {name: [] for name in TARGETS}
-    for example in examples:
+    for example, base_weight in zip(examples, example_weights, strict=True):
         row = example.record_index
         specialist = example.specialist_index
         ordinary = example.ordinary_index
-        base_weight = (
-            1.0
-            / eligible_decisions[example.record.run_group]
-            / pair_counts[example.record_index]
-        )
         predictions = {
             "search_utility": output.policy_logits[row, specialist]
             - output.policy_logits[row, ordinary],

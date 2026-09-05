@@ -9,6 +9,7 @@ from balatro_ai_v2.actions import LeaveShop, iter_legal_actions
 from balatro_ai_v2.balatrobot.adapter import to_public_observation
 from balatro_ai_v2.route_learning import (
     RouteLearningDataError,
+    _example_weights,
     reconstruct_route_split,
     route_pair_coverage,
     route_paired_examples,
@@ -162,6 +163,18 @@ def test_irrelevant_and_pair_duplication_are_weight_invariant():
     model_c.load_state_dict(model_a.state_dict())
     loss_c, _ = route_training_loss(model_c, (record, record))
     assert torch.equal(loss_a, loss_c)
+
+
+def test_unequal_pair_counts_still_weight_each_eligible_decision_equally():
+    record = _record(1)
+    example = route_paired_examples((record,))[0]
+    examples = (
+        example,
+        replace(example, record_index=0),
+        replace(example, record_index=1),
+    )
+    weights = _example_weights(examples)
+    assert sum(weights[:2]) == sum(weights[2:])
 
 
 def test_null_mismatch_masks_only_the_affected_head():
