@@ -4406,3 +4406,32 @@ with 227.9 MB maximum RSS; cache-on took 343.5 seconds at 101.5 steps/second wit
 241.5 MB maximum RSS. That is an 18.2% throughput regression, not the required
 five-percent gain. The cache and its tests were deleted; the experiment reports
 remain local under `/tmp/balatro-cache-s6.TSzhL8/`.
+
+### Route-terminal v1 batch 03 completes (2026-09-05)
+
+Batch 03 on development seeds 2351--2370 completed 20/20 from the unchanged
+clean collection revision. It produced one win, 4.40 mean antes cleared, six
+runs reaching Ante 6, and a maximum of ten antes cleared. The source search
+completed 1,294 strategic decisions and 1,184,789 rollout steps. All 171
+terminal-teacher anchors and 3,316 root samples completed with zero rejected,
+censored, unavailable, unsupported, fallback, or action-affecting work.
+
+An independent read authenticated every opaque family against the frozen HMAC
+mapping, reproduced route coverage exactly, and matched dataset SHA-256
+`28d89795b6edd1a1853ae64bad32b9eae90ad877426bd5d9ba2945fb4bb053e9` and
+report SHA-256
+`d55f134e977f5f92b4170961e3bedcc6224e816ce527b904ea3f4ca0694da829`.
+The component contains 171 records from 20 groups, including 21 route-diverse
+rows across 13 groups and 63 exact same-action pairs. Scalar utility is
+sample-sensitive in 43 pairs (12 positive, 31 negative); next-Boss outcome is
+sensitive in 11 pairs, all negative. Route pairs comprise 52 played-retrigger,
+nine held-retrigger, and two consumable-duplication comparisons. Five Endless
+rows from the one winning group add resolved post-win training targets without
+altering the frozen 3/1/1 split.
+
+The slowest anchor remained a wide pack decision: 139 roots, 278 terminal sample
+evaluations, 9,832 steps, and 109.3 seconds. This reinforces pack fan-out as the
+collection tail while the rejected cross-observation cache remains a net loss.
+After this batch became idle, 125 focused route learner/merger/evaluator tests
+and the complete 1,101-test repository suite passed; Ruff and diff whitespace
+checks also passed. Batch 04 remains the untouched calibration component.
