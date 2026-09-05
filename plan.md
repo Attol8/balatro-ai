@@ -1245,7 +1245,10 @@ empirical radius. Admit a pair/head only when every paired sample is jointly
 resolved. This is an empirical envelope, not a statistical coverage claim.
 Batch 05 must have at least two safe recommendations from distinct groups;
 scalar residual MAE must beat zero, sensitive-pair balanced sign accuracy must
-exceed one half, current-blind and next-Boss residual MAE must each beat zero,
+exceed one half, and next-Boss residual MAE must beat zero. Current-blind
+residual MAE is diagnostic-only because route-diverse terminal anchors occur
+after that blind has cleared and the pilot observed 160/160 exact-zero pairs;
+any observed current-blind regression remains a hard failure.
 and every recommendation must have positive observed utility with no tie,
 survival regression, Victory route, rejected root, or regret against the best
 safe same-action specialist. Victory recommendations cannot reduce resolved

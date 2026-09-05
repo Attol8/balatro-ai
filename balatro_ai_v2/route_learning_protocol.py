@@ -112,7 +112,7 @@ HOLDOUT_GATE = {
     "minimum_safe_recommendation_groups": 2,
     "scalar_residual_mae_beats_zero": True,
     "balanced_sensitive_sign_accuracy_strictly_above": 0.5,
-    "current_blind_residual_mae_beats_zero": True,
+    "current_blind_residual_mae_diagnostic_only": True,
     "next_boss_residual_mae_beats_zero": True,
     "recommendations_positive_utility": True,
     "zero_ties": True,
