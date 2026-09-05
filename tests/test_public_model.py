@@ -39,6 +39,7 @@ from balatro_ai_v2.public_model import (  # noqa: E402
     load_public_model,
     public_model_candidates,
     save_public_model,
+    _observation_features,
 )
 from balatro_ai_v2.public_state import PublicShopPlayingCard  # noqa: E402
 from state_factory import item_card, playing_card, state  # noqa: E402
@@ -92,6 +93,24 @@ def test_model_ignores_item_label_and_effect_prose_but_uses_public_money() -> No
     assert torch.equal(original.logits, prose.logits)
     assert torch.equal(original.values, prose.values)
     assert not torch.equal(original.values, money.values)
+
+
+def test_public_model_features_distinguish_disabled_current_boss() -> None:
+    raw = state("SELECTING_HAND")
+    raw["blinds"]["small"]["status"] = "DEFEATED"
+    raw["blinds"]["boss"]["status"] = "CURRENT"
+    enabled = to_public_observation(raw)
+    disabled = replace(
+        enabled,
+        blinds=tuple(
+            replace(blind, disabled=True) if blind.kind == "BOSS" else blind
+            for blind in enabled.blinds
+        ),
+    )
+
+    assert _observation_features(enabled, 2048) != _observation_features(
+        disabled, 2048
+    )
 
 
 def test_model_encodes_structured_shop_playing_card_and_ignores_prose() -> None:

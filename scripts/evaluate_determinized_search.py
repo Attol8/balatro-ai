@@ -28,8 +28,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from balatro_ai_v2.backend import RunSpec
+from balatro_ai_v2.actions import (
+    ReorderConsumables,
+    ReorderHand,
+    ReorderJokers,
+    iter_legal_actions,
+)
 from balatro_ai_v2.balatrobot.runner import AuthorityRunner
-from balatro_ai_v2.balatrobot.tracing import build_manifest
+from balatro_ai_v2.balatrobot.tracing import build_manifest, source_snapshot
 from balatro_ai_v2.baselines import build_public_baseline
 from balatro_ai_v2.determinized_search import (
     SEARCH_VERSION,
@@ -61,8 +67,11 @@ from balatro_ai_v2.strategy_model import (
 )
 from balatro_ai_v2.strategy_shadow import ShadowStrategyPolicy
 from balatro_ai_v2.strategy_teacher import (
+    StrategyTargetEndpoint,
     StrategyTeacherDraft,
     StrategyTeacherRecord,
+    teacher_records_digest,
+    teacher_records_from_bytes,
     write_teacher_records,
 )
 from balatro_ai_v2.strategy_tuning import StrategyTuning
@@ -76,15 +85,15 @@ _CONTEXTUAL_BATCHES = tuple(
         "seed_start": seed_start,
         "seeds": 50,
         "teacher_jsonl": (
-            "runs/experiments/contextual-continuation-v10/"
-            f"batch-{index + 1:02d}.teacher.jsonl"
+            "runs/experiments/contextual-continuation-v11/"
+            f"batch-{index + 1:02d}/teacher.jsonl"
         ),
         "report_json": (
-            "runs/experiments/contextual-continuation-v10/"
-            f"batch-{index + 1:02d}.report.json"
+            "runs/experiments/contextual-continuation-v11/"
+            f"batch-{index + 1:02d}/report.json"
         ),
     }
-    for index, seed_start in enumerate(range(1375, 1675, 50))
+    for index, seed_start in enumerate(range(1675, 1975, 50))
 )
 _CONTEXTUAL_SEARCH = {
     "samples": 6,
@@ -94,13 +103,19 @@ _CONTEXTUAL_SEARCH = {
     "max_decisions": 1200,
     "ante_cap": 12,
     "workers": 6,
-    "nonce": "contextual-continuation-v10-frozen",
+    "nonce": "contextual-continuation-v11-frozen",
     "continuation": "strategic",
     "policy_seed": "baseline-v1",
     "strategy_options": False,
     "include_reorders": False,
     "dense_teacher": True,
 }
+_CONTEXTUAL_FIRST_100_GATE = {
+    "minimum_action_sensitive_fraction": 0.4,
+    "minimum_observed_victory_groups": 10,
+    "rejected_or_censored": 0,
+}
+_CONTEXTUAL_REORDERS = (ReorderHand, ReorderJokers, ReorderConsumables)
 
 
 def _init_worker(args_dict: dict[str, object]) -> None:
@@ -243,6 +258,7 @@ def _run_seed(seed_number: int) -> dict[str, object]:
             "run_seconds": time.perf_counter() - started,
         },
         "search_decision_profile": _search_decision_profile(policy.decisions),
+        "search_failure_reasons": _search_failure_reasons(policy.decisions),
         "search_decisions": [decision.as_dict() for decision in policy.decisions]
         if bool(args_dict["record_decisions"])
         else [],
@@ -423,11 +439,11 @@ def _validate_contextual_preregistration(
     *,
     repository_root: Path,
 ) -> dict[str, object] | None:
-    retired = range(1075, 1375)
-    reserved = range(1375, 1675)
+    retired = range(1075, 1675)
+    reserved = range(1675, 1975)
     requested = range(args.seed_start, args.seed_start + args.seeds)
     if requested.start < retired.stop and retired.start < requested.stop:
-        raise SystemExit("contextual v9 seeds 1075-1374 are retired")
+        raise SystemExit("contextual v9/v10 seeds 1075-1674 are retired")
     overlaps_reserved = (
         requested.start < reserved.stop and reserved.start < requested.stop
     )
@@ -435,7 +451,7 @@ def _validate_contextual_preregistration(
     if path is None:
         if overlaps_reserved:
             raise SystemExit(
-                "seeds 1375-1674 require --contextual-preregistration-json"
+                "seeds 1675-1974 require --contextual-preregistration-json"
             )
         return None
     try:
@@ -446,7 +462,7 @@ def _validate_contextual_preregistration(
     if not isinstance(spec, dict):
         raise SystemExit("contextual preregistration root must be an object")
     if (
-        spec.get("protocol_id") != "contextual-continuation-development-v2"
+        spec.get("protocol_id") != "contextual-continuation-development-v3"
         or spec.get("status") != "reserved"
         or spec.get("immutable_batches") is not True
     ):
@@ -476,6 +492,7 @@ def _validate_contextual_preregistration(
     if (
         spec.get("search") != _CONTEXTUAL_SEARCH
         or expected_search != _CONTEXTUAL_SEARCH
+        or spec.get("first_100_kill_gate") != _CONTEXTUAL_FIRST_100_GATE
     ):
         raise SystemExit("contextual preregistration search budget mismatch")
     origin = spec.get("origin_mapping")
@@ -483,7 +500,7 @@ def _validate_contextual_preregistration(
         not isinstance(origin, dict)
         or origin.get("algorithm") != "hmac-sha256-truncated-128"
         or origin.get("key_path")
-        != "runs/secrets/contextual-continuation-v10-origin.key"
+        != "runs/secrets/contextual-continuation-v11-origin.key"
         or not isinstance(origin.get("key_sha256"), str)
         or len(origin["key_sha256"]) != 64
         or args.origin_key_file is None
@@ -535,6 +552,13 @@ def _validate_contextual_preregistration(
             or actual.resolve() != (repository_root / declared).resolve()
         ):
             raise SystemExit(f"contextual preregistration mismatch: {key}")
+    if int(batch["seed_start"]) >= int(_CONTEXTUAL_BATCHES[2]["seed_start"]):
+        _validate_contextual_first_100(
+            spec,
+            preregistration_sha256=hashlib.sha256(raw).hexdigest(),
+            origin_key=origin_key,
+            repository_root=repository_root,
+        )
     return {
         "protocol_id": spec["protocol_id"],
         "sha256": hashlib.sha256(raw).hexdigest(),
@@ -548,6 +572,185 @@ def _validate_contextual_preregistration(
         "backend": spec.get("backend"),
         "origin_key_sha256": origin["key_sha256"],
     }
+
+
+def _validate_contextual_first_100(
+    spec: dict[str, object],
+    *,
+    preregistration_sha256: str,
+    origin_key: bytes,
+    repository_root: Path,
+) -> None:
+    """Enforce the precommitted kill gate before batch three can start."""
+
+    gate = spec.get("first_100_kill_gate")
+    batches = spec.get("batches")
+    if not isinstance(gate, dict) or not isinstance(batches, list) or len(batches) != 6:
+        raise SystemExit("contextual first-100 gate is missing")
+    all_records: list[StrategyTeacherRecord] = []
+    all_rows: list[dict[str, object]] = []
+    for expected in batches[:2]:
+        if (
+            not isinstance(expected, dict)
+            or not isinstance(expected.get("report_json"), str)
+            or not isinstance(expected.get("teacher_jsonl"), str)
+        ):
+            raise SystemExit("contextual first-100 artifact path is invalid")
+        try:
+            report = json.loads(
+                (repository_root / expected["report_json"]).read_text(encoding="utf-8")
+            )
+            teacher_bytes = (repository_root / expected["teacher_jsonl"]).read_bytes()
+            records = teacher_records_from_bytes(teacher_bytes)
+        except (OSError, json.JSONDecodeError, ValueError) as exc:
+            raise SystemExit("contextual first-100 artifacts are incomplete") from exc
+        if not isinstance(report, dict):
+            raise SystemExit("contextual first-100 report is invalid")
+        binding = report.get("contextual_teacher_preregistration")
+        teacher = report.get("strategy_teacher_dataset")
+        rows = report.get("results")
+        if (
+            not isinstance(binding, dict)
+            or binding.get("sha256") != preregistration_sha256
+            or binding.get("batch_id") != expected.get("batch_id")
+            or not isinstance(teacher, dict)
+            or teacher.get("status") != "written"
+            or teacher.get("sha256") != hashlib.sha256(teacher_bytes).hexdigest()
+            or teacher.get("groups") != 50
+            or teacher.get("records") != len(records)
+            or {record.teacher_config_digest for record in records}
+            != {teacher.get("teacher_config_digest")}
+            or not isinstance(rows, list)
+            or len(rows) != 50
+            or any(
+                not isinstance(row, dict)
+                or row.get("complete") is not True
+                or row.get("terminal_reason") not in {"game_over", "ante_cap"}
+                or row.get("terminal_error") is not None
+                or row.get("rejected_decisions") != 0
+                or not isinstance(row.get("search"), dict)
+                or row["search"].get("rejected_rollouts") != 0
+                or row["search"].get("unavailable") != 0
+                or row.get("search_failure_reasons") != {}
+                for row in rows
+            )
+        ):
+            raise SystemExit("contextual first-100 gate failed integrity checks")
+        typed_rows = [row for row in rows if isinstance(row, dict)]
+        _validate_first_100_component_records(
+            records,
+            typed_rows,
+            expected_seed_start=int(expected["seed_start"]),
+            origin_key=origin_key,
+        )
+        actual_coverage = _teacher_coverage(records, typed_rows)
+        if teacher.get("coverage") != actual_coverage:
+            raise SystemExit("contextual first-100 report coverage is unauthenticated")
+        all_records.extend(records)
+        all_rows.extend(typed_rows)
+    dense = _teacher_coverage(tuple(all_records), all_rows)["dense_paired_utility"]
+    assert isinstance(dense, dict)
+    if (
+        float(dense["action_sensitive_fraction"])
+        < float(gate["minimum_action_sensitive_fraction"])
+        or int(dense["observed_victory_origin_groups"])
+        < int(gate["minimum_observed_victory_groups"])
+        or gate.get("rejected_or_censored") != 0
+    ):
+        raise SystemExit("contextual first-100 kill gate failed")
+
+
+def _validate_first_100_component_records(
+    records: tuple[StrategyTeacherRecord, ...],
+    rows: list[dict[str, object]],
+    *,
+    expected_seed_start: int,
+    origin_key: bytes,
+) -> None:
+    expected_seeds = set(range(expected_seed_start, expected_seed_start + 50))
+    if {row.get("seed") for row in rows} != expected_seeds:
+        raise SystemExit("contextual first-100 seed panel is invalid")
+    expected_groups = {
+        "origin-"
+        + hmac.new(
+            origin_key, str(int(row["seed"])).encode(), hashlib.sha256
+        ).hexdigest()[:32]: row
+        for row in rows
+    }
+    by_group: dict[str, list[StrategyTeacherRecord]] = {}
+    for record in records:
+        by_group.setdefault(record.run_group, []).append(record)
+    if set(by_group) != set(expected_groups):
+        raise SystemExit("contextual first-100 origin mapping is invalid")
+    for group, group_records in by_group.items():
+        row = expected_groups[group]
+        search = row["search"]
+        assert isinstance(search, dict)
+        ordered = sorted(group_records, key=lambda record: record.decision_index)
+        if (
+            [record.decision_index for record in ordered] != list(range(len(ordered)))
+            or not isinstance(search.get("searched"), int)
+            or isinstance(search.get("searched"), bool)
+            or len(ordered) != int(search["searched"])
+            or not isinstance(row.get("won"), bool)
+            or not isinstance(row.get("antes_cleared"), int)
+            or isinstance(row.get("antes_cleared"), bool)
+            or not isinstance(row.get("best_hand_score"), int)
+            or isinstance(row.get("best_hand_score"), bool)
+        ):
+            raise SystemExit("contextual first-100 decision sequence is incomplete")
+        expected_log_score = math.log10(max(1, int(row["best_hand_score"])))
+        for record in ordered:
+            legal_roots = tuple(
+                action
+                for action in iter_legal_actions(record.observation)
+                if not isinstance(action, _CONTEXTUAL_REORDERS)
+            )
+            if (
+                record.run_won is not row["won"]
+                or record.terminal_ante != row["antes_cleared"]
+                or not math.isclose(
+                    record.run_log_score,
+                    expected_log_score,
+                    rel_tol=0.0,
+                    abs_tol=1e-12,
+                )
+                or tuple(candidate.action for candidate in record.candidates)
+                != legal_roots
+                or record.candidate_space_size != len(legal_roots)
+                or any(candidate.intent is not None for candidate in record.candidates)
+                or any(len(candidate.samples) != 6 for candidate in record.candidates)
+                or any(
+                    sample.endpoint == StrategyTargetEndpoint.CENSORED
+                    for candidate in record.candidates
+                    for sample in candidate.samples
+                )
+                or record.selected_index != _contextual_selected_index(record)
+            ):
+                raise SystemExit("contextual first-100 teacher record is invalid")
+
+
+def _contextual_selected_index(record: StrategyTeacherRecord) -> int:
+    baseline_values = tuple(
+        sample.search_utility
+        for sample in record.candidates[record.baseline_index].samples
+    )
+    best_index = record.baseline_index
+    best_mean: float | None = None
+    for index, candidate in enumerate(record.candidates):
+        if index == record.baseline_index:
+            continue
+        deltas = tuple(
+            sample.search_utility - baseline
+            for sample, baseline in zip(candidate.samples, baseline_values, strict=True)
+        )
+        mean = sum(deltas) / len(deltas)
+        variance = sum((delta - mean) ** 2 for delta in deltas) / (len(deltas) - 1)
+        lower = mean - math.sqrt(variance / len(deltas))
+        if mean > 0.0 and lower > 0.0 and (best_mean is None or mean > best_mean):
+            best_index = index
+            best_mean = mean
+    return best_index
 
 
 def _verify_contextual_freeze(
@@ -609,7 +812,7 @@ def _verify_contextual_freeze(
         ).stdout.splitlines()
     except (OSError, subprocess.CalledProcessError) as exc:
         raise SystemExit("cannot verify contextual implementation ancestry") from exc
-    if set(changed) != {"experiments/contextual-continuation-v10-preregistration.json"}:
+    if set(changed) != {"experiments/contextual-continuation-v11-preregistration.json"}:
         raise SystemExit(
             "contextual preregistration commit changed implementation source"
         )
@@ -877,6 +1080,42 @@ def main() -> None:
     try:
         candidate_runtime = verify_jackdaw_runtime()
         metadata_backend = JackdawBackend()
+        preflight_manifest = build_manifest(
+            repository_root=root,
+            command=tuple(sys.argv),
+            policy_name=policy_name,
+            backend=metadata_backend.metadata,
+            run=RunSpec(args.deck, args.stake, f"{args.seed_start}:{args.seeds}"),
+            max_decisions=args.max_decisions,
+            max_antes_cleared=args.ante_cap,
+            max_settle_polls=0,
+            launch_fast=False,
+            launch_headless=False,
+            profile_mode="all_unlocked",
+            model_path=args.strategy_shadow_model,
+            inference_budget=(
+                f"determinized_rollouts;{budget.canonical()};{strategy_mode};{shadow_mode};"
+                f"workers={args.workers};ante_cap={args.ante_cap}"
+            ),
+        )
+        _verify_terminal_freeze(
+            terminal_preregistration,
+            repository_revision=preflight_manifest.repository_revision,
+            source_digest=preflight_manifest.source_digest,
+            repository_dirty=preflight_manifest.repository_dirty,
+            candidate_runtime=candidate_runtime,
+            backend=asdict(metadata_backend.metadata),
+            repository_root=root,
+        )
+        _verify_contextual_freeze(
+            contextual_preregistration,
+            repository_revision=preflight_manifest.repository_revision,
+            source_digest=preflight_manifest.source_digest,
+            repository_dirty=preflight_manifest.repository_dirty,
+            candidate_runtime=candidate_runtime,
+            backend=asdict(metadata_backend.metadata),
+            repository_root=root,
+        )
         if args.workers == 1:
             _init_worker(worker_args)
             results = [_run_seed(seed) for seed in seeds]
@@ -894,9 +1133,7 @@ def main() -> None:
             origin_key=origin_key,
         )
         teacher_digest = (
-            write_teacher_records(args.teacher_jsonl, teacher_records)
-            if args.teacher_jsonl is not None and teacher_records
-            else None
+            teacher_records_digest(teacher_records) if teacher_records else None
         )
         teacher_coverage = _teacher_coverage(teacher_records, results)
         elapsed = time.perf_counter() - started
@@ -1091,9 +1328,81 @@ def main() -> None:
         }
         encoded = json.dumps(payload, sort_keys=True)
         print(json.dumps({"summary": summary}, sort_keys=True))
-        if args.report_json is not None:
-            args.report_json.parent.mkdir(parents=True, exist_ok=True)
-            _publish_json_exclusive(args.report_json, encoded + "\n")
+        publication_manifest = build_manifest(
+            repository_root=root,
+            command=tuple(sys.argv),
+            policy_name=policy_name,
+            backend=metadata_backend.metadata,
+            run=RunSpec(args.deck, args.stake, f"{args.seed_start}:{args.seeds}"),
+            max_decisions=args.max_decisions,
+            max_antes_cleared=args.ante_cap,
+            max_settle_polls=0,
+            launch_fast=False,
+            launch_headless=False,
+            profile_mode="all_unlocked",
+            model_path=args.strategy_shadow_model,
+            inference_budget=(
+                f"determinized_rollouts;{budget.canonical()};{strategy_mode};{shadow_mode};"
+                f"workers={args.workers};ante_cap={args.ante_cap}"
+            ),
+        )
+        if (
+            publication_manifest.repository_revision != manifest.repository_revision
+            or publication_manifest.repository_dirty != manifest.repository_dirty
+            or publication_manifest.source_digest != manifest.source_digest
+        ):
+            raise SystemExit("repository source changed before atomic publication")
+        publication_runtime = verify_jackdaw_runtime()
+        _verify_terminal_freeze(
+            terminal_preregistration,
+            repository_revision=publication_manifest.repository_revision,
+            source_digest=publication_manifest.source_digest,
+            repository_dirty=publication_manifest.repository_dirty,
+            candidate_runtime=publication_runtime,
+            backend=asdict(metadata_backend.metadata),
+            repository_root=root,
+        )
+        _verify_contextual_freeze(
+            contextual_preregistration,
+            repository_revision=publication_manifest.repository_revision,
+            source_digest=publication_manifest.source_digest,
+            repository_dirty=publication_manifest.repository_dirty,
+            candidate_runtime=publication_runtime,
+            backend=asdict(metadata_backend.metadata),
+            repository_root=root,
+        )
+        if contextual_preregistration is not None:
+            if args.teacher_jsonl is None or args.report_json is None:
+                raise RuntimeError("contextual artifact paths disappeared")
+            _publish_contextual_bundle(
+                args.teacher_jsonl,
+                args.report_json,
+                teacher_records,
+                expected_teacher_digest=teacher_digest,
+                encoded_report=encoded + "\n",
+                expected_manifest=manifest,
+                expected_runtime=contextual_preregistration["candidate_runtime"],
+                repository_root=root,
+            )
+        else:
+            teacher_published = False
+            try:
+                if args.teacher_jsonl is not None and teacher_records:
+                    actual_digest = write_teacher_records(
+                        args.teacher_jsonl, teacher_records
+                    )
+                    teacher_published = True
+                    if actual_digest != teacher_digest:
+                        raise RuntimeError(
+                            "published teacher digest changed after preflight"
+                        )
+                if args.report_json is not None:
+                    args.report_json.parent.mkdir(parents=True, exist_ok=True)
+                    _publish_json_exclusive(args.report_json, encoded + "\n")
+            except BaseException:
+                if teacher_published and args.teacher_jsonl is not None:
+                    args.teacher_jsonl.unlink(missing_ok=True)
+                raise
         if sum(bool(row["complete"]) for row in results) != len(results):
             raise SystemExit(2)
     except JackdawUnavailable as exc:
@@ -1117,6 +1426,61 @@ def _publish_json_exclusive(path: Path, encoded: str) -> None:
         raise SystemExit(f"refusing to overwrite existing output: {path}") from exc
     finally:
         temporary.unlink(missing_ok=True)
+
+
+def _publish_contextual_bundle(
+    teacher_path: Path,
+    report_path: Path,
+    records: tuple[StrategyTeacherRecord, ...],
+    *,
+    expected_teacher_digest: str | None,
+    encoded_report: str,
+    expected_manifest: object,
+    expected_runtime: object,
+    repository_root: Path,
+) -> None:
+    """Publish a contextual batch with one crash-atomic directory rename."""
+
+    final_directory = teacher_path.parent.resolve()
+    if report_path.parent.resolve() != final_directory:
+        raise SystemExit("contextual outputs must share one batch directory")
+    if final_directory.exists():
+        raise SystemExit(f"refusing to overwrite existing batch: {final_directory}")
+    final_directory.parent.mkdir(parents=True, exist_ok=True)
+    staged = Path(
+        tempfile.mkdtemp(
+            prefix=f".{final_directory.name}.",
+            suffix=".tmp",
+            dir=final_directory.parent,
+        )
+    )
+    staged_teacher = staged / teacher_path.name
+    staged_report = staged / report_path.name
+    try:
+        if records:
+            actual_digest = write_teacher_records(staged_teacher, records)
+            if actual_digest != expected_teacher_digest:
+                raise RuntimeError("published teacher digest changed after preflight")
+        elif expected_teacher_digest is not None:
+            raise RuntimeError("empty teacher records have a nonempty digest")
+        _publish_json_exclusive(staged_report, encoded_report)
+        revision, dirty, source_digest = source_snapshot(repository_root)
+        if (
+            dirty
+            or revision != getattr(expected_manifest, "repository_revision", None)
+            or source_digest != getattr(expected_manifest, "source_digest", None)
+            or verify_jackdaw_runtime() != expected_runtime
+        ):
+            raise SystemExit("contextual source changed before bundle publication")
+        os.rename(staged, final_directory)
+    except BaseException:
+        staged_teacher.unlink(missing_ok=True)
+        staged_report.unlink(missing_ok=True)
+        try:
+            staged.rmdir()
+        except OSError:
+            pass
+        raise
 
 
 def _distribution(values: list[float]) -> dict[str, float]:
@@ -1158,6 +1522,15 @@ def _search_decision_profile(decisions: list[SearchDecision]) -> dict[str, objec
             "seconds": slowest.seconds,
         },
     }
+
+
+def _search_failure_reasons(decisions: list[SearchDecision]) -> dict[str, int]:
+    reasons: Counter[str] = Counter()
+    for decision in decisions:
+        if decision.unavailable_reason is not None:
+            reasons[f"unavailable|{decision.unavailable_reason}"] += 1
+        reasons.update(dict(decision.rejection_reasons))
+    return dict(sorted(reasons.items()))
 
 
 def _success_teacher_profile(
@@ -1367,6 +1740,34 @@ def _finalize_teacher_records(
         for row in results:
             row.pop("_teacher_drafts", None)
         return (), "discarded_rejected_panel"
+    if any(int(row["search"].get("unavailable", 0)) != 0 for row in results):
+        for row in results:
+            row.pop("_teacher_drafts", None)
+        return (), "discarded_unavailable_panel"
+    for row in results:
+        drafts = row.get("_teacher_drafts", ())
+        searched = int(row["search"].get("searched", -1))
+        if origin_key is not None and (
+            not isinstance(drafts, tuple)
+            or not all(isinstance(draft, StrategyTeacherDraft) for draft in drafts)
+            or searched != len(drafts)
+            or any(
+                draft.candidate_space_size != len(draft.candidates)
+                or any(
+                    candidate.intent is not None
+                    or len(candidate.samples) != 6
+                    or any(
+                        sample.endpoint == StrategyTargetEndpoint.CENSORED
+                        for sample in candidate.samples
+                    )
+                    for candidate in draft.candidates
+                )
+                for draft in drafts
+            )
+        ):
+            for result in results:
+                result.pop("_teacher_drafts", None)
+            return (), "discarded_invalid_teacher_panel"
     records: list[StrategyTeacherRecord] = []
     run_groups = [
         (

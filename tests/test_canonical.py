@@ -103,6 +103,18 @@ def test_unknown_authority_schema_fails_closed() -> None:
         BalatroBotCanonicalizer().canonicalize(raw)
 
 
+@pytest.mark.parametrize("value", [None, 0, 1, "false"])
+def test_blind_disabled_state_must_be_present_and_boolean(value: object) -> None:
+    raw = state()
+    if value is None:
+        raw["blinds"]["small"].pop("disabled")
+    else:
+        raw["blinds"]["small"]["disabled"] = value
+
+    with pytest.raises(CanonicalizationError, match="disabled must be boolean"):
+        BalatroBotCanonicalizer().canonicalize(raw)
+
+
 def test_empty_lua_table_normalization_is_path_specific() -> None:
     left = state("SHOP")
     right = deepcopy(left)

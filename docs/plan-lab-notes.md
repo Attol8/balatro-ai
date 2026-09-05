@@ -3795,3 +3795,84 @@ deck count stayed stale. The wrapper now verifies the bought object occurs in
 exactly one owned pile and synchronizes the permanent count. The regression
 requires the existing indexed RPC, exact money delta, +1 deck size, matching
 public deck composition, and one removed shop offer.
+
+### Contextual collection v10 failed checkpoint (2026-09-05)
+
+Batch 1 on development seeds 1375--1424 completed 50/50 with 2,756 dense
+decisions from 50 opaque groups, 83.89% action-sensitive rows, five groups with
+an observed victory sibling, three source wins, 60 post-win rows, zero
+unavailable or rejected work, and complete roots up to 265. The teacher SHA-256
+is `83bfa11d14f251486b77e17920b7bf49e77fb62d40496c8abe2615ad41c5592f`;
+the report SHA-256 is
+`061a096379d9e67d31fe7d9c06a0bc0b75eac9c3a6f795183d0e0031173cac7b`.
+
+Batch 2 on seeds 1425--1474 completed 50/50 with four source wins and zero
+unavailable searches, but one Ante-10 source run, seed 1466, accumulated 63
+rejected rollout transitions. The evaluator discarded all teacher drafts and
+published no dataset. Its report SHA-256 is
+`7f0fd3127c9322f6b2e010bf84a51d8f0634be9416b2073b2b2afe6c48bb79a5`.
+This fails the precommitted first-100 zero-rejection condition. Batches 3--6
+were not started; the entire preregistered v10 reservation 1375--1674 is retired
+and no clean subset may be recovered or spliced.
+
+Two exact read-only replays of failed seed 1466 reproduced 63/63 failures with
+the same terminal outcome. All occur after a public `SellJoker` action removes
+Luchador during current Cerulean Bell: 31 at one legal Joker index and 32 at
+another across different root continuations. The wrapper applies Luchador's
+missing Jackdaw boss-disable transition and clears every `forced_selection`
+marker. The resulting private candidate state is a normal eight-card
+`SELECTING_HAND` state with `blind.disabled=true`, but the serialized public
+blind has only name/status/effect. The adapter therefore misclassifies disabled
+Cerulean as active and raises `ObservationError: active Cerulean Bell requires
+one visibly forced hand card`. This is a missing public state bit and candidate
+bridge fidelity defect, not a policy rejection to ignore.
+
+The same adversarial pass found validator defects that did not corrupt batch 1
+but must be closed before v11: source freeze was checked only after execution;
+unavailable decisions and searched/teacher mismatch were mergeable; the
+first-100 stop was not executable; complete roots and selected indices were not
+independently reconstructed; training arguments were not authenticated against
+the preregistration; certification inferred phase support from row presence;
+and item-zone kinds were not centrally exhaustive. The v11 plan fixes all of
+them before using fresh seeds. No v10 model may be trained or certified.
+
+### Contextual v11 recovery implementation checkpoint (2026-09-05)
+
+The missing public fact is now a required strict `PublicBlind.disabled` boolean
+through the candidate and authority adapters, canonical observation, terminal
+projection, policy wire, teacher schema, and both model feature families.
+Impossible disabled Small/Big/upcoming blinds fail closed. Enabled current
+Cerulean requires exactly one visibly forced card; disabled Cerulean requires
+none. Disabled bosses contribute no score, capacity, or strategy constraint.
+The BalatroBot authority-readiness patch and installed development mod export
+the same boolean, and the patch applies cleanly to an untouched upstream tree.
+
+Public item kinds are now canonical and exhaustive by zone, so a generic item
+cannot impersonate a playing card or cross from Joker/consumable/voucher/pack
+storage into an invalid area. Lightweight candidate clones retain an isolated
+normalized bridge frame and omit redundant JSON serialization and parsing;
+normal candidate and authority traces retain canonical JSON and hashes.
+
+Collection v11 verifies source/runtime before workers and again before atomic
+teacher/report publication. Any incomplete source run, rejected or unavailable
+search, censored sample, incomplete root set, or searched/draft mismatch
+discards the whole batch. The executable first-100 gate authenticates both
+teacher artifacts before batch 3. The merger independently authenticates the
+preregistration and origin key, reconstructs seed-to-origin HMACs, reconciles
+terminal outcomes, regenerates exact non-reorder legal roots, recomputes paired
+selection, runs the frozen tensorizer, and enforces both coverage gates.
+
+An adversarial review then closed six more evidence-boundary defects. The
+first-100 gate now parses the captured teacher bytes once, reconstructs HMAC
+origins, outcomes, complete roots, paired selection, and coverage instead of
+trusting report summaries. Component parsing hashes and decodes the same bytes,
+and report/record teacher configuration must agree. Both contextual batches
+and merged outputs publish as staged unique directories with one atomic rename,
+so interruption cannot expose a half-bundle at an immutable path. The merger
+also proves its own checkout still equals the collection source before the
+final rename, while failed ordinary rollouts retain public rejection reasons.
+
+Verification before the implementation freeze: 863 repository tests pass,
+Ruff and `git diff --check` pass, and the authority patch passes
+`git apply --check --unidiff-zero` against a clean BalatroBot archive. V10
+artifacts remain retired and unloadable under the new teacher/public schemas.

@@ -235,6 +235,7 @@ class AuthorityRunner:
                     "name": result.terminal_blind.name,
                     "effect": result.terminal_blind.effect,
                     "score": result.terminal_blind.score,
+                    "disabled": result.terminal_blind.disabled,
                 }
                 if result.terminal_blind is not None
                 else None

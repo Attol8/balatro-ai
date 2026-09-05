@@ -1080,6 +1080,19 @@ def test_public_score_projects_the_arms_pre_score_level_reduction() -> None:
     assert score == (15 + 10) * 2
 
 
+def test_disabled_current_boss_has_no_scoring_or_play_constraint() -> None:
+    raw = state("SELECTING_HAND")
+    raw["hands"]["High Card"].update(chips=25, level=3, mult=3)
+    _current_boss(raw, "The Arm")
+    raw["blinds"]["boss"]["disabled"] = True
+    observation = to_public_observation(raw)
+    stats = {stat.name: stat for stat in observation.hand_stats}
+
+    score = _play_score(observation, (HandSlot(0),), stats)[0]
+
+    assert score == (25 + 10) * 3
+
+
 def test_strategic_policy_fails_closed_on_unknown_current_boss() -> None:
     raw = state("SELECTING_HAND")
     _current_boss(raw, "Future Boss")

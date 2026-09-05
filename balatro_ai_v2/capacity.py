@@ -293,7 +293,12 @@ def _unsupported_reason(
             (blind for blind in observation.blinds if blind.status == "CURRENT"),
             None,
         )
-        if current is not None and current.kind == "BOSS" and boss_rule(current.name) is None:
+        if (
+            current is not None
+            and current.kind == "BOSS"
+            and not current.disabled
+            and boss_rule(current.name) is None
+        ):
             return f"unknown current boss blind {current.name!r}"
     if canonical_remaining_deck(belief.remaining_deck) != canonical_remaining_deck(
         observation.remaining_deck
@@ -519,7 +524,7 @@ def _play_meets_boss(observation: PublicObservation, action: PlayCards) -> bool:
         (blind for blind in observation.blinds if blind.status == "CURRENT"),
         None,
     )
-    if current is None or current.kind != "BOSS":
+    if current is None or current.kind != "BOSS" or current.disabled:
         return True
     rule = boss_rule(current.name)
     return rule is not None and (

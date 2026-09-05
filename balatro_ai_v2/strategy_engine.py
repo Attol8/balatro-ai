@@ -128,6 +128,7 @@ class HandDevelopment:
 class BossVulnerability:
     name: str | None
     known: bool
+    disabled: bool
     constraints: frozenset[BossConstraint]
     conflicts: frozenset[str]
     score_multiplier: int | None
@@ -381,10 +382,14 @@ def _boss_vulnerability(
         None,
     )
     if visible is None:
-        return BossVulnerability(None, False, frozenset(), frozenset(), None)
+        return BossVulnerability(None, False, False, frozenset(), frozenset(), None)
+    if visible.disabled:
+        return BossVulnerability(visible.name, True, True, frozenset(), frozenset(), 1)
     rule = boss_rule(visible.name)
     if rule is None:
-        return BossVulnerability(visible.name, False, frozenset(), frozenset(), None)
+        return BossVulnerability(
+            visible.name, False, False, frozenset(), frozenset(), None
+        )
 
     tags = scoring.archetype_tags
     conflicts: set[str] = set()
@@ -425,6 +430,7 @@ def _boss_vulnerability(
     return BossVulnerability(
         name=visible.name,
         known=True,
+        disabled=False,
         constraints=rule.constraints,
         conflicts=frozenset(conflicts),
         score_multiplier=rule.score_multiplier,

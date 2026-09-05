@@ -120,7 +120,7 @@ def test_terminal_projection_persists_public_loss_context() -> None:
     projection = module.terminal_projection(to_public_observation(raw))
 
     assert projection == {
-        "schema_version": 2,
+        "schema_version": 3,
         "phase": "GAME_OVER",
         "won": False,
         "antes_cleared": 2,
@@ -140,6 +140,7 @@ def test_terminal_projection_persists_public_loss_context() -> None:
             "name": "Big Blind",
             "effect": "",
             "score": 450,
+            "disabled": False,
             "tag_name": "",
             "tag_effect": "",
         },
@@ -149,6 +150,7 @@ def test_terminal_projection_persists_public_loss_context() -> None:
             "name": "The Head",
             "effect": "Debuffs hearts",
             "score": 600,
+            "disabled": False,
             "tag_name": "",
             "tag_effect": "",
         },

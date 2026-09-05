@@ -685,6 +685,64 @@ exercise an organic Jackdaw shop-card purchase transition before freezing v10,
 checking the indexed action, price, deck growth, shop removal, and resulting
 public round trip. Synthetic adapter/RPC tests alone are not sufficient.
 
+### Contextual v10 failure and v11 recovery (active 2026-09-05)
+
+The preregistered first-100 checkpoint fails and retires the entire v10 seed
+reservation `1375-1674`. Batch 1 completed cleanly, but batch 2 encountered 63
+rejected rollout transitions in one source run and therefore discarded its
+teacher data atomically. Do not launch batches 3-6, recover the other 49 batch-2
+runs, or combine v10 with any later cohort.
+
+Exact replay localizes every rejection to selling Luchador during an active
+Cerulean Bell. Jackdaw disables the boss and clears the forced card correctly,
+but the public adapter infers that Cerulean remains enabled from name/status
+alone and requires a forced slot. The missing value is the player-visible boss
+disabled state, not a search threshold or a rollout exception policy.
+
+V11 recovery design:
+
+1. Add a required boolean disabled state to `PublicBlind`. Project it from the
+   candidate blind and the authority observation contract. Cerulean requires
+   exactly one visibly forced hand slot only while it is current and enabled;
+   a disabled boss permits none. Bump every observation-dependent environment,
+   policy, teacher, search, and model digest.
+2. Add an organic candidate transition that sells Luchador against current
+   Cerulean and proves the forced marker disappears, public legality remains
+   nonempty, and normal play continues. Add codec, malformed-state,
+   hidden-history twin, and relational tensor tests. Do not infer disabled state
+   from tooltip prose or a private identifier.
+3. Harden the collector before a fresh cohort. Verify the committed source and
+   candidate runtime before executing a seed, repeat the check before atomic
+   publication, discard the whole batch on incomplete runs, rejected rollouts,
+   unavailable searches, censored samples, or searched/teacher count mismatch,
+   and retain public rejection-reason diagnostics on failed batches.
+4. Independently validate evidence. The merger authenticates the
+   preregistration and private origin commitment, reconciles every seed result
+   to its opaque group, recomputes exact legal non-reorder roots and the paired
+   `z=1` selection, rejects malformed item zones, and proves the first-100 gate
+   failed or passed before accepting later components.
+5. Bind training separately after a successful merge. Commit a new training
+   preregistration containing the merged hashes, actual trainer source, exact
+   182/59/59 split, architecture, optimizer, seed, output paths, and fixed
+   phase gate before reading calibration or holdout metrics. A phase may be
+   certified only with recommendations in all 59 holdout groups, zero unsafe or
+   false-tie overrides, strictly positive per-recommendation gains, zero
+   run-equal regret, and positive run-equal gain.
+6. Remove lightweight rollout JSON parse/serialize work with a private,
+   copy-isolated normalized frame. Preserve canonical JSON on normal/authority
+   paths and require exact action, public-state, teacher-target, terminal, and
+   sampled-branch identity on reused development diagnostics before retaining
+   the speedup.
+7. Only after these gates pass, preregister six fresh 50-run batches on disjoint
+   development seeds `1675-1974` with a new origin key. Protected panels
+   `1-200`, `501-700`, `701-900`, and evaluator-secret authority remain sealed.
+
+V11 remains a pre-win/early-Endless continuation increment, not the complete
+high-score policy. After it resolves, add the missing public boss-reroll action,
+audited visible Joker targets/counters, and proven pack-time consumable actions;
+then collect dedicated post-win options with deck conversion, consumable
+sequences, copy/reorder timing, and nonlinear engine growth.
+
 ## Active development loop
 
 The two disjoint 30-seed screens are enough to retain one-ante strategic

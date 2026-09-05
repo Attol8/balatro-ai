@@ -16,7 +16,7 @@ from balatro_ai_v2.backend import BackendMetadata, RunSpec
 
 
 TRACE_SCHEMA_VERSION = 1
-CANONICAL_SCHEMA_VERSION = 6
+CANONICAL_SCHEMA_VERSION = 7
 
 
 @dataclass(frozen=True, slots=True)
@@ -143,11 +143,15 @@ def read_verified_trace(path: Path) -> tuple[dict[str, Any], ...]:
             try:
                 row = json.loads(line)
             except json.JSONDecodeError as exc:
-                raise ValueError(f"invalid JSON on trace line {line_number}: {exc}") from exc
+                raise ValueError(
+                    f"invalid JSON on trace line {line_number}: {exc}"
+                ) from exc
             if not isinstance(row, dict):
                 raise ValueError(f"trace line {line_number} is not an object")
             if row.get("schema_version") != TRACE_SCHEMA_VERSION:
-                raise ValueError(f"unsupported schema version at trace line {line_number}")
+                raise ValueError(
+                    f"unsupported schema version at trace line {line_number}"
+                )
             row_run_id = row.get("run_id")
             if not isinstance(row_run_id, str) or not row_run_id:
                 raise ValueError(f"missing run ID at trace line {line_number}")
@@ -230,13 +234,23 @@ def _git_state(root: Path) -> tuple[str, bool]:
         return "unknown", True
 
 
+def source_snapshot(root: Path) -> tuple[str, bool, str]:
+    """Return the exact revision, relevant dirtiness, and source-tree digest."""
+
+    revision, dirty = _git_state(root)
+    return revision, dirty, _source_digest(root)
+
+
 def _source_digest(root: Path) -> str:
     digest = hashlib.sha256()
     candidates = [root / "pyproject.toml", root / "plan.md"]
     for directory in (root / "balatro_ai_v2", root / "scripts", root / "tests"):
         if directory.exists():
             candidates.extend(directory.rglob("*.py"))
-    for path in sorted((path for path in candidates if path.is_file()), key=lambda item: str(item.relative_to(root))):
+    for path in sorted(
+        (path for path in candidates if path.is_file()),
+        key=lambda item: str(item.relative_to(root)),
+    ):
         digest.update(str(path.relative_to(root)).encode("utf-8"))
         digest.update(b"\0")
         digest.update(path.read_bytes())
@@ -251,7 +265,13 @@ def _file_digest(path: Path) -> str:
 
 
 def _canonical_json(value: object) -> str:
-    return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False)
+    return json.dumps(
+        value,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+        allow_nan=False,
+    )
 
 
 def _sha256(value: bytes) -> str:

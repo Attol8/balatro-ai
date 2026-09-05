@@ -73,11 +73,13 @@ class FrozenJackdawBackend:
                 active_pack_cards,
                 stale_shop_areas,
                 scalar_bridge_values,
+                lightweight_normalized,
             ) = pickle.loads(self._payload)
             clone = JackdawBackend(lightweight=True)
             clone._backend._gs = game_state
             clone._active_pack_cards = active_pack_cards
             clone._stale_shop_areas = stale_shop_areas
+            clone._lightweight_normalized = lightweight_normalized
             for name, value in zip(
                 _SCALAR_BRIDGE_FIELDS, scalar_bridge_values, strict=True
             ):
@@ -123,6 +125,7 @@ def freeze_backend(backend: JackdawBackend) -> FrozenJackdawBackend:
                 backend._active_pack_cards,
                 backend._stale_shop_areas,
                 tuple(getattr(backend, name) for name in _SCALAR_BRIDGE_FIELDS),
+                backend._lightweight_normalized,
             ),
             protocol=pickle.HIGHEST_PROTOCOL,
         )

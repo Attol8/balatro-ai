@@ -11,7 +11,7 @@ from balatro_ai_v2.strategy_engine import derive_engine_state
 from balatro_ai_v2.strategy_options import PersistentIntent, iter_strategy_options
 
 
-STRATEGY_DIAGNOSTIC_SCHEMA_VERSION = 1
+STRATEGY_DIAGNOSTIC_SCHEMA_VERSION = 2
 
 
 def strategy_snapshot(
@@ -85,6 +85,7 @@ def strategy_snapshot(
         "boss": {
             "name": engine.boss.name,
             "known": engine.boss.known,
+            "disabled": engine.boss.disabled,
             "constraints": sorted(constraint.value for constraint in engine.boss.constraints),
             "conflicts": sorted(engine.boss.conflicts),
             "score_multiplier": engine.boss.score_multiplier,

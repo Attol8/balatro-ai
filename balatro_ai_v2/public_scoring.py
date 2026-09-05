@@ -678,7 +678,7 @@ def _current_boss_rule(observation: PublicObservation) -> BossRule | None:
         (blind for blind in observation.blinds if blind.status == "CURRENT"),
         None,
     )
-    if current is None or current.kind != "BOSS":
+    if current is None or current.kind != "BOSS" or current.disabled:
         return None
     rule = boss_rule(current.name)
     if rule is None:

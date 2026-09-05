@@ -122,6 +122,22 @@ def test_boss_vulnerability_uses_audited_rule_and_visible_engine_tags() -> None:
     assert "debuffs_hearts" in boss.conflicts
 
 
+def test_disabled_current_boss_has_no_strategy_constraints() -> None:
+    raw = state("SELECTING_HAND")
+    raw["blinds"]["small"]["status"] = "DEFEATED"
+    raw["blinds"]["boss"].update(
+        name="The Head", status="CURRENT", disabled=True
+    )
+
+    boss = derive_engine_state(to_public_observation(raw)).boss
+
+    assert boss.name == "The Head"
+    assert boss.known
+    assert boss.disabled
+    assert not boss.constraints
+    assert not boss.conflicts
+
+
 def test_unknown_boss_and_joker_mechanics_fail_closed() -> None:
     observation = to_public_observation(state("SHOP"))
     observation = replace(

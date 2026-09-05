@@ -125,6 +125,24 @@ def test_unknown_boss_and_preblind_riff_raff_fail_closed() -> None:
     assert riff_result.unavailable_reason == "unsupported Joker j_riff_raff"
 
 
+def test_disabled_unknown_current_boss_is_effectless_for_visible_capacity() -> None:
+    raw = state("SELECTING_HAND")
+    raw["blinds"]["small"]["status"] = "DEFEATED"
+    raw["blinds"]["boss"].update(
+        name="Unmodeled Boss", status="CURRENT", disabled=True
+    )
+    observation = to_public_observation(raw)
+
+    estimate = estimate_capacity(
+        observation,
+        PublicDrawBelief.from_observation(observation),
+        samples=32,
+    )
+
+    assert estimate.available
+    assert estimate.mean_best_score == 15
+
+
 def test_unmodeled_next_boss_information_fails_closed() -> None:
     raw = state("SHOP")
     raw["hand"]["limit"] = 2

@@ -2,18 +2,21 @@ from __future__ import annotations
 
 import importlib.util
 import hashlib
+import hmac
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
-from balatro_ai_v2.actions import LeaveShop
+from balatro_ai_v2.actions import LeaveShop, iter_legal_actions
 from balatro_ai_v2.balatrobot.adapter import to_public_observation
 from balatro_ai_v2.strategy_engine import RunGoal
 from balatro_ai_v2.strategy_teacher import (
     StrategyRolloutTarget,
     StrategyTeacherCandidate,
     StrategyTeacherDraft,
+    write_teacher_records,
 )
 from balatro_ai_v2.strategy_tuning import StrategyTuning
 from state_factory import state
@@ -399,7 +402,7 @@ def test_reserved_contextual_seeds_require_preregistration_before_backend_work(
         [
             "evaluate_determinized_search.py",
             "--seed-start",
-            "1375",
+            "1675",
             "--seeds",
             "50",
             "--dense-teacher",
@@ -446,7 +449,7 @@ def test_retired_contextual_v9_seeds_cannot_be_reused(
         lambda: pytest.fail("backend verification must not run"),
     )
 
-    with pytest.raises(SystemExit, match="v9 seeds 1075-1374 are retired"):
+    with pytest.raises(SystemExit, match="v9/v10 seeds 1075-1674 are retired"):
         module.main()
 
 
@@ -455,12 +458,12 @@ def test_contextual_preregistration_binds_batch_budget_and_outputs(tmp_path) -> 
     root = tmp_path
     teacher = root / module._CONTEXTUAL_BATCHES[0]["teacher_jsonl"]
     report = root / module._CONTEXTUAL_BATCHES[0]["report_json"]
-    origin_key = root / "runs/secrets/contextual-continuation-v10-origin.key"
+    origin_key = root / "runs/secrets/contextual-continuation-v11-origin.key"
     origin_key.parent.mkdir(parents=True)
     origin_key.write_bytes(b"k" * 32)
     preregistration = tmp_path / "prereg.json"
     spec = {
-        "protocol_id": "contextual-continuation-development-v2",
+        "protocol_id": "contextual-continuation-development-v3",
         "status": "reserved",
         "immutable_batches": True,
         "seed_provenance": "development",
@@ -475,7 +478,7 @@ def test_contextual_preregistration_binds_batch_budget_and_outputs(tmp_path) -> 
             "max_decisions": 1200,
             "ante_cap": 12,
             "workers": 6,
-            "nonce": "contextual-continuation-v10-frozen",
+            "nonce": "contextual-continuation-v11-frozen",
             "continuation": "strategic",
             "policy_seed": "baseline-v1",
             "strategy_options": False,
@@ -484,16 +487,17 @@ def test_contextual_preregistration_binds_batch_budget_and_outputs(tmp_path) -> 
         },
         "origin_mapping": {
             "algorithm": "hmac-sha256-truncated-128",
-            "key_path": "runs/secrets/contextual-continuation-v10-origin.key",
+            "key_path": "runs/secrets/contextual-continuation-v11-origin.key",
             "key_sha256": hashlib.sha256(b"k" * 32).hexdigest(),
         },
         "batches": list(module._CONTEXTUAL_BATCHES),
+        "first_100_kill_gate": module._CONTEXTUAL_FIRST_100_GATE,
     }
     preregistration.write_text(json.dumps(spec), encoding="utf-8")
     args = module.build_parser().parse_args(
         [
             "--seed-start",
-            "1375",
+            "1675",
             "--seeds",
             "50",
             "--samples",
@@ -509,7 +513,7 @@ def test_contextual_preregistration_binds_batch_budget_and_outputs(tmp_path) -> 
             "--workers",
             "6",
             "--nonce",
-            "contextual-continuation-v10-frozen",
+            "contextual-continuation-v11-frozen",
             "--dense-teacher",
             "--teacher-jsonl",
             str(teacher),
@@ -532,6 +536,127 @@ def test_contextual_preregistration_binds_batch_budget_and_outputs(tmp_path) -> 
     with pytest.raises(SystemExit, match="search budget mismatch"):
         module._validate_contextual_preregistration(
             args, StrategyTuning(), repository_root=root
+        )
+
+
+def test_contextual_first_100_gate_requires_two_clean_passing_reports(tmp_path) -> None:
+    module = _load_script()
+    preregistration_digest = "d" * 64
+    origin_key = b"k" * 32
+    batches = list(module._CONTEXTUAL_BATCHES)
+    spec = {
+        "batches": batches,
+        "first_100_kill_gate": {
+            "minimum_action_sensitive_fraction": 0.4,
+            "minimum_observed_victory_groups": 10,
+            "rejected_or_censored": 0,
+        },
+    }
+    for expected in batches[:2]:
+        seed_start = int(expected["seed_start"])
+        observation = to_public_observation(state("BLIND_SELECT"))
+        actions = tuple(iter_legal_actions(observation))
+        records = tuple(
+            StrategyTeacherDraft(
+                observation=observation,
+                candidates=tuple(
+                    StrategyTeacherCandidate(
+                        action,
+                        None,
+                        tuple(
+                            StrategyRolloutTarget(
+                                1,
+                                1,
+                                1 if seed < seed_start + 5 and index == 1 else 0,
+                                4,
+                                2,
+                                search_utility=2 if index == 1 else 1,
+                            )
+                            for _ in range(6)
+                        ),
+                    )
+                    for index, action in enumerate(actions)
+                ),
+                selected_index=1,
+                baseline_index=0,
+                goal=RunGoal.VICTORY,
+                teacher_config_digest="3" * 64,
+                candidate_space_size=len(actions),
+            ).finalize(
+                run_group="origin-"
+                + hmac.new(origin_key, str(seed).encode(), hashlib.sha256).hexdigest()[
+                    :32
+                ],
+                decision_index=0,
+                run_complete=True,
+                run_won=False,
+                terminal_ante=3,
+                best_hand_score=100,
+            )
+            for seed in range(seed_start, seed_start + 50)
+        )
+        rows = [
+            {
+                "seed": seed,
+                "complete": True,
+                "won": False,
+                "antes_cleared": 3,
+                "rejected_decisions": 0,
+                "terminal_reason": "game_over",
+                "terminal_error": None,
+                "best_hand_score": 100,
+                "search_failure_reasons": {},
+                "search": {
+                    "rejected_rollouts": 0,
+                    "unavailable": 0,
+                    "searched": 1,
+                },
+            }
+            for seed in range(seed_start, seed_start + 50)
+        ]
+        teacher_path = tmp_path / expected["teacher_jsonl"]
+        teacher_path.parent.mkdir(parents=True, exist_ok=True)
+        teacher_digest = write_teacher_records(teacher_path, records)
+        path = tmp_path / expected["report_json"]
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            json.dumps(
+                {
+                    "contextual_teacher_preregistration": {
+                        "sha256": preregistration_digest,
+                        "batch_id": expected["batch_id"],
+                    },
+                    "strategy_teacher_dataset": {
+                        "status": "written",
+                        "sha256": teacher_digest,
+                        "groups": 50,
+                        "records": 50,
+                        "teacher_config_digest": "3" * 64,
+                        "coverage": module._teacher_coverage(records, rows),
+                    },
+                    "results": rows,
+                }
+            ),
+            encoding="utf-8",
+        )
+
+    module._validate_contextual_first_100(
+        spec,
+        preregistration_sha256=preregistration_digest,
+        origin_key=origin_key,
+        repository_root=tmp_path,
+    )
+
+    failed = tmp_path / batches[1]["report_json"]
+    report = json.loads(failed.read_text(encoding="utf-8"))
+    report["results"][0]["search"]["rejected_rollouts"] = 1
+    failed.write_text(json.dumps(report), encoding="utf-8")
+    with pytest.raises(SystemExit, match="integrity checks"):
+        module._validate_contextual_first_100(
+            spec,
+            preregistration_sha256=preregistration_digest,
+            origin_key=origin_key,
+            repository_root=tmp_path,
         )
 
 
@@ -591,3 +716,52 @@ def test_report_publication_is_atomic_and_exclusive(tmp_path: Path) -> None:
         module._publish_json_exclusive(path, '{"complete":false}\n')  # noqa: SLF001
     assert path.read_text(encoding="utf-8") == '{"complete":true}\n'
     assert list(tmp_path.iterdir()) == [path]
+
+
+def test_contextual_bundle_publishes_teacher_and_report_together(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _load_script()
+    observation = to_public_observation(state("SHOP"))
+    record = StrategyTeacherDraft(
+        observation=observation,
+        candidates=(
+            StrategyTeacherCandidate(
+                LeaveShop(),
+                None,
+                (StrategyRolloutTarget(1, 1, 0, 3, 2),),
+            ),
+        ),
+        selected_index=0,
+        baseline_index=0,
+        goal=RunGoal.VICTORY,
+        teacher_config_digest="2" * 64,
+    ).finalize(
+        run_group="origin-" + "1" * 32,
+        decision_index=0,
+        run_complete=True,
+        run_won=False,
+        terminal_ante=3,
+        best_hand_score=100,
+    )
+    records = (record,)
+    runtime = {"revision": "runtime"}
+    monkeypatch.setattr(module, "source_snapshot", lambda _root: ("r", False, "s"))
+    monkeypatch.setattr(module, "verify_jackdaw_runtime", lambda: runtime)
+    teacher = tmp_path / "batch-01/teacher.jsonl"
+    report = tmp_path / "batch-01/report.json"
+
+    module._publish_contextual_bundle(
+        teacher,
+        report,
+        records,
+        expected_teacher_digest=module.teacher_records_digest(records),
+        encoded_report='{"complete":true}\n',
+        expected_manifest=SimpleNamespace(repository_revision="r", source_digest="s"),
+        expected_runtime=runtime,
+        repository_root=tmp_path,
+    )
+
+    assert teacher.is_file()
+    assert report.read_text(encoding="utf-8") == '{"complete":true}\n'
+    assert {path.name for path in tmp_path.iterdir()} == {"batch-01"}

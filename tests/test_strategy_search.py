@@ -275,6 +275,34 @@ def test_public_dead_end_is_a_losing_rollout_not_a_rejected_root() -> None:
     assert outcome.goal_utility.alive_probability == 0
 
 
+def test_rollout_fails_closed_when_clone_omits_public_projection() -> None:
+    before = to_public_observation(state("BLIND_SELECT"))
+
+    class MissingProjectionClone:
+        current_public = None
+
+        def step(self, action):
+            del action
+            return SimpleNamespace(status="accepted", after=SimpleNamespace())
+
+    policy = DeterminizedSearchPolicy(
+        backend=None,  # type: ignore[arg-type]
+        continuation=PublicStrategicPolicy(),
+    )
+
+    outcome = policy._rollout(  # noqa: SLF001 - exact rollout contract regression
+        MissingProjectionClone(),  # type: ignore[arg-type]
+        before,
+        (),
+        SelectBlind(),
+    )
+
+    assert outcome.rejected
+    assert outcome.rejection_reason == "missing_public_projection"
+    assert outcome.goal_utility is not None
+    assert outcome.goal_utility.alive_probability == 0
+
+
 def test_success_anchor_schedule_is_sparse_per_public_ante() -> None:
     policy = DeterminizedSearchPolicy(
         backend=None,  # type: ignore[arg-type]

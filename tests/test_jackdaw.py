@@ -32,51 +32,13 @@ def test_candidate_module_is_lazy_and_revision_is_pinned() -> None:
     assert jackdaw.JACKDAW_REVISION == "dbedc66255fe594cce7b7cccc188c8a11649d9ec"
 
 
-def test_candidate_continues_winning_authority_trace_into_endless() -> None:
-    pytest.importorskip("jackdaw")
+def test_schema_six_authority_trace_is_retired_after_public_blind_change() -> None:
     trace = (
         Path(__file__).resolve().parents[1]
         / "runs/evidence/phase1-voucher-affordance-v1-red-white-seed44-authority-20260902-attempt3.jsonl"
     )
-    rows = read_verified_trace(trace)
-    manifest = rows[0]["manifest"]
-    run = manifest["run"]
-    start = next(row for row in rows if row["event"] == "run_start")
-    backend = jackdaw.JackdawBackend()
-    try:
-        backend.configure_replay(start["authority"]["canonical"])
-        backend.reset(RunSpec(run["deck"], run["stake"], run["seed"]))
-        observation = None
-        for row in rows:
-            if row["event"] != "transition":
-                continue
-            result = backend.step(action_from_data(row["action"]))
-            assert result.status == "accepted"
-            assert result.after is not None
-            observation = result.after
-
-        assert observation is not None
-        public = to_public_observation(json.loads(observation.observed.raw_json))
-        assert public.won
-        assert public.antes_cleared == 8
-        assert not public.terminal
-
-        for action in (CashOut(), LeaveShop(), SelectBlind()):
-            result = backend.step(action)
-            assert result.status == "accepted"
-            assert result.after is not None
-
-        endless = to_public_observation(json.loads(result.after.observed.raw_json))
-        assert endless.phase.value == "SELECTING_HAND"
-        assert endless.ante == 9
-        assert endless.antes_cleared == 8
-        assert endless.won
-        assert (
-            next(blind for blind in endless.blinds if blind.kind == "SMALL").score
-            == 110_000
-        )
-    finally:
-        backend.close()
+    with pytest.raises(ValueError, match="unsupported canonical schema version"):
+        read_verified_trace(trace)
 
 
 def test_candidate_data_bootstrap_copies_missing_pinned_files(tmp_path) -> None:
@@ -548,6 +510,7 @@ def test_bridge_normalization_exposes_cerulean_forced_slot_from_empty_card_state
         SimpleNamespace(ability={"x_mult": 1}),
     ]
     private = {
+        "blind": SimpleNamespace(name="Cerulean Bell", disabled=False),
         "deck": [SimpleNamespace(ability={"x_mult": 1}) for _ in raw["cards"]["cards"]],
         "discard_pile": [],
         "hand": private_hand,
@@ -568,6 +531,29 @@ def test_bridge_normalization_exposes_cerulean_forced_slot_from_empty_card_state
         "forced_selection": True,
     }
     assert observation.required_hand_slots == (1,)
+
+
+def test_bridge_normalization_exposes_disabled_cerulean_without_forced_slot() -> None:
+    raw = state("SELECTING_HAND")
+    raw["blinds"]["small"]["status"] = "DEFEATED"
+    raw["blinds"]["boss"].update(name="Cerulean Bell", status="CURRENT")
+    cards = [SimpleNamespace(ability={"x_mult": 1}) for _ in raw["hand"]["cards"]]
+    private = {
+        "blind": SimpleNamespace(name="Cerulean Bell", disabled=True),
+        "deck": [SimpleNamespace(ability={"x_mult": 1}) for _ in raw["cards"]["cards"]],
+        "discard_pile": [],
+        "hand": cards,
+        "jokers": [],
+        "consumables": [],
+        "current_round": {},
+        "round": 1,
+    }
+
+    normalized = jackdaw._normalize_jackdaw_bridge(raw, private)
+    observation = to_public_observation(normalized)
+
+    assert normalized["blinds"]["boss"]["disabled"] is True
+    assert observation.required_hand_slots == ()
 
 
 def test_card_ability_normalization_matches_balatrobot_extractor() -> None:

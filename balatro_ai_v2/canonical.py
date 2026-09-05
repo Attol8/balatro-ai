@@ -68,7 +68,16 @@ _CARD_FIELDS = {"cost", "id", "key", "label", "modifier", "set", "state", "value
 _COST_FIELDS = {"buy", "sell"}
 _VALUE_FIELDS = {"ability", "effect", "perma_bonus", "rarity", "rank", "suit"}
 _HAND_FIELDS = {"chips", "example", "level", "mult", "order", "played", "played_this_round"}
-_BLIND_FIELDS = {"effect", "name", "score", "status", "tag_effect", "tag_name", "type"}
+_BLIND_FIELDS = {
+    "disabled",
+    "effect",
+    "name",
+    "score",
+    "status",
+    "tag_effect",
+    "tag_name",
+    "type",
+}
 _ROUND_FIELDS = {
     "ancient_suit",
     "chips",
@@ -290,6 +299,8 @@ def _validate_state(raw: Mapping[str, Any]) -> None:
     for name, blind_value in blinds.items():
         blind = _expect_mapping(blind_value, f"blinds.{name}")
         _reject_unknown(blind, _BLIND_FIELDS, f"blinds.{name}")
+        if not isinstance(blind.get("disabled"), bool):
+            raise CanonicalizationError(f"blinds.{name}.disabled must be boolean")
     round_state = _expect_mapping(raw["round"], "round")
     _reject_unknown(round_state, _ROUND_FIELDS, "round")
 

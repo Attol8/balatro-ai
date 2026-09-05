@@ -432,6 +432,7 @@ def _blind(raw: object) -> PublicBlind:
         name=_required_string(raw, "name"),
         effect=str(raw.get("effect") or ""),
         score=_required_score_int(raw, "score"),
+        disabled=_required_bool(raw, "disabled"),
         tag_name=str(raw.get("tag_name") or ""),
         tag_effect=str(raw.get("tag_effect") or ""),
     )
@@ -458,7 +459,9 @@ def _required_hand_slots(
     if phase != Phase.SELECTING_HAND:
         return ()
     cerulean_active = any(
-        blind.name == "Cerulean Bell" and blind.status == "CURRENT"
+        blind.name == "Cerulean Bell"
+        and blind.status == "CURRENT"
+        and not blind.disabled
         for blind in blinds
     )
     forced: list[int] = []

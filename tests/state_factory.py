@@ -75,6 +75,7 @@ def state(
         "ante_num": 1,
         "blinds": {
             "small": {
+                "disabled": False,
                 "effect": "",
                 "name": "Small Blind",
                 "score": 300,
@@ -84,6 +85,7 @@ def state(
                 "type": "SMALL",
             },
             "big": {
+                "disabled": False,
                 "effect": "",
                 "name": "Big Blind",
                 "score": 450,
@@ -93,6 +95,7 @@ def state(
                 "type": "BIG",
             },
             "boss": {
+                "disabled": False,
                 "effect": "Debuffs hearts",
                 "name": "The Head",
                 "score": 600,

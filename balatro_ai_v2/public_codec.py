@@ -127,6 +127,7 @@ def _blind(value: object) -> PublicBlind:
         name=_string(raw["name"], "blind.name"),
         effect=_string(raw["effect"], "blind.effect"),
         score=_integer(raw["score"], "blind.score"),
+        disabled=_boolean(raw["disabled"], "blind.disabled"),
         tag_name=_string(raw["tag_name"], "blind.tag_name"),
         tag_effect=_string(raw["tag_effect"], "blind.tag_effect"),
     )

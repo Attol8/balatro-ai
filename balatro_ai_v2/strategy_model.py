@@ -68,7 +68,7 @@ from balatro_ai_v2.strategy_context import PublicStrategyContext
 from balatro_ai_v2.strategy_options import StrategyIntent
 
 
-STRATEGY_MODEL_FORMAT_VERSION: Final = 4
+STRATEGY_MODEL_FORMAT_VERSION: Final = 5
 
 
 class StrategyModelError(RuntimeError):
@@ -387,6 +387,7 @@ _SCALARS = (
     "driver_tally",
     "blind_score",
     "blind_log_score",
+    "blind_disabled",
     "hand_level",
     "hand_chips",
     "hand_log_chips",
@@ -467,6 +468,7 @@ def _model_schema_digest() -> str:
             "five_per_candidate_value_heads_v3"
         ),
         "public_shop_offer_contract": "item_or_structured_playing_card_v1",
+        "public_blind_contract": "required_disabled_v1",
         "calibration_fields": (
             "policy_temperature",
             "current_blind_bias",
@@ -1068,6 +1070,8 @@ class PublicStrategyTensorizer:
             features = _features()
             _put_scaled(features, "blind_score", blind.score, 1_000_000)
             _put_log_scaled(features, "blind_log_score", blind.score, 100)
+            if blind.disabled:
+                _put(features, "blind_disabled", 1.0)
             _put_category(features, "blind_status", blind.status, _BLIND_STATUSES)
             if blind.tag_name:
                 _put_category(features, "tag", blind.tag_name, _TAGS)

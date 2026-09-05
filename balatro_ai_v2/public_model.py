@@ -50,8 +50,8 @@ from balatro_ai_v2.public_state import (
 )
 
 
-MODEL_FORMAT_VERSION: Final = 4
-PUBLIC_MODEL_ACTION_PROPOSAL_SCHEMA: Final = "factorized_tactical_targeted_shop_card_v4"
+MODEL_FORMAT_VERSION: Final = 5
+PUBLIC_MODEL_ACTION_PROPOSAL_SCHEMA: Final = "factorized_tactical_targeted_shop_card_v5"
 _REORDER_ACTIONS = (ReorderHand, ReorderJokers, ReorderConsumables)
 _ACTION_FAMILIES = {
     SelectBlind: "select_blind",
@@ -594,6 +594,7 @@ def _observation_features(observation: PublicObservation, size: int) -> list[flo
         vector.category(f"{prefix}.name", blind.name)
         vector.category(f"{prefix}.tag_name", blind.tag_name)
         vector.number(f"{prefix}.score", blind.score, 1_000_000)
+        vector.number(f"{prefix}.disabled", int(blind.disabled), 1)
     for hand in observation.hand_stats:
         prefix = f"hand_stat.{hand.name}"
         for name, value, scale in (

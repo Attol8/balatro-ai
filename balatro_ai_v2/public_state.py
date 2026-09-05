@@ -15,6 +15,16 @@ from typing import TypeAlias
 
 OBSCURED_CARD_ATTRIBUTE = "?"
 
+_PUBLIC_ITEM_KINDS = frozenset(
+    {"JOKER", "TAROT", "PLANET", "SPECTRAL", "VOUCHER", "BOOSTER"}
+)
+_JOKER_KINDS = frozenset({"JOKER"})
+_CONSUMABLE_KINDS = frozenset({"TAROT", "PLANET", "SPECTRAL"})
+_VOUCHER_KINDS = frozenset({"VOUCHER"})
+_BOOSTER_KINDS = frozenset({"BOOSTER"})
+_SHOP_ITEM_KINDS = frozenset({"JOKER", "TAROT", "PLANET", "SPECTRAL"})
+_OPENED_PACK_ITEM_KINDS = _SHOP_ITEM_KINDS
+
 
 class Phase(str, Enum):
     BLIND_SELECT = "BLIND_SELECT"
@@ -97,6 +107,16 @@ class PublicItem:
     runtime: PublicJokerRuntime | None = None
 
     def __post_init__(self) -> None:
+        if not isinstance(self.kind, str):
+            raise ValueError("public item kind must be a string")
+        if self.kind != self.kind.upper():
+            raise ValueError("public item kind must use canonical uppercase")
+        if self.kind in {"DEFAULT", "ENHANCED"}:
+            raise ValueError(
+                "playing cards cannot use the generic public item representation"
+            )
+        if self.kind not in _PUBLIC_ITEM_KINDS:
+            raise ValueError(f"unsupported public item kind {self.kind!r}")
         if self.runtime is not None and self.kind != "JOKER":
             raise ValueError("only Jokers may carry Joker runtime")
 
@@ -132,8 +152,15 @@ class PublicBlind:
     name: str
     effect: str
     score: int
+    disabled: bool
     tag_name: str = ""
     tag_effect: str = ""
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.disabled, bool):
+            raise ValueError("blind disabled state must be boolean")
+        if self.disabled and (self.kind != "BOSS" or self.status != "CURRENT"):
+            raise ValueError("only the current boss blind may be disabled")
 
 
 @dataclass(frozen=True, slots=True)
@@ -191,25 +218,56 @@ class PublicObservation:
     won: bool
 
     def __post_init__(self) -> None:
+        _validate_item_zone("jokers", self.jokers, _JOKER_KINDS)
+        _validate_item_zone("consumables", self.consumables, _CONSUMABLE_KINDS)
+        _validate_item_zone("vouchers", self.vouchers, _VOUCHER_KINDS)
+        _validate_item_zone("packs", self.packs, _BOOSTER_KINDS)
         if any(
             not isinstance(offer, (PublicItem, PublicShopPlayingCard))
             for offer in self.shop
         ):
             raise ValueError("shop offers must use a recognized public representation")
+        _validate_item_zone(
+            "shop",
+            tuple(offer for offer in self.shop if isinstance(offer, PublicItem)),
+            _SHOP_ITEM_KINDS,
+        )
         if any(
-            isinstance(offer, PublicItem)
-            and offer.kind.upper() in {"DEFAULT", "ENHANCED"}
-            for offer in self.shop
+            not isinstance(offer, (PublicItem, VisiblePlayingCard))
+            for offer in self.opened_pack
         ):
             raise ValueError(
-                "visible shop playing cards require PublicShopPlayingCard"
+                "opened-pack offers must use a recognized public representation"
             )
+        _validate_item_zone(
+            "opened_pack",
+            tuple(
+                offer for offer in self.opened_pack if isinstance(offer, PublicItem)
+            ),
+            _OPENED_PACK_ITEM_KINDS,
+        )
         if tuple(sorted(set(self.required_hand_slots))) != self.required_hand_slots:
             raise ValueError("required hand slots must be unique and increasing")
         if any(slot < 0 or slot >= len(self.hand) for slot in self.required_hand_slots):
             raise ValueError("required hand slot is outside the visible hand")
         if self.required_hand_slots and self.phase != Phase.SELECTING_HAND:
             raise ValueError("required hand slots are valid only while selecting a hand")
+        if self.phase == Phase.SELECTING_HAND:
+            cerulean_enabled = any(
+                blind.kind == "BOSS"
+                and blind.status == "CURRENT"
+                and blind.name == "Cerulean Bell"
+                and not blind.disabled
+                for blind in self.blinds
+            )
+            if cerulean_enabled and len(self.required_hand_slots) != 1:
+                raise ValueError(
+                    "enabled current Cerulean Bell requires one forced hand slot"
+                )
+            if not cerulean_enabled and self.required_hand_slots:
+                raise ValueError(
+                    "forced hand slots require an enabled current Cerulean Bell"
+                )
         pack_kinds = {"ARCANA", "CELESTIAL", "SPECTRAL", "STANDARD", "BUFFOON", "SMODS"}
         if self.phase == Phase.PACK:
             if self.pack_kind not in pack_kinds or self.pack_choices_remaining <= 0:
@@ -232,6 +290,18 @@ class PublicObservation:
 
     def digest(self) -> str:
         return hashlib.sha256(self.canonical_json().encode("utf-8")).hexdigest()
+
+
+def _validate_item_zone(
+    zone: str,
+    items: tuple[PublicItem, ...],
+    admitted_kinds: frozenset[str],
+) -> None:
+    if any(not isinstance(item, PublicItem) for item in items):
+        raise ValueError(f"{zone} must contain public items")
+    invalid = sorted({item.kind for item in items if item.kind not in admitted_kinds})
+    if invalid:
+        raise ValueError(f"{zone} contains unsupported public item kinds: {invalid}")
 
 
 def _json_value(value: object) -> object:

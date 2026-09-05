@@ -34,7 +34,7 @@ from balatro_ai_v2.strategy_engine import RunGoal, derive_engine_state
 from balatro_ai_v2.strategy_options import StrategyIntent
 
 
-STRATEGY_TEACHER_SCHEMA_VERSION = 5
+STRATEGY_TEACHER_SCHEMA_VERSION = 6
 _RUN_GROUP = re.compile(r"origin-[0-9a-f]{32}")
 _SHA256 = re.compile(r"[0-9a-f]{64}")
 
@@ -425,12 +425,43 @@ def write_teacher_records(
     return digest.hexdigest()
 
 
+def teacher_records_digest(records: tuple[StrategyTeacherRecord, ...]) -> str:
+    """Hash the exact JSONL bytes without publishing a dataset."""
+
+    if not records:
+        raise ValueError("strategy teacher dataset is empty")
+    if len({record.teacher_config_digest for record in records}) != 1:
+        raise ValueError("strategy teacher dataset mixes teacher configurations")
+    digest = hashlib.sha256()
+    for record in records:
+        encoded = (
+            json.dumps(
+                teacher_record_to_data(record),
+                sort_keys=True,
+                separators=(",", ":"),
+            )
+            + "\n"
+        )
+        digest.update(encoded.encode("utf-8"))
+    return digest.hexdigest()
+
+
 def read_teacher_records(path: Path) -> tuple[StrategyTeacherRecord, ...]:
-    records = tuple(
-        teacher_record_from_data(json.loads(line))
-        for line in path.read_text(encoding="utf-8").splitlines()
-        if line.strip()
-    )
+    return teacher_records_from_bytes(path.read_bytes())
+
+
+def teacher_records_from_bytes(raw: bytes) -> tuple[StrategyTeacherRecord, ...]:
+    """Parse one captured JSONL byte string without a second filesystem read."""
+
+    try:
+        text = raw.decode("utf-8")
+        records = tuple(
+            teacher_record_from_data(json.loads(line))
+            for line in text.splitlines()
+            if line.strip()
+        )
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ValueError("strategy teacher dataset is invalid JSONL") from exc
     if not records:
         raise ValueError("strategy teacher dataset is empty")
     identities = {(record.run_group, record.decision_index) for record in records}
@@ -496,5 +527,6 @@ __all__ = [
     "read_teacher_records",
     "teacher_record_from_data",
     "teacher_record_to_data",
+    "teacher_records_digest",
     "write_teacher_records",
 ]

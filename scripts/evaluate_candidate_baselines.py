@@ -31,7 +31,7 @@ from balatro_ai_v2.strategy_diagnostics import strategy_snapshot, summarize_stra
 from balatro_ai_v2.strategy_tuning import StrategyTuning
 
 
-TERMINAL_PROJECTION_SCHEMA_VERSION = 2
+TERMINAL_PROJECTION_SCHEMA_VERSION = 3
 
 
 def main() -> None:
@@ -147,7 +147,7 @@ def main() -> None:
             launch_headless=False,
             profile_mode="all_unlocked",
             inference_budget=(
-                "policy_action_contract=public_legality_v4;random_public_actions<=256;"
+                "policy_action_contract=public_legality_v5;random_public_actions<=256;"
                 "tactical_candidates<=2048;draw_branches<=512;"
                 f"{exact_budget}"
                 f"policy_timeout_seconds={args.policy_timeout}"
@@ -284,6 +284,7 @@ def _blind_projection(blind: PublicBlind | None) -> dict[str, object] | None:
         "name": blind.name,
         "effect": blind.effect,
         "score": blind.score,
+        "disabled": blind.disabled,
         "tag_name": blind.tag_name,
         "tag_effect": blind.tag_effect,
     }

@@ -683,6 +683,37 @@ def test_scientific_scale_public_scores_tensorize_without_float_overflow() -> No
     assert not torch.equal(ordinary.entity_features, scaled.entity_features)
 
 
+def test_strategy_tensor_distinguishes_disabled_current_boss() -> None:
+    observation = _observation("SELECTING_HAND")
+    enabled = replace(
+        observation,
+        blinds=tuple(
+            replace(blind, status="DEFEATED")
+            if blind.kind == "SMALL"
+            else replace(blind, status="CURRENT")
+            if blind.kind == "BOSS"
+            else blind
+            for blind in observation.blinds
+        ),
+    )
+    disabled = replace(
+        enabled,
+        blinds=tuple(
+            replace(blind, disabled=True) if blind.kind == "BOSS" else blind
+            for blind in enabled.blinds
+        ),
+    )
+    action = PlayCards((HandSlot(0),))
+    tensorizer = PublicStrategyTensorizer(_config())
+
+    enabled_tensor = tensorizer.tensorize((enabled,), ((action,),))
+    disabled_tensor = tensorizer.tensorize((disabled,), ((action,),))
+
+    assert not torch.equal(
+        enabled_tensor.entity_features, disabled_tensor.entity_features
+    )
+
+
 def test_exact_vanilla_skip_tag_is_admitted() -> None:
     observation = _observation()
     tagged = replace(
@@ -711,7 +742,7 @@ def test_strategy_checkpoint_round_trip_and_digest(tmp_path) -> None:
     assert loaded.calibration == StrategyCalibration()
     assert loaded.provenance == {"training_status": "untrained"}
     payload = torch.load(path, weights_only=True)
-    assert payload["format_version"] == STRATEGY_MODEL_FORMAT_VERSION == 4
+    assert payload["format_version"] == STRATEGY_MODEL_FORMAT_VERSION == 5
     assert set(payload) == {
         "format_version",
         "schema_digest",

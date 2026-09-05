@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -11,6 +12,7 @@ from balatro_ai_v2.public_codec import (
     public_observation_from_data,
     public_observation_to_data,
 )
+from balatro_ai_v2.public_state import PublicItem
 from state_factory import playing_card, state
 
 
@@ -140,6 +142,55 @@ def test_public_observation_codec_round_trips_and_validates_forced_hand_slot() -
         public_observation_from_data(data)
 
 
+def test_public_blind_disabled_contract_is_strict_and_round_trips() -> None:
+    raw = state("SELECTING_HAND")
+    raw["blinds"]["small"]["status"] = "DEFEATED"
+    raw["blinds"]["boss"].update(
+        name="Cerulean Bell", status="CURRENT", disabled=True
+    )
+
+    observation = to_public_observation(raw)
+    data = public_observation_to_data(observation)
+
+    assert observation.required_hand_slots == ()
+    assert public_observation_from_data(data) == observation
+
+    missing = deepcopy(data)
+    missing["blinds"][2].pop("disabled")
+    with pytest.raises(PublicCodecError, match="missing=.*disabled"):
+        public_observation_from_data(missing)
+
+    malformed = deepcopy(data)
+    malformed["blinds"][2]["disabled"] = 1
+    with pytest.raises(PublicCodecError, match="blind.disabled must be a boolean"):
+        public_observation_from_data(malformed)
+
+    impossible = deepcopy(data)
+    impossible["blinds"][0]["disabled"] = True
+    with pytest.raises(ValueError, match="only the current boss"):
+        public_observation_from_data(impossible)
+
+    stale_slot = deepcopy(data)
+    stale_slot["required_hand_slots"] = [0]
+    with pytest.raises(ValueError, match="forced hand slots require"):
+        public_observation_from_data(stale_slot)
+
+
+def test_adapter_rejects_stale_forced_marker_after_cerulean_is_disabled() -> None:
+    raw = state("SELECTING_HAND")
+    raw["blinds"]["small"]["status"] = "DEFEATED"
+    raw["blinds"]["boss"].update(
+        name="Cerulean Bell", status="CURRENT", disabled=True
+    )
+    raw["hand"]["cards"][0]["state"] = {
+        "highlight": True,
+        "forced_selection": True,
+    }
+
+    with pytest.raises(Exception, match="inconsistent with the active blind"):
+        to_public_observation(raw)
+
+
 def test_public_observation_codec_round_trips_fixed_joker_runtime_only() -> None:
     raw = state("SHOP")
     raw["shop"]["cards"][0]["key"] = "j_green_joker"
@@ -210,7 +261,7 @@ def test_shop_playing_card_codec_rejects_legacy_and_malformed_shapes() -> None:
     legacy = public_observation_to_data(to_public_observation(state("SHOP")))
     legacy["shop"][0]["kind"] = "DEFAULT"  # type: ignore[index]
     legacy["shop"][0]["key"] = "H_K"  # type: ignore[index]
-    with pytest.raises(PublicCodecError, match="legacy generic item"):
+    with pytest.raises(ValueError, match="generic public item"):
         public_observation_from_data(legacy)
 
     raw = state("SHOP")
@@ -232,6 +283,57 @@ def test_shop_playing_card_codec_rejects_legacy_and_malformed_shapes() -> None:
     malformed["shop"][0].pop("buy_cost")  # type: ignore[index]
     with pytest.raises(PublicCodecError, match="shop offer has unknown fields"):
         public_observation_from_data(malformed)
+
+
+@pytest.mark.parametrize(
+    ("kind", "message"),
+    [
+        ("joker", "canonical uppercase"),
+        ("DEFAULT", "generic public item"),
+        ("ENHANCED", "generic public item"),
+        ("FUTURE", "unsupported public item kind"),
+    ],
+)
+def test_public_item_rejects_noncanonical_or_generic_kinds(
+    kind: str, message: str
+) -> None:
+    with pytest.raises(ValueError, match=message):
+        PublicItem("test", "Test", kind)
+
+
+@pytest.mark.parametrize(
+    ("zone", "kind"),
+    [
+        ("jokers", "TAROT"),
+        ("consumables", "JOKER"),
+        ("vouchers", "BOOSTER"),
+        ("packs", "VOUCHER"),
+        ("shop", "VOUCHER"),
+        ("shop", "BOOSTER"),
+        ("opened_pack", "VOUCHER"),
+        ("opened_pack", "BOOSTER"),
+    ],
+)
+def test_public_observation_rejects_item_kinds_in_the_wrong_zone(
+    zone: str, kind: str
+) -> None:
+    phase = "TAROT_PACK" if zone == "opened_pack" else "SHOP"
+    observation = to_public_observation(state(phase))
+    malformed = PublicItem("test", "Test", kind)
+
+    with pytest.raises(ValueError, match=f"{zone} contains unsupported"):
+        replace(observation, **{zone: (malformed,)})
+
+
+def test_spectral_item_is_valid_in_an_arcana_pack() -> None:
+    observation = to_public_observation(state("TAROT_PACK"))
+    soul = PublicItem("c_soul", "The Soul", "SPECTRAL")
+
+    updated = replace(observation, opened_pack=(soul,))
+
+    assert updated.pack_kind == "ARCANA"
+    assert updated.opened_pack == (soul,)
+    assert public_observation_from_data(public_observation_to_data(updated)) == updated
 
 
 def test_public_codec_has_no_authority_or_candidate_dependency() -> None:

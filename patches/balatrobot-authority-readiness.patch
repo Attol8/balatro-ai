@@ -347,3 +347,103 @@ index 7801ed3..4f265c6 100644
 +          G.hand:add_to_highlighted(hand_card, true) -- silent=true
 +        end
 +      end
+diff --git a/src/lua/utils/gamestate.lua b/src/lua/utils/gamestate.lua
+index 171031e..4c11d9f 100644
+--- a/src/lua/utils/gamestate.lua
++++ b/src/lua/utils/gamestate.lua
+@@ -733,6 +733,7 @@ function gamestate.get_blinds_info()
+     small = {
+       type = "SMALL",
+       status = "UPCOMING",
++      disabled = false,
+       name = "",
+       effect = "",
+       score = 0,
+@@ -742,6 +743,7 @@ function gamestate.get_blinds_info()
+     big = {
+       type = "BIG",
+       status = "UPCOMING",
++      disabled = false,
+       name = "",
+       effect = "",
+       score = 0,
+@@ -751,6 +753,7 @@ function gamestate.get_blinds_info()
+     boss = {
+       type = "BOSS",
+       status = "UPCOMING",
++      disabled = false,
+       name = "",
+       effect = "",
+       score = 0,
+@@ -846,0 +850,8 @@ function gamestate.get_blinds_info()
++  -- A disabled boss is visibly crossed out in the ordinary game UI. Export
++  -- the state only on the active blind; future blind prototypes are enabled.
++  for _, blind in pairs(blinds) do
++    if blind.status == "CURRENT" then
++      blind.disabled = G.GAME.blind and G.GAME.blind.disabled == true or false
++    end
++  end
++
+diff --git a/src/lua/utils/openrpc.json b/src/lua/utils/openrpc.json
+index 6dafa99..e51b42f 100644
+--- a/src/lua/utils/openrpc.json
++++ b/src/lua/utils/openrpc.json
+@@ -1226,6 +1226,10 @@
+           "status": {
+             "$ref": "#/components/schemas/BlindStatus"
+           },
++          "disabled": {
++            "type": "boolean",
++            "description": "Whether the current blind's effect is visibly disabled"
++          },
+           "name": {
+             "type": "string",
+             "description": "Name of the blind (e.g., 'Small', 'Big' or the Boss name)"
+@@ -1250,6 +1254,7 @@
+         "required": [
+           "type",
+           "status",
++          "disabled",
+           "name",
+           "effect",
+           "score"
+diff --git a/src/lua/utils/types.lua b/src/lua/utils/types.lua
+index 53f43b1..b92e5c6 100644
+--- a/src/lua/utils/types.lua
++++ b/src/lua/utils/types.lua
+@@ -50,6 +50,7 @@
+ ---@class Blind
+ ---@field type Blind.Type Type of the blind
+ ---@field status Blind.Status Status of the bilnd
++---@field disabled boolean Whether the current blind's effect is visibly disabled
+ ---@field name string Name of the blind (e.g., "Small", "Big" or the Boss name)
+ ---@field effect string Description of the blind's effect
+ ---@field score integer Score requirement to beat this blind
+diff --git a/tests/lua/endpoints/test_gamestate.py b/tests/lua/endpoints/test_gamestate.py
+index 2c26a12..d886f00 100644
+--- a/tests/lua/endpoints/test_gamestate.py
++++ b/tests/lua/endpoints/test_gamestate.py
+@@ -143,6 +143,7 @@ class TestGamestateBlinds:
+         expected_blinds = {
+             "small": {
+                 "type": "SMALL",
++                "disabled": False,
+                 "name": "Small Blind",
+                 "effect": "",
+                 "score": 300,
+@@ -152,6 +153,7 @@ class TestGamestateBlinds:
+                 "tag_name": "Polychrome Tag",
+             },
+             "big": {
++                "disabled": False,
+                 "effect": "",
+                 "name": "Big Blind",
+                 "score": 450,
+@@ -162,6 +164,7 @@ class TestGamestateBlinds:
+                 "type": "BIG",
+             },
+             "boss": {
++                "disabled": False,
+                 "effect": "-1 Hand Size",
+                 "name": "The Manacle",
+                 "score": 600,

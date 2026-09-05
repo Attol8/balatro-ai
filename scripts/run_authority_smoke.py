@@ -100,7 +100,7 @@ def main() -> None:
             policy = policy_process
             policy_name = f"{implementation_name}:process-v1"
             inference_budget = (
-                "policy_action_contract=public_legality_v4;"
+                "policy_action_contract=public_legality_v5;"
                 f"policy_timeout_seconds={args.policy_timeout}"
             )
         spec = RunSpec(deck=args.deck, stake=args.stake, seed=args.seed)

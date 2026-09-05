@@ -187,9 +187,7 @@ def test_sample_seed_depends_only_on_public_digest_nonce_and_index() -> None:
 
 
 def test_frozen_backend_matches_legacy_clone_and_preserves_bridge_fields() -> None:
-    for backend, observation, _ in _organic_states(
-        "3", phases={Phase.SHOP}, limit=1
-    ):
+    for backend, observation, _ in _organic_states("3", phases={Phase.SHOP}, limit=1):
         game_state = backend._backend._gs
         pack_cards = game_state.setdefault("pack_cards", [])
         backend._active_pack_cards = pack_cards
@@ -223,8 +221,7 @@ def test_frozen_backend_matches_legacy_clone_and_preserves_bridge_fields() -> No
                 assert getattr(loaded, name) == getattr(legacy, name)
             assert loaded._active_pack_cards is loaded._backend._gs["pack_cards"]
             assert (
-                loaded._stale_shop_areas["test"]["cards"]
-                is loaded._active_pack_cards
+                loaded._stale_shop_areas["test"]["cards"] is loaded._active_pack_cards
             )
         finally:
             loaded.close()
@@ -261,6 +258,112 @@ def test_frozen_backend_loads_repeated_independent_clones() -> None:
         finally:
             left.close()
             right.close()
+        return
+    pytest.skip("no shop reached in the fixture run")
+
+
+def test_refrozen_sampled_clones_own_independent_normalized_frames() -> None:
+    for backend, observation, history in _organic_states(
+        "3", phases={Phase.SHOP}, limit=1
+    ):
+        sample = sample_candidate(
+            backend, observation, history, sample_seed(observation, "frame", 0)
+        )
+        try:
+            frozen = freeze_backend(sample)
+        finally:
+            sample.close()
+
+        left = frozen.clone()
+        right = frozen.clone()
+        try:
+            assert left._lightweight_normalized is not None
+            assert right._lightweight_normalized is not None
+            assert left._lightweight_normalized == right._lightweight_normalized
+            assert left._lightweight_normalized is not right._lightweight_normalized
+
+            left._lightweight_normalized["test_mutation"] = True
+
+            assert "test_mutation" not in right._lightweight_normalized
+        finally:
+            left.close()
+            right.close()
+        return
+    pytest.skip("no shop reached in the fixture run")
+
+
+def test_refrozen_sampled_clone_steps_without_json_round_trip(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    for backend, observation, history in _organic_states(
+        "3", phases={Phase.SHOP}, limit=1
+    ):
+        action = PublicStrategicPolicy().choose_action(
+            observation, lambda: iter_legal_actions(observation), history
+        )
+        sample = sample_candidate(
+            backend, observation, history, sample_seed(observation, "frame", 0)
+        )
+        try:
+            frozen = freeze_backend(sample)
+        finally:
+            sample.close()
+        clone = frozen.clone()
+
+        def unexpected_json(*_args, **_kwargs):
+            raise AssertionError("lightweight rollout performed a JSON round trip")
+
+        try:
+            with monkeypatch.context() as patch:
+                patch.setattr(json, "loads", unexpected_json)
+                patch.setattr(json, "dumps", unexpected_json)
+                result = clone.step(action)
+            assert result.status == "accepted", result.error
+            assert result.rpc_observations == ()
+            assert result.after is not None
+            assert result.after.observed.raw_json == ""
+            assert clone.current_public is not None
+        finally:
+            clone.close()
+        return
+    pytest.skip("no shop reached in the fixture run")
+
+
+def test_normal_frozen_clone_bootstraps_json_once_then_owns_the_frame(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    for backend, observation, history in _organic_states(
+        "3", phases={Phase.SHOP}, limit=1
+    ):
+        action = PublicStrategicPolicy().choose_action(
+            observation, lambda: iter_legal_actions(observation), history
+        )
+        clone = freeze_backend(backend).clone()
+        original_loads = json.loads
+        original_dumps = json.dumps
+        calls = {"loads": 0, "dumps": 0}
+
+        def counting_loads(*args, **kwargs):
+            calls["loads"] += 1
+            return original_loads(*args, **kwargs)
+
+        def counting_dumps(*args, **kwargs):
+            calls["dumps"] += 1
+            return original_dumps(*args, **kwargs)
+
+        try:
+            with monkeypatch.context() as patch:
+                patch.setattr(json, "loads", counting_loads)
+                patch.setattr(json, "dumps", counting_dumps)
+                first = clone.step(action)
+                assert first.status == "accepted", first.error
+                assert clone.current_public is not None
+                second_action = next(iter_legal_actions(clone.current_public))
+                second = clone.step(second_action)
+                assert second.status == "accepted", second.error
+            assert calls == {"loads": 1, "dumps": 0}
+        finally:
+            clone.close()
         return
     pytest.skip("no shop reached in the fixture run")
 
@@ -304,9 +407,7 @@ def test_sample_candidate_closes_clone_when_validation_fails(
 
 
 def test_clone_backend_remains_a_one_shot_frozen_clone() -> None:
-    for backend, observation, _ in _organic_states(
-        "3", phases={Phase.SHOP}, limit=1
-    ):
+    for backend, observation, _ in _organic_states("3", phases={Phase.SHOP}, limit=1):
         clone = clone_backend(backend)
         try:
             assert clone.current_public == observation
@@ -338,9 +439,7 @@ def test_frozen_clone_behavior_matches_legacy_on_organic_strategic_states() -> N
             legacy_results = _evaluate_roots(
                 legacy_factory, observation, history, roots
             )
-            frozen_forward = _evaluate_roots(
-                frozen.clone, observation, history, roots
-            )
+            frozen_forward = _evaluate_roots(frozen.clone, observation, history, roots)
             frozen_reverse = _evaluate_roots(
                 frozen.clone, observation, history, tuple(reversed(roots))
             )
@@ -684,3 +783,7 @@ def test_continuation_failure_inside_a_rollout_fails_closed_for_that_rollout() -
         assert action in list(iter_legal_actions(observation))
         assert policy.last_decision is not None
         assert policy.last_decision.rejected_rollouts >= 1
+        assert any(
+            "continuation_exception:RuntimeError" in reason
+            for reason, _ in policy.last_decision.rejection_reasons
+        )

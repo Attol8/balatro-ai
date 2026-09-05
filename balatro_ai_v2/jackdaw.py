@@ -382,6 +382,9 @@ class JackdawBackend:
     current_public: PublicObservation | None = field(
         default=None, init=False, repr=False
     )
+    _lightweight_normalized: dict[str, Any] | None = field(
+        default=None, init=False, repr=False
+    )
 
     def __post_init__(self) -> None:
         try:
@@ -395,7 +398,7 @@ class JackdawBackend:
         self.metadata = BackendMetadata(
             backend_name="Jackdaw",
             backend_version=f"0.1.0+{JACKDAW_REVISION}",
-            adapter_version="2",
+            adapter_version="3",
             game_version="Balatro-1.0.1o-model",
             runtime_version="Python",
             capabilities=BackendCapabilities(
@@ -416,6 +419,7 @@ class JackdawBackend:
         self._pack_card_limit = None
         self._won = False
         self._pending_skip_dollars = 0
+        self._lightweight_normalized = None
         self._handle("menu", {})
         raw = self._handle(
             "start",
@@ -453,7 +457,14 @@ class JackdawBackend:
         if self._current is None:
             raise RuntimeError("reset must be called before step")
         before = self._current
-        raw_before = json.loads(before.observed.raw_json)
+        raw_before = self._lightweight_normalized if self.lightweight else None
+        if raw_before is None:
+            decoded = json.loads(before.observed.raw_json)
+            if not isinstance(decoded, dict):
+                raise RuntimeError("Jackdaw current observation is invalid")
+            raw_before = decoded
+            if self.lightweight:
+                self._lightweight_normalized = raw_before
         public_before = self.current_public
         if public_before is None:
             public_before = to_public_observation(raw_before)
@@ -533,7 +544,7 @@ class JackdawBackend:
             before=before,
             rpc_method=method,
             rpc_params=params,
-            rpc_observations=(after.observed.raw_json,),
+            rpc_observations=() if self.lightweight else (after.observed.raw_json,),
             after=after,
         )
 
@@ -548,6 +559,7 @@ class JackdawBackend:
         self._pack_card_limit = None
         self._won = False
         self._pending_skip_dollars = 0
+        self._lightweight_normalized = None
 
     def _handle(self, method: str, params: dict[str, Any]) -> dict[str, Any]:
         with (
@@ -951,15 +963,14 @@ class JackdawBackend:
         )
         self.current_public = to_public_observation(normalized)
         if self.lightweight:
-            # Rollout clones need only the raw frame for the next step and the
-            # public projection; hash-chained canonical digests are for traces.
-            raw_json = json.dumps(
-                normalized, sort_keys=True, separators=(",", ":"), ensure_ascii=False
-            )
+            # The normalized bridge frame is private rollout state. Lightweight
+            # clones own it directly; hash-chained JSON belongs only to traces.
+            self._lightweight_normalized = normalized
             observed = CanonicalObservedState(
-                raw_json=raw_json, canonical_json="", raw_digest="", canonical_digest=""
+                raw_json="", canonical_json="", raw_digest="", canonical_digest=""
             )
             return AuthorityObservation(observed=observed, settled=True, polls=())
+        self._lightweight_normalized = None
         observed = self.canonicalizer.canonicalize(normalized)
         return AuthorityObservation(
             observed=observed, settled=True, polls=(observed.raw_json,)
@@ -1595,6 +1606,27 @@ def _normalize_jackdaw_bridge(
     if poker_hand_iteration_order is None:
         poker_hand_iteration_order = _DEFAULT_POKER_HAND_ITERATION_ORDER
     result["poker_hand_iteration_order"] = list(poker_hand_iteration_order)
+    blinds = result.get("blinds")
+    if not isinstance(blinds, Mapping):
+        raise RuntimeError("Jackdaw blind observations are unavailable")
+    current_blinds: list[dict[str, Any]] = []
+    for blind in blinds.values():
+        if not isinstance(blind, dict):
+            raise RuntimeError("Jackdaw blind observation is invalid")
+        blind["disabled"] = False
+        if blind.get("status") == "CURRENT":
+            current_blinds.append(blind)
+    if len(current_blinds) > 1:
+        raise RuntimeError("Jackdaw exposes multiple current blinds")
+    if current_blinds:
+        private_blind = private.get("blind")
+        disabled = getattr(private_blind, "disabled", None)
+        private_name = getattr(private_blind, "name", None)
+        if not isinstance(disabled, bool):
+            raise RuntimeError("Jackdaw current blind disabled state is unavailable")
+        if private_name != current_blinds[0].get("name"):
+            raise RuntimeError("Jackdaw current blind identity is out of sync")
+        current_blinds[0]["disabled"] = disabled
     discard_pile = private.get("discard_pile")
     if not isinstance(discard_pile, list):
         raise RuntimeError("Jackdaw discard pile is unavailable")

@@ -30,7 +30,6 @@ from balatro_ai_v2.actions import (
     action_to_data,
     iter_legal_actions,
 )
-from balatro_ai_v2.balatrobot.adapter import to_public_observation
 from balatro_ai_v2.determinize import (
     STRATEGIC_PHASES,
     DeterminizationUnavailable,
@@ -68,7 +67,7 @@ from balatro_ai_v2.strategy_teacher import (
 )
 
 
-SEARCH_VERSION = "determinized-search-v10"
+SEARCH_VERSION = "determinized-search-v11"
 _REORDER_TYPES = (ReorderHand, ReorderJokers, ReorderConsumables)
 _DENSE_TEACHER_MAX_ROOTS = 512
 
@@ -485,6 +484,7 @@ class DeterminizedSearchPolicy:
         outcomes: list[list[RolloutOutcome]] = [[] for _ in roots]
         steps = 0
         rejected = 0
+        rejection_reasons: Counter[str] = Counter()
         prefix_best_hand_score = _public_best_hand_score(history)
         try:
             for frozen_sample in frozen_samples:
@@ -504,6 +504,10 @@ class DeterminizedSearchPolicy:
                     outcomes[index].append(outcome)
                     steps += outcome.steps
                     rejected += int(outcome.rejected)
+                    if outcome.rejection_reason is not None:
+                        rejection_reasons[
+                            f"{_label(root)}|{outcome.rejection_reason}"
+                        ] += 1
         except DeterminizationUnavailable as exc:
             self.counters.unavailable += 1
             self._record(
@@ -516,6 +520,7 @@ class DeterminizedSearchPolicy:
                 rejected,
                 started,
                 str(exc),
+                tuple(sorted(rejection_reasons.items())),
             )
             if success_anchor:
                 engine = derive_engine_state(observation)
@@ -588,6 +593,7 @@ class DeterminizedSearchPolicy:
             rejected,
             started,
             None,
+            tuple(sorted(rejection_reasons.items())),
         )
         if success_anchor:
             engine = derive_engine_state(observation)
@@ -1456,8 +1462,13 @@ class DeterminizedSearchPolicy:
                 )
             after = clone.current_public
             if after is None:
-                after = to_public_observation(
-                    json.loads(result.after.observed.raw_json)
+                value = _progress_value(current, start_rounds)
+                return RolloutOutcome(
+                    value,
+                    steps,
+                    True,
+                    _goal_utility(current, value, best_hand_score, alive=False),
+                    "missing_public_projection",
                 )
             trajectory.append(PublicHistoryStep(current, action, after))
             if isinstance(action, PlayCards):
@@ -1600,6 +1611,7 @@ class DeterminizedSearchPolicy:
         rejected: int,
         started: float,
         unavailable_reason: str | None,
+        rejection_reasons: tuple[tuple[str, int], ...] = (),
     ) -> None:
         seconds = time.perf_counter() - started
         self.counters.rollout_steps += steps
@@ -1617,6 +1629,7 @@ class DeterminizedSearchPolicy:
             baseline=_label(baseline),
             selected=_label(selected),
             unavailable_reason=unavailable_reason,
+            rejection_reasons=rejection_reasons,
         )
         self.last_decision = decision
         self.decisions.append(decision)
