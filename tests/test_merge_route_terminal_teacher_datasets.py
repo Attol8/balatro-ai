@@ -16,6 +16,7 @@ from balatro_ai_v2.strategy_teacher import (
     StrategyRolloutTarget,
     StrategyTeacherCandidate,
     StrategyTeacherDraft,
+    write_teacher_records,
 )
 from state_factory import state
 
@@ -114,9 +115,7 @@ def test_publisher_is_no_overwrite_and_binds_digest(tmp_path, monkeypatch):
     monkeypatch.setattr(module, "_capture_merger_source", lambda *_: merger_source)
     dataset = tmp_path / "bundle/teacher.jsonl"
     output = tmp_path / "bundle/report.json"
-    module._publish_bundle(
-        dataset, output, records, report, tmp_path, merger_source
-    )
+    module._publish_bundle(dataset, output, records, report, tmp_path, merger_source)
     assert dataset.exists() and output.exists()
     assert (
         json.loads(output.read_text())["strategy_teacher_dataset"]["sha256"]
@@ -138,6 +137,56 @@ def test_schema_or_mode_is_rejected_by_component_loader(tmp_path):
     )
     with pytest.raises(SystemExit, match="invalid route teacher component"):
         module._load_component(dataset, report)
+
+
+def test_actual_batch_report_shape_has_collection_flags_only_in_binding(tmp_path):
+    module = _module()
+    record = _record(1, b"k" * 32)
+    dataset = tmp_path / "teacher.jsonl"
+    report = tmp_path / "report.json"
+    digest = write_teacher_records(dataset, (record,))
+    report.write_text(
+        json.dumps(
+            {
+                "strategy_teacher_dataset": {
+                    "mode": "route_terminal_paired_utility",
+                    "schema_version": 11,
+                    "status": "written",
+                    "sha256": digest,
+                    "records": 1,
+                    "groups": 1,
+                    "contains_game_seeds": False,
+                    "complete_runs_only": True,
+                    "teacher_config_digest": "a" * 64,
+                },
+                "results": [],
+            }
+        )
+    )
+    _, _, loaded_report, loaded_records, _ = module._load_component(dataset, report)
+    assert loaded_report["strategy_teacher_dataset"]["records"] == len(loaded_records)
+
+
+def test_component_binding_flags_remain_mandatory(tmp_path):
+    module = _module()
+    component = (
+        tmp_path / "teacher",
+        tmp_path / "report",
+        {
+            "route_terminal_teacher_preregistration": {
+                "protocol_id": module.ROUTE_TEACHER_PROTOCOL_ID,
+                "sha256": "p" * 64,
+                "immutable_batches": True,
+                "collection_only": True,
+                "training_authorized": True,
+            }
+        },
+        (),
+        "d" * 64,
+    )
+    components = (component,) * 5
+    with pytest.raises(SystemExit, match="lacks distinct binding"):
+        module._validate_components(components, {}, "p" * 64, b"k" * 32, tmp_path)
 
 
 def test_merged_report_keeps_opaque_component_membership(tmp_path):
@@ -173,9 +222,10 @@ def test_merged_report_keeps_opaque_component_membership(tmp_path):
     assert merged["collection_summary"]["training_authorized"] is False
     assert len(merged["merged_components"][0]["opaque_group_sha256"]) == 64
     assert merged["merged_components"][0]["opaque_groups"] == [record.run_group]
-    assert merged["merged_components"][0]["opaque_group_sha256"] == hashlib.sha256(
-        record.run_group.encode()
-    ).hexdigest()
+    assert (
+        merged["merged_components"][0]["opaque_group_sha256"]
+        == hashlib.sha256(record.run_group.encode()).hexdigest()
+    )
     assert merged["manifest"]["merger_source"] == merger_source
 
 
@@ -195,8 +245,7 @@ def test_components_are_canonicalized_by_frozen_batch_order(tmp_path):
         (component("batch-05"), component("batch-01"), component("batch-03"))
     )
     assert [
-        row[2]["route_terminal_teacher_preregistration"]["batch_id"]
-        for row in ordered
+        row[2]["route_terminal_teacher_preregistration"]["batch_id"] for row in ordered
     ] == ["batch-01", "batch-03", "batch-05"]
 
 
@@ -217,9 +266,7 @@ def test_publisher_discards_stage_if_merger_source_changes(tmp_path, monkeypatch
     dataset = tmp_path / "bundle/teacher.jsonl"
     output = tmp_path / "bundle/report.json"
     with pytest.raises(SystemExit, match="source changed"):
-        module._publish_bundle(
-            dataset, output, (record,), report, tmp_path, expected
-        )
+        module._publish_bundle(dataset, output, (record,), report, tmp_path, expected)
     assert not dataset.parent.exists()
 
 

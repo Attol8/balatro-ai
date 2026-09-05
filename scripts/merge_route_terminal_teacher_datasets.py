@@ -73,9 +73,7 @@ def main() -> None:
     )
     if failures:
         raise SystemExit("route teacher coverage gate failed: " + ",".join(failures))
-    report = _merged_report(
-        components, records, coverage, prereg_digest, merger_source
-    )
+    report = _merged_report(components, records, coverage, prereg_digest, merger_source)
     _publish_bundle(
         args.output_jsonl,
         args.output_report,
@@ -143,8 +141,6 @@ def _load_component(dataset: Path, report_path: Path):
         or teacher.get("mode") != "route_terminal_paired_utility"
         or teacher.get("schema_version") != STRATEGY_TEACHER_SCHEMA_VERSION
         or teacher.get("status") != "written"
-        or teacher.get("collection_only") is not True
-        or teacher.get("training_authorized") is not False
         or teacher.get("contains_game_seeds") is not False
         or teacher.get("complete_runs_only") is not True
         or teacher.get("sha256") != hashlib.sha256(dataset_bytes).hexdigest()
@@ -362,7 +358,9 @@ def _validate_merger_ancestry(
             capture_output=True,
         )
     except (OSError, subprocess.CalledProcessError) as exc:
-        raise SystemExit("route merger does not descend from the collection source") from exc
+        raise SystemExit(
+            "route merger does not descend from the collection source"
+        ) from exc
 
 
 def _tensorization_preflight(records, spec) -> None:
@@ -401,9 +399,9 @@ def _merged_report(components, records, coverage, prereg_digest, merger_source):
         opaque_groups = sorted({record.run_group for record in component[3]})
         merged_components.append(
             {
-                "batch_id": component[2][
-                    "route_terminal_teacher_preregistration"
-                ]["batch_id"],
+                "batch_id": component[2]["route_terminal_teacher_preregistration"][
+                    "batch_id"
+                ],
                 "report_sha256": component[4],
                 "dataset_sha256": component[2]["strategy_teacher_dataset"]["sha256"],
                 "opaque_group_sha256": hashlib.sha256(
