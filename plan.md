@@ -1526,6 +1526,19 @@ and exact supported scores. Retain only if seed 2439 reproduces every non-timing
 field and improves single-worker anchor/runtime throughput by at least 5%
 without higher peak RSS; otherwise revert the slice.
 
+Scorer optimization result: commit `d380920` passed the full 1,118-test suite
+and matched commit `da9cd9d` on all 111,994 legal plays from 521 organic
+selecting-hand observations. On an isolated single-worker replay of development
+seed 2439, both versions executed the same 72,071 rollout steps; normalized
+result fields were exact, and all five terminal-teacher records were exact
+after sorting their nondeterministic output order and replacing the opaque run
+group. Wall time fell from 456.24 to 344.04 seconds (24.59%), search throughput
+rose from 158.97 to 210.95 steps/second (32.70%), and maximum RSS fell from
+228,933,632 to 228,835,328 bytes. The 186-root terminal Arcana anchor fell from
+133.62 to 97.70 seconds. Retain the change. The next performance slice must be
+chosen from a fresh profile of the retained code; do not optimize the already
+small clone path or reduce search coverage.
+
 ## Active development loop
 
 The two disjoint 30-seed screens are enough to retain one-ante strategic

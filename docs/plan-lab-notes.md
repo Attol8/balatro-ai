@@ -4609,3 +4609,32 @@ aggregate trace-set SHA-256 is
 `134680fcf001608b392677fa22dd08d5364fb7169e8e62c7eff906759d7a3bbe`.
 This certifies only exact execution of the narrow public Planet action; the
 coverage policy is deliberately weak and its losses are not strength evidence.
+
+### Exact scorer hot-path optimization (2026-09-05)
+
+The opt-in timing profile on fresh development seeds 2431--2440 attributed
+512.40 of 640.17 terminal-anchor seconds to continuation choice, versus only
+1.57 seconds to cloning. Later non-play/play engine steps consumed 80.24/41.02
+seconds, and GC consumed an overlapping 85.63 seconds across 212,480 actual
+collections. This rejected clone reuse and search-width shortcuts and selected
+one exact scorer change: remove ordinary Jokers from prepared per-card passes
+where their keys have no effect, keep pass-specific Blueprint/Brainstorm
+resolution and source order, retain ordinary non-copyable Bloodstone, and skip
+only literal additive/multiplicative identities.
+
+Commit `d380920` passed 1,118 tests and reproduced the previous scorer on all
+111,994 legal plays across 521 organic selecting-hand observations from the
+certified 2411--2430 traces. A clean detached, single-worker before/after replay
+of development seed 2439 used identical search configuration and the same
+72,071 rollout steps. After excluding only timing fields, both result reports
+were exact. All five terminal-teacher records were also exact candidate by
+candidate after sorting nondeterministic record order and replacing the opaque
+run-group identifier.
+
+Wall time improved from 456.24 to 344.04 seconds (24.59%), search throughput
+from 158.97 to 210.95 rollout steps/second (32.70%), and the 186-root Arcana
+terminal anchor from 133.62 to 97.70 seconds. Maximum RSS decreased slightly,
+from 228,933,632 to 228,835,328 bytes. The before/after reports and teacher
+records remain diagnostic under `runs/experiments/profiling/terminal-timing-v1-
+seed2439-{before,after}-single/`; no protected seed was used and no search
+budget, root, action, label, endpoint, or failure behavior changed.
