@@ -11,7 +11,7 @@ import pytest
 
 from balatro_ai_v2.actions import LeaveShop, iter_legal_actions
 from balatro_ai_v2.balatrobot.adapter import to_public_observation
-from balatro_ai_v2.determinized_search import SearchCounters
+from balatro_ai_v2.determinized_search import SearchCounters, SearchDecision
 from balatro_ai_v2.strategy_engine import RunGoal, RunRoute
 from balatro_ai_v2.strategy_teacher import (
     StrategyRolloutTarget,
@@ -271,6 +271,12 @@ def test_search_summary_aggregates_route_identity_diagnostics() -> None:
         searched=2,
         changed=0,
         strategy_identity_changes=1,
+        strategy_specialist_challenges=7,
+        strategy_specialist_roots_generated=9,
+        strategy_specialist_overrides=1,
+        strategy_specialist_unavailable=1,
+        strategy_route_abandonments=1,
+        strategy_victory_escapes=1,
         success_route_only_overrides=1,
     )
     counters.strategy_route_selections.update(
@@ -287,6 +293,13 @@ def test_search_summary_aggregates_route_identity_diagnostics() -> None:
     assert summary["strategy_identity_changes"] == 1
     assert summary["strategy_identity_changed_fraction"] == 0.5
     assert summary["success_route_only_overrides"] == 1
+    assert summary["strategy_specialist_challenges"] == 7
+    assert summary["strategy_specialist_roots_generated"] == 9
+    assert summary["strategy_specialist_overrides"] == 1
+    assert summary["strategy_specialist_unavailable"] == 1
+    assert summary["strategy_specialist_unavailable_fraction"] == 0.5
+    assert summary["strategy_route_abandonments"] == 1
+    assert summary["strategy_victory_escapes"] == 1
     assert summary["strategy_route_selections"] == {
         "held_retrigger": 1,
         "victory": 1,
@@ -294,6 +307,40 @@ def test_search_summary_aggregates_route_identity_diagnostics() -> None:
     assert summary["strategy_route_transitions"] == {
         "held_retrigger->held_retrigger": 1,
         "held_retrigger->victory": 1,
+    }
+
+
+def test_search_decision_profile_reports_overlay_shape_and_failures() -> None:
+    module = _load_script()
+    decision = SearchDecision(
+        phase="SHOP",
+        ante=2,
+        roots=5,
+        samples=2,
+        steps=20,
+        seconds=0.5,
+        rejected_rollouts=0,
+        values=(),
+        baseline='{"type":"leave_shop"}',
+        selected='{"type":"reroll_shop"}',
+        ordinary_selected='{"type":"leave_shop"}',
+        ordinary_roots=3,
+        specialist_roots=2,
+        specialist_roots_generated=4,
+        specialist_override=True,
+        specialist_unavailable_reason="synthetic_specialist_gap",
+    )
+
+    profile = module._search_decision_profile([decision])
+    failures = module._search_failure_reasons([decision])
+
+    assert profile["specialist_overrides"] == 1
+    assert profile["specialist_unavailable"] == 1
+    assert profile["ordinary_roots"]["max"] == 3
+    assert profile["specialist_roots"]["max"] == 2
+    assert profile["specialist_roots_generated"]["max"] == 4
+    assert failures == {
+        "specialist_unavailable|synthetic_specialist_gap": 1,
     }
 
 

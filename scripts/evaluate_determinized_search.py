@@ -39,6 +39,7 @@ from balatro_ai_v2.balatrobot.tracing import build_manifest, source_snapshot
 from balatro_ai_v2.baselines import build_public_baseline
 from balatro_ai_v2.determinized_search import (
     SEARCH_VERSION,
+    STRATEGY_SPECIALIST_MAX_ROOTS,
     DeterminizedSearchPolicy,
     RolloutBudget,
     SearchDecision,
@@ -1279,15 +1280,19 @@ def main() -> None:
                 "phases": ["BLIND_SELECT", "PACK", "SHOP"],
                 "value": "rounds_cleared_plus_failed_blind_fraction;alive_at_horizon=+1",
                 "selection": (
-                    "paired_lexicographic_delta_vs_continuation;"
-                    "lower_components_require_exact_higher_ties"
+                    "ordinary_all_legal_nonreorder_scalar_then_nonvictory_"
+                    "specialist_overlay;"
+                    "paired_delta_vs_ordinary_winner;"
+                    "override_when_mean_minus_z_se_positive;"
+                    "victory_is_unconditioned;specialist_root_cap="
+                    f"{STRATEGY_SPECIALIST_MAX_ROOTS}"
                     if args.strategy_options
                     else "paired_delta_vs_continuation;override_when_mean_minus_z_se_positive"
                 ),
                 "strategy_options": args.strategy_options,
                 "include_reorders": args.include_reorders,
                 "objective": (
-                    "lexicographic_victory_then_survival;postwin_endless_ante_then_log_score"
+                    "scalar_progress_online;goal_utility_teacher_and_diagnostics_only"
                     if args.strategy_options
                     else "legacy_scalar_progress"
                 ),
@@ -1518,16 +1523,37 @@ def _search_decision_profile(decisions: list[SearchDecision]) -> dict[str, objec
     if not decisions:
         return {
             "decisions": 0,
+            "specialist_overrides": 0,
+            "specialist_unavailable": 0,
             "seconds": _distribution([]),
             "roots": _distribution([]),
+            "ordinary_roots": _distribution([]),
+            "specialist_roots": _distribution([]),
+            "specialist_roots_generated": _distribution([]),
             "steps": _distribution([]),
             "slowest": None,
         }
     slowest = max(decisions, key=lambda decision: decision.seconds)
     return {
         "decisions": len(decisions),
+        "specialist_overrides": sum(
+            decision.specialist_override for decision in decisions
+        ),
+        "specialist_unavailable": sum(
+            decision.specialist_unavailable_reason is not None
+            for decision in decisions
+        ),
         "seconds": _distribution([decision.seconds for decision in decisions]),
         "roots": _distribution([float(decision.roots) for decision in decisions]),
+        "ordinary_roots": _distribution(
+            [float(decision.ordinary_roots) for decision in decisions]
+        ),
+        "specialist_roots": _distribution(
+            [float(decision.specialist_roots) for decision in decisions]
+        ),
+        "specialist_roots_generated": _distribution(
+            [float(decision.specialist_roots_generated) for decision in decisions]
+        ),
         "steps": _distribution([float(decision.steps) for decision in decisions]),
         "slowest": {
             "phase": slowest.phase,
@@ -1544,6 +1570,10 @@ def _search_failure_reasons(decisions: list[SearchDecision]) -> dict[str, int]:
     for decision in decisions:
         if decision.unavailable_reason is not None:
             reasons[f"unavailable|{decision.unavailable_reason}"] += 1
+        if decision.specialist_unavailable_reason is not None:
+            reasons[
+                f"specialist_unavailable|{decision.specialist_unavailable_reason}"
+            ] += 1
         reasons.update(dict(decision.rejection_reasons))
     return dict(sorted(reasons.items()))
 
@@ -1674,6 +1704,12 @@ def _search_summary(results: list[dict[str, object]]) -> dict[str, object]:
             "searched",
             "changed",
             "strategy_identity_changes",
+            "strategy_specialist_challenges",
+            "strategy_specialist_roots_generated",
+            "strategy_specialist_overrides",
+            "strategy_specialist_unavailable",
+            "strategy_route_abandonments",
+            "strategy_victory_escapes",
             "unavailable",
             "rollout_steps",
             "rejected_rollouts",
@@ -1716,6 +1752,12 @@ def _search_summary(results: list[dict[str, object]]) -> dict[str, object]:
         else 0.0,
         "unavailable_fraction": (
             totals["unavailable"] / totals["strategic_decisions"]
+            if totals["strategic_decisions"] > 0
+            else 0.0
+        ),
+        "strategy_specialist_unavailable_fraction": (
+            totals["strategy_specialist_unavailable"]
+            / totals["strategic_decisions"]
             if totals["strategic_decisions"] > 0
             else 0.0
         ),

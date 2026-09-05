@@ -609,7 +609,7 @@ def test_search_policy_returns_legal_actions_and_records_paired_values() -> None
         return
 
 
-def test_strategy_option_search_is_legal_goal_conditioned_and_carries_intent() -> None:
+def test_intent_only_continuation_keeps_ordinary_search_and_disables_route_lane() -> None:
     class IntentContinuation:
         def __init__(self) -> None:
             self.base = PublicStrategicPolicy()
@@ -660,16 +660,16 @@ def test_strategy_option_search_is_legal_goal_conditioned_and_carries_intent() -
         assert policy.last_decision is not None
         assert policy.last_decision.goal == "victory"
         assert policy.last_decision.goal_values
-        assert continuation.seen
-        assert policy.teacher_drafts
-        assert policy.teacher_drafts[-1].observation == observation
-        assert all(
-            candidate.samples for candidate in policy.teacher_drafts[-1].candidates
+        assert not continuation.seen
+        assert not policy.teacher_drafts
+        assert (
+            policy.last_decision.specialist_unavailable_reason
+            == "route_continuation_unavailable"
         )
         return
 
 
-def test_production_strategy_continuation_executes_intent_rollouts() -> None:
+def test_production_route_overlay_is_inert_without_specialist_candidates() -> None:
     for backend, observation, history in _organic_states(
         "9", phases={Phase.SHOP}, limit=1
     ):
@@ -689,14 +689,16 @@ def test_production_strategy_continuation_executes_intent_rollouts() -> None:
         assert policy.last_decision.steps > 0
         assert policy.last_decision.rejected_rollouts == 0
         assert policy.teacher_drafts
-        assert any(
-            candidate.intent is not None
+        assert all(
+            candidate.intent is None and candidate.route is None
             for candidate in policy.teacher_drafts[-1].candidates
         )
+        assert policy.last_decision.specialist_roots == 0
+        assert not policy.last_decision.specialist_override
         return
 
 
-def test_strategy_rollouts_do_not_mutate_an_ordinary_stateful_continuation() -> None:
+def test_route_overlay_matches_ordinary_stateful_continuation_calls() -> None:
     class StatefulContinuation:
         def __init__(self) -> None:
             self.base = PublicStrategicPolicy()
@@ -709,6 +711,17 @@ def test_strategy_rollouts_do_not_mutate_an_ordinary_stateful_continuation() -> 
     for backend, observation, history in _organic_states(
         "9", phases={Phase.SHOP}, limit=1
     ):
+        control_continuation = StatefulContinuation()
+        control = DeterminizedSearchPolicy(
+            backend=backend,
+            continuation=control_continuation,
+            budget=RolloutBudget(samples=1, horizon_antes=1, max_steps=200),
+        )
+        control_action = control.choose_action(
+            observation, lambda: iter_legal_actions(observation), history
+        )
+        control_calls = control_continuation.calls
+
         continuation = StatefulContinuation()
         policy = DeterminizedSearchPolicy(
             backend=backend,
@@ -724,7 +737,8 @@ def test_strategy_rollouts_do_not_mutate_an_ordinary_stateful_continuation() -> 
         assert action in tuple(iter_legal_actions(observation))
         assert policy.last_decision is not None
         assert policy.last_decision.rejected_rollouts == 0
-        assert continuation.calls == 1
+        assert action == control_action
+        assert continuation.calls == control_calls
         return
 
 

@@ -7,10 +7,12 @@ import pytest
 
 import balatro_ai_v2.determinized_search as search_module
 from balatro_ai_v2.actions import (
+    BuyShopCard,
     LeaveShop,
     PlayCards,
     RerollShop,
     SelectBlind,
+    ShopSlot,
     iter_legal_actions,
 )
 from balatro_ai_v2.balatrobot.adapter import to_public_observation
@@ -122,7 +124,9 @@ def test_truncated_or_rejected_root_is_ineligible_to_override() -> None:
     )
 
 
-def test_strategy_search_fails_closed_before_sampling_unknown_owned_mechanics() -> None:
+def test_unknown_owned_mechanics_disable_only_specialist_lane(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     observation = replace(
         to_public_observation(state("SHOP", money=10)),
         jokers=(PublicItem("j_future_mod", "Future", "JOKER"),),
@@ -130,6 +134,11 @@ def test_strategy_search_fails_closed_before_sampling_unknown_owned_mechanics() 
     continuation = PublicStrategicPolicy()
     baseline = continuation.choose_action(
         observation, lambda: iter_legal_actions(observation), ()
+    )
+    _install_strategy_root_harness(
+        monkeypatch,
+        (StrategyCandidateRoot(baseline, None),),
+        better_index=0,
     )
     policy = DeterminizedSearchPolicy(
         backend=None,  # type: ignore[arg-type]
@@ -143,10 +152,17 @@ def test_strategy_search_fails_closed_before_sampling_unknown_owned_mechanics() 
 
     assert selected == baseline
     assert policy.last_decision is not None
-    assert policy.last_decision.unavailable_reason == "unknown_owned_joker"
+    assert policy.last_decision.unavailable_reason is None
+    assert (
+        policy.last_decision.specialist_unavailable_reason
+        == "unsupported_public_state:unknown_owned_joker"
+    )
+    assert policy.counters.searched == 1
 
 
-def test_strategy_search_fails_closed_on_unknown_active_voucher() -> None:
+def test_unknown_active_voucher_disables_only_specialist_lane(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     observation = replace(
         to_public_observation(state("SHOP", money=10)),
         used_vouchers=("v_future_mod",),
@@ -154,6 +170,11 @@ def test_strategy_search_fails_closed_on_unknown_active_voucher() -> None:
     continuation = PublicStrategicPolicy()
     baseline = continuation.choose_action(
         observation, lambda: iter_legal_actions(observation), ()
+    )
+    _install_strategy_root_harness(
+        monkeypatch,
+        (StrategyCandidateRoot(baseline, None),),
+        better_index=0,
     )
     policy = DeterminizedSearchPolicy(
         backend=None,  # type: ignore[arg-type]
@@ -166,10 +187,17 @@ def test_strategy_search_fails_closed_on_unknown_active_voucher() -> None:
         == baseline
     )
     assert policy.last_decision is not None
-    assert policy.last_decision.unavailable_reason == "unknown_used_voucher"
+    assert policy.last_decision.unavailable_reason is None
+    assert (
+        policy.last_decision.specialist_unavailable_reason
+        == "unsupported_public_state:unknown_used_voucher"
+    )
+    assert policy.counters.searched == 1
 
 
-def test_intent_continuation_without_isolated_fork_fails_closed() -> None:
+def test_missing_route_continuation_disables_only_specialist_lane(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     class UnsafeIntentContinuation:
         control = PublicStrategicPolicy()
 
@@ -184,6 +212,11 @@ def test_intent_continuation_without_isolated_fork_fails_closed() -> None:
     baseline = continuation.choose_action(
         observation, lambda: iter_legal_actions(observation), ()
     )
+    _install_strategy_root_harness(
+        monkeypatch,
+        (StrategyCandidateRoot(baseline, None),),
+        better_index=0,
+    )
     policy = DeterminizedSearchPolicy(
         backend=None,  # type: ignore[arg-type]
         continuation=continuation,
@@ -195,10 +228,12 @@ def test_intent_continuation_without_isolated_fork_fails_closed() -> None:
         == baseline
     )
     assert policy.last_decision is not None
+    assert policy.last_decision.unavailable_reason is None
     assert (
-        policy.last_decision.unavailable_reason
-        == "intent_continuation_missing_rollout_fork"
+        policy.last_decision.specialist_unavailable_reason
+        == "route_continuation_unavailable"
     )
+    assert policy.counters.searched == 1
 
 
 def test_active_intent_controls_intervening_public_decisions() -> None:
@@ -274,6 +309,44 @@ def test_active_route_controls_intervening_public_decisions() -> None:
 
     assert selected == legal[-1]
     assert continuation.calls == [(None, RunRoute.HELD_RETRIGGER)]
+
+
+def test_victory_route_is_cleared_before_any_conditioned_decision() -> None:
+    class TrackingContinuation:
+        def __init__(self) -> None:
+            self.ordinary_calls = 0
+            self.strategy_calls = 0
+
+        def choose_action(self, observation, legal_actions, history):
+            del observation, history
+            self.ordinary_calls += 1
+            return tuple(legal_actions())[0]
+
+        def choose_action_for_strategy(
+            self, observation, legal_actions, history, intent, route
+        ):
+            del observation, history, intent, route
+            self.strategy_calls += 1
+            return tuple(legal_actions())[-1]
+
+    observation = to_public_observation(state("SELECTING_HAND"))
+    legal = tuple(iter_legal_actions(observation))
+    engine = search_module.derive_engine_state(observation)
+    continuation = TrackingContinuation()
+    policy = DeterminizedSearchPolicy(
+        backend=None,  # type: ignore[arg-type]
+        continuation=continuation,  # type: ignore[arg-type]
+        enable_strategy_options=True,
+        active_route=PersistentRoute.start(RunRoute.VICTORY, engine, ()),
+    )
+
+    selected = policy.choose_action(observation, lambda: iter(legal), ())
+
+    assert selected == legal[0]
+    assert continuation.ordinary_calls == 1
+    assert continuation.strategy_calls == 0
+    assert policy.active_route is None
+    assert policy.active_intent is None
 
 
 def test_public_dead_end_is_a_losing_rollout_not_a_rejected_root() -> None:
@@ -573,33 +646,123 @@ def _install_strategy_root_harness(
     roots: tuple[StrategyCandidateRoot, ...],
     *,
     better_index: int,
+    rejected_index: int | None = None,
+    rejected_samples: frozenset[int] | None = None,
 ) -> dict[str, object]:
     captured: dict[str, object] = {}
 
     class Sample:
+        def __init__(self, index: int) -> None:
+            self.index = index
+
         def close(self) -> None:
             pass
 
     class Frozen:
-        def clone(self):
-            return SimpleNamespace(close=lambda: None)
+        def __init__(self, sample: Sample) -> None:
+            self.index = sample.index
 
-    monkeypatch.setattr(search_module, "sample_candidate", lambda *args: Sample())
-    monkeypatch.setattr(search_module, "freeze_backend", lambda sample: Frozen())
+        def clone(self):
+            return SimpleNamespace(sample_index=self.index, close=lambda: None)
+
+    sample_seeds: list[str] = []
+
+    def sample_candidate(*args):
+        sample_seeds.append(args[3])
+        return Sample(len(sample_seeds) - 1)
+
+    captured["sample_seeds"] = sample_seeds
+    captured["rollout_samples"] = {}
+    monkeypatch.setattr(search_module, "sample_candidate", sample_candidate)
+    monkeypatch.setattr(search_module, "freeze_backend", Frozen)
     monkeypatch.setattr(
         search_module, "_teacher_config_digest", lambda policy: "1" * 64
     )
 
     def candidates(*args, **kwargs):
         captured.update(kwargs)
+        captured["control_action"] = args[2]
         return roots
 
     monkeypatch.setattr(search_module, "build_strategy_candidates", candidates)
 
     def rollout(self, clone, observation, history, action, **kwargs):
-        del self, clone, observation, history
+        del self, observation, history
         identity = (action, kwargs.get("intent"), kwargs.get("route"))
+        rollout_samples = captured["rollout_samples"]
+        assert isinstance(rollout_samples, dict)
+        rollout_samples.setdefault(identity, []).append(clone.sample_index)
         value = 2.0 if identity == roots[better_index].identity else 1.0
+        rejected = (
+            rejected_index is not None
+            and identity == roots[rejected_index].identity
+            and (
+                rejected_samples is None
+                or clone.sample_index in rejected_samples
+            )
+        )
+        return RolloutOutcome(
+            value=value,
+            steps=1,
+            rejected=rejected,
+            goal_utility=_utility(clear=1, progress=value, ante=1),
+            rejection_reason="synthetic_rejection" if rejected else None,
+        )
+
+    monkeypatch.setattr(DeterminizedSearchPolicy, "_rollout", rollout)
+    return captured
+
+
+def test_v16_overlay_preserves_exact_ordinary_search_without_specialist(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[int, object, StrategyIntent | None, RunRoute | None, bool]] = []
+    sample_seeds: list[str] = []
+    captured: dict[str, object] = {}
+
+    class Sample:
+        def __init__(self, index: int) -> None:
+            self.index = index
+
+        def close(self) -> None:
+            pass
+
+    class Frozen:
+        def __init__(self, sample: Sample) -> None:
+            self.index = sample.index
+
+        def clone(self):
+            return SimpleNamespace(sample_index=self.index, close=lambda: None)
+
+    def sample_candidate(*args):
+        sample_seeds.append(args[3])
+        return Sample(len(sample_seeds) - 1)
+
+    monkeypatch.setattr(search_module, "sample_candidate", sample_candidate)
+    monkeypatch.setattr(search_module, "freeze_backend", Frozen)
+    monkeypatch.setattr(
+        search_module, "_teacher_config_digest", lambda policy: "1" * 64
+    )
+
+    def candidates(*args, **kwargs):
+        del kwargs
+        captured["control_action"] = args[2]
+        return ()
+
+    monkeypatch.setattr(search_module, "build_strategy_candidates", candidates)
+
+    def rollout(self, clone, observation, history, action, **kwargs):
+        del self, observation, history
+        calls.append(
+            (
+                clone.sample_index,
+                action,
+                kwargs.get("intent"),
+                kwargs.get("route"),
+                kwargs.get("isolate_continuation", False),
+            )
+        )
+        value = 3.0 if isinstance(action, RerollShop) else 1.0
         return RolloutOutcome(
             value=value,
             steps=1,
@@ -608,7 +771,304 @@ def _install_strategy_root_harness(
         )
 
     monkeypatch.setattr(DeterminizedSearchPolicy, "_rollout", rollout)
-    return captured
+    observation = to_public_observation(state("SHOP", money=10))
+    legal = tuple(iter_legal_actions(observation))
+    budget = RolloutBudget(samples=2, horizon_antes=1, override_z=0)
+
+    control = DeterminizedSearchPolicy(
+        backend=None,  # type: ignore[arg-type]
+        continuation=_RouteOnlyContinuation(),  # type: ignore[arg-type]
+        budget=budget,
+    )
+    control_selected = control.choose_action(observation, lambda: iter(legal), ())
+    control_calls = tuple(calls)
+    control_seeds = tuple(sample_seeds)
+    calls.clear()
+    sample_seeds.clear()
+
+    overlay = DeterminizedSearchPolicy(
+        backend=None,  # type: ignore[arg-type]
+        continuation=_RouteOnlyContinuation(),  # type: ignore[arg-type]
+        budget=budget,
+        enable_strategy_options=True,
+    )
+    overlay_selected = overlay.choose_action(observation, lambda: iter(legal), ())
+
+    assert control_selected == overlay_selected == RerollShop()
+    assert tuple(calls) == control_calls
+    assert tuple(sample_seeds) == control_seeds
+    assert len(sample_seeds) == budget.samples
+    assert all(
+        intent is route is None and not isolated
+        for _, _, intent, route, isolated in calls
+    )
+    by_action: dict[object, list[int]] = {}
+    for sample_index, action, _, _, _ in calls:
+        by_action.setdefault(action, []).append(sample_index)
+    assert all(indexes == [0, 1] for indexes in by_action.values())
+    assert captured["control_action"] == RerollShop()
+    assert overlay.active_intent is None
+    assert overlay.active_route is None
+    assert overlay.counters.changed == control.counters.changed
+    assert overlay.counters.rejected_rollouts == control.counters.rejected_rollouts
+    assert overlay.last_decision is not None
+    assert overlay.last_decision.ordinary_selected == '{"type":"reroll_shop"}'
+    assert not overlay.last_decision.specialist_override
+    assert control.last_decision is not None
+    assert control.last_decision.ordinary_roots == control.last_decision.roots
+    assert control.last_decision.specialist_roots == 0
+
+
+def test_single_ordinary_root_without_specialist_does_not_sample(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class OrdinaryOnly:
+        def choose_action(self, observation, legal_actions, history):
+            del observation, history
+            return tuple(legal_actions())[0]
+
+    monkeypatch.setattr(
+        search_module,
+        "sample_candidate",
+        lambda *args: pytest.fail("single-root ordinary search must not sample"),
+    )
+    observation = to_public_observation(state("SHOP", money=0))
+    only_action = LeaveShop()
+    policy = DeterminizedSearchPolicy(
+        backend=None,  # type: ignore[arg-type]
+        continuation=OrdinaryOnly(),  # type: ignore[arg-type]
+        enable_strategy_options=True,
+    )
+
+    selected = policy.choose_action(observation, lambda: iter((only_action,)), ())
+
+    assert selected == only_action
+    assert policy.last_decision is None
+    assert policy.counters.searched == 0
+
+
+def test_specialist_builder_failure_falls_back_to_ordinary_winner(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _install_strategy_root_harness(
+        monkeypatch,
+        (StrategyCandidateRoot(LeaveShop(), None),),
+        better_index=0,
+    )
+
+    def fail_builder(*args, **kwargs):
+        del args, kwargs
+        raise ValueError("synthetic candidate mismatch")
+
+    monkeypatch.setattr(search_module, "build_strategy_candidates", fail_builder)
+    observation = to_public_observation(state("SHOP", money=10))
+    legal = tuple(iter_legal_actions(observation))
+    policy = DeterminizedSearchPolicy(
+        backend=None,  # type: ignore[arg-type]
+        continuation=_RouteOnlyContinuation(),  # type: ignore[arg-type]
+        budget=RolloutBudget(samples=1, horizon_antes=1, override_z=0),
+        enable_strategy_options=True,
+    )
+
+    selected = policy.choose_action(observation, lambda: iter(legal), ())
+
+    assert selected == LeaveShop()
+    assert policy.last_decision is not None
+    assert policy.last_decision.specialist_roots == 0
+    assert policy.last_decision.specialist_unavailable_reason is not None
+    assert policy.last_decision.specialist_unavailable_reason.startswith(
+        "specialist_builder_exception:ValueError"
+    )
+    assert policy.counters.strategy_specialist_unavailable == 1
+    assert not policy.teacher_drafts
+
+
+def test_whole_search_unavailability_abandons_active_route(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        search_module,
+        "sample_candidate",
+        lambda *args: (_ for _ in ()).throw(
+            search_module.DeterminizationUnavailable("synthetic unavailable")
+        ),
+    )
+    observation = to_public_observation(state("SHOP", money=10))
+    engine = search_module.derive_engine_state(observation)
+    legal = tuple(iter_legal_actions(observation))
+    policy = DeterminizedSearchPolicy(
+        backend=None,  # type: ignore[arg-type]
+        continuation=_RouteOnlyContinuation(),  # type: ignore[arg-type]
+        enable_strategy_options=True,
+        active_route=PersistentRoute.start(
+            RunRoute.HELD_RETRIGGER, engine, ("visible_baron",)
+        ),
+    )
+
+    selected = policy.choose_action(observation, lambda: iter(legal), ())
+
+    assert selected == LeaveShop()
+    assert policy.active_route is None
+    assert policy.active_intent is None
+    assert policy.counters.unavailable == 1
+    assert policy.counters.strategy_route_abandonments == 1
+    assert policy.counters.strategy_victory_escapes == 0
+
+
+def test_specialist_root_bound_preserves_ordinary_search(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    specialists = tuple(
+        StrategyCandidateRoot(
+            BuyShopCard(ShopSlot(index)),
+            StrategyIntent.ECONOMY,
+            route=RunRoute.HELD_RETRIGGER,
+        )
+        for index in range(129)
+    )
+    captured = _install_strategy_root_harness(
+        monkeypatch,
+        specialists,
+        better_index=0,
+    )
+    observation = to_public_observation(state("SHOP", money=10))
+    legal = tuple(iter_legal_actions(observation))
+    policy = DeterminizedSearchPolicy(
+        backend=None,  # type: ignore[arg-type]
+        continuation=_RouteOnlyContinuation(),  # type: ignore[arg-type]
+        budget=RolloutBudget(samples=1, horizon_antes=1, override_z=0),
+        enable_strategy_options=True,
+    )
+
+    selected = policy.choose_action(observation, lambda: iter(legal), ())
+
+    assert selected == LeaveShop()
+    assert policy.last_decision is not None
+    assert policy.last_decision.specialist_roots_generated == 129
+    assert policy.last_decision.specialist_roots == 0
+    assert (
+        policy.last_decision.specialist_unavailable_reason
+        == "specialist_root_bound_exceeded:129>128"
+    )
+    rollout_samples = captured["rollout_samples"]
+    assert isinstance(rollout_samples, dict)
+    assert not any(identity in rollout_samples for identity in (root.identity for root in specialists))
+
+
+def test_specialist_is_gated_against_ordinary_search_winner(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    option = StrategicOption(
+        StrategyIntent.RELIABLE_HAND,
+        LeaveShop(),
+        ("synthetic_held_route",),
+        RunRoute.HELD_RETRIGGER,
+    )
+    specialist = StrategyCandidateRoot(
+        option.first_action, option.intent, option, option.route
+    )
+    captured = _install_strategy_root_harness(
+        monkeypatch,
+        (specialist,),
+        better_index=0,
+    )
+
+    def rollout(self, clone, observation, history, action, **kwargs):
+        del self, observation, history
+        identity = (action, kwargs.get("intent"), kwargs.get("route"))
+        rollout_samples = captured["rollout_samples"]
+        assert isinstance(rollout_samples, dict)
+        rollout_samples.setdefault(identity, []).append(clone.sample_index)
+        value = (
+            3.0
+            if isinstance(action, RerollShop) and identity[1:] == (None, None)
+            else 2.0
+            if identity == specialist.identity
+            else 1.0
+        )
+        return RolloutOutcome(
+            value=value,
+            steps=1,
+            rejected=False,
+            goal_utility=_utility(clear=1, progress=value, ante=1),
+        )
+
+    monkeypatch.setattr(DeterminizedSearchPolicy, "_rollout", rollout)
+    observation = to_public_observation(state("SHOP", money=10))
+    legal = tuple(iter_legal_actions(observation))
+    policy = DeterminizedSearchPolicy(
+        backend=None,  # type: ignore[arg-type]
+        continuation=_RouteOnlyContinuation(),  # type: ignore[arg-type]
+        budget=RolloutBudget(samples=2, horizon_antes=1, override_z=0),
+        enable_strategy_options=True,
+    )
+
+    selected = policy.choose_action(observation, lambda: iter(legal), ())
+
+    assert selected == RerollShop()
+    assert captured["control_action"] == RerollShop()
+    assert policy.active_route is None
+    assert policy.counters.strategy_specialist_challenges == 1
+    assert policy.counters.strategy_specialist_overrides == 0
+    rollout_samples = captured["rollout_samples"]
+    assert isinstance(rollout_samples, dict)
+    assert rollout_samples[(RerollShop(), None, None)] == [0, 1]
+    assert rollout_samples[specialist.identity] == [0, 1]
+    assert len(captured["sample_seeds"]) == 2
+    assert policy.last_decision is not None
+    assert policy.last_decision.specialist_paired_mean_delta == 0
+    assert policy.last_decision.specialist_paired_lower_bound == 0
+
+
+def test_active_specialist_retains_generic_action_only_with_paired_advantage(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    observation = to_public_observation(state("SHOP", money=10))
+    engine = search_module.derive_engine_state(observation)
+    prior = PersistentRoute.start(
+        RunRoute.HELD_RETRIGGER, engine, ("visible_baron",)
+    )
+    roots = (StrategyCandidateRoot(LeaveShop(), None, route=RunRoute.VICTORY),)
+    _install_strategy_root_harness(monkeypatch, roots, better_index=0)
+
+    def rollout(self, clone, observation, history, action, **kwargs):
+        del self, clone, observation, history
+        route = kwargs.get("route")
+        value = (
+            2.0
+            if route == RunRoute.HELD_RETRIGGER and isinstance(action, LeaveShop)
+            else 1.0
+        )
+        return RolloutOutcome(
+            value=value,
+            steps=1,
+            rejected=False,
+            goal_utility=_utility(clear=1, progress=value, ante=1),
+        )
+
+    monkeypatch.setattr(DeterminizedSearchPolicy, "_rollout", rollout)
+    legal = tuple(iter_legal_actions(observation))
+    policy = DeterminizedSearchPolicy(
+        backend=None,  # type: ignore[arg-type]
+        continuation=_RouteOnlyContinuation(),  # type: ignore[arg-type]
+        budget=RolloutBudget(samples=2, horizon_antes=1, override_z=0),
+        enable_strategy_options=True,
+        active_route=prior,
+    )
+
+    selected = policy.choose_action(observation, lambda: iter(legal), ())
+
+    assert selected == LeaveShop()
+    assert policy.active_route is not None
+    assert policy.active_route.route == RunRoute.HELD_RETRIGGER
+    assert policy.active_route.started_ante == prior.started_ante
+    assert policy.active_route.decisions == prior.decisions + 1
+    assert policy.active_route.pivots == prior.pivots
+    assert policy.counters.strategy_specialist_overrides == 1
+    assert policy.counters.strategy_victory_escapes == 0
+    assert policy.last_decision is not None
+    assert policy.last_decision.specialist_paired_mean_delta == 1
+    assert policy.last_decision.specialist_paired_lower_bound == 1
 
 
 def test_route_only_continuation_preserves_candidate_intent_and_route(
@@ -641,10 +1101,56 @@ def test_route_only_continuation_preserves_candidate_intent_and_route(
     assert selected == RerollShop()
     assert captured["intent_aware"] is True
     assert captured["route_aware"] is True
+    assert captured["control_action"] == LeaveShop()
     assert policy.active_intent is not None
     assert policy.active_intent.intent == StrategyIntent.ECONOMY
     assert policy.active_route is not None
     assert policy.active_route.route == RunRoute.HELD_RETRIGGER
+
+
+def test_rejected_specialist_cannot_override_ordinary_winner(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    option = StrategicOption(
+        StrategyIntent.ECONOMY,
+        RerollShop(),
+        ("synthetic_rejected_specialist",),
+        RunRoute.HELD_RETRIGGER,
+    )
+    candidate = StrategyCandidateRoot(
+        option.first_action, option.intent, option, option.route
+    )
+    _install_strategy_root_harness(
+        monkeypatch,
+        (candidate,),
+        better_index=0,
+        rejected_index=0,
+        rejected_samples=frozenset({1}),
+    )
+    observation = to_public_observation(state("SHOP", money=10))
+    legal = tuple(iter_legal_actions(observation))
+    policy = DeterminizedSearchPolicy(
+        backend=None,  # type: ignore[arg-type]
+        continuation=_RouteOnlyContinuation(),  # type: ignore[arg-type]
+        budget=RolloutBudget(samples=2, horizon_antes=1, override_z=0),
+        enable_strategy_options=True,
+    )
+
+    selected = policy.choose_action(observation, lambda: iter(legal), ())
+
+    assert selected == LeaveShop()
+    assert policy.active_route is None
+    assert policy.counters.strategy_specialist_overrides == 0
+    assert policy.counters.rejected_rollouts == 1
+    assert policy.last_decision is not None
+    assert not policy.last_decision.specialist_override
+    assert policy.last_decision.specialist_roots == 1
+    assert policy.last_decision.best_specialist_rejected
+    assert any(
+        reason.endswith("|synthetic_rejection")
+        for reason, _ in policy.last_decision.rejection_reasons
+    )
+    assert not policy.teacher_drafts
 
 
 @pytest.mark.parametrize("won", (False, True))
@@ -676,13 +1182,13 @@ def test_specialized_route_can_escape_on_same_action_and_records_pivot(
     selected = policy.choose_action(observation, lambda: iter(legal), ())
 
     assert selected == action
-    assert policy.last_strategy_selected_index == 1
+    assert policy.last_decision is not None
+    assert policy.last_decision.ordinary_selected == '{"type":"leave_shop"}'
     assert policy.active_intent is None
-    assert policy.active_route is not None
-    assert policy.active_route.route == RunRoute.VICTORY
-    assert policy.active_route.pivots == 1
+    assert policy.active_route is None
     assert policy.counters.changed == 0
-    assert policy.counters.strategy_identity_changes == 1
+    assert policy.counters.strategy_identity_changes == 0
+    assert policy.counters.strategy_victory_escapes == 1
     assert policy.counters.strategy_route_transitions == {
         "held_retrigger->victory": 1
     }
@@ -997,6 +1503,86 @@ def test_terminal_action_selector_requires_root_adjusted_paired_dominance(
     assert policy.last_success_decision.positive_discordances == 5
     assert policy.last_success_decision.executed_intent == StrategyIntent.ECONOMY
     assert policy.counters.success_action_overrides == 1
+
+
+def test_terminal_selector_cannot_bypass_scalar_specialist_gate(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _install_terminal_rollout_stub(monkeypatch)
+    observation = replace(
+        to_public_observation(state("SHOP", money=10)),
+        ante=4,
+        antes_cleared=3,
+    )
+    roots = (
+        StrategyCandidateRoot(LeaveShop(), None),
+        StrategyCandidateRoot(
+            RerollShop(),
+            StrategyIntent.RELIABLE_HAND,
+            route=RunRoute.HELD_RETRIGGER,
+        ),
+    )
+    policy = DeterminizedSearchPolicy(
+        backend=None,  # type: ignore[arg-type]
+        continuation=PublicStrategicPolicy(),
+        success_teacher=SuccessTeacherBudget(samples=2),
+        success_terminal_actions=SuccessTerminalActionBudget(max_samples=12),
+    )
+
+    selected = policy._collect_success_teacher(  # noqa: SLF001
+        observation,
+        (),
+        roots,
+        behavior_index=0,
+        intent_aware=True,
+        engine_goal=RunGoal.VICTORY,
+        execution_admissible=(True, False),
+    )
+
+    assert selected == 0
+    assert policy.last_success_decision is not None
+    assert policy.last_success_decision.teacher_selected_index == 1
+    assert policy.last_success_decision.executed_index == 0
+    assert (
+        policy.last_success_decision.fallback_reason
+        == "specialist_not_scalar_admissible"
+    )
+    assert policy.active_route is None
+
+
+def test_strategy_overlay_wires_terminal_specialist_admissibility(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    behavior = StrategyCandidateRoot(LeaveShop(), None, route=RunRoute.VICTORY)
+    candidate = StrategyCandidateRoot(
+        RerollShop(),
+        StrategyIntent.RELIABLE_HAND,
+        route=RunRoute.HELD_RETRIGGER,
+    )
+    _install_integrated_terminal_harness(monkeypatch, (behavior, candidate))
+    observation = replace(
+        to_public_observation(state("SHOP", money=10)),
+        ante=4,
+        antes_cleared=3,
+    )
+    legal = tuple(iter_legal_actions(observation))
+    policy = _integrated_terminal_policy(_RouteOnlyContinuation())
+    policy.enable_strategy_options = True
+    policy.success_terminal_actions = SuccessTerminalActionBudget(max_samples=12)
+
+    selected = policy.choose_action(observation, lambda: iter(legal), ())
+
+    assert selected == LeaveShop()
+    assert policy.last_decision is not None
+    assert not policy.last_decision.specialist_override
+    assert policy.last_success_decision is not None
+    assert policy.last_success_decision.teacher_route == RunRoute.HELD_RETRIGGER
+    assert policy.last_success_decision.executed_route is None
+    assert (
+        policy.last_success_decision.fallback_reason
+        == "specialist_not_scalar_admissible"
+    )
+    assert policy.active_route is None
 
 
 def test_terminal_action_selector_counts_same_action_intent_override(

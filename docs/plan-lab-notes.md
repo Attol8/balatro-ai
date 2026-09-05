@@ -4111,3 +4111,73 @@ the victory state in the invalid report; its eventual win is ignored as strength
 evidence. The replay is only proof that the observed lifecycle crash is closed.
 The diagnostic report is
 `runs/experiments/elite-route-screen/v15-control-seed2288-post-cerulean-fix.json`.
+
+### Rejected v15 online route selector (2026-09-05)
+
+The final preregistered development screen on seeds `2299-2310` completed both
+arms and decisively rejects the v15 online route selector. The ordinary-root
+control completed 12/12, won 2 runs, averaged 5.67 antes, reached Ante 6 in 8/12,
+and produced a 69,102 best hand. The route arm completed 12/12, won none, averaged
+3.58 antes, reached Ante 6 in 2/12, and produced a 15,120 best hand. Its paired
+ante delta was -2.08 with bootstrap 95% interval [-3.00, -1.25]; paired mean
+log10 best-hand score fell by 0.55 with interval [-0.78, -0.32]. It regressed 11
+seeds and tied one.
+
+The failure is architectural rather than evidence that persistent routes are
+useless. The candidate changed 183/495 selected actions and 193/495 canonical
+identities, but 481 selected roots were labelled Victory. Only one specialized
+held-retrigger route began, on seed `2304`, and it was retained for 13 later
+decisions. Thus nearly all damage happened before specialist behavior could be
+tested. Strategy mode had replaced the ordinary all-legal-action root set with
+handwritten intent candidates, selected online with a lexicographic `GoalUtility`
+whose economy reserve breaks exact one-ante survival ties, and passed even the
+Victory route through a restricted route continuation. It expanded mean root
+count from 9.29 to 11.53 and reduced normalized rollout throughput from 96.7 to
+75.5 steps/second while destroying strength.
+
+The control report is
+`runs/experiments/elite-route-screen/v15-control-seeds2299-2310.json`; the rejected
+candidate report is
+`runs/experiments/elite-route-screen/v15-route-seeds2299-2310.json`. These are
+development diagnostics, not promoted evidence. v16 will make ordinary search
+an exact behavioral subset: every legal ordinary root and its continuation remain
+unchanged until a non-Victory specialist challenger clears the existing paired
+scalar significance rule. Victory becomes absence of specialist conditioning and
+cannot persist. `GoalUtility` remains useful for teacher labels and future leaf
+learning, but is removed from live short-horizon selection. No fresh seed block is
+authorized until unit parity and a causal replay on this already-observed block
+demonstrate that the repair preserves control before an actual specialist override.
+
+### Control-preserving v16 route overlay (2026-09-05)
+
+The v15 selector has been replaced, not tuned. v16 first performs the exact
+ordinary non-reorder search prefix on the caller-supplied legal-action order, with
+plain continuation, the same frozen public samples, scalar progress, and the
+existing paired significance rule. Only after that chooses its winner does the
+policy construct non-Victory specialist challengers. A specialist is compared
+directly against that ordinary winner on the same sample identities and cannot
+override on `GoalUtility`, cash reserve, an intent label, or an action advantage
+relative only to the weaker heuristic baseline.
+
+Victory is now absence of route conditioning. Pre-existing Victory state is
+cleared before any policy call, Victory roots are excluded from the live overlay,
+and the rollout boundary normalizes any teacher-side Victory identity to ordinary
+continuation. If a live specialist cannot re-clear paired scalar evidence, the
+ordinary winner executes and clears it. The retained route itself contributes one
+fork-isolated route-policy challenger, avoiding an action-times-route expansion;
+new specialist identities are deduplicated and capped at 128. Builder errors,
+unsupported route state, cap overflow, and specialist rollout failure disable only
+the optional lane and are separate from whole-search unavailability.
+
+The terminal teacher remains free to label longer-horizon specialist value, but
+action-affecting terminal selection cannot execute a specialist that failed the
+online scalar gate. Reports now retain the continuation baseline, ordinary winner,
+specialist proposal, paired lower bound, best losing challenger, generated and
+admitted specialist roots, effective route transition, evidence-backed escape,
+and unavailable-lane abandonment as distinct facts. Exact paired-sample identity,
+no-specialist parity, gating against the ordinary winner, rejected-root exclusion,
+isolated retention, Victory clearing, builder failure, root cap, terminal bypass,
+and control/report reconciliation all have regressions. Verification is 941 full
+repository tests, 96 focused search/determinization/report tests, Ruff, and clean
+diff whitespace. No game outcome is claimed yet; the next v16 evidence is a causal
+replay of already-observed seeds `2299-2310`.

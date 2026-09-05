@@ -69,9 +69,10 @@ from balatro_ai_v2.strategy_teacher import (
 )
 
 
-SEARCH_VERSION = "determinized-search-v15"
+SEARCH_VERSION = "determinized-search-v16"
 _REORDER_TYPES = (ReorderHand, ReorderJokers, ReorderConsumables)
 _DENSE_TEACHER_MAX_ROOTS = 512
+STRATEGY_SPECIALIST_MAX_ROOTS = 128
 
 
 @dataclass(frozen=True, slots=True)
@@ -183,6 +184,20 @@ class SearchDecision:
     baseline_route: str | None = None
     selected_intent: str | None = None
     selected_route: str | None = None
+    ordinary_selected: str | None = None
+    ordinary_selected_intent: str | None = None
+    ordinary_selected_route: str | None = None
+    specialist_override: bool = False
+    specialist_unavailable_reason: str | None = None
+    ordinary_roots: int = 0
+    specialist_roots: int = 0
+    specialist_roots_generated: int = 0
+    specialist_paired_mean_delta: float = 0.0
+    specialist_paired_lower_bound: float = 0.0
+    best_specialist: str | None = None
+    best_specialist_paired_mean_delta: float = 0.0
+    best_specialist_paired_lower_bound: float = 0.0
+    best_specialist_rejected: bool = False
     goal_values: tuple[tuple[str, tuple[float, ...]], ...] = ()
     rejection_reasons: tuple[tuple[str, int], ...] = ()
 
@@ -219,6 +234,24 @@ class SearchDecision:
             "baseline_route": self.baseline_route,
             "selected_intent": self.selected_intent,
             "selected_route": self.selected_route,
+            "ordinary_selected": self.ordinary_selected,
+            "ordinary_selected_intent": self.ordinary_selected_intent,
+            "ordinary_selected_route": self.ordinary_selected_route,
+            "specialist_override": self.specialist_override,
+            "specialist_unavailable_reason": self.specialist_unavailable_reason,
+            "ordinary_roots": self.ordinary_roots,
+            "specialist_roots": self.specialist_roots,
+            "specialist_roots_generated": self.specialist_roots_generated,
+            "specialist_paired_mean_delta": self.specialist_paired_mean_delta,
+            "specialist_paired_lower_bound": self.specialist_paired_lower_bound,
+            "best_specialist": self.best_specialist,
+            "best_specialist_paired_mean_delta": (
+                self.best_specialist_paired_mean_delta
+            ),
+            "best_specialist_paired_lower_bound": (
+                self.best_specialist_paired_lower_bound
+            ),
+            "best_specialist_rejected": self.best_specialist_rejected,
             "identity_changed": self.identity_changed,
             "goal_values": [[label, list(value)] for label, value in self.goal_values],
             "rejection_reasons": [list(pair) for pair in self.rejection_reasons],
@@ -336,6 +369,12 @@ class SearchCounters:
     strategy_identity_changes: int = 0
     strategy_route_selections: Counter[str] = field(default_factory=Counter)
     strategy_route_transitions: Counter[str] = field(default_factory=Counter)
+    strategy_specialist_challenges: int = 0
+    strategy_specialist_roots_generated: int = 0
+    strategy_specialist_overrides: int = 0
+    strategy_specialist_unavailable: int = 0
+    strategy_route_abandonments: int = 0
+    strategy_victory_escapes: int = 0
     unavailable: int = 0
     rollout_steps: int = 0
     rejected_rollouts: int = 0
@@ -365,6 +404,14 @@ class SearchCounters:
             "strategy_route_transitions": dict(
                 sorted(self.strategy_route_transitions.items())
             ),
+            "strategy_specialist_challenges": self.strategy_specialist_challenges,
+            "strategy_specialist_roots_generated": (
+                self.strategy_specialist_roots_generated
+            ),
+            "strategy_specialist_overrides": self.strategy_specialist_overrides,
+            "strategy_specialist_unavailable": self.strategy_specialist_unavailable,
+            "strategy_route_abandonments": self.strategy_route_abandonments,
+            "strategy_victory_escapes": self.strategy_victory_escapes,
             "unavailable": self.unavailable,
             "rollout_steps": self.rollout_steps,
             "rejected_rollouts": self.rejected_rollouts,
@@ -442,13 +489,23 @@ class DeterminizedSearchPolicy:
         legal_actions: ActionSource,
         history: tuple[PublicHistoryStep, ...],
     ) -> PublicAction:
+        if (
+            self.active_route is not None
+            and self.active_route.route == RunRoute.VICTORY
+        ):
+            self.active_intent = None
+            self.active_route = None
         choose_for_route = getattr(
             self.continuation, "choose_action_for_strategy", None
         )
         choose_for_intent = getattr(
             self.continuation, "choose_action_for_intent", None
         )
-        if self.active_route is not None and callable(choose_for_route):
+        if self.enable_strategy_options and observation.phase in STRATEGIC_PHASES:
+            baseline = self.continuation.choose_action(
+                observation, legal_actions, history
+            )
+        elif self.active_route is not None and callable(choose_for_route):
             try:
                 baseline = choose_for_route(
                     observation,
@@ -495,10 +552,12 @@ class DeterminizedSearchPolicy:
             observation
         )
         if self.enable_strategy_options:
+            captured_legal_actions = tuple(legal_actions())
             return self._choose_strategy_option(
                 observation,
                 baseline,
                 history,
+                captured_legal_actions,
                 success_anchor=success_anchor,
             )
         captured_legal_actions = tuple(legal_actions())
@@ -743,37 +802,14 @@ class DeterminizedSearchPolicy:
         observation: PublicObservation,
         baseline: PublicAction,
         history: tuple[PublicHistoryStep, ...],
+        legal_actions: tuple[PublicAction, ...],
         *,
         success_anchor: bool,
     ) -> PublicAction:
-        """Search legal option first-actions while retaining paired samples."""
+        """Overlay paired specialist challengers on exact ordinary search."""
 
         engine = derive_engine_state(observation)
         unsupported = _strategy_unsupported(engine)
-        if unsupported:
-            self.counters.unavailable += 1
-            started = time.perf_counter()
-            root = _SearchRoot(baseline, None)
-            self._record_strategy(
-                observation,
-                (root,),
-                baseline,
-                root,
-                (),
-                0,
-                0,
-                started,
-                ",".join(unsupported),
-            )
-            if success_anchor:
-                self._record_unavailable_success_anchor(
-                    observation,
-                    root,
-                    engine.goal,
-                    f"unsupported_public_state:{','.join(unsupported)}",
-                    unsupported=True,
-                )
-            return baseline
         rollout_continuation = self.rollout_continuation or self.continuation
         has_intent_chooser = callable(
             getattr(rollout_continuation, "choose_action_for_intent", None)
@@ -784,59 +820,48 @@ class DeterminizedSearchPolicy:
         has_route_chooser = callable(
             getattr(rollout_continuation, "choose_action_for_strategy", None)
         )
-        if (has_intent_chooser or has_route_chooser) and not has_rollout_fork:
-            self.counters.unavailable += 1
-            started = time.perf_counter()
-            root = _SearchRoot(baseline, None)
-            self._record_strategy(
-                observation,
-                (root,),
-                baseline,
-                root,
-                (),
-                0,
-                0,
-                started,
-                "intent_continuation_missing_rollout_fork"
-                if has_intent_chooser
-                else "route_continuation_missing_rollout_fork",
-            )
-            if success_anchor:
-                self._record_unavailable_success_anchor(
-                    observation,
-                    root,
-                    engine.goal,
-                    "intent_continuation_missing_rollout_fork"
-                    if has_intent_chooser
-                    else "route_continuation_missing_rollout_fork",
-                    unsupported=True,
-                )
-            return baseline
         intent_aware = (has_intent_chooser or has_route_chooser) and has_rollout_fork
-        legal_actions = tuple(iter_legal_actions(observation))
-        roots = build_strategy_candidates(
-            observation,
-            legal_actions,
-            baseline,
-            active_intent=self.active_intent,
-            active_route=self.active_route,
-            include_reorders=self.include_reorders,
-            intent_aware=intent_aware,
-            route_aware=has_route_chooser,
-            engine=engine,
+        specialist_unavailable_reason: str | None = None
+        if unsupported:
+            specialist_unavailable_reason = (
+                f"unsupported_public_state:{','.join(unsupported)}"
+            )
+        elif not has_route_chooser:
+            specialist_unavailable_reason = "route_continuation_unavailable"
+        elif not has_rollout_fork:
+            specialist_unavailable_reason = "route_continuation_missing_rollout_fork"
+        if specialist_unavailable_reason is not None:
+            self.counters.strategy_specialist_unavailable += 1
+
+        ordinary_actions = [
+            action
+            for action in legal_actions
+            if not isinstance(action, _REORDER_TYPES)
+        ]
+        if baseline not in ordinary_actions:
+            ordinary_actions.append(baseline)
+        ordinary_roots = tuple(
+            _SearchRoot(action, None, None, None)
+            for action in ordinary_actions
         )
-        self.last_strategy_candidates = roots
-        if len(roots) <= 1:
+        ordinary_count = len(ordinary_roots)
+        baseline_index = ordinary_actions.index(baseline)
+        if ordinary_count == 1 and specialist_unavailable_reason is not None:
+            self.last_strategy_candidates = ordinary_roots
             self.last_strategy_selected_index = 0
+            self.counters.strategy_route_abandonments += int(
+                self.active_route is not None
+            )
+            self.active_intent = None
+            self.active_route = None
             if success_anchor:
                 self._record_unavailable_success_anchor(
                     observation,
-                    roots[0],
+                    ordinary_roots[0],
                     engine.goal,
                     "single_root",
                 )
             return baseline
-
         started = time.perf_counter()
         frozen_samples: list[FrozenJackdawBackend] = []
         try:
@@ -853,18 +878,34 @@ class DeterminizedSearchPolicy:
                     sample.close()
         except DeterminizationUnavailable as exc:
             self.counters.unavailable += 1
+            root = ordinary_roots[baseline_index]
             self._record_strategy(
-                observation, roots, baseline, roots[0], (), 0, 0, started, str(exc)
+                observation,
+                ordinary_roots,
+                baseline,
+                root,
+                root,
+                (),
+                0,
+                0,
+                started,
+                str(exc),
             )
             if success_anchor:
                 self._record_unavailable_success_anchor(
                     observation,
-                    roots[0],
+                    root,
                     engine.goal,
                     "determinization_unavailable",
                 )
+            self.counters.strategy_route_abandonments += int(
+                self.active_route is not None
+            )
+            self.active_intent = None
+            self.active_route = None
             return baseline
 
+        roots = list(ordinary_roots)
         utilities: list[list[GoalUtility]] = [[] for _ in roots]
         outcomes: list[list[RolloutOutcome]] = [[] for _ in roots]
         scalar_values: list[list[float]] = [[] for _ in roots]
@@ -873,46 +914,46 @@ class DeterminizedSearchPolicy:
         root_rejected = [False for _ in roots]
         rejection_reasons: Counter[str] = Counter()
         prefix_best_hand_score = _public_best_hand_score(history)
+
+        def retain_outcome(index: int, outcome: RolloutOutcome) -> None:
+            nonlocal steps, rejected
+            if outcome.goal_utility is None:
+                raise AssertionError("strategy rollout produced no goal utility")
+            utilities[index].append(outcome.goal_utility)
+            outcomes[index].append(outcome)
+            scalar_values[index].append(outcome.value)
+            steps += outcome.steps
+            rejected += int(outcome.rejected)
+            root_rejected[index] = root_rejected[index] or outcome.rejected
+            if outcome.rejection_reason is not None:
+                rejection_reasons[
+                    f"{_root_label(roots[index])}|{outcome.rejection_reason}"
+                ] += 1
+
         try:
             for frozen_sample in frozen_samples:
-                for index, root in enumerate(roots):
+                for index, root in enumerate(ordinary_roots):
                     clone = frozen_sample.clone()
-                    intent = root.intent if intent_aware else None
-                    route = root.route if has_route_chooser else None
                     try:
                         outcome = self._rollout(
                             clone,
                             observation,
                             history,
                             root.action,
-                            intent=intent,
-                            route=route,
-                            isolate_continuation=True,
                             prefix_best_hand_score=prefix_best_hand_score,
                         )
                     finally:
                         clone.close()
-                    if outcome.goal_utility is None:
-                        raise AssertionError(
-                            "strategy rollout produced no goal utility"
-                        )
-                    utilities[index].append(outcome.goal_utility)
-                    outcomes[index].append(outcome)
-                    scalar_values[index].append(outcome.value)
-                    steps += outcome.steps
-                    rejected += int(outcome.rejected)
-                    root_rejected[index] = root_rejected[index] or outcome.rejected
-                    if outcome.rejection_reason is not None:
-                        rejection_reasons[
-                            f"{_root_label(root)}|{outcome.rejection_reason}"
-                        ] += 1
+                    retain_outcome(index, outcome)
         except DeterminizationUnavailable as exc:
             self.counters.unavailable += 1
+            root = ordinary_roots[baseline_index]
             self._record_strategy(
                 observation,
-                roots,
+                ordinary_roots,
                 baseline,
-                roots[0],
+                root,
+                root,
                 (),
                 steps,
                 rejected,
@@ -922,23 +963,179 @@ class DeterminizedSearchPolicy:
             if success_anchor:
                 self._record_unavailable_success_anchor(
                     observation,
-                    roots[0],
+                    root,
                     engine.goal,
                     "determinization_unavailable",
                 )
+            self.counters.strategy_route_abandonments += int(
+                self.active_route is not None
+            )
+            self.active_intent = None
+            self.active_route = None
             return baseline
 
-        selected_index = _select_goal_root(
-            utilities,
-            baseline_index=0,
-            goal=engine.goal,
+        ordinary_index = _select_root(
+            scalar_values[:ordinary_count],
+            baseline_index=baseline_index,
             override_z=self.budget.override_z,
-            admissible=tuple(not value for value in root_rejected),
         )
+        ordinary_root = roots[ordinary_index]
+        specialist_generated_count = 0
+
+        if specialist_unavailable_reason is None:
+            seen = {root.identity for root in roots}
+            specialist_roots: list[_SearchRoot] = []
+            try:
+                if self.active_route is not None:
+                    retained_intent = (
+                        self.active_intent.intent
+                        if self.active_intent is not None
+                        else None
+                    )
+                    retained_continuation = rollout_continuation.fork_for_rollout(
+                        retained_intent,
+                        self.active_route.route,
+                    )
+                    if retained_continuation is rollout_continuation:
+                        raise ValueError(
+                            "route continuation fork returned its shared instance"
+                        )
+                    retained_chooser = getattr(
+                        retained_continuation, "choose_action_for_strategy", None
+                    )
+                    if not callable(retained_chooser):
+                        raise ValueError(
+                            "route continuation fork lost strategy capability"
+                        )
+                    retained_action = retained_chooser(
+                        observation,
+                        lambda: iter(legal_actions),
+                        history,
+                        retained_intent,
+                        self.active_route.route,
+                    )
+                    if retained_action not in ordinary_actions:
+                        raise ValueError(
+                            "route continuation selected an inadmissible root"
+                        )
+                    retained_root = _SearchRoot(
+                        retained_action,
+                        retained_intent,
+                        None,
+                        self.active_route.route,
+                    )
+                    specialist_roots.append(retained_root)
+                    seen.add(retained_root.identity)
+                option_roots = build_strategy_candidates(
+                    observation,
+                    legal_actions,
+                    ordinary_root.action,
+                    active_intent=self.active_intent,
+                    active_route=self.active_route,
+                    include_reorders=self.include_reorders,
+                    intent_aware=intent_aware,
+                    route_aware=True,
+                    engine=engine,
+                )
+                for root in option_roots:
+                    if root.route in (None, RunRoute.VICTORY):
+                        continue
+                    if (
+                        self.active_route is not None
+                        and root.route == self.active_route.route
+                    ):
+                        continue
+                    if root.identity not in seen:
+                        specialist_roots.append(root)
+                        seen.add(root.identity)
+                specialist_generated_count = len(specialist_roots)
+                if len(specialist_roots) > STRATEGY_SPECIALIST_MAX_ROOTS:
+                    specialist_unavailable_reason = (
+                        "specialist_root_bound_exceeded:"
+                        f"{len(specialist_roots)}>{STRATEGY_SPECIALIST_MAX_ROOTS}"
+                    )
+                    self.counters.strategy_specialist_unavailable += 1
+                    specialist_roots = []
+            except Exception as exc:
+                specialist_unavailable_reason = _exception_reason(
+                    "specialist_builder_exception", exc
+                )
+                self.counters.strategy_specialist_unavailable += 1
+                specialist_roots = []
+            roots.extend(specialist_roots)
+            utilities.extend([] for _ in specialist_roots)
+            outcomes.extend([] for _ in specialist_roots)
+            scalar_values.extend([] for _ in specialist_roots)
+            root_rejected.extend(False for _ in specialist_roots)
+            try:
+                for frozen_sample in frozen_samples:
+                    for index in range(ordinary_count, len(roots)):
+                        root = roots[index]
+                        clone = frozen_sample.clone()
+                        try:
+                            outcome = self._rollout(
+                                clone,
+                                observation,
+                                history,
+                                root.action,
+                                intent=root.intent,
+                                route=root.route,
+                                isolate_continuation=True,
+                                prefix_best_hand_score=prefix_best_hand_score,
+                            )
+                        finally:
+                            clone.close()
+                        retain_outcome(index, outcome)
+            except DeterminizationUnavailable:
+                specialist_unavailable_reason = "specialist_determinization_unavailable"
+                self.counters.strategy_specialist_unavailable += 1
+                roots = roots[:ordinary_count]
+                utilities = utilities[:ordinary_count]
+                outcomes = outcomes[:ordinary_count]
+                scalar_values = scalar_values[:ordinary_count]
+                root_rejected = root_rejected[:ordinary_count]
+
+        self.last_strategy_candidates = tuple(roots)
+        specialist_evidence = {
+            index: _paired_delta_evidence(
+                scalar_values[index],
+                scalar_values[ordinary_index],
+                self.budget.override_z,
+            )
+            for index in range(ordinary_count, len(roots))
+        }
+        best_specialist_index = (
+            max(
+                specialist_evidence,
+                key=lambda index: (specialist_evidence[index][0], -index),
+            )
+            if specialist_evidence
+            else None
+        )
+        challenger_indexes = (ordinary_index, *range(ordinary_count, len(roots)))
+        challenger_selected = _select_root(
+            [scalar_values[index] for index in challenger_indexes],
+            baseline_index=0,
+            override_z=self.budget.override_z,
+            admissible=(
+                True,
+                *(not root_rejected[index] for index in challenger_indexes[1:]),
+            ),
+        )
+        selected_index = challenger_indexes[challenger_selected]
         selected_root = roots[selected_index]
+        paired_mean, paired_lower = _paired_delta_evidence(
+            scalar_values[selected_index],
+            scalar_values[ordinary_index],
+            self.budget.override_z,
+        )
         self.last_strategy_selected_index = selected_index
         selected = selected_root.action
-        if not any(root_rejected) and self.success_teacher is None:
+        if (
+            not any(root_rejected)
+            and self.success_teacher is None
+            and specialist_unavailable_reason is None
+        ):
             self.teacher_drafts.append(
                 StrategyTeacherDraft(
                     observation=observation,
@@ -973,22 +1170,19 @@ class DeterminizedSearchPolicy:
                         for root, root_outcomes in zip(roots, outcomes, strict=True)
                     ),
                     selected_index=selected_index,
-                    baseline_index=0,
+                    baseline_index=ordinary_index,
                     goal=engine.goal,
                     teacher_config_digest=_teacher_config_digest(self),
                 )
             )
         self.counters.searched += 1
         self.counters.changed += int(selected != baseline)
-        self.counters.strategy_identity_changes += int(selected_index != 0)
-        baseline_route = roots[0].route.value if roots[0].route is not None else "none"
-        selected_route = (
-            selected_root.route.value if selected_root.route is not None else "none"
+        specialist_override = selected_index != ordinary_index
+        self.counters.strategy_specialist_challenges += len(roots) - ordinary_count
+        self.counters.strategy_specialist_roots_generated += (
+            specialist_generated_count
         )
-        self.counters.strategy_route_selections[selected_route] += 1
-        self.counters.strategy_route_transitions[
-            f"{baseline_route}->{selected_route}"
-        ] += 1
+        self.counters.strategy_specialist_overrides += int(specialist_override)
         count = len(frozen_samples)
         goal_means = tuple(
             (
@@ -1008,14 +1202,41 @@ class DeterminizedSearchPolicy:
         )
         self._record_strategy(
             observation,
-            roots,
+            tuple(roots),
             baseline,
+            ordinary_root,
             selected_root,
             goal_means,
             steps,
             rejected,
             started,
             None,
+            specialist_unavailable_reason=specialist_unavailable_reason,
+            ordinary_root_count=ordinary_count,
+            specialist_root_count=len(roots) - ordinary_count,
+            specialist_root_generated_count=specialist_generated_count,
+            specialist_paired_mean_delta=paired_mean,
+            specialist_paired_lower_bound=paired_lower,
+            best_specialist=(
+                _root_label(roots[best_specialist_index])
+                if best_specialist_index is not None
+                else None
+            ),
+            best_specialist_paired_mean_delta=(
+                specialist_evidence[best_specialist_index][0]
+                if best_specialist_index is not None
+                else 0.0
+            ),
+            best_specialist_paired_lower_bound=(
+                specialist_evidence[best_specialist_index][1]
+                if best_specialist_index is not None
+                else 0.0
+            ),
+            best_specialist_rejected=(
+                root_rejected[best_specialist_index]
+                if best_specialist_index is not None
+                else False
+            ),
             scalar_means={
                 _root_label(root): sum(values) / count
                 for root, values in zip(roots, scalar_values, strict=True)
@@ -1027,13 +1248,43 @@ class DeterminizedSearchPolicy:
             effective_index = self._collect_success_teacher(
                 observation,
                 history,
-                roots,
+                tuple(roots),
                 behavior_index=selected_index,
                 intent_aware=intent_aware,
                 engine_goal=engine.goal,
+                execution_admissible=tuple(
+                    root.route is None or index == selected_index
+                    for index, root in enumerate(roots)
+                ),
             )
         effective_root = roots[effective_index]
         self.last_strategy_selected_index = effective_index
+        incoming_route = (
+            self.active_route.route.value
+            if self.active_route is not None
+            else RunRoute.VICTORY.value
+        )
+        executed_route = (
+            effective_root.route.value
+            if effective_root.route is not None
+            else RunRoute.VICTORY.value
+        )
+        self.counters.strategy_identity_changes += int(
+            effective_root.action != baseline
+            or effective_root.intent is not None
+            or effective_root.route is not None
+        )
+        leaving_route = self.active_route is not None and effective_root.route is None
+        self.counters.strategy_victory_escapes += int(
+            leaving_route and specialist_unavailable_reason is None
+        )
+        self.counters.strategy_route_abandonments += int(
+            leaving_route and specialist_unavailable_reason is not None
+        )
+        self.counters.strategy_route_selections[executed_route] += 1
+        self.counters.strategy_route_transitions[
+            f"{incoming_route}->{executed_route}"
+        ] += 1
         self._commit_strategy_root(effective_root, engine)
         return effective_root.action
 
@@ -1042,13 +1293,19 @@ class DeterminizedSearchPolicy:
         root: StrategyCandidateRoot,
         engine: PublicEngineState,
     ) -> None:
+        if root.route == RunRoute.VICTORY:
+            self.active_intent = None
+            self.active_route = None
+            return
         if root.option is None:
             self.active_intent = None
         elif self.active_intent is None:
             self.active_intent = PersistentIntent.start(root.option, engine)
         else:
             self.active_intent = self.active_intent.advance(root.option, engine)
-        if root.route is not None:
+        if root.route is None:
+            self.active_route = None
+        else:
             evidence = (
                 root.option.evidence
                 if root.option is not None
@@ -1149,6 +1406,7 @@ class DeterminizedSearchPolicy:
         behavior_index: int,
         intent_aware: bool,
         engine_goal: RunGoal,
+        execution_admissible: Sequence[bool] | None = None,
     ) -> int:
         """Evaluate a sparse terminal anchor and return the public root to execute."""
 
@@ -1498,7 +1756,7 @@ class DeterminizedSearchPolicy:
                 fallback_reason="insufficient_terminal_dominance",
             )
 
-        selected_index = max(
+        teacher_selected_index = max(
             qualified,
             key=lambda index: (
                 positive[index],
@@ -1506,8 +1764,29 @@ class DeterminizedSearchPolicy:
                 -index,
             ),
         )
+        executable = (
+            qualified
+            if execution_admissible is None
+            else tuple(index for index in qualified if execution_admissible[index])
+        )
+        if not executable:
+            return finish(
+                teacher_index=teacher_selected_index,
+                executed_index=behavior_index,
+                fallback_reason="specialist_not_scalar_admissible",
+                positive_discordances=positive[teacher_selected_index],
+                adverse_discordances=adverse[teacher_selected_index],
+            )
+        selected_index = max(
+            executable,
+            key=lambda index: (
+                positive[index],
+                _mean_terminal_action_key(outcomes[index], engine_goal),
+                -index,
+            ),
+        )
         return finish(
-            teacher_index=selected_index,
+            teacher_index=teacher_selected_index,
             executed_index=selected_index,
             fallback_reason=None,
             positive_discordances=positive[selected_index],
@@ -1529,6 +1808,9 @@ class DeterminizedSearchPolicy:
         endless_horizon_antes: int = 2,
         prefix_best_hand_score: int | None = None,
     ) -> RolloutOutcome:
+        if route == RunRoute.VICTORY:
+            intent = None
+            route = None
         start_rounds = observation.round_no
         start_antes = observation.antes_cleared
         horizon = (
@@ -1747,6 +2029,7 @@ class DeterminizedSearchPolicy:
         observation: PublicObservation,
         roots: Sequence[_SearchRoot],
         baseline: PublicAction,
+        ordinary: _SearchRoot,
         selected: _SearchRoot,
         goal_values: tuple[tuple[str, tuple[float, ...]], ...],
         steps: int,
@@ -1756,6 +2039,16 @@ class DeterminizedSearchPolicy:
         *,
         scalar_means: dict[str, float] | None = None,
         rejection_reasons: tuple[tuple[str, int], ...] = (),
+        specialist_unavailable_reason: str | None = None,
+        ordinary_root_count: int | None = None,
+        specialist_root_count: int = 0,
+        specialist_root_generated_count: int = 0,
+        specialist_paired_mean_delta: float = 0.0,
+        specialist_paired_lower_bound: float = 0.0,
+        best_specialist: str | None = None,
+        best_specialist_paired_mean_delta: float = 0.0,
+        best_specialist_paired_lower_bound: float = 0.0,
+        best_specialist_rejected: bool = False,
     ) -> None:
         seconds = time.perf_counter() - started
         self.counters.rollout_steps += steps
@@ -1775,18 +2068,34 @@ class DeterminizedSearchPolicy:
             selected=_label(selected.action),
             unavailable_reason=unavailable_reason,
             goal=engine.goal.value,
-            baseline_intent=(
-                roots[0].intent.value if roots[0].intent is not None else None
-            ),
-            baseline_route=(
-                roots[0].route.value if roots[0].route is not None else None
-            ),
+            baseline_intent=None,
+            baseline_route=None,
             selected_intent=(
                 selected.intent.value if selected.intent is not None else None
             ),
             selected_route=(
                 selected.route.value if selected.route is not None else None
             ),
+            ordinary_selected=_label(ordinary.action),
+            ordinary_selected_intent=(
+                ordinary.intent.value if ordinary.intent is not None else None
+            ),
+            ordinary_selected_route=(
+                ordinary.route.value if ordinary.route is not None else None
+            ),
+            specialist_override=selected.identity != ordinary.identity,
+            specialist_unavailable_reason=specialist_unavailable_reason,
+            ordinary_roots=(
+                len(roots) if ordinary_root_count is None else ordinary_root_count
+            ),
+            specialist_roots=specialist_root_count,
+            specialist_roots_generated=specialist_root_generated_count,
+            specialist_paired_mean_delta=specialist_paired_mean_delta,
+            specialist_paired_lower_bound=specialist_paired_lower_bound,
+            best_specialist=best_specialist,
+            best_specialist_paired_mean_delta=best_specialist_paired_mean_delta,
+            best_specialist_paired_lower_bound=best_specialist_paired_lower_bound,
+            best_specialist_rejected=best_specialist_rejected,
             goal_values=tuple(sorted(goal_values)),
             rejection_reasons=rejection_reasons,
         )
@@ -1821,6 +2130,8 @@ class DeterminizedSearchPolicy:
             values=tuple(sorted(values.items())),
             baseline=_label(baseline),
             selected=_label(selected),
+            ordinary_selected=_label(selected),
+            ordinary_roots=len(roots),
             unavailable_reason=unavailable_reason,
             rejection_reasons=rejection_reasons,
         )
@@ -1829,7 +2140,10 @@ class DeterminizedSearchPolicy:
 
 
 def _select_root(
-    values: Sequence[Sequence[float]], baseline_index: int, override_z: float
+    values: Sequence[Sequence[float]],
+    baseline_index: int,
+    override_z: float,
+    admissible: Sequence[bool] | None = None,
 ) -> int:
     """Override the continuation only on significant paired evidence.
 
@@ -1846,6 +2160,8 @@ def _select_root(
     best_mean = None
     for index, root_values in enumerate(values):
         if index == baseline_index:
+            continue
+        if admissible is not None and not admissible[index]:
             continue
         deltas = [
             root - base for root, base in zip(root_values, baseline_values, strict=True)
@@ -1864,6 +2180,27 @@ def _select_root(
             best_mean = mean
             best_index = index
     return best_index
+
+
+def _paired_delta_evidence(
+    root_values: Sequence[float],
+    baseline_values: Sequence[float],
+    override_z: float,
+) -> tuple[float, float]:
+    """Return the paired mean delta and the selector's lower confidence bound."""
+
+    deltas = [
+        root - base
+        for root, base in zip(root_values, baseline_values, strict=True)
+    ]
+    if not deltas:
+        return 0.0, 0.0
+    mean = sum(deltas) / len(deltas)
+    if len(deltas) == 1:
+        return mean, mean
+    variance = sum((delta - mean) ** 2 for delta in deltas) / (len(deltas) - 1)
+    lower = mean - override_z * math.sqrt(variance / len(deltas))
+    return mean, lower
 
 
 def _dense_teacher_indexes(

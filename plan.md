@@ -966,6 +966,62 @@ exclusive report contract above. If this block exposes another completeness bug,
 repair it but stop consuming fresh panels and replace broad online screening with
 targeted lifecycle fuzz/replay until that audit is green.
 
+The complete third screen rejects v15 route selection. The ordinary-root control
+finished 12/12 with two wins and mean 5.67 antes; the route arm finished 12/12
+with zero wins and mean 3.58 antes. The paired ante delta was -2.08 with bootstrap
+95% interval [-3.00, -1.25], and log10 best-hand score fell by 0.55. The route arm
+changed 183/495 actions even though 481/495 selected roots were labelled Victory;
+only one specialized held-retrigger route ever started. Root expansion rose while
+rollout throughput fell. This is decisive development evidence that v15 did not
+add a specialist option above control: it replaced the proven ordinary root space,
+used lexicographic one-ante economy tie-breaks online, and made even Victory use a
+route-filtered continuation. Retain the implementation as rejected evidence, not
+as the deployable policy, and do not consume another fresh seed block yet.
+
+The v16 repair must be control-preserving by construction:
+
+1. Build generic roots from every ordinary legal non-reorder action in exactly
+   the same order as action-only search. With no active specialist, evaluate those
+   roots with ordinary continuation and choose their winner using the unchanged
+   paired scalar progress rule.
+2. Add only non-Victory specialist route roots as challengers. A specialist may
+   replace the ordinary winner only when its paired scalar rollout advantage
+   clears the same significance gate. `GoalUtility` remains a teacher/shadow
+   target until a calibrated long-horizon leaf value is certified; it does not
+   choose live roots.
+3. Victory means ordinary policy: never pass it to route-filtered continuation,
+   never persist it, and clear active route/intent on an explicit Victory escape.
+   While a specialist is active, generic legal actions retain that route and a
+   same-action ordinary escape remains available.
+4. Record the ordinary winner, specialist challengers, specialist override,
+   retention, and escape separately. Advance search/report schema versions rather
+   than reinterpreting v15 evidence.
+5. Before any game replay, prove exact selected-action parity between v16 strategy
+   mode with no admitted specialist and ordinary search over shared samples; test
+   no-op Victory behavior, specialist significance gating, active retention, and
+   same-action escape. Run focused and full suites plus Ruff and diff review.
+6. Reuse `2299-2310` only as a diagnostic causal replay. It must match control up
+   to any genuinely selected specialist override. Preregister a disjoint fresh
+   screen only after that replay is complete and reconciled; never use the replay
+   as strength evidence.
+
+Implementation checkpoint: v16 now runs the ordinary and specialist lanes on the
+same frozen public determinization samples. The ordinary prefix uses the supplied
+legal-action order, the unchanged non-reorder root filter, plain continuation,
+scalar progress, and the existing paired significance selector. It chooses the
+ordinary winner before constructing specialists. Victory is normalized to no
+route at both policy and rollout boundaries. A retained route contributes one
+isolated route-policy challenger rather than every legal action; new non-Victory
+route options are deduplicated and capped at 128, with overflow or construction
+failure disabling only the overlay. Terminal action selection may label any
+specialist but cannot execute one that did not clear the scalar overlay gate.
+Diagnostics separate control baseline, ordinary winner, scalar specialist
+proposal, effective route transition, generated/admitted roots, best losing
+challenger evidence, route escape, route abandonment, and specialist-only
+unavailability. The implementation and report protocol are v16; 941 repository
+tests and Ruff pass. The next action is the already-observed causal replay, not a
+fresh strength panel.
+
 The retired v11 design remains a pre-win/early-Endless continuation increment,
 not the complete high-score policy. Its useful continuation machinery is retained
 inside the broader program above, while its collection protocol remains retired.
