@@ -4102,3 +4102,12 @@ constructs the complete Cerulean play, Round Eval, cash-out, and new-shop histor
 and verifies that the score context remains available with no forced slot.
 Verification: 929 repository tests and Ruff pass; the focused baseline/firewall/
 codec suite passes 289 tests and `git diff --check` is clean.
+
+The exact retired-seed causal replay then completed 1/1 through terminal state
+under the original six-sample ordinary-root settings. Seed `2288` crossed the
+former Cerulean shop boundary, finished 235 decisions and 107 searches with zero
+rejected rollouts, and reported 136.6 rollout steps/second. It had already reached
+the victory state in the invalid report; its eventual win is ignored as strength
+evidence. The replay is only proof that the observed lifecycle crash is closed.
+The diagnostic report is
+`runs/experiments/elite-route-screen/v15-control-seed2288-post-cerulean-fix.json`.

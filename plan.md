@@ -958,6 +958,14 @@ publishing only a post-fix diagnostic under `runs/experiments/elite-route-screen
 Ignore its outcome; require a complete trajectory with no forced-slot policy
 error. Only that causal replay authorizes a new disjoint paired screen.
 
+The retired seed `2288` replay completed through terminal state with no policy
+error, 107 searches, zero rejected rollouts, and 136.6 rollout steps/second; its
+win is diagnostic-only. Preregister the third and final small v15 behavior screen
+on fresh development seeds `2299-2310`, again with the exact paired settings and
+exclusive report contract above. If this block exposes another completeness bug,
+repair it but stop consuming fresh panels and replace broad online screening with
+targeted lifecycle fuzz/replay until that audit is green.
+
 The retired v11 design remains a pre-win/early-Endless continuation increment,
 not the complete high-score policy. Its useful continuation machinery is retained
 inside the broader program above, while its collection protocol remains retired.
