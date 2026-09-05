@@ -1539,6 +1539,19 @@ rose from 158.97 to 210.95 steps/second (32.70%), and maximum RSS fell from
 chosen from a fresh profile of the retained code; do not optimize the already
 small clone path or reduce search coverage.
 
+Boss-filter optimization design: the retained profile still spends most time
+inside continuation choice. `_boss_eligible_plays` currently classifies every
+candidate play for every known boss, then uses the hand family only for The Eye
+(`repeat_hand_restriction`) and The Mouth (`single_hand_family`). Preserve play
+order and the existing minimum-card filter, including The Psychic's five-card
+rule, but return immediately afterward for every boss without either family
+restriction. Keep the existing classification and deterministic Mouth family
+tie-break unchanged for Eye/Mouth. Add a call-boundary regression proving an
+ordinary boss does not classify, a Psychic regression proving its size filter
+still applies without classification, and retain the existing Eye/Mouth
+semantic tests. Retain only with exact matched search behavior and measurable
+same-seed throughput improvement; otherwise revert it as noise.
+
 ## Active development loop
 
 The two disjoint 30-seed screens are enough to retain one-ante strategic

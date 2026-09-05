@@ -963,7 +963,6 @@ def _boss_eligible_plays(
     actions: list[PublicAction],
     current_boss: BossRule | None,
 ) -> list[PlayCards]:
-    stats = {hand.name: hand for hand in observation.hand_stats}
     plays = [action for action in actions if isinstance(action, PlayCards)]
     if current_boss is None:
         return plays
@@ -973,16 +972,22 @@ def _boss_eligible_plays(
             for action in plays
             if len(action.cards) >= current_boss.min_selected_cards
         ]
+    if not (
+        current_boss.repeat_hand_restriction or current_boss.single_hand_family
+    ):
+        return plays
+    stats = {hand.name: hand for hand in observation.hand_stats}
+    active_keys = frozenset(
+        joker.key
+        for joker in observation.jokers
+        if isinstance(joker, PublicItem) and not joker.debuffed
+    )
     classified = [
         (
             action,
             _classify(
                 tuple(observation.hand[slot.value] for slot in action.cards),
-                frozenset(
-                    joker.key
-                    for joker in observation.jokers
-                    if isinstance(joker, PublicItem) and not joker.debuffed
-                ),
+                active_keys,
             ),
         )
         for action in plays

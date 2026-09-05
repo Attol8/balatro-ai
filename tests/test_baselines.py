@@ -40,6 +40,7 @@ from balatro_ai_v2.baselines import (
     PublicBeliefTacticalPolicy,
     PublicStrategicPolicy,
     _best_play_with_score,
+    _boss_eligible_plays,
     _build_pace_play,
     _classify,
     _coverage_discard,
@@ -836,6 +837,39 @@ def test_strategic_policy_selects_five_cards_for_the_psychic() -> None:
 
     assert isinstance(action, PlayCards)
     assert len(action.cards) == 5
+
+
+@pytest.mark.parametrize("boss_name", ["The Arm", "The Psychic"])
+def test_boss_eligibility_classifies_only_for_hand_family_rules(
+    boss_name: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    raw = state("SELECTING_HAND")
+    raw["hand"]["cards"].extend(
+        [playing_card("D_9", card_id=90), playing_card("C_8", card_id=91)]
+    )
+    raw["hand"]["count"] = 5
+    observation = to_public_observation(raw)
+    actions = list(iter_legal_actions(observation))
+    current_boss = boss_rule(boss_name)
+    assert current_boss is not None
+
+    def unexpected_classification(*args: object, **kwargs: object) -> str:
+        raise AssertionError(f"{boss_name} must not inspect poker-hand family")
+
+    monkeypatch.setattr(
+        "balatro_ai_v2.baselines._classify", unexpected_classification
+    )
+    eligible = _boss_eligible_plays(observation, actions, current_boss)
+
+    expected_size = 5 if boss_name == "The Psychic" else None
+    expected = [
+        action
+        for action in actions
+        if isinstance(action, PlayCards)
+        and (expected_size is None or len(action.cards) >= expected_size)
+    ]
+    assert eligible == expected
 
 
 def test_strategic_policy_avoids_repeating_a_hand_for_the_eye() -> None:
