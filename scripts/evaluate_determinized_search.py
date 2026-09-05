@@ -60,6 +60,7 @@ from balatro_ai_v2.strategy_diagnostics import (
     strategy_snapshot,
     summarize_strategy_results,
 )
+from balatro_ai_v2.strategy_engine import RunRoute
 from balatro_ai_v2.strategy_continuation import CertifiedUtilityContinuationPolicy
 from balatro_ai_v2.strategy_model import (
     PublicStrategyTensorizer,
@@ -69,6 +70,7 @@ from balatro_ai_v2.strategy_model import (
 from balatro_ai_v2.strategy_shadow import ShadowStrategyPolicy
 from balatro_ai_v2.strategy_teacher import (
     StrategyTargetEndpoint,
+    StrategyTeacherCandidate,
     StrategyTeacherDraft,
     StrategyTeacherRecord,
     teacher_records_digest,
@@ -1327,7 +1329,7 @@ def main() -> None:
                 "groups": len({record.run_group for record in teacher_records}),
                 "contains_game_seeds": False,
                 "complete_runs_only": True,
-                "mode": "dense_paired_utility" if args.dense_teacher else "legacy",
+                "mode": _teacher_dataset_mode(args),
                 "teacher_config_digest": (
                     teacher_records[0].teacher_config_digest
                     if teacher_records
@@ -2014,6 +2016,156 @@ def _teacher_coverage(
             "postwin_rows": len(endless_rows),
             "postwin_origin_groups": endless_groups,
         },
+        "route_terminal_paired_utility": _route_terminal_teacher_coverage(records),
+    }
+
+
+_ROUTE_TERMINAL_TARGETS = (
+    "search_utility",
+    "current_blind_clear",
+    "next_boss_clear",
+    "ante8_win",
+    "endless_ante",
+    "log_score",
+)
+
+
+def _teacher_dataset_mode(args: argparse.Namespace) -> str:
+    if args.dense_teacher:
+        return "dense_paired_utility"
+    if (
+        args.strategy_options
+        and args.success_teacher
+        and not args.success_terminal_actions
+    ):
+        return "route_terminal_paired_utility"
+    return "legacy"
+
+
+def _route_terminal_teacher_coverage(
+    records: tuple[StrategyTeacherRecord, ...],
+) -> dict[str, object]:
+    phase_rows: Counter[str] = Counter()
+    goal_rows: Counter[str] = Counter()
+    route_roots: Counter[str] = Counter()
+    route_diverse_groups: set[str] = set()
+    sample_count_roots: Counter[int] = Counter()
+    matched_pairs = 0
+    matched_pair_samples: list[int] = []
+    route_diverse_rows = 0
+    censored_rows = 0
+    censored_samples = 0
+    sample_count_mismatch_rows = 0
+    pair_metrics = {
+        target: {
+            "sensitive_pairs": 0,
+            "positive_pairs": 0,
+            "negative_pairs": 0,
+            "zero_pairs": 0,
+            "null_mismatch_pairs": 0,
+        }
+        for target in _ROUTE_TERMINAL_TARGETS
+    }
+
+    for record in records:
+        phase_rows[record.observation.phase.value] += 1
+        goal_rows[record.goal.value] += 1
+        row_routes = {candidate.route for candidate in record.candidates}
+        non_victory_routes = {
+            route
+            for route in row_routes
+            if route is not None and route != RunRoute.VICTORY
+        }
+        if non_victory_routes and len(row_routes) > 1:
+            route_diverse_rows += 1
+            route_diverse_groups.add(record.run_group)
+
+        sample_counts = {len(candidate.samples) for candidate in record.candidates}
+        sample_count_mismatch_rows += int(len(sample_counts) > 1)
+        row_censored = False
+        ordinary_by_action: dict[object, list[StrategyTeacherCandidate]] = {}
+        for candidate in record.candidates:
+            sample_count_roots[len(candidate.samples)] += 1
+            if candidate.route is not None and candidate.route != RunRoute.VICTORY:
+                route_roots[candidate.route.value] += 1
+            elif candidate.route is None and candidate.intent is None:
+                ordinary_by_action.setdefault(candidate.action, []).append(candidate)
+            candidate_censored = sum(
+                sample.endpoint == StrategyTargetEndpoint.CENSORED
+                for sample in candidate.samples
+            )
+            censored_samples += candidate_censored
+            row_censored |= bool(candidate_censored)
+        censored_rows += int(row_censored)
+
+        for specialist in record.candidates:
+            if specialist.route is None or specialist.route == RunRoute.VICTORY:
+                continue
+            for ordinary in ordinary_by_action.get(specialist.action, ()):
+                matched_pairs += 1
+                matched_pair_samples.append(len(specialist.samples))
+                for target in _ROUTE_TERMINAL_TARGETS:
+                    deltas: list[float] = []
+                    null_mismatch = False
+                    for specialist_sample, ordinary_sample in zip(
+                        specialist.samples, ordinary.samples, strict=True
+                    ):
+                        specialist_value = getattr(specialist_sample, target)
+                        ordinary_value = getattr(ordinary_sample, target)
+                        if (specialist_value is None) != (ordinary_value is None):
+                            null_mismatch = True
+                        elif specialist_value is not None:
+                            deltas.append(
+                                float(specialist_value) - float(ordinary_value)
+                            )
+                    metric = pair_metrics[target]
+                    assert isinstance(metric, dict)
+                    sensitive = null_mismatch or any(delta != 0.0 for delta in deltas)
+                    metric["sensitive_pairs"] += int(sensitive)
+                    metric["null_mismatch_pairs"] += int(null_mismatch)
+                    signed_delta = sum(deltas)
+                    if signed_delta > 0.0:
+                        metric["positive_pairs"] += 1
+                    elif signed_delta < 0.0:
+                        metric["negative_pairs"] += 1
+                    else:
+                        metric["zero_pairs"] += 1
+
+    return {
+        "records": len(records),
+        "groups": len({record.run_group for record in records}),
+        "phase_rows": dict(sorted(phase_rows.items())),
+        "goal_rows": dict(sorted(goal_rows.items())),
+        "roots_by_non_victory_route": dict(sorted(route_roots.items())),
+        "route_diverse_rows": route_diverse_rows,
+        "route_diverse_groups": len(route_diverse_groups),
+        "matched_pairs": matched_pairs,
+        "pair_contract": (
+            "nonvictory_route_minus_exact_action_null_intent_null_route;"
+            "sample_order_paired;null_mismatch_sensitive;"
+            "sign=sum_jointly_resolved_deltas"
+        ),
+        "pair_metrics": pair_metrics,
+        "stored_root_max": max(
+            (len(record.candidates) for record in records), default=0
+        ),
+        "candidate_space_max": max(
+            (record.candidate_space_size for record in records), default=0
+        ),
+        "subset_rows": sum(
+            record.candidate_space_size > len(record.candidates)
+            for record in records
+        ),
+        "censored_rows": censored_rows,
+        "censored_samples": censored_samples,
+        "sample_count_roots": {
+            str(count): roots for count, roots in sorted(sample_count_roots.items())
+        },
+        "sample_count_min": min(sample_count_roots, default=0),
+        "sample_count_max": max(sample_count_roots, default=0),
+        "sample_count_mismatch_rows": sample_count_mismatch_rows,
+        "matched_pair_sample_count_min": min(matched_pair_samples, default=0),
+        "matched_pair_sample_count_max": max(matched_pair_samples, default=0),
     }
 
 

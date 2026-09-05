@@ -1101,7 +1101,7 @@ Build a separate route-terminal expert-iteration protocol; do not loosen or
 reinterpret the frozen contextual merger, trainer, or continuation certificate:
 
 1. Report `--strategy-options --success-teacher` collections explicitly as
-   `route_terminal_paired_utility`. Bind search v16, teacher schema 10, the exact
+   `route_terminal_paired_utility`. Bind search v16, teacher schema 11, the exact
    action-inert anchor schedule, paired sample count/order, complete-root cap,
    public origin groups, source/runtime digests, and atomic rejection semantics.
 2. Add route coverage computed from the records: route-diverse rows and groups,
@@ -1132,6 +1132,17 @@ reinterpret the frozen contextual merger, trainer, or continuation certificate:
 Implement and test the collection/report contract first, then the merger and
 training gates, then exact-root shadow inference and certification. Do not reserve
 fresh development seeds or train from the one-seed diagnostic.
+
+Teacher schema 11 must make the v16 comparison self-contained before fresh
+collection. Persist `ordinary_index`, `behavior_index`, and `selected_index` as
+separate exact-triple indexes; require `baseline_index == ordinary_index` so the
+existing paired loss learns against the proven ordinary lane. Terminal selection
+also compares against `ordinary_index`. `behavior_index` records the root that
+generated the factual trajectory and does not label sibling outcomes. A
+route-terminal record is valid only when the accompanying success decision proves
+`executed_index == behavior_index` and `affects_actions=false`. Schema-10 records
+remain readable only as their historical non-route type and cannot enter the new
+protocol.
 
 The retired v11 design remains a pre-win/early-Endless continuation increment,
 not the complete high-score policy. Its useful continuation machinery is retained

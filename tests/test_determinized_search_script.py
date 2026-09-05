@@ -9,12 +9,14 @@ from types import SimpleNamespace
 
 import pytest
 
-from balatro_ai_v2.actions import LeaveShop, iter_legal_actions
+from balatro_ai_v2.actions import LeaveShop, RerollShop, iter_legal_actions
 from balatro_ai_v2.balatrobot.adapter import to_public_observation
 from balatro_ai_v2.determinized_search import SearchCounters, SearchDecision
 from balatro_ai_v2.strategy_engine import RunGoal, RunRoute
+from balatro_ai_v2.strategy_options import StrategyIntent
 from balatro_ai_v2.strategy_teacher import (
     StrategyRolloutTarget,
+    StrategyTargetEndpoint,
     StrategyTeacherCandidate,
     StrategyTeacherDraft,
     write_teacher_records,
@@ -382,6 +384,200 @@ def test_success_teacher_coverage_requires_distinct_winning_groups() -> None:
     assert not coverage["training_coverage_passed"]
     assert coverage["dense_paired_utility"]["route_roots"] == {"victory": 10}
     assert coverage["dense_paired_utility"]["route_diverse_rows"] == 0
+
+
+def test_route_terminal_coverage_matches_seed2309_style_paired_residuals() -> None:
+    module = _load_script()
+    observation = to_public_observation(state("SHOP", money=10))
+    ordinary_leave = (
+        StrategyRolloutTarget(
+            0,
+            0,
+            None,
+            None,
+            None,
+            endpoint=StrategyTargetEndpoint.CENSORED,
+            search_utility=1,
+        ),
+        StrategyRolloutTarget(0, 0, 1, None, 1, search_utility=1),
+    )
+    specialist_leave = (
+        StrategyRolloutTarget(1, 1, 0, None, None, search_utility=2),
+        StrategyRolloutTarget(0, 0, 1, None, 2, search_utility=2),
+    )
+    ordinary_reroll = (
+        StrategyRolloutTarget(0, 1, 0, None, None, search_utility=3),
+        StrategyRolloutTarget(0, 1, 0, None, None, search_utility=3),
+    )
+    specialist_reroll = (
+        StrategyRolloutTarget(0, 1, 0, None, None, search_utility=2),
+        StrategyRolloutTarget(0, 1, 0, None, None, search_utility=2),
+    )
+    record = StrategyTeacherDraft(
+        observation=observation,
+        candidates=(
+            StrategyTeacherCandidate(LeaveShop(), None, ordinary_leave),
+            StrategyTeacherCandidate(
+                LeaveShop(),
+                StrategyIntent.PLAYED_RETRIGGER_ENGINE,
+                specialist_leave,
+                route=RunRoute.PLAYED_RETRIGGER,
+            ),
+            StrategyTeacherCandidate(RerollShop(), None, ordinary_reroll),
+            StrategyTeacherCandidate(
+                RerollShop(),
+                StrategyIntent.HELD_RETRIGGER_ENGINE,
+                specialist_reroll,
+                route=RunRoute.HELD_RETRIGGER,
+            ),
+        ),
+        selected_index=0,
+        baseline_index=0,
+        goal=RunGoal.VICTORY,
+        teacher_config_digest="4" * 64,
+        candidate_space_size=5,
+    ).finalize(
+        run_group="origin-00000000000000000000000000000001",
+        decision_index=0,
+        run_complete=True,
+        run_won=False,
+        terminal_ante=4,
+        best_hand_score=100,
+    )
+
+    route = module._teacher_coverage((record,), [{"won": False}])[
+        "route_terminal_paired_utility"
+    ]
+
+    assert route["records"] == 1
+    assert route["groups"] == 1
+    assert route["phase_rows"] == {"SHOP": 1}
+    assert route["goal_rows"] == {"victory": 1}
+    assert route["roots_by_non_victory_route"] == {
+        "held_retrigger": 1,
+        "played_retrigger": 1,
+    }
+    assert route["route_diverse_rows"] == 1
+    assert route["route_diverse_groups"] == 1
+    assert route["matched_pairs"] == 2
+    assert route["pair_metrics"]["search_utility"] == {
+        "sensitive_pairs": 2,
+        "positive_pairs": 1,
+        "negative_pairs": 1,
+        "zero_pairs": 0,
+        "null_mismatch_pairs": 0,
+    }
+    assert route["pair_metrics"]["current_blind_clear"] == {
+        "sensitive_pairs": 1,
+        "positive_pairs": 1,
+        "negative_pairs": 0,
+        "zero_pairs": 1,
+        "null_mismatch_pairs": 0,
+    }
+    assert route["pair_metrics"]["next_boss_clear"] == {
+        "sensitive_pairs": 1,
+        "positive_pairs": 1,
+        "negative_pairs": 0,
+        "zero_pairs": 1,
+        "null_mismatch_pairs": 0,
+    }
+    assert route["pair_metrics"]["ante8_win"] == {
+        "sensitive_pairs": 1,
+        "positive_pairs": 0,
+        "negative_pairs": 0,
+        "zero_pairs": 2,
+        "null_mismatch_pairs": 1,
+    }
+    assert route["pair_metrics"]["endless_ante"] == {
+        "sensitive_pairs": 0,
+        "positive_pairs": 0,
+        "negative_pairs": 0,
+        "zero_pairs": 2,
+        "null_mismatch_pairs": 0,
+    }
+    assert route["pair_metrics"]["log_score"] == {
+        "sensitive_pairs": 1,
+        "positive_pairs": 1,
+        "negative_pairs": 0,
+        "zero_pairs": 1,
+        "null_mismatch_pairs": 0,
+    }
+    assert route["stored_root_max"] == 4
+    assert route["candidate_space_max"] == 5
+    assert route["subset_rows"] == 1
+    assert route["censored_rows"] == 1
+    assert route["censored_samples"] == 1
+    assert route["sample_count_roots"] == {"2": 4}
+    assert route["sample_count_min"] == 2
+    assert route["sample_count_max"] == 2
+    assert route["sample_count_mismatch_rows"] == 0
+    assert route["matched_pair_sample_count_min"] == 2
+    assert route["matched_pair_sample_count_max"] == 2
+
+
+def test_route_terminal_coverage_all_null_routes_have_zero_support() -> None:
+    module = _load_script()
+    observation = to_public_observation(state("SHOP"))
+    record = StrategyTeacherDraft(
+        observation=observation,
+        candidates=(
+            StrategyTeacherCandidate(
+                LeaveShop(),
+                None,
+                (StrategyRolloutTarget(1, 0, None, None, None),),
+            ),
+        ),
+        selected_index=0,
+        baseline_index=0,
+        goal=RunGoal.VICTORY,
+        teacher_config_digest="5" * 64,
+    ).finalize(
+        run_group="origin-00000000000000000000000000000002",
+        decision_index=0,
+        run_complete=True,
+        run_won=False,
+        terminal_ante=3,
+        best_hand_score=100,
+    )
+
+    route = module._teacher_coverage((record,), [{"won": False}])[
+        "route_terminal_paired_utility"
+    ]
+
+    assert route["roots_by_non_victory_route"] == {}
+    assert route["route_diverse_rows"] == 0
+    assert route["route_diverse_groups"] == 0
+    assert route["matched_pairs"] == 0
+    assert all(
+        counts
+        == {
+            "sensitive_pairs": 0,
+            "positive_pairs": 0,
+            "negative_pairs": 0,
+            "zero_pairs": 0,
+            "null_mismatch_pairs": 0,
+        }
+        for counts in route["pair_metrics"].values()
+    )
+
+
+def test_teacher_dataset_mode_classifies_only_route_success_collection() -> None:
+    module = _load_script()
+    parser = module.build_parser()
+
+    route = parser.parse_args(["--strategy-options", "--success-teacher"])
+    dense = parser.parse_args(["--dense-teacher"])
+    strategy_only = parser.parse_args(["--strategy-options"])
+    success_only = parser.parse_args(["--success-teacher"])
+    terminal = parser.parse_args(
+        ["--strategy-options", "--success-terminal-actions"]
+    )
+
+    assert module._teacher_dataset_mode(route) == "route_terminal_paired_utility"
+    assert module._teacher_dataset_mode(dense) == "dense_paired_utility"
+    assert module._teacher_dataset_mode(strategy_only) == "legacy"
+    assert module._teacher_dataset_mode(success_only) == "legacy"
+    assert module._teacher_dataset_mode(terminal) == "legacy"
 
 
 def test_search_evaluator_rejects_panel_before_backend_work(

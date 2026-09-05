@@ -4255,3 +4255,15 @@ as the immediate data-collection cost concentration. Fresh collection remains
 blocked until a distinct route-terminal report/preregistration/merger contract,
 route-sensitive coverage gates, paired calibration, exact-root shadowing, and a
 separate fail-closed route-leaf certificate exist and pass local tests.
+
+The first protocol increment now names these collections
+`route_terminal_paired_utility` instead of `legacy` and derives route evidence
+from the serialized records. It reports non-Victory roots by route,
+route-diverse rows/groups, exact same-action specialist-to-null-route pairs,
+paired positive/negative/zero and null-mismatch counts for scalar progress and
+all five value heads, sample-count integrity, censoring, subsets, and maximum root
+fan-out. The all-null case reports zero support rather than inheriting generic
+action sensitivity. No numerical cohort gate is frozen yet; the next schema
+increment must first separate ordinary, factual behavior, and terminal-teacher
+indexes so the paired comparator remains authenticated after any specialist
+override.
