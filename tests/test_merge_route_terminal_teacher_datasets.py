@@ -4,6 +4,7 @@ import hashlib
 import importlib.util
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -227,3 +228,60 @@ def test_publisher_rejects_identical_dataset_and_report_paths(tmp_path):
     output = tmp_path / "bundle/output.json"
     with pytest.raises(SystemExit, match="must be distinct"):
         module._publish_bundle(output, output, (), {}, tmp_path, {})
+
+
+def test_main_captures_merger_source_before_loading_inputs(tmp_path, monkeypatch):
+    module = _module()
+    calls = []
+    args = SimpleNamespace(
+        repository_root=tmp_path,
+        output_jsonl=tmp_path / "bundle/teacher.jsonl",
+        output_report=tmp_path / "bundle/report.json",
+        preregistration_json=tmp_path / "prereg.json",
+        origin_key_file=tmp_path / "key",
+        input=(),
+    )
+    parser = SimpleNamespace(parse_args=lambda: args)
+    monkeypatch.setattr(module, "build_parser", lambda: parser)
+    monkeypatch.setattr(
+        module,
+        "_capture_merger_source",
+        lambda _root: calls.append("capture")
+        or {
+            "repository_revision": "m",
+            "repository_dirty": False,
+            "source_digest": "x",
+        },
+    )
+
+    def reject_inputs(*_args):
+        calls.append("load")
+        raise RuntimeError("stop")
+
+    monkeypatch.setattr(module, "_load_preregistration", reject_inputs)
+    with pytest.raises(RuntimeError, match="stop"):
+        module.main()
+    assert calls == ["capture", "load"]
+
+
+def test_tensorization_preflight_supplies_route_features(monkeypatch):
+    module = _module()
+    record = _record(1, b"k" * 32)
+    seen = []
+
+    class Batch:
+        def validate(self):
+            seen.append("validated")
+
+    class Tensorizer:
+        def __init__(self, _config):
+            pass
+
+        def tensorize(self, *_args):
+            seen.append(_args[4])
+            return Batch()
+
+    monkeypatch.setattr(module, "PublicStrategyTensorizer", Tensorizer)
+    module._tensorization_preflight((record,), {})
+    assert seen[0] == ((None, RunRoute.PLAYED_RETRIGGER),)
+    assert seen[1] == "validated"

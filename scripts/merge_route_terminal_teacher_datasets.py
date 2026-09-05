@@ -41,13 +41,14 @@ from balatro_ai_v2.strategy_teacher import (
 
 def main() -> None:
     args = build_parser().parse_args()
+    root = args.repository_root.resolve()
+    merger_source = _capture_merger_source(root)
     if args.output_jsonl.resolve() == args.output_report.resolve():
         raise SystemExit("merged dataset and report paths must be distinct")
     if args.output_jsonl.parent.resolve() != args.output_report.parent.resolve():
         raise SystemExit("merged outputs must share one bundle directory")
     if args.output_jsonl.exists() or args.output_report.exists():
         raise SystemExit("refusing to overwrite existing output")
-    root = args.repository_root.resolve()
     spec, prereg_digest, key = _load_preregistration(
         args.preregistration_json, args.origin_key_file, root
     )
@@ -55,8 +56,10 @@ def main() -> None:
         _load_component(Path(dataset), Path(report)) for dataset, report in args.input
     )
     _validate_components(components, spec, prereg_digest, key, root)
-    merger_source = _capture_merger_source(
-        root, components[0][2]["manifest"]["repository_revision"]
+    _validate_merger_ancestry(
+        root,
+        str(components[0][2]["manifest"]["repository_revision"]),
+        str(merger_source["repository_revision"]),
     )
     records = tuple(record for component in components for record in component[3])
     _tensorization_preflight(records, spec)
@@ -331,24 +334,35 @@ def _validate_source_freeze(fixed, spec, root: Path) -> None:
         raise SystemExit("route collection revision changed implementation source")
 
 
-def _capture_merger_source(root: Path, collection_revision: str) -> dict[str, object]:
+def _capture_merger_source(root: Path) -> dict[str, object]:
     revision, dirty, digest = source_snapshot(root)
     if dirty:
         raise SystemExit("route merger checkout is dirty")
+    return {
+        "repository_revision": revision,
+        "repository_dirty": False,
+        "source_digest": digest,
+    }
+
+
+def _validate_merger_ancestry(
+    root: Path, collection_revision: str, merger_revision: str
+) -> None:
     try:
         subprocess.run(
-            ["git", "merge-base", "--is-ancestor", collection_revision, revision],
+            [
+                "git",
+                "merge-base",
+                "--is-ancestor",
+                collection_revision,
+                merger_revision,
+            ],
             cwd=root,
             check=True,
             capture_output=True,
         )
     except (OSError, subprocess.CalledProcessError) as exc:
         raise SystemExit("route merger does not descend from the collection source") from exc
-    return {
-        "repository_revision": revision,
-        "repository_dirty": False,
-        "source_digest": digest,
-    }
 
 
 def _tensorization_preflight(records, spec) -> None:
@@ -452,10 +466,7 @@ def _publish_bundle(
             json.dumps(payload, sort_keys=True, allow_nan=False) + "\n",
             encoding="utf-8",
         )
-        current = _capture_merger_source(
-            root,
-            str(payload["manifest"]["repository_revision"]),
-        )
+        current = _capture_merger_source(root)
         if current != merger_source:
             raise SystemExit("route merger source changed before bundle publication")
         os.rename(staged, final)
