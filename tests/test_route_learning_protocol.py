@@ -18,6 +18,7 @@ from balatro_ai_v2.route_learning_protocol import (
     RouteLearningProtocolError,
     validate_route_learning_preregistration,
 )
+from balatro_ai_v2.strategy_model import STRATEGY_MODEL_SCHEMA_DIGEST
 from balatro_ai_v2.route_teacher_protocol import ROUTE_TEACHER_PROTOCOL_ID
 
 
@@ -28,6 +29,9 @@ def _spec():
         "collection_protocol_id": ROUTE_TEACHER_PROTOCOL_ID,
         "collection_mode": ROUTE_LEARNING_COLLECTION_MODE,
         "collection_schema_version": 11,
+        "collection_preregistration_sha256": "c" * 64,
+        "merger_implementation_revision": "d" * 40,
+        "merger_expected_source_digest": "e" * 64,
         "implementation_revision": "a" * 40,
         "expected_source_digest": "b" * 64,
         "split": copy.deepcopy(SPLIT_CONFIG),
@@ -38,6 +42,7 @@ def _spec():
             "action_influence": False,
             "rollout_authority": False,
             "certificate_required": True,
+            "base_model_schema_digest": STRATEGY_MODEL_SCHEMA_DIGEST,
         },
         "model": copy.deepcopy(MODEL_CONFIG),
         "optimizer": copy.deepcopy(OPTIMIZER_CONFIG),
@@ -45,7 +50,6 @@ def _spec():
         "admission": copy.deepcopy(ADMISSION_CONFIG),
         "holdout_gate": copy.deepcopy(HOLDOUT_GATE),
         "support_cell_contract": copy.deepcopy(SUPPORT_CELL_CONTRACT),
-        "support_cells": [["played_retrigger", "victory", "PACK", 5]],
     }
 
 
@@ -110,7 +114,7 @@ def test_configuration_and_shadow_authority_mutations_fail_closed():
 
 def test_support_cells_are_exact_tuples_not_cartesian_field_lists():
     value = _spec()
-    value["support_cells"] = {
+    value["support_cell_contract"]["tuple_fields"] = {
         "routes": ["played_retrigger"],
         "goals": ["victory"],
         "phases": ["PACK"],
@@ -119,7 +123,7 @@ def test_support_cells_are_exact_tuples_not_cartesian_field_lists():
     with pytest.raises(RouteLearningProtocolError):
         validate_route_learning_preregistration(value)
     value = _spec()
-    value["support_cells"] = [["played_retrigger", "victory", "PACK"]]
+    value["support_cell_contract"]["minimum_train_pairs"] = 1
     with pytest.raises(RouteLearningProtocolError):
         validate_route_learning_preregistration(value)
 
@@ -127,6 +131,9 @@ def test_support_cells_are_exact_tuples_not_cartesian_field_lists():
 def test_digest_and_revision_shape_are_strict():
     for field, bad in (
         ("implementation_revision", True),
+        ("merger_implementation_revision", "c" * 39),
+        ("collection_preregistration_sha256", "c" * 63),
+        ("merger_expected_source_digest", 7),
         ("expected_source_digest", 7),
         ("expected_source_digest", "c" * 63),
     ):

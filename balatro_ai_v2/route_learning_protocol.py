@@ -12,6 +12,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+from balatro_ai_v2.strategy_model import STRATEGY_MODEL_SCHEMA_DIGEST
 from balatro_ai_v2.route_teacher_protocol import ROUTE_TEACHER_PROTOCOL_ID
 
 
@@ -104,13 +105,14 @@ HOLDOUT_GATE = {
     "victory_ante8_non_regression": True,
     "endless_ante_non_regression": True,
     "endless_log_score_non_regression": True,
+    "all_overprediction_within_calibration_radii": True,
 }
 SUPPORT_CELL_CONTRACT = {
     "tuple_fields": ["route", "goal", "phase", "ante"],
-    "minimum_train_pairs": 1,
-    "minimum_calibration_pairs": 1,
-    "minimum_holdout_pairs": 1,
-    "minimum_train_groups": 1,
+    "minimum_train_pairs": 4,
+    "minimum_calibration_pairs": 2,
+    "minimum_holdout_pairs": 2,
+    "minimum_train_groups": 2,
     "minimum_calibration_groups": 1,
     "minimum_holdout_groups": 1,
     "mixed_signs_before_holdout": True,
@@ -150,25 +152,6 @@ def _equal_exact(actual: object, expected: object) -> bool:
     return actual == expected
 
 
-def _validate_support_cells(value: object) -> None:
-    if not isinstance(value, list):
-        raise RouteLearningProtocolError("support_cells must be a list of exact tuples")
-    for index, cell in enumerate(value):
-        if (
-            not isinstance(cell, list)
-            or len(cell) != 4
-            or not all(
-                isinstance(item, (str, int)) and not isinstance(item, bool)
-                for item in cell
-            )
-            or not isinstance(cell[3], int)
-            or isinstance(cell[3], bool)
-        ):
-            raise RouteLearningProtocolError(
-                f"support_cells[{index}] is not a route/goal/phase/ante tuple"
-            )
-
-
 def validate_route_learning_preregistration(spec: object) -> dict[str, Any]:
     """Validate and return a canonical future route-learning preregistration."""
 
@@ -180,6 +163,9 @@ def validate_route_learning_preregistration(spec: object) -> dict[str, Any]:
             "collection_protocol_id",
             "collection_mode",
             "collection_schema_version",
+            "collection_preregistration_sha256",
+            "merger_implementation_revision",
+            "merger_expected_source_digest",
             "implementation_revision",
             "expected_source_digest",
             "split",
@@ -191,7 +177,6 @@ def validate_route_learning_preregistration(spec: object) -> dict[str, Any]:
             "admission",
             "holdout_gate",
             "support_cell_contract",
-            "support_cells",
         },
         "preregistration",
     )
@@ -208,18 +193,26 @@ def validate_route_learning_preregistration(spec: object) -> dict[str, Any]:
         or root["collection_schema_version"] != 11
     ):
         raise RouteLearningProtocolError("collection binding is invalid")
-    if (
-        not isinstance(root["implementation_revision"], str)
-        or len(root["implementation_revision"]) != 40
-        or not all(c in "0123456789abcdef" for c in root["implementation_revision"])
+    for field in ("implementation_revision", "merger_implementation_revision"):
+        value = root[field]
+        if (
+            not isinstance(value, str)
+            or len(value) != 40
+            or not all(c in "0123456789abcdef" for c in value)
+        ):
+            raise RouteLearningProtocolError(f"{field} is invalid")
+    for field in (
+        "expected_source_digest",
+        "merger_expected_source_digest",
+        "collection_preregistration_sha256",
     ):
-        raise RouteLearningProtocolError("implementation revision is invalid")
-    if (
-        not isinstance(root["expected_source_digest"], str)
-        or len(root["expected_source_digest"]) != 64
-        or not all(c in "0123456789abcdef" for c in root["expected_source_digest"])
-    ):
-        raise RouteLearningProtocolError("source digest is invalid")
+        value = root[field]
+        if (
+            not isinstance(value, str)
+            or len(value) != 64
+            or not all(c in "0123456789abcdef" for c in value)
+        ):
+            raise RouteLearningProtocolError(f"{field} is invalid")
     if (
         not _equal_exact(root["split"], SPLIT_CONFIG)
         or not _equal_exact(root["comparator"], ROUTE_LEARNING_COMPARATOR)
@@ -239,6 +232,7 @@ def validate_route_learning_preregistration(spec: object) -> dict[str, Any]:
             "action_influence",
             "rollout_authority",
             "certificate_required",
+            "base_model_schema_digest",
         },
         "artifact",
     )
@@ -250,10 +244,10 @@ def validate_route_learning_preregistration(spec: object) -> dict[str, Any]:
             "action_influence": False,
             "rollout_authority": False,
             "certificate_required": True,
+            "base_model_schema_digest": STRATEGY_MODEL_SCHEMA_DIGEST,
         },
     ):
         raise RouteLearningProtocolError("route artifact is not shadow-only")
-    _validate_support_cells(root["support_cells"])
     return root
 
 
