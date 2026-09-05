@@ -4364,6 +4364,29 @@ has 39 sensitive pairs (15 positive, 23 negative); scalar progress is the main
 signal. Ante-8, Endless-ante, and score heads remain goal-specific guards rather
 than blended utility.
 
+### Route-terminal v1 batch 02 completes (2026-09-05)
+
+Batch 02 on development seeds 2331--2350 completed 20/20 from the same clean
+frozen collection revision. It produced no wins, 4.00 mean antes cleared, six
+runs reaching Ante 6, and a maximum of eight antes cleared. All 140 scheduled
+anchors completed, covering 3,600 terminal root samples, with zero rejected,
+censored, unavailable, unsupported, fallback, or action-affecting work. The
+source search completed 1,146 strategic decisions and 1,149,817 rollout steps
+with zero rejected or unavailable rollouts.
+
+An independent read authenticated every opaque family against the frozen HMAC
+mapping, reproduced the report coverage exactly, and matched the published
+dataset digest
+`d3e341536811bcd058f36cde9bd95ba0379ad43ae861f4cf981add0256ef57df`.
+The report digest is
+`f2783242e6dfb807c127250c2afdd3e1cb9182847f61d610773d654575ca33ad`.
+The component contains 140 records from 20 groups, including 16 route-diverse
+rows across 12 groups and 52 exact same-action pairs. Scalar utility is
+sample-sensitive in 31 pairs (nine positive, 22 negative); next-Boss outcome is
+sensitive in eight (three positive, five negative). Unlike batch 01, it has no
+winning or Endless groups. This is an honest immutable component, not a reason
+to rebalance the preregistered 3/1/1 split.
+
 Collection cost remains sharply concentrated. The batch used 137,340 terminal
 teacher steps in 1,975 seconds of summed worker time. Its slowest 154-root pack
 anchor alone used 25,463 steps and 320 seconds. Prefix deduplication is still not
