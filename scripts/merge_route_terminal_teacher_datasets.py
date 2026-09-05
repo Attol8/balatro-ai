@@ -239,6 +239,7 @@ def _validate_components(
             if isinstance(search_protocol, dict)
             else None
         )
+        run = manifest.get("run")
         if (
             not isinstance(search_protocol, dict)
             or search_protocol.get("version") != "determinized-search-v16"
@@ -272,12 +273,13 @@ def _validate_components(
             or report.get("strategy_tuning") != spec.get("strategy_tuning")
             or manifest.get("backend") != spec.get("backend")
             or manifest.get("source_digest") != spec.get("expected_source_digest")
-            or manifest.get("max_decisions") != 1200
-            or manifest.get("max_antes_cleared") != 20
+            or manifest.get("max_decisions") != ROUTE_TEACHER_SEARCH["max_decisions"]
+            or manifest.get("max_antes_cleared") != ROUTE_TEACHER_SEARCH["ante_cap"]
             or manifest.get("profile_mode") != "all_unlocked"
-            or manifest.get("run", {}).get("deck") != "RED"
-            or manifest.get("run", {}).get("stake") != "WHITE"
-            or manifest.get("run", {}).get("seed")
+            or not isinstance(run, dict)
+            or run.get("deck") != "RED"
+            or run.get("stake") != "WHITE"
+            or run.get("seed")
             != f"{binding.get('seed_start')}:{ROUTE_TEACHER_BATCH_SIZE}"
         ):
             raise SystemExit(f"route component violates frozen protocol: {dataset}")
