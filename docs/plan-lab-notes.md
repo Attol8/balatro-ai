@@ -4435,3 +4435,41 @@ collection tail while the rejected cross-observation cache remains a net loss.
 After this batch became idle, 125 focused route learner/merger/evaluator tests
 and the complete 1,101-test repository suite passed; Ruff and diff whitespace
 checks also passed. Batch 04 remains the untouched calibration component.
+
+### Route-terminal v1 batch 04 exposes a calibration-support miss (2026-09-05)
+
+Batch 04 on development seeds 2371--2390 completed 20/20 from the unchanged
+collection revision. It produced one win, 4.30 mean antes cleared, nine runs
+reaching Ante 6, and a maximum of nine antes cleared. All 167 terminal-teacher
+anchors completed with zero rejected, censored, unavailable, unsupported,
+fallback, or action-affecting work. The source search completed 1,234 strategic
+decisions and 1,210,221 rollout steps.
+
+Independent validation reconstructed all 19 record-bearing HMAC origin families,
+reproduced route coverage exactly, and matched dataset SHA-256
+`48c83c889c6016a92766b393a62f3300e70e23f4cbc1b254db6dbf50b09fb9e8` and
+report SHA-256
+`ded929b82784ed9b0124b7a371e8cde9b5dac0597bd37486017ec4cb4b90444f`.
+The component has 167 rows, 15 route-diverse rows across ten groups, and 25
+exact same-action route pairs: 20 played-retrigger, four held-retrigger, and one
+consumable-duplication pair. Fifteen scalar pairs are sensitive (nine positive,
+six negative); six next-Boss pairs are sensitive (two positive, three negative,
+with one sample-sensitive mean tie).
+
+This calibration component clears the preregistered group, row, pair, scalar
+sensitivity, and mixed-sign minima, and contains five Endless rows from its one
+winning run. Crucially, none of those Endless rows contains an eligible
+non-Victory/ordinary route pair. Exact learner admission therefore reports zero
+resolved `endless_ante` and `log_score` pairs and fails on
+`minimum_endless_ante_calibration_pairs` plus
+`minimum_log_score_calibration_pairs`. The new pre-freeze guard turns this into
+the specified atomic pre-training rejection; it is not repaired by imputing
+targets, moving groups, or inspecting batch 05.
+
+The 4,414-second wall time is itself useful cost evidence. Seed 2387 consumed
+3,754 seconds; its slowest Ante-7 pack anchor had 367 roots, 734 terminal sample
+evaluations, 31,642 steps, and 440.5 seconds. A one-second stack sample during
+that run showed active Python rational arithmetic, consistent with the measured
+exact-`Fraction` scorer bottleneck rather than a worker or IPC stall. Batch 05
+will remain untouched until the learner preregistration is committed; it can
+complete the frozen evidence family but cannot change this calibration verdict.
