@@ -383,3 +383,20 @@ def test_save_rejects_wrong_config_and_embedded_trained_provenance(tmp_path):
             calibration=_calibration(),
             provenance=_provenance(),
         )
+
+
+def test_save_rejects_int_dropout_before_unloadable_round_trip(tmp_path):
+    path = tmp_path / "int-dropout.pt"
+    model = RelationalStrategyPolicyValue(
+        StrategyModelConfig(**{**MODEL_CONFIG, "dropout": 0})
+    )
+    assert model.config == StrategyModelConfig(**MODEL_CONFIG)
+
+    with pytest.raises(ValueError, match="configuration"):
+        save_route_model(
+            path,
+            model,
+            calibration=_calibration(),
+            provenance=_provenance(),
+        )
+    assert not path.exists()

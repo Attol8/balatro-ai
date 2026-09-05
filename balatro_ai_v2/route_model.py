@@ -243,7 +243,7 @@ def _model_config() -> StrategyModelConfig:
 def _validate_model(model: object) -> None:
     if not isinstance(model, RelationalStrategyPolicyValue):
         raise ValueError("route artifact model has the wrong type")
-    if model.config != _model_config():
+    if not _equal_exact(asdict(model.config), MODEL_CONFIG):
         raise ValueError("route artifact model configuration is not frozen")
     if model.calibration != StrategyCalibration():
         raise ValueError("route artifact embedded model calibration must stay default")
