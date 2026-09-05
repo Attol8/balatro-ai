@@ -4332,3 +4332,42 @@ from complete runs that never reached an anchor remain visible in the report but
 correctly have no dataset family. The evaluator rechecks the frozen source before
 work, after work, and before atomic publication. An independent adversarial pass
 found no remaining collection-path blocker. No pilot outcome exists yet.
+
+### Route-terminal v1 pilot passes (2026-09-05)
+
+Batch 01 on development seeds 2311--2330 completed 20/20 from the clean frozen
+collection revision `4ca3692`. It produced two wins, 4.55 mean antes cleared,
+eight runs reaching Ante 6, and a maximum of Ante 10. The action-inert teacher
+completed all 179 scheduled anchors and 1,829 roots with zero rejected,
+censored, unavailable, unsupported, fallback, or action-affecting work. The
+source search also had zero rejected or unavailable rollouts. This remains fast
+Jackdaw capability data, not authoritative Balatro strength evidence.
+
+The published schema-11 dataset SHA-256 is
+`dfac9cfeb8efabfbfba975ef0ca74ca53adb39efb2f1114fd1a6fb3fe1c438a8`.
+An independent read reconstructed all HMAC origin families and exact decision
+identities, matched that digest to the report, and reproduced the reported route
+coverage byte-for-byte. The frozen pilot gate has no failures: 179 records from
+20 groups include 25 route-diverse rows across 12 groups, 160 exact same-action
+pairs, and 94 scalar-sensitive pairs (33 positive, 61 negative). Route support
+spans SHOP and PACK and includes played retrigger, held retrigger, and consumable
+duplication. The gate therefore authorizes batches 02--05 to continue, but still
+does not authorize training or influence.
+
+The pilot changed the learner design before its own preregistration. All 160
+current-blind route residuals are exactly zero because route-diverse SHOP/PACK
+anchors occur only after the current blind is cleared; requiring their MAE to
+strictly beat a literal-zero baseline would be impossible. That head remains a
+reported calibration and hard no-regression guard, while strict predictive
+improvement is required for scalar utility and next-Boss survival. Next-Boss
+has 39 sensitive pairs (15 positive, 23 negative); scalar progress is the main
+signal. Ante-8, Endless-ante, and score heads remain goal-specific guards rather
+than blended utility.
+
+Collection cost remains sharply concentrated. The batch used 137,340 terminal
+teacher steps in 1,975 seconds of summed worker time. Its slowest 154-root pack
+anchor alone used 25,463 steps and 320 seconds. Prefix deduplication is still not
+justified by the earlier identity audit; the bounded cross-clone public-score
+cache remains an experimental optimization pending a six-sample matched replay.
+Batch 02 started only after the pilot component validator and gate were rerun
+from the published bytes and returned no failures.
