@@ -4,9 +4,12 @@
 from __future__ import annotations
 
 import argparse
+import ctypes
+import errno
 import hashlib
 import json
 import os
+import shutil
 import subprocess
 import tempfile
 from pathlib import Path
@@ -480,19 +483,67 @@ def _publish_bundle(
     try:
         digest = write_teacher_records(staged / dataset.name, records)
         payload["strategy_teacher_dataset"]["sha256"] = digest
-        (staged / report.name).write_text(
+        staged_report = staged / report.name
+        staged_report.write_text(
             json.dumps(payload, sort_keys=True, allow_nan=False) + "\n",
             encoding="utf-8",
         )
+        _fsync_file(staged / dataset.name)
+        _fsync_file(staged_report)
         current = _capture_merger_source(root)
         if current != merger_source:
             raise SystemExit("route merger source changed before bundle publication")
-        os.rename(staged, final)
-    except BaseException:
-        for path in staged.iterdir():
-            path.unlink(missing_ok=True)
-        staged.rmdir()
-        raise
+        _fsync_directory(staged)
+        _rename_directory_no_replace(staged, final)
+        _fsync_directory(final.parent)
+    finally:
+        shutil.rmtree(staged, ignore_errors=True)
+
+
+def _rename_directory_no_replace(source: Path, destination: Path) -> None:
+    libc = ctypes.CDLL(None, use_errno=True)
+    source_bytes = os.fsencode(source)
+    destination_bytes = os.fsencode(destination)
+    if sys.platform == "darwin":
+        rename = libc.renamex_np
+        rename.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint]
+        rename.restype = ctypes.c_int
+        result = rename(source_bytes, destination_bytes, 0x00000004)
+    elif sys.platform.startswith("linux"):
+        try:
+            rename = libc.renameat2
+        except AttributeError as exc:
+            raise RuntimeError("atomic no-replace publication is unsupported") from exc
+        rename.argtypes = [
+            ctypes.c_int,
+            ctypes.c_char_p,
+            ctypes.c_int,
+            ctypes.c_char_p,
+            ctypes.c_uint,
+        ]
+        rename.restype = ctypes.c_int
+        result = rename(-100, source_bytes, -100, destination_bytes, 1)
+    else:
+        raise RuntimeError("atomic no-replace publication is unsupported")
+    if result == 0:
+        return
+    error = ctypes.get_errno()
+    if error in {errno.EEXIST, errno.ENOTEMPTY}:
+        raise SystemExit("refusing to overwrite existing bundle")
+    raise OSError(error, os.strerror(error), destination)
+
+
+def _fsync_file(path: Path) -> None:
+    with path.open("rb") as handle:
+        os.fsync(handle.fileno())
+
+
+def _fsync_directory(path: Path) -> None:
+    descriptor = os.open(path, os.O_RDONLY)
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
 
 
 def build_parser() -> argparse.ArgumentParser:

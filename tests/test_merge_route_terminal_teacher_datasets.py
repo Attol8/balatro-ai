@@ -277,6 +277,37 @@ def test_publisher_rejects_identical_dataset_and_report_paths(tmp_path):
         module._publish_bundle(output, output, (), {}, tmp_path, {})
 
 
+def test_publisher_does_not_replace_racing_destination(tmp_path, monkeypatch):
+    module = _module()
+    record = _record(1, b"k" * 32)
+    expected = {
+        "repository_revision": "m",
+        "repository_dirty": False,
+        "source_digest": "x",
+    }
+    dataset = tmp_path / "bundle/teacher.jsonl"
+    output = tmp_path / "bundle/report.json"
+    destination = dataset.parent
+
+    def capture(_root):
+        destination.mkdir(parents=True)
+        (destination / "sentinel").write_text("keep")
+        return expected
+
+    monkeypatch.setattr(module, "_capture_merger_source", capture)
+    with pytest.raises(SystemExit, match="overwrite"):
+        module._publish_bundle(
+            dataset,
+            output,
+            (record,),
+            {"strategy_teacher_dataset": {"sha256": None}},
+            tmp_path,
+            expected,
+        )
+    assert (destination / "sentinel").read_text() == "keep"
+    assert not dataset.exists() and not output.exists()
+
+
 def test_main_captures_merger_source_before_loading_inputs(tmp_path, monkeypatch):
     module = _module()
     calls = []
