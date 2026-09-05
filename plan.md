@@ -1065,6 +1065,24 @@ specialists correctly without displacing ordinary survival. If the artifacts are
 invalid or route-poor, repair the collection protocol and collect high-quality
 public trajectories/terminal labels on unused development seeds before training.
 
+The audit finds no trainable route artifact: success-teacher v5 is schema 2 and
+contextual v10 batch 1 is schema 5, both store only `route=null`, and both are
+already frozen as failed diagnostic evidence. Current teacher schema 10 and model
+format 9 deliberately reject them. Before designing a fresh cohort, run one
+action-inert success-teacher diagnostic on already-observed seed `2309`, whose v16
+replay contained the closest specialist near miss. Use the exact v16 replay
+behavior settings and add the frozen success-teacher defaults: first shop per
+ante, first pack per ante from Ante 4, Boss select from Ante 5, two paired samples,
+600-step cap, victory/death before winning and two-ante Endless horizon after it.
+Publish exclusively at
+`runs/experiments/route-success-diagnostic-v16/seed2309.report.json` and
+`runs/experiments/route-success-diagnostic-v16/seed2309.teacher.jsonl`. Require a
+complete action-identical source trajectory, zero rejected or censored terminal
+work, and at least one non-Victory candidate at a terminal anchor. Measure route
+and phase coverage plus action-sensitive Ante-8/Endless/log-score targets. If the
+near-miss route is absent or terminally tied, redesign anchor scheduling/value
+targets before reserving fresh seeds; do not scale an uninformative collector.
+
 The retired v11 design remains a pre-win/early-Endless continuation increment,
 not the complete high-score policy. Its useful continuation machinery is retained
 inside the broader program above, while its collection protocol remains retired.
