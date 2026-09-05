@@ -713,6 +713,45 @@ def test_original_components_prevent_split_membership_and_record_tamper(
         )
 
 
+def test_original_component_report_paths_are_checkout_portable_but_exact(
+    tmp_path, monkeypatch
+):
+    module = _module()
+    records, report, collection, digest, key, _ = _authenticated_component_fixture(
+        module, monkeypatch, tmp_path
+    )
+    for merged, batch in zip(
+        report["merged_components"], module.ROUTE_TEACHER_BATCHES, strict=True
+    ):
+        report_path = tmp_path / str(batch["report_json"])
+        component = json.loads(report_path.read_text())
+        component["strategy_teacher_dataset"]["path"] = str(
+            Path("/different/clean/checkout") / str(batch["teacher_jsonl"])
+        )
+        report_bytes = json.dumps(component, sort_keys=True).encode()
+        report_path.write_bytes(report_bytes)
+        merged["report_sha256"] = hashlib.sha256(report_bytes).hexdigest()
+
+    module._reauthenticate_original_components(
+        records, report, collection, digest, key, tmp_path
+    )
+
+    first_report = tmp_path / str(module.ROUTE_TEACHER_BATCHES[0]["report_json"])
+    component = json.loads(first_report.read_text())
+    component["strategy_teacher_dataset"]["path"] = (
+        "/different/clean/checkout/batch-99/teacher.jsonl"
+    )
+    tampered_bytes = json.dumps(component, sort_keys=True).encode()
+    first_report.write_bytes(tampered_bytes)
+    report["merged_components"][0]["report_sha256"] = hashlib.sha256(
+        tampered_bytes
+    ).hexdigest()
+    with pytest.raises(SystemExit, match="violates frozen metadata"):
+        module._reauthenticate_original_components(
+            records, report, collection, digest, key, tmp_path
+        )
+
+
 def test_merged_bundle_validates_all_frozen_bindings(monkeypatch, tmp_path):
     module = _module()
     _patch_coverage(module, monkeypatch)

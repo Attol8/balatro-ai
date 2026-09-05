@@ -224,6 +224,45 @@ def test_split_admission_report_is_json_safe_and_fail_closed():
     assert "minimum_groups" in report["splits"]["holdout"]["failures"]
 
 
+def test_split_admission_rejects_missing_calibration_head_before_training():
+    records = []
+    for index in range(40):
+        record = _record(index // 10 + 1)
+        specialist = record.candidates[2]
+        samples = tuple(
+            replace(
+                sample,
+                search_utility=(0.0 if index == 0 else sample.search_utility),
+                endless_ante=None,
+            )
+            for sample in specialist.samples
+        )
+        records.append(
+            replace(
+                record,
+                decision_index=index % 10,
+                candidates=(
+                    *record.candidates[:2],
+                    replace(specialist, samples=samples),
+                ),
+            )
+        )
+
+    class Split:
+        train = holdout = tuple(records)
+        calibration = tuple(records)
+
+    calibration = route_split_admission_report(Split())["splits"]["calibration"]
+    assert calibration["counts"]["groups"] == 4
+    assert calibration["counts"]["rows"] == 40
+    assert calibration["counts"]["matched_pairs"] == 40
+    assert calibration["counts"]["positive_mean_pairs"] == 39
+    assert calibration["counts"]["negative_mean_pairs"] == 1
+    assert calibration["counts"]["resolved_pairs_by_target"]["endless_ante"] == 0
+    assert calibration["failures"] == ["minimum_endless_ante_calibration_pairs"]
+    assert calibration["passed"] is False
+
+
 def test_split_admission_counts_sample_sensitive_mean_ties():
     record = _record(1)
     specialist = record.candidates[2]

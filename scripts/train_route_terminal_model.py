@@ -570,8 +570,9 @@ def _reauthenticate_original_components(
             or teacher.get("status") != "written"
             or teacher.get("mode") != ROUTE_LEARNING_COLLECTION_MODE
             or teacher.get("schema_version") != STRATEGY_TEACHER_SCHEMA_VERSION
-            or not isinstance(teacher_path, str)
-            or (root / teacher_path).resolve() != dataset_path
+            or not _matches_frozen_component_path(
+                teacher_path, str(batch["teacher_jsonl"])
+            )
             or teacher.get("sha256") != dataset_digest
             or not _equal_exact(teacher.get("records"), len(records))
             or not _equal_exact(
@@ -680,6 +681,18 @@ def _reauthenticate_original_components(
         canonical_records.extend(records)
     if tuple(canonical_records) != merged_records:
         raise SystemExit("merged route records are not the canonical component records")
+
+
+def _matches_frozen_component_path(value: object, expected: str) -> bool:
+    if not isinstance(value, str) or not value:
+        return False
+    declared = Path(value)
+    frozen = Path(expected)
+    if ".." in declared.parts or declared.name != frozen.name:
+        return False
+    if not declared.is_absolute():
+        return declared == frozen
+    return declared.parts[-len(frozen.parts) :] == frozen.parts
 
 
 def _validate_frozen_revision(

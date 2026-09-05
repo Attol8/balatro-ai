@@ -102,6 +102,7 @@ def test_configuration_and_shadow_authority_mutations_fail_closed():
         ("objective", "weighting", "row"),
         ("calibration", "radius_estimator", "quantile"),
         ("admission", "minimum_positive_and_negative_by_split", False),
+        ("admission", "minimum_calibration_pairs_by_target", {}),
         ("holdout_gate", "zero_ties", False),
         ("support_cell_contract", "no_independent_field_lists", False),
     ):

@@ -106,6 +106,14 @@ ADMISSION_CONFIG = {
         "holdout": {"groups": 4, "rows": 40, "matched_pairs": 20, "sensitive_pairs": 2},
     },
     "minimum_positive_and_negative_by_split": True,
+    "minimum_calibration_pairs_by_target": {
+        "search_utility": 1,
+        "current_blind_clear": 1,
+        "next_boss_clear": 1,
+        "ante8_win": 1,
+        "endless_ante": 1,
+        "log_score": 1,
+    },
 }
 HOLDOUT_GATE = {
     "minimum_safe_recommendations": 2,

@@ -905,6 +905,48 @@ are ever selected, retained, completed, or escaped, and whether their extra root
 fan-out reduces rollout throughput. Do not reserve or consume a new teacher panel
 until that screen shows useful route diversity and no behavior regression.
 
+### Post-route capability order (elite-play refresh, 2026-09-05)
+
+Finish the immutable route-terminal learner exactly as frozen and interpret a
+pass narrowly: it can validate long-horizon route identity for an existing first
+action, not establish elite live play. The next capability work follows observed
+failure data and public expert play rather than increasing the same rollout
+budget:
+
+1. Complete and differentially lock the public action surface for buy-and-use
+   consumables plus legal pack-phase use, sale, and inventory choreography.
+   Add a bounded trigger-checkpoint scheduler for hand, Joker, and consumable
+   order at shop exit, blind start, first play/discard, scoring, and end of round;
+   do not add every permutation to every strategic root.
+2. Replace the self-reinforcing generic hand prior with a persistent typed build
+   plan separate from the Endless route: target hand family, enabling-card
+   readiness, chips/additive/xMult coverage, scaling source, deck consistency,
+   seal support, economy stage, pivot cost, and confidence. The first 40 route
+   development runs won only 2; Pair or Two Pair dominated 34 of 38 losing-run
+   hand histories, while many deaths retained cash or empty Joker slots.
+3. Export and lockstep-test missing visible runtime values before using them:
+   current Mail-In Rebate rank, Castle suit, Invisible Joker duplication progress,
+   Turtle Bean decay/hand-size bonus, and any Satellite history needed by its
+   public rule. Unknown or unavailable values continue to fail closed.
+4. Learn multi-round spending and sticker lifecycle value instead of adding more
+   fixed reserve constants. Model temporary bridges, Rental liabilities, empty
+   slots, pack development, and planned replacement as continuation value.
+5. Ingest complete authoritative expert trajectories only after steps 1--3 can
+   express their actions. Retain canonical public observations/actions/history,
+   strip seed and all private state, validate temporal legality and hidden twins,
+   split by complete run, behavior-clone for coverage, then correct demonstrated
+   and sibling actions with paired determinized search and DAgger-style expert
+   iteration.
+
+For post-win strength, refine the three broad non-Victory routes into explicit
+public stages: assemble, stabilize economy, concentrate the deck, duplicate exact
+payloads, gain slots/hand size, schedule copy targets, lock late boss/draw setup,
+then balance scoring triggers. Represent exact red-seal Steel Kings and trigger/
+xMult equivalents rather than broad related-tag counts; add distinct played-card
+anchors such as Photograph, Ancient Joker, and Bloodstone; and represent the
+Perkeo-plus-Death sculpting stage before Cryptid/Observatory. Deep Endless uses a
+learned long-horizon stage value, not brute-force one-Ante particles.
+
 Preregister the first v15 behavior screen on fresh development seeds `2275-2286`
 from implementation commit `7fa23ab`. Run two complete Red/White panels with the
 same strategic continuation, policy seed `baseline-v1`, nonce
@@ -1291,6 +1333,26 @@ digest-checks the staged artifact before publication. The report records all
 losses, calibration atoms, literal-zero comparisons, support cells,
 recommendations, failures, environment versions, exact command, and immutable
 input/output digests; neither outcome creates authority or a certificate.
+
+Pre-freeze calibration-admission correction: the real first two components show
+that resolved Endless targets are sparse even when scalar pair and group minima
+pass. Bind the learner preregistration to at least one fully resolved calibration
+pair for every trained residual target, expose the exact per-target counts in the
+split-admission report, and reject before model construction when any target has
+no calibration support. Keep the fitter's independent no-support rejection as a
+second fail-closed check. This converts a predictable one-shot fitter exception
+into the already specified atomic `split_admission_failed` evidence report; it
+does not impute missing targets, relax calibration, or authorize partial heads.
+
+Pre-freeze component-path portability correction: collection reports preserve
+the producer checkout's absolute dataset path, but that machine-local prefix is
+not evidence identity. The trainer still reads each original component only from
+the preregistered path beneath its explicit repository root and rechecks its
+bytes, hashes, HMAC origin families, and report binding. Validate the report's
+path as either that exact frozen relative path or an absolute path ending in the
+same full frozen batch path. Reject traversal and sibling/name-only matches. This
+allows an immutable bundle to be audited in a second clean checkout without
+rewriting signed report bytes or weakening component authentication.
 
 ## Active development loop
 

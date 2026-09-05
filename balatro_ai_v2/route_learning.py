@@ -280,6 +280,13 @@ def route_split_admission_report(split: object) -> dict[str, object]:
             ),
             "positive_mean_pairs": sum(mean > 0.0 for mean in means),
             "negative_mean_pairs": sum(mean < 0.0 for mean in means),
+            "resolved_pairs_by_target": {
+                "search_utility": len(examples),
+                **{
+                    head: sum(all(example.targets.masks[head]) for example in examples)
+                    for head in HEADS
+                },
+            },
         }
         for field in ("groups", "rows", "matched_pairs", "sensitive_pairs"):
             if counts[field] < minimum[field]:
@@ -289,6 +296,12 @@ def route_split_admission_report(split: object) -> dict[str, object]:
                 failures.append("minimum_positive_mean_pairs")
             if counts["negative_mean_pairs"] < 1:
                 failures.append("minimum_negative_mean_pairs")
+        if name == "calibration":
+            for target, required in ADMISSION_CONFIG[
+                "minimum_calibration_pairs_by_target"
+            ].items():
+                if counts["resolved_pairs_by_target"][target] < required:
+                    failures.append(f"minimum_{target}_calibration_pairs")
         sections[name] = {
             "counts": counts,
             "failures": failures,
