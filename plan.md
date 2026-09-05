@@ -1211,6 +1211,13 @@ if actions, projections, root identities, terminal outcomes, rollout counts, and
 failure counters are identical and the six-sample workload gains at least five
 percent wall-clock throughput. Otherwise delete it as a rejected optimization.
 
+The cross-observation score cache is rejected and deleted. On the matched
+six-sample seed-210 replay, every non-timing report field and all 34,506 rollout
+steps were identical, but elapsed time increased from 281.1 to 343.5 seconds,
+throughput fell from 124.1 to 101.5 steps/second, and peak RSS increased from
+227.9 MB to 241.5 MB. Canonical public serialization costs more than the clone
+reuse saves on the real workload; do not revive this key or retain its code.
+
 Route learner design sketch (before batch 05 exists): keep the frozen v14
 trainer, model envelope, shadow wrapper, and continuation certificate unchanged.
 The route learner gets its own protocol, loss/evaluation module, artifact
@@ -1270,6 +1277,20 @@ action, alter an already-selected specialist, authorize rollout continuation,
 or add a deterministic model value to individual rollout particles. It binds
 the model, merged data/report, learner preregistration, training report, exact
 shadow replay, candidate contract, support cells, caps, and calibration radii.
+
+The route trainer is a one-shot, fail-closed evidence producer. It accepts only
+the canonical five-component merged bundle and the two frozen preregistrations,
+captures a clean source snapshot before reading labels, and verifies every
+dataset, report, collection, merger, learner, split, schema, teacher-config, and
+source binding before optimization. It checks the preregistered split admission
+before constructing the model, trains exactly the frozen 30 full-batch epochs,
+fits calibration on batch 04, and evaluates batch 05 once. A failed admission
+or holdout gate emits a no-overwrite rejection report and no model. A passing
+gate atomically publishes a shadow-only model/report bundle, then reloads and
+digest-checks the staged artifact before publication. The report records all
+losses, calibration atoms, literal-zero comparisons, support cells,
+recommendations, failures, environment versions, exact command, and immutable
+input/output digests; neither outcome creates authority or a certificate.
 
 ## Active development loop
 

@@ -4364,6 +4364,14 @@ has 39 sensitive pairs (15 positive, 23 negative); scalar progress is the main
 signal. Ante-8, Endless-ante, and score heads remain goal-specific guards rather
 than blended utility.
 
+Collection cost remains sharply concentrated. The batch used 137,340 terminal
+teacher steps in 1,975 seconds of summed worker time. Its slowest 154-root pack
+anchor alone used 25,463 steps and 320 seconds. Prefix deduplication is still not
+justified by the earlier identity audit; the bounded cross-clone public-score
+cache remains an experimental optimization pending a six-sample matched replay.
+Batch 02 started only after the pilot component validator and gate were rerun
+from the published bytes and returned no failures.
+
 ### Route-terminal v1 batch 02 completes (2026-09-05)
 
 Batch 02 on development seeds 2331--2350 completed 20/20 from the same clean
@@ -4387,10 +4395,14 @@ sensitive in eight (three positive, five negative). Unlike batch 01, it has no
 winning or Endless groups. This is an honest immutable component, not a reason
 to rebalance the preregistered 3/1/1 split.
 
-Collection cost remains sharply concentrated. The batch used 137,340 terminal
-teacher steps in 1,975 seconds of summed worker time. Its slowest 154-root pack
-anchor alone used 25,463 steps and 320 seconds. Prefix deduplication is still not
-justified by the earlier identity audit; the bounded cross-clone public-score
-cache remains an experimental optimization pending a six-sample matched replay.
-Batch 02 started only after the pilot component validator and gate were rerun
-from the published bytes and returned no failures.
+### Cross-observation score cache rejected (2026-09-05)
+
+The bounded public-observation LRU passed unit identity, ordering, failure, and
+eviction tests but failed its frozen six-sample workload gate. Cache-off and
+cache-on seed-210 reports were identical after removing only manifest and timing
+fields: both completed 34,506 rollout steps, cleared three antes, searched 43
+decisions, and changed three. Cache-off took 281.1 seconds at 124.1 steps/second
+with 227.9 MB maximum RSS; cache-on took 343.5 seconds at 101.5 steps/second with
+241.5 MB maximum RSS. That is an 18.2% throughput regression, not the required
+five-percent gain. The cache and its tests were deleted; the experiment reports
+remain local under `/tmp/balatro-cache-s6.TSzhL8/`.
