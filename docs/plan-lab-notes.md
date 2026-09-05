@@ -4212,3 +4212,46 @@ changes immediate survival. The next strength experiment must supply a calibrate
 long-horizon public value from valid expert-iteration/terminal evidence, first in
 shadow and counterfactual replay. If current frozen data lacks route diversity or
 valid provenance, repair and recollect it rather than training a misleading model.
+
+### Route-terminal seed-2309 diagnostic (2026-09-05)
+
+The action-inert success teacher was run once on already-observed development seed
+`2309` from clean commit `7fa23d0`, using the exact v16 replay policy, nonce, six
+online samples, one-ante horizon, and two terminal samples. The report is
+`runs/experiments/route-success-diagnostic-v16/seed2309.report.json` (SHA-256
+`3e8f7386806750af5e6c8ddc68cc6e986e2d7181a08237aae2fb4f182751cc8a`) and the
+teacher is `runs/experiments/route-success-diagnostic-v16/seed2309.teacher.jsonl`
+(SHA-256 `eba20d503e32e1035257e5de3a6ba226a65d78c37c983df0e892c2b17c2c14c9`).
+These ignored artifacts are diagnostic only and are never eligible for training
+or strength claims.
+
+Collection integrity passes. The live run exactly matches seed `2309` in the v16
+causal replay on terminal state, outcome, 188-decision count, action aggregates,
+and complete final public observation: it loses after clearing seven antes with a
+69,102 best hand. All 17 anchors completed with no fallback, unavailability,
+rejection, or censoring. Counter and per-decision teacher time/step totals agree
+exactly. The schema-10 teacher contains 17 rows and 269 roots over BLIND_SELECT,
+SHOP, and PACK; three rows contain 17 played-retrigger roots. No hidden seed is
+stored. The report is incorrectly labelled `legacy`, confirming the audited
+report/trainer protocol gap.
+
+The original one-ante near miss at the first Ante-5 pack is present. Its
+played-retrigger target-[4] root does not survive the terminal check: both paired
+samples lose before Ante 8 and its mean scalar progress is `-0.447` relative to
+the identical ordinary action. However, the same decision contains a target-[3]
+played-retrigger root whose route-conditioned continuation improves paired scalar
+progress by `+1.217` over its identical ordinary sibling and clears the next Boss
+in the second sample where ordinary continuation fails. Across all 17 exact
+same-action route pairs, five change terminal scalar progress, two are positive,
+and one changes next-Boss survival; none changes the Ante-8 target. The teacher
+therefore exposes real route-conditioned continuation signal, but a binary win
+head alone would erase it. The correct learned object is a paired candidate Q
+vector with explicit survival guards and route-specific uncertainty.
+
+The terminal work used 21,515 steps in 216.5 seconds. One 154-root Ante-5 pack
+accounted for 14,401 steps and 146.2 seconds; median anchors had 10 roots and 441
+steps. This identifies pack combinatorics, not determinization or route dispatch,
+as the immediate data-collection cost concentration. Fresh collection remains
+blocked until a distinct route-terminal report/preregistration/merger contract,
+route-sensitive coverage gates, paired calibration, exact-root shadowing, and a
+separate fail-closed route-leaf certificate exist and pass local tests.

@@ -1083,6 +1083,56 @@ and phase coverage plus action-sensitive Ante-8/Endless/log-score targets. If th
 near-miss route is absent or terminally tied, redesign anchor scheduling/value
 targets before reserving fresh seeds; do not scale an uninformative collector.
 
+The seed-2309 diagnostic validates the collector but rejects an Ante-8-only route
+target. The source trajectory is exactly action/outcome identical to the v16
+causal replay and all 17 scheduled anchors completed with zero rejected,
+censored, unavailable, or fallback work. The teacher produced 17 schema-10 rows,
+269 roots, three route-diverse rows, and 17 same-action/different-route pairs.
+Five of those pairs changed paired terminal progress, two positively; one Ante-5
+played-retrigger sibling improved mean terminal progress by `+1.217` and cleared
+the next Boss in a sample where its identical ordinary sibling failed. No pair
+changed the Ante-8 label, and the original target-[4] near miss was terminally
+worse. The usable signal is therefore route-conditioned paired Q residual with
+survival guards, not a standalone binary victory head. The 154-root Ante-5 pack
+also consumed 14,401/21,515 teacher steps, so exact pack-root fan-out is the first
+collection-efficiency target.
+
+Build a separate route-terminal expert-iteration protocol; do not loosen or
+reinterpret the frozen contextual merger, trainer, or continuation certificate:
+
+1. Report `--strategy-options --success-teacher` collections explicitly as
+   `route_terminal_paired_utility`. Bind search v16, teacher schema 10, the exact
+   action-inert anchor schedule, paired sample count/order, complete-root cap,
+   public origin groups, source/runtime digests, and atomic rejection semantics.
+2. Add route coverage computed from the records: route-diverse rows and groups,
+   roots by route, exact same-action/different-route pairs, pair sensitivity and
+   signed residuals for current blind, next Boss, Ante 8, Endless ante, log score,
+   and scalar progress. All-null/Victory-only routes, reordered/substituted
+   triples, partial groups, subsets, censored targets, and mixed configurations
+   fail closed. Freeze numerical cohort gates only after local fixtures and the
+   reused-seed diagnostic exercise the metric contract.
+3. Add a distinct preregistration and merger path for exact v16 triples. Preserve
+   candidate and incoming routes, sample pairing, original order, behavior and
+   ordinary indexes, and configuration digests. The old v14 ordinary merger stays
+   byte-for-byte semantically frozen.
+4. Train the existing candidate-conditioned value vector first; do not invent a
+   no-op terminal leaf. Evaluate paired specialist-minus-matched-ordinary
+   residuals by route, goal, phase, and ante, with false-override, regret,
+   survival-non-regression, calibration, and positive-support gates. The executed
+   source run outcome labels only its factual behavior, never sibling candidates.
+5. Shadow-rank an immutable snapshot of the exact v16 searched roots, including
+   ordinary winner and admissibility. Record every head for every triple; never
+   rebuild generic roots, admit Victory as a specialist, or rank a rejected root.
+6. Authorize influence only through a new route-leaf certificate bound to the
+   model, dataset, report, comparator, supported routes/phases/antes, root cap,
+   calibrated error radii, and v16-or-successor candidate contract. A missing or
+   unsupported certificate returns exact v16 behavior. Never add one deterministic
+   model delta to every rollout particle as if it were independent evidence.
+
+Implement and test the collection/report contract first, then the merger and
+training gates, then exact-root shadow inference and certification. Do not reserve
+fresh development seeds or train from the one-seed diagnostic.
+
 The retired v11 design remains a pre-win/early-Endless continuation increment,
 not the complete high-score policy. Its useful continuation machinery is retained
 inside the broader program above, while its collection protocol remains retired.
