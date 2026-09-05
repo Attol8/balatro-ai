@@ -224,6 +224,27 @@ def test_split_admission_report_is_json_safe_and_fail_closed():
     assert "minimum_groups" in report["splits"]["holdout"]["failures"]
 
 
+def test_split_admission_counts_sample_sensitive_mean_ties():
+    record = _record(1)
+    specialist = record.candidates[2]
+    samples = tuple(
+        replace(sample, search_utility=value)
+        for sample, value in zip(specialist.samples, (0.0, 2.0), strict=True)
+    )
+    tied = replace(
+        record,
+        candidates=(*record.candidates[:2], replace(specialist, samples=samples)),
+    )
+
+    class Split:
+        train = calibration = holdout = (tied,)
+
+    counts = route_split_admission_report(Split())["splits"]["train"]["counts"]
+    assert counts["sensitive_pairs"] == 1
+    assert counts["positive_mean_pairs"] == 0
+    assert counts["negative_mean_pairs"] == 0
+
+
 def test_null_mismatch_masks_only_the_affected_head():
     torch.manual_seed(9)
     record = _record(1, null_ante8=True)

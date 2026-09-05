@@ -274,7 +274,10 @@ def route_split_admission_report(split: object) -> dict[str, object]:
             "groups": len(groups),
             "rows": len(records),
             "matched_pairs": len(examples),
-            "sensitive_pairs": sum(mean != 0.0 for mean in means),
+            "sensitive_pairs": sum(
+                any(value != 0.0 for value in example.targets.scalar)
+                for example in examples
+            ),
             "positive_mean_pairs": sum(mean > 0.0 for mean in means),
             "negative_mean_pairs": sum(mean < 0.0 for mean in means),
         }
