@@ -4532,3 +4532,45 @@ speed work must first attribute clone, initial root step, continuation/scoring,
 and allocation/GC time, then preserve byte-identical root order, labels,
 endpoints, actions, outcomes, steps, and failures on matched development
 replays. Root capping, target pruning, and horizon reduction are not eligible.
+
+### Planet buy-and-use capability contract (2026-09-05)
+
+The first post-freeze capability slice adds an explicit public
+`BuyShopCard(mode=use)` for affordable, catalogued vanilla Planets only. It is
+distinct from storing the offer, does not require consumable capacity, and
+does not widen Tarot, Spectral, targeted, pack-phase, unknown, or modded-card
+semantics. Negative consumables may now also be stored at nominal capacity,
+matching their public edition rule. Strategy-model format 10 has an explicit
+buy-and-use feature; public-model format/proposal schema 9 prevents older
+artifacts from silently acting in the expanded candidate domain. Backend
+adapter version 7 and determinized-search v17 bind the execution change.
+
+BalatroBot uses the selected card's native `buy_and_use` UI definition. It
+rejects invalid modes, non-Planets, unknown Planet keys, projected/live key
+disagreement, unusable cards, and missing/unsettled buttons before mutation.
+Completion requires exactly one shop removal and charge, exactly one hand-level
+increase, the matching `last_tarot_planet`, the original consumable object list
+and limit, full card teardown, cleared use/interrupt locks, and a complete SHOP
+state. A 900-condition bound returns one internal error instead of leaving a
+stale callback. The adjacent Negative Joker capacity check now consults the
+live card edition rather than a nonexistent projected field.
+
+Four focused endpoint cases passed in real Balatro after hardening, including a
+full two-card tray and invalid-mode no-mutation. The preceding complete buy
+endpoint regression passed 23/23 cases. Fixture generation temporarily exposed
+the upstream `set`/`add` endpoints only under debug mode; that exposure was
+removed immediately and these runs are tests, not evidence. The corresponding
+Jackdaw transaction mirrors native remove/add-to-deck/purchase/charge/use/
+remove-from-deck/release order, restores the game-state mapping in place after
+any post-mutation failure, and passed Negative-Planet, full-capacity,
+Constellation, usage, unknown-key, and Credit-Card rollback tests.
+
+The authority-readiness patch was rebuilt from the complete installed diff
+because the earlier incremental artifact no longer applied to pinned upstream.
+Patch SHA-256 is
+`8071d3eb78647010813986b8c4457155cb37522c6e08391944b893fe78763bc9`;
+forward application on clean BalatroBot commit `ce35234` and reverse application
+against the installed tree both pass. After the final adversarial fixes, the
+main project suite passes all 1,110 tests and Ruff plus both repository diff
+checks are clean. Organic authority/candidate lockstep remains required before
+the action is authority-certified.

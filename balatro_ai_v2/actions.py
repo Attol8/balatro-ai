@@ -271,6 +271,9 @@ def iter_legal_actions(observation: PublicObservation) -> Iterator[PublicAction]
             action = BuyShopCard(ShopSlot(index))
             if is_legal(observation, action):
                 yield action
+            use = BuyShopCard(ShopSlot(index), BuyMode.USE)
+            if is_legal(observation, use):
+                yield use
         for index, item in enumerate(observation.vouchers):
             action = BuyVoucher(VoucherSlot(index))
             if is_legal(observation, action):
@@ -384,10 +387,25 @@ def is_legal(observation: PublicObservation, action: PublicAction) -> bool:
             and _valid_hand_selection(observation, action.cards)
         )
     if isinstance(action, BuyShopCard):
-        if phase != Phase.SHOP or action.mode != BuyMode.STORE or action.card.value >= len(observation.shop):
+        if phase != Phase.SHOP or action.card.value >= len(observation.shop):
             return False
         item = observation.shop[action.card.value]
-        return _can_spend(observation, item.buy_cost) and _has_room(observation, item)
+        if not _can_spend(observation, item.buy_cost):
+            return False
+        if action.mode == BuyMode.STORE:
+            return _has_room(observation, item)
+        return (
+            action.mode == BuyMode.USE
+            and isinstance(item, PublicItem)
+            and item.kind == "PLANET"
+            and public_consumable_is_usable(
+                observation,
+                item,
+                (),
+                # The shop card is not occupying a held consumable slot.
+                from_pack=True,
+            )
+        )
     if isinstance(action, BuyVoucher):
         return (
             phase == Phase.SHOP
@@ -533,7 +551,10 @@ def _has_room(
     if kind == "JOKER":
         return item.edition == "NEGATIVE" or len(observation.jokers) < observation.joker_limit
     if kind in {"TAROT", "PLANET", "SPECTRAL"}:
-        return len(observation.consumables) < observation.consumable_limit
+        return (
+            item.edition == "NEGATIVE"
+            or len(observation.consumables) < observation.consumable_limit
+        )
     return False
 
 

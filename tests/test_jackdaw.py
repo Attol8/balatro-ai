@@ -8,6 +8,7 @@ import pytest
 
 import balatro_ai_v2.jackdaw as jackdaw
 from balatro_ai_v2.actions import (
+    BuyMode,
     BuyPack,
     BuyShopCard,
     CashOut,
@@ -943,6 +944,150 @@ def test_candidate_organic_magic_trick_shop_card_purchase_grows_deck() -> None:
         assert after.deck_size == before.deck_size + 1
         assert sum(entry.count for entry in after.remaining_deck) == after.deck_size
         assert len(after.shop) == len(before.shop) - 1
+    finally:
+        backend.close()
+
+
+def test_candidate_planet_buy_and_use_is_atomic_at_full_capacity() -> None:
+    pytest.importorskip("jackdaw")
+    from jackdaw.engine.actions import GamePhase
+    from jackdaw.engine.card_factory import create_consumable, create_joker
+    from jackdaw.engine.data.hands import HandType
+
+    backend = jackdaw.JackdawBackend()
+    try:
+        backend.reset(RunSpec("RED", "WHITE", "9001"))
+        game_state = backend._backend._gs
+        planet = create_consumable("c_mercury")
+        planet.cost = 3
+        planet.edition = {"negative": True}
+        game_state["phase"] = GamePhase.SHOP
+        game_state["dollars"] = 10
+        game_state["shop_cards"] = [planet]
+        game_state["shop_vouchers"] = []
+        game_state["shop_boosters"] = []
+        game_state["shop_voucher_limit"] = 1
+        game_state["shop_booster_limit"] = 2
+        game_state["consumables"] = [
+            create_consumable("c_uranus"),
+            create_consumable("c_pluto"),
+        ]
+        game_state["consumable_slots"] = 2
+        constellation = create_joker("j_constellation")
+        game_state["jokers"] = [constellation]
+        backend.observe()
+        before_level = game_state["hand_levels"].get_state(HandType.PAIR).level
+        before_x_mult = constellation.ability["x_mult"]
+
+        result = backend.step(BuyShopCard(ShopSlot(0), BuyMode.USE))
+
+        assert result.status == "accepted"
+        assert result.after is not None
+        after = to_public_observation(json.loads(result.after.observed.raw_json))
+        assert result.rpc_params == {"card": 0, "mode": "use"}
+        assert after.money == 7
+        assert len(after.shop) == 0
+        assert len(after.consumables) == 2
+        assert after.consumable_limit == 2
+        pair = next(hand for hand in after.hand_stats if hand.name == "Pair")
+        assert pair.level == before_level + 1
+        assert after.last_tarot_planet == "c_mercury"
+        assert game_state["cards_purchased"] == 1
+        assert game_state["consumable_usage"]["c_mercury"]["count"] == 1
+        assert constellation.ability["x_mult"] == pytest.approx(before_x_mult + 0.1)
+    finally:
+        backend.close()
+
+
+def test_candidate_buy_and_use_rejection_does_not_mutate_state() -> None:
+    pytest.importorskip("jackdaw")
+    from jackdaw.engine.actions import GamePhase
+    from jackdaw.engine.card_factory import create_consumable
+
+    backend = jackdaw.JackdawBackend()
+    try:
+        backend.reset(RunSpec("RED", "WHITE", "9002"))
+        game_state = backend._backend._gs
+        tarot = create_consumable("c_magician")
+        tarot.cost = 3
+        game_state["phase"] = GamePhase.SHOP
+        game_state["dollars"] = 10
+        game_state["shop_cards"] = [tarot]
+        game_state["shop_vouchers"] = []
+        game_state["shop_boosters"] = []
+        game_state["shop_voucher_limit"] = 1
+        game_state["shop_booster_limit"] = 2
+        backend.observe()
+        before = backend._handle("gamestate", {})
+
+        with pytest.raises(backend._rpc_error):
+            backend._buy_and_use_planet_compatibility({"card": 0, "mode": "use"})
+        assert backend._handle("gamestate", {}) == before
+        assert game_state["shop_cards"] == [tarot]
+        assert game_state["dollars"] == 10
+    finally:
+        backend.close()
+
+
+def test_candidate_buy_and_use_rejects_unknown_planet_key() -> None:
+    pytest.importorskip("jackdaw")
+    from jackdaw.engine.actions import GamePhase
+    from jackdaw.engine.card_factory import create_consumable
+
+    backend = jackdaw.JackdawBackend()
+    try:
+        backend.reset(RunSpec("RED", "WHITE", "9004"))
+        game_state = backend._backend._gs
+        planet = create_consumable("c_mercury")
+        planet.center_key = "c_modded_planet"
+        game_state["phase"] = GamePhase.SHOP
+        game_state["dollars"] = 10
+        game_state["shop_cards"] = [planet]
+
+        with pytest.raises(backend._rpc_error, match="known Planets only"):
+            backend._buy_and_use_planet_compatibility({"card": 0, "mode": "use"})
+
+        assert game_state["shop_cards"] == [planet]
+        assert game_state["dollars"] == 10
+    finally:
+        backend.close()
+
+
+def test_candidate_buy_and_use_rolls_back_post_mutation_failure_with_credit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pytest.importorskip("jackdaw")
+    from jackdaw.engine import game
+    from jackdaw.engine.actions import GamePhase
+    from jackdaw.engine.card_factory import create_consumable
+
+    backend = jackdaw.JackdawBackend()
+    try:
+        backend.reset(RunSpec("RED", "WHITE", "9003"))
+        game_state = backend._backend._gs
+        planet = create_consumable("c_mercury")
+        planet.cost = 3
+        game_state["phase"] = GamePhase.SHOP
+        game_state["dollars"] = 0
+        game_state["bankrupt_at"] = -20
+        game_state["shop_cards"] = [planet]
+        game_state["shop_vouchers"] = []
+        game_state["shop_boosters"] = []
+        game_state["shop_voucher_limit"] = 1
+        game_state["shop_booster_limit"] = 2
+        before = backend._handle("gamestate", {})
+
+        def fail_after_purchase(*_args: object, **_kwargs: object) -> None:
+            raise RuntimeError("forced Planet failure")
+
+        monkeypatch.setattr(game, "_use_consumable_card", fail_after_purchase)
+        with pytest.raises(RuntimeError, match="forced Planet failure"):
+            backend._buy_and_use_planet_compatibility({"card": 0, "mode": "use"})
+
+        assert backend._backend._gs is game_state
+        assert backend._handle("gamestate", {}) == before
+        assert game_state["dollars"] == 0
+        assert game_state["bankrupt_at"] == -20
     finally:
         backend.close()
 

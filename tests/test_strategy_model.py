@@ -11,6 +11,7 @@ torch = pytest.importorskip("torch")
 
 import balatro_ai_v2.strategy_model as strategy_model_module  # noqa: E402
 from balatro_ai_v2.actions import (  # noqa: E402
+    BuyMode,
     BuyShopCard,
     ShopSlot,
     HandSlot,
@@ -293,6 +294,28 @@ def test_shop_playing_card_tensor_preserves_card_price_and_action_relation() -> 
     )
     assert batch.action_relations[0, 0, shop_rows[0]].any()
     assert batch.action_relations[1, 0, shop_rows[1]].any()
+
+
+def test_shop_planet_store_and_buy_and_use_have_distinct_action_features() -> None:
+    raw = state("SHOP", money=10)
+    raw["shop"] = {
+        "cards": [item_card("c_mercury", card_id=90, kind="PLANET", buy=3)],
+        "count": 1,
+        "highlighted_limit": 1,
+        "limit": 2,
+    }
+    observation = to_public_observation(raw)
+    store = BuyShopCard(ShopSlot(0))
+    use = BuyShopCard(ShopSlot(0), BuyMode.USE)
+
+    batch = PublicStrategyTensorizer(_config()).tensorize(
+        (observation,), ((store, use),)
+    )
+
+    feature = strategy_model_module._FEATURE_INDEX["action_buy_and_use"]
+    assert batch.action_features[0, 0, feature] == 0
+    assert batch.action_features[0, 1, feature] == 1
+    assert not torch.equal(batch.action_features[0, 0], batch.action_features[0, 1])
 
 
 def test_intent_conditioning_admits_same_action_with_distinct_intents() -> None:
@@ -926,7 +949,7 @@ def test_strategy_checkpoint_round_trip_and_digest(tmp_path) -> None:
     assert loaded.calibration == StrategyCalibration()
     assert loaded.provenance == {"training_status": "untrained"}
     payload = torch.load(path, weights_only=True)
-    assert payload["format_version"] == STRATEGY_MODEL_FORMAT_VERSION == 9
+    assert payload["format_version"] == STRATEGY_MODEL_FORMAT_VERSION == 10
     assert set(payload) == {
         "format_version",
         "schema_digest",

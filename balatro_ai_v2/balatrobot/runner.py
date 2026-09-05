@@ -7,6 +7,7 @@ from collections import Counter
 from dataclasses import dataclass
 
 from balatro_ai_v2.actions import (
+    BuyMode,
     BuyPack,
     BuyShopCard,
     BuyVoucher,
@@ -352,7 +353,11 @@ def _semantic_action_label(
     action_name: str
     if isinstance(action, BuyShopCard):
         item = observation.shop[action.card.value]
-        action_name = "buy_shop_card"
+        action_name = (
+            "buy_and_use_consumable"
+            if action.mode == BuyMode.USE
+            else "buy_shop_card"
+        )
     elif isinstance(action, BuyVoucher):
         item = observation.vouchers[action.voucher.value]
         action_name = "buy_voucher"

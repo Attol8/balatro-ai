@@ -8,6 +8,7 @@ from collections.abc import Mapping, Sequence
 from typing import Any
 
 from balatro_ai_v2.actions import (
+    BuyMode,
     BuyPack,
     BuyShopCard,
     BuyVoucher,
@@ -238,7 +239,10 @@ def action_to_rpc(action: PublicAction, observation: PublicObservation) -> tuple
     if isinstance(action, DiscardCards):
         return "discard", {"cards": [slot.value for slot in action.cards]}
     if isinstance(action, BuyShopCard):
-        return "buy", {"card": action.card.value}
+        params: JsonObject = {"card": action.card.value}
+        if action.mode == BuyMode.USE:
+            params["mode"] = "use"
+        return "buy", params
     if isinstance(action, BuyVoucher):
         return "buy", {"voucher": action.voucher.value}
     if isinstance(action, BuyPack):

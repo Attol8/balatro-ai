@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from balatro_ai_v2.actions import (
+    BuyMode,
     BuyShopCard,
     ConsumableSlot,
     SelectBlind,
@@ -294,6 +295,21 @@ def test_runner_semantic_action_label_uses_public_item_key() -> None:
     assert (
         _semantic_action_label(observation, BuyShopCard(ShopSlot(0)))
         == "buy_shop_card:j_joker"
+    )
+
+    raw = state("SHOP", money=10)
+    raw["shop"] = {
+        "cards": [item_card("c_mercury", card_id=90, kind="PLANET", buy=3)],
+        "count": 1,
+        "highlighted_limit": 1,
+        "limit": 2,
+    }
+    planet_shop = to_public_observation(raw)
+    assert (
+        _semantic_action_label(
+            planet_shop, BuyShopCard(ShopSlot(0), BuyMode.USE)
+        )
+        == "buy_and_use_consumable:c_mercury"
     )
 
 

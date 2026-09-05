@@ -13,13 +13,13 @@ from balatro_ai_v2.route_learning_protocol import (
     OPTIMIZER_CONFIG,
     ROUTE_LEARNING_COLLECTION_MODE,
     ROUTE_LEARNING_COMPARATOR,
+    ROUTE_LEARNING_BASE_MODEL_SCHEMA_DIGEST,
     ROUTE_LEARNING_PROTOCOL_ID,
     SPLIT_CONFIG,
     SUPPORT_CELL_CONTRACT,
     RouteLearningProtocolError,
     validate_route_learning_preregistration,
 )
-from balatro_ai_v2.strategy_model import STRATEGY_MODEL_SCHEMA_DIGEST
 from balatro_ai_v2.route_teacher_protocol import ROUTE_TEACHER_PROTOCOL_ID
 
 
@@ -43,7 +43,7 @@ def _spec():
             "action_influence": False,
             "rollout_authority": False,
             "certificate_required": True,
-            "base_model_schema_digest": STRATEGY_MODEL_SCHEMA_DIGEST,
+            "base_model_schema_digest": ROUTE_LEARNING_BASE_MODEL_SCHEMA_DIGEST,
         },
         "model": copy.deepcopy(MODEL_CONFIG),
         "optimizer": copy.deepcopy(OPTIMIZER_CONFIG),

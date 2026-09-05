@@ -1,16 +1,290 @@
+diff --git a/balatrobot.lua b/balatrobot.lua
+index a7cfe8c..1eac5f5 100644
+--- a/balatrobot.lua
++++ b/balatrobot.lua
+@@ -13,11 +13,7 @@ BB_ENDPOINTS = {
+   -- Save/load endpoints
+   "src/lua/endpoints/save.lua",
+   "src/lua/endpoints/load.lua",
+-  -- Screenshot endpoint
+-  "src/lua/endpoints/screenshot.lua",
+-  -- Game control endpoints
+-  "src/lua/endpoints/set.lua",
+-  "src/lua/endpoints/add.lua",
++  "src/lua/endpoints/checkpoint.lua",
+   -- Gameplay endpoints
+   "src/lua/endpoints/menu.lua",
+   "src/lua/endpoints/start.lua",
+@@ -28,13 +24,12 @@ BB_ENDPOINTS = {
+   "src/lua/endpoints/highlight.lua",
+   "src/lua/endpoints/play.lua",
+   "src/lua/endpoints/discard.lua",
+-  "src/lua/endpoints/score_many.lua",
+-  "src/lua/endpoints/score_shop_candidate.lua",
+   -- Cash out endpoint
+   "src/lua/endpoints/cash_out.lua",
+   -- Shop endpoints
+   "src/lua/endpoints/next_round.lua",
+   "src/lua/endpoints/reroll.lua",
++  "src/lua/endpoints/reroll_boss.lua",
+   "src/lua/endpoints/buy.lua",
+   "src/lua/endpoints/pack.lua",
+   -- Rearrange endpoint
 diff --git a/src/lua/endpoints/buy.lua b/src/lua/endpoints/buy.lua
-index 96b432c..24f0fb0 100644
+index 96b432c..b3a6480 100644
 --- a/src/lua/endpoints/buy.lua
 +++ b/src/lua/endpoints/buy.lua
-@@ -134 +134,2 @@ return {
+@@ -1,5 +1,20 @@
+ -- src/lua/endpoints/buy.lua
+
++local VANILLA_PLANETS = {
++  c_pluto = true,
++  c_mercury = true,
++  c_uranus = true,
++  c_venus = true,
++  c_saturn = true,
++  c_jupiter = true,
++  c_earth = true,
++  c_mars = true,
++  c_neptune = true,
++  c_planet_x = true,
++  c_ceres = true,
++  c_eris = true,
++}
++
+ -- ==========================================================================
+ -- Buy Endpoint Params
+ -- ==========================================================================
+@@ -8,6 +23,7 @@
+ ---@field card integer? 0-based index of card to buy
+ ---@field voucher integer? 0-based index of voucher to buy
+ ---@field pack integer? 0-based index of pack to buy
++---@field mode "store"|"use"? Whether a shop card is stored or bought and used
+
+ -- ==========================================================================
+ -- Buy Endpoint
+@@ -36,6 +52,12 @@ return {
+       required = false,
+       description = "0-based index of pack to buy",
+     },
++    mode = {
++      type = "string",
++      required = false,
++      enum = { "store", "use" },
++      description = "Shop card purchase mode; 'use' is restricted to Planet cards",
++    },
+   },
+
+   requires_state = { G.STATES.SHOP },
+@@ -45,6 +67,14 @@ return {
+   execute = function(args, send_response)
+     sendDebugMessage("Init buy()", "BB.ENDPOINTS")
+     local gamestate = BB_GAMESTATE.get_gamestate()
++    if args.mode ~= nil and args.mode ~= "store" and args.mode ~= "use" then
++      send_response({
++        message = "Invalid purchase mode. Must be one of: store, use",
++        name = BB_ERROR_NAMES.BAD_REQUEST,
++      })
++      return
++    end
++    local buy_and_use = args.mode == "use"
+     local area
+     local pos
+     local set = 0
+@@ -82,6 +112,14 @@ return {
+       return
+     end
+
++    if args.mode and not args.card then
++      send_response({
++        message = "Purchase mode is valid only with card",
++        name = BB_ERROR_NAMES.BAD_REQUEST,
++      })
++      return
++    end
++
+     -- Validate that the area has cards
+     if #area.cards == 0 then
+       local msg
+@@ -118,6 +156,26 @@ return {
+
+     -- Get the card
+     local card = area.cards[pos]
++    local shop_card = args.card and G.shop_jokers.cards[pos] or nil
++
++    if buy_and_use and (
++      card.set ~= "PLANET"
++      or not shop_card
++      or not shop_card.ability
++      or shop_card.ability.set ~= "Planet"
++      or not shop_card.config
++      or not shop_card.config.center
++      or not VANILLA_PLANETS[shop_card.config.center.key]
++      or card.key ~= shop_card.config.center.key
++      or not shop_card.can_use_consumeable
++      or not shop_card:can_use_consumeable()
++    ) then
++      send_response({
++        message = "Buy-and-use is available only for a usable Planet card",
++        name = BB_ERROR_NAMES.NOT_ALLOWED,
++      })
++      return
++    end
+
+     -- Check if the card can be afforded (accounting for Credit Card joker via bankrupt_at)
+     local available_money = G.GAME.dollars - G.GAME.bankrupt_at
+@@ -131,7 +189,8 @@ return {
+
+     -- Ensure there is space in joker area
+     if card.set == "JOKER" then
 -      if gamestate.jokers.count >= gamestate.jokers.limit then
-+      local is_negative = card.edition and card.edition.negative
++      local is_negative = shop_card and shop_card.edition and shop_card.edition.negative
 +      if gamestate.jokers.count >= gamestate.jokers.limit and not is_negative then
+         send_response({
+           message = "Cannot purchase joker card, joker slots are full. Current: "
+             .. gamestate.jokers.count
+@@ -145,7 +204,8 @@ return {
+
+     -- Ensure there is space in consumable area
+     if card.set == "PLANET" or card.set == "SPECTRAL" or card.set == "TAROT" then
+-      if gamestate.consumables.count >= gamestate.consumables.limit then
++      local is_negative = shop_card and shop_card.edition and shop_card.edition.negative
++      if not buy_and_use and gamestate.consumables.count >= gamestate.consumables.limit and not is_negative then
+         send_response({
+           message = "Cannot purchase consumable card, consumable slots are full. Current: "
+             .. gamestate.consumables.count
+@@ -160,6 +220,18 @@ return {
+     local initial_shop_count = 0
+     local initial_dest_count = 0
+     local initial_money = gamestate.money
++    local initial_consumable_count = gamestate.consumables.count
++    local initial_hand_levels = {}
++    local initial_consumable_limit = G.consumeables.config.card_limit
++    local initial_consumable_cards = {}
++    if buy_and_use then
++      for hand_name, hand in pairs(gamestate.hands) do
++        initial_hand_levels[hand_name] = hand.level
++      end
++      for index, consumable in ipairs(G.consumeables.cards) do
++        initial_consumable_cards[index] = consumable
++      end
++    end
+
+     if args.card then
+       initial_shop_count = gamestate.shop.count
+@@ -177,7 +249,12 @@ return {
+     -- Get the buy button from the card
+     local btn
+     if args.card then
+-      btn = G.shop_jokers.cards[pos].children.buy_button.definition
++      if buy_and_use then
++        btn = shop_card.children.buy_and_use_button
++          and shop_card.children.buy_and_use_button.definition
++      else
++        btn = shop_card.children.buy_button.definition
++      end
+     elseif args.voucher then
+       btn = G.shop_vouchers.cards[pos].children.buy_button.definition
+     elseif args.pack then
+@@ -185,7 +262,19 @@ return {
+     end
+     if not btn then
+       send_response({
+-        message = "No buy button found for card",
++        message = buy_and_use and "No buy-and-use button found for card" or "No buy button found for card",
++        name = BB_ERROR_NAMES.NOT_ALLOWED,
++      })
++      return
++    end
++    if buy_and_use and (
++      not btn.config
++      or btn.config.id ~= "buy_and_use"
++      or btn.config.ref_table ~= shop_card
++      or btn.config.button ~= "buy_from_shop"
++    ) then
++      send_response({
++        message = "Buy-and-use button is not settled for the selected Planet",
+         name = BB_ERROR_NAMES.NOT_ALLOWED,
+       })
+       return
+@@ -204,10 +293,12 @@ return {
+     end
+
+     -- Wait for buy completion with comprehensive verification
++    local completion_checks = 0
+     G.E_MANAGER:add_event(Event({
+       trigger = "condition",
+       blocking = false,
+       func = function()
++        completion_checks = completion_checks + 1
+         local done = false
+
+         if args.card then
+@@ -218,7 +309,40 @@ return {
+           local shop_decreased = (shop_count == initial_shop_count - 1)
+           local dest_increased = (dest_count == initial_dest_count + 1)
+           local money_deducted = (G.GAME.dollars == initial_money - card.cost.buy)
+-          if shop_decreased and dest_increased and money_deducted and G.STATE == G.STATES.SHOP then
++          if buy_and_use then
++            local current = BB_GAMESTATE.get_gamestate()
++            local leveled_hands = 0
++            for hand_name, hand in pairs(current.hands) do
++              local initial_level = initial_hand_levels[hand_name]
++              if initial_level and hand.level == initial_level + 1 then
++                leveled_hands = leveled_hands + 1
++              elseif initial_level and hand.level ~= initial_level then
++                leveled_hands = -1000
++              end
++            end
++            local same_inventory = #G.consumeables.cards == #initial_consumable_cards
++            if same_inventory then
++              for index, consumable in ipairs(initial_consumable_cards) do
++                if G.consumeables.cards[index] ~= consumable then
++                  same_inventory = false
++                  break
++                end
++              end
++            end
++            local tray_unchanged = current.consumables.count == initial_consumable_count
++              and G.consumeables.config.card_limit == initial_consumable_limit
++              and same_inventory
++            local planet_recorded = current.last_tarot_planet == card.key
++            local controller_unlocked = not G.CONTROLLER.locks.use
++            local no_stop_use = not (G.GAME.STOP_USE and G.GAME.STOP_USE > 0)
++            local use_finished = shop_card.REMOVED and not G.TAROT_INTERRUPT
++            if shop_decreased and tray_unchanged and money_deducted
++              and leveled_hands == 1 and planet_recorded
++              and controller_unlocked and no_stop_use and use_finished
++              and G.STATE == G.STATES.SHOP and G.STATE_COMPLETE then
++              done = true
++            end
++          elseif shop_decreased and dest_increased and money_deducted and G.STATE == G.STATES.SHOP then
+             done = true
+           end
+         elseif args.voucher then
+@@ -292,6 +416,14 @@ return {
+           return true
+         end
+
++        if completion_checks >= 900 then
++          send_response({
++            message = "Purchase did not settle to its declared postconditions",
++            name = BB_ERROR_NAMES.INTERNAL_ERROR,
++          })
++          return true
++        end
++
+         return false
+       end,
+     }))
 diff --git a/src/lua/endpoints/cash_out.lua b/src/lua/endpoints/cash_out.lua
 index 03e7ee6..e9c5156 100644
 --- a/src/lua/endpoints/cash_out.lua
 +++ b/src/lua/endpoints/cash_out.lua
-@@ -28 +28,19 @@ return {
+@@ -25,7 +25,25 @@ return {
+   ---@param send_response fun(response: Response.Endpoint)
+   execute = function(_, send_response)
+     sendDebugMessage("Init cash_out()", "BB.ENDPOINTS")
 -    G.FUNCS.cash_out({ config = {} })
 +
 +    -- A prior round's standalone cash-out UIBox can remain in G.I.UIBOX.
@@ -31,11 +305,17 @@ index 03e7ee6..e9c5156 100644
 +    end
 +
 +    G.FUNCS.cash_out(cash_out_button)
+
+     local num_items = function(area)
+       local count = 0
 diff --git a/src/lua/endpoints/discard.lua b/src/lua/endpoints/discard.lua
 index 22d2f6e..e334b33 100644
 --- a/src/lua/endpoints/discard.lua
 +++ b/src/lua/endpoints/discard.lua
-@@ -70,0 +71,19 @@ return {
+@@ -70,6 +70,25 @@ return {
+       end
+     end
+
 +    for _, hand_card in ipairs(G.hand.cards) do
 +      if hand_card.ability and hand_card.ability.forced_selection then
 +        local includes_forced = false
@@ -55,11 +335,17 @@ index 22d2f6e..e334b33 100644
 +      end
 +    end
 +
+     -- NOTE: Clear any existing highlights before selecting new cards
+     -- prevent state pollution. This is a bit of a hack but could interfere
+     -- with Boss Blind like Cerulean Bell.
 diff --git a/src/lua/endpoints/health.lua b/src/lua/endpoints/health.lua
 index f43b412..d551d2a 100644
 --- a/src/lua/endpoints/health.lua
 +++ b/src/lua/endpoints/health.lua
-@@ -28,0 +29,9 @@ return {
+@@ -26,8 +26,19 @@ return {
+   execute = function(_, send_response)
+     sendDebugMessage("Init health()", "BB.ENDPOINTS")
+     sendDebugMessage("Return health()", "BB.ENDPOINTS")
 +    local active_mods = {}
 +    if SMODS and SMODS.Mods then
 +      for id, mod in pairs(SMODS.Mods) do
@@ -69,14 +355,257 @@ index f43b412..d551d2a 100644
 +      end
 +      table.sort(active_mods)
 +    end
-@@ -30,0 +40,2 @@ return {
+     send_response({
+       status = "ok",
 +      profile_mode = BB_SETTINGS.all_unlocked and "all_unlocked" or "career",
 +      active_mods = active_mods,
+     })
+   end,
+ }
+diff --git a/src/lua/endpoints/load.lua b/src/lua/endpoints/load.lua
+index eafb9fc..124b8d5 100644
+--- a/src/lua/endpoints/load.lua
++++ b/src/lua/endpoints/load.lua
+@@ -12,6 +12,7 @@
+ -- ==========================================================================
+
+ local nativefs = require("nativefs")
++local RUN_RESTORE = assert(SMODS.load_file("src/lua/utils/run_restore.lua"))()
+
+ -- ==========================================================================
+ -- Load Endpoint
+@@ -38,6 +39,7 @@ return {
+   ---@param send_response fun(response: Response.Endpoint)
+   execute = function(args, send_response)
+     sendDebugMessage("Init load()", "BB.ENDPOINTS")
++    if BB_CHECKPOINT_CLEAR then BB_CHECKPOINT_CLEAR() end
+     local path = args.path
+
+     -- Check if file exists
+@@ -76,10 +78,8 @@ return {
+     end
+
+     -- Load using game's built-in functions
+-    G:delete_run()
+-    G.SAVED_GAME = get_compressed(temp_filename) ---@diagnostic disable-line: undefined-global
+-
+-    if G.SAVED_GAME == nil then
++    local serialized = get_compressed(temp_filename) ---@diagnostic disable-line: undefined-global
++    if serialized == nil then
+       send_response({
+         message = "Invalid save file format",
+         name = BB_ERROR_NAMES.INTERNAL_ERROR,
+@@ -88,85 +88,10 @@ return {
+       return
+     end
+
+-    G.SAVED_GAME = STR_UNPACK(G.SAVED_GAME)
+-
+-    -- Temporarily suppress "Card area not instantiated" warnings during load
+-    -- These are expected when loading a save from shop state (shop CardAreas
+-    -- are created later when the shop UI renders, and the game handles this)
+-    local original_print = print
+-    print = function(msg)
+-      if type(msg) == "string" and msg:find("ERROR LOADING GAME: Card area") then
+-        return -- suppress expected warning
+-      end
+-      original_print(msg)
+-    end
+-
+-    G:start_run({ savetext = G.SAVED_GAME })
+-
+-    -- Restore original print
+-    print = original_print
+-
+-    -- Clean up
+     love.filesystem.remove(temp_filename)
+-
+-    local num_items = function(area)
+-      local count = 0
+-      if area and area.cards then
+-        for _, v in ipairs(area.cards) do
+-          if v.children.buy_button and v.children.buy_button.definition then
+-            count = count + 1
+-          end
+-        end
+-      end
+-      return count
+-    end
+-
+-    G.E_MANAGER:add_event(Event({
+-      no_delete = true,
+-      trigger = "condition",
+-      blocking = false,
+-      func = function()
+-        local done = false
+-
+-        if not G.STATE_COMPLETE or G.CONTROLLER.locked then
+-          return false
+-        end
+-
+-        if G.STATE == G.STATES.BLIND_SELECT then
+-          done = G.GAME.blind_on_deck ~= nil
+-            and G.blind_select_opts ~= nil
+-            and G.blind_select_opts["small"]:get_UIE_by_ID("tag_Small") ~= nil
+-        end
+-
+-        if G.STATE == G.STATES.SELECTING_HAND then
+-          done = G.hand ~= nil
+-        end
+-
+-        if G.STATE == G.STATES.ROUND_EVAL and G.round_eval then
+-          for _, b in ipairs(G.I.UIBOX) do
+-            if b:get_UIE_by_ID("cash_out_button") then
+-              done = true
+-            end
+-          end
+-        end
+-
+-        if G.STATE == G.STATES.SHOP then
+-          done = num_items(G.shop_booster) > 0 or num_items(G.shop_jokers) > 0 or num_items(G.shop_vouchers) > 0
+-        end
+-
+-        if G.STATE == G.STATES.SMODS_BOOSTER_OPENED then
+-          done = G.pack_cards and G.pack_cards.cards and #G.pack_cards.cards > 0
+-        end
+-
+-        if done then
+-          sendDebugMessage("Return load() - loaded from " .. path, "BB.ENDPOINTS")
+-          send_response({
+-            success = true,
+-            path = path,
+-          })
+-        end
+-        return done
+-      end,
+-    }))
++    RUN_RESTORE.restore(serialized, send_response, function()
++      sendDebugMessage("Return load() - loaded from " .. path, "BB.ENDPOINTS")
++      send_response({ success = true, path = path })
++    end)
+   end,
+ }
+diff --git a/src/lua/endpoints/menu.lua b/src/lua/endpoints/menu.lua
+index daade39..b342143 100644
+--- a/src/lua/endpoints/menu.lua
++++ b/src/lua/endpoints/menu.lua
+@@ -25,6 +25,7 @@ return {
+   ---@param send_response fun(response: Response.Endpoint)
+   execute = function(_, send_response)
+     sendDebugMessage("Init menu()", "BB.ENDPOINTS")
++    if BB_CHECKPOINT_CLEAR then BB_CHECKPOINT_CLEAR() end
+     if G.STATE ~= G.STATES.MENU then
+       G.FUNCS.go_to_menu({})
+     end
+diff --git a/src/lua/endpoints/pack.lua b/src/lua/endpoints/pack.lua
+index 214a0b4..7f34198 100644
+--- a/src/lua/endpoints/pack.lua
++++ b/src/lua/endpoints/pack.lua
+@@ -137,15 +137,15 @@ return {
+       sendDebugMessage(string.format("Pack: skipping (%d cards remaining)", pack_count), "BB.ENDPOINTS")
+       G.FUNCS.skip_booster({})
+
+-      -- Wait for pack to close and return to shop
++      -- Shop packs return to SHOP; blind-skip tag packs return to BLIND_SELECT.
+       G.E_MANAGER:add_event(Event({
+         trigger = "condition",
+         blocking = false,
+         func = function()
+           local pack_closed = not G.pack_cards or G.pack_cards.REMOVED
+-          local back_to_shop = G.STATE == G.STATES.SHOP
++          local back_to_decision = G.STATE == G.STATES.SHOP or G.STATE == G.STATES.BLIND_SELECT
+
+-          if pack_closed and back_to_shop then
++          if pack_closed and back_to_decision then
+             sendDebugMessage("Return pack() after skip", "BB.ENDPOINTS")
+             send_response(BB_GAMESTATE.get_gamestate())
+             return true
+@@ -195,7 +195,8 @@ return {
+       if card.ability and card.ability.set == "Joker" then
+         local joker_count = G.jokers and G.jokers.config and G.jokers.config.card_count or 0
+         local joker_limit = G.jokers and G.jokers.config and G.jokers.config.card_limit or 0
+-        if joker_count >= joker_limit then
++        local is_negative = card.edition and card.edition.negative
++        if joker_count >= joker_limit and not is_negative then
+           send_response({
+             message = "Cannot select joker, joker slots are full. Current: "
+               .. joker_count
+@@ -252,11 +253,28 @@ return {
+
+           -- Highlight the target cards in hand
+           if args.targets and #args.targets > 0 then
+-            -- Clear existing highlights using proper CardArea method
+-            for i = #G.hand.highlighted, 1, -1 do
+-              G.hand:remove_from_highlighted(G.hand.highlighted[i], true)
++            for _, hand_card in ipairs(G.hand.cards) do
++              if hand_card.ability and hand_card.ability.forced_selection then
++                local includes_forced = false
++                for _, target_idx in ipairs(args.targets) do
++                  if G.hand.cards[target_idx + 1] == hand_card then
++                    includes_forced = true
++                    break
++                  end
++                end
++                if not includes_forced then
++                  send_response({
++                    message = "Pack targets must include Cerulean Bell's forced card",
++                    name = BB_ERROR_NAMES.NOT_ALLOWED,
++                  })
++                  return true
++                end
++              end
+             end
+
++            -- Match the UI: preserve Cerulean Bell's forced selection.
++            G.hand:unhighlight_all()
++
+             -- Highlight target cards using proper CardArea method
+             for _, target_idx in ipairs(args.targets) do
+               local hand_pos = target_idx + 1 -- Convert 0-based to 1-based
+@@ -267,7 +285,9 @@ return {
+                 })
+                 return true
+               end
+-              G.hand:add_to_highlighted(G.hand.cards[hand_pos], true)
++              if not G.hand.cards[hand_pos].highlighted then
++                G.hand:add_to_highlighted(G.hand.cards[hand_pos], true)
++              end
+             end
+           end
+         end
+@@ -294,6 +314,7 @@ return {
+       }
+
+       local pack_choices_before = G.GAME.pack_choices or 0
++      local pack_state_before = G.STATE
+
+       selection_in_progress = true
+       G.FUNCS.use_card(btn)
+@@ -304,12 +325,14 @@ return {
+         blocking = false,
+         func = function()
+           -- Check if more selections remain (mega packs decrement pack_choices)
+-          if pack_choices_before == 2 and G.GAME.pack_choices and G.GAME.pack_choices == 1 then
++          if pack_choices_before > 1
++            and G.GAME.pack_choices
++            and G.GAME.pack_choices == pack_choices_before - 1 then
+             -- Pack stays open - wait for stabilization
+             local pack_stable = G.pack_cards
+               and not G.pack_cards.REMOVED
+               and G.STATE_COMPLETE
+-              and G.STATE == G.STATES.SMODS_BOOSTER_OPENED
++              and G.STATE == pack_state_before
+
+             if pack_stable then
+               selection_in_progress = false
 diff --git a/src/lua/endpoints/play.lua b/src/lua/endpoints/play.lua
-index 2c63b56..fbb0985 100644
+index 2c63b56..90c136c 100644
 --- a/src/lua/endpoints/play.lua
 +++ b/src/lua/endpoints/play.lua
-@@ -64,0 +65,19 @@ return {
+@@ -64,6 +64,25 @@ return {
+       end
+     end
+
 +    for _, hand_card in ipairs(G.hand.cards) do
 +      if hand_card.ability and hand_card.ability.forced_selection then
 +        local includes_forced = false
@@ -96,114 +625,128 @@ index 2c63b56..fbb0985 100644
 +      end
 +    end
 +
-@@ -137 +137,3 @@ return {
+     -- NOTE: Clear any existing highlights before selecting new cards
+     -- prevent state pollution. This is a bit of a hack but could interfere
+     -- with Boss Blind like Cerulean Bell.
+@@ -134,7 +153,9 @@ return {
+           -- Wait for cash_out_button to ensure the last scoring row (bottom) has been processed
+           local has_cash_out_button = false
+           for _, b in ipairs(G.I.UIBOX) do
 -            if b:get_UIE_by_ID("cash_out_button") then
 +            if b.config
 +              and b.config.major == G.round_eval
 +              and b:get_UIE_by_ID("cash_out_button") then
-diff --git a/src/lua/endpoints/pack.lua b/src/lua/endpoints/pack.lua
-index 214a0b4..330af1b 100644
---- a/src/lua/endpoints/pack.lua
-+++ b/src/lua/endpoints/pack.lua
-@@ -140 +140 @@ return {
--      -- Wait for pack to close and return to shop
-+      -- Shop packs return to SHOP; blind-skip tag packs return to BLIND_SELECT.
-@@ -146 +146 @@ return {
--          local back_to_shop = G.STATE == G.STATES.SHOP
-+          local back_to_decision = G.STATE == G.STATES.SHOP or G.STATE == G.STATES.BLIND_SELECT
-@@ -148 +148 @@ return {
--          if pack_closed and back_to_shop then
-+          if pack_closed and back_to_decision then
-@@ -195,7 +195,8 @@ return {
-       if card.ability and card.ability.set == "Joker" then
-         local joker_count = G.jokers and G.jokers.config and G.jokers.config.card_count or 0
-         local joker_limit = G.jokers and G.jokers.config and G.jokers.config.card_limit or 0
--        if joker_count >= joker_limit then
-+        local is_negative = card.edition and card.edition.negative
-+        if joker_count >= joker_limit and not is_negative then
-           send_response({
-             message = "Cannot select joker, joker slots are full. Current: "
-               .. joker_count
-@@ -255,4 +256,21 @@ return {
--            -- Clear existing highlights using proper CardArea method
--            for i = #G.hand.highlighted, 1, -1 do
--              G.hand:remove_from_highlighted(G.hand.highlighted[i], true)
--            end
-+            for _, hand_card in ipairs(G.hand.cards) do
-+              if hand_card.ability and hand_card.ability.forced_selection then
-+                local includes_forced = false
-+                for _, target_idx in ipairs(args.targets) do
-+                  if G.hand.cards[target_idx + 1] == hand_card then
-+                    includes_forced = true
-+                    break
-+                  end
-+                end
-+                if not includes_forced then
-+                  send_response({
-+                    message = "Pack targets must include Cerulean Bell's forced card",
-+                    name = BB_ERROR_NAMES.NOT_ALLOWED,
-+                  })
-+                  return true
-+                end
-+              end
+               has_cash_out_button = true
+               break
+             end
+diff --git a/src/lua/endpoints/start.lua b/src/lua/endpoints/start.lua
+index e9bb9d2..fe25034 100644
+--- a/src/lua/endpoints/start.lua
++++ b/src/lua/endpoints/start.lua
+@@ -77,6 +77,7 @@ return {
+   ---@param send_response fun(response: Response.Endpoint)
+   execute = function(args, send_response)
+     sendDebugMessage("Init start()", "BB.ENDPOINTS")
++    if BB_CHECKPOINT_CLEAR then BB_CHECKPOINT_CLEAR() end
+
+     -- Validate and map stake enum
+     local stake_number = STAKE_ENUM_TO_NUMBER[args.stake]
+diff --git a/src/lua/endpoints/use.lua b/src/lua/endpoints/use.lua
+index 7801ed3..c9f3f28 100644
+--- a/src/lua/endpoints/use.lua
++++ b/src/lua/endpoints/use.lua
+@@ -55,7 +55,11 @@ return {
+     local consumable_card = G.consumeables.cards[args.consumable + 1]
+
+     -- Step 2: Determine Card Selection Requirements
+-    local requires_cards = consumable_card.ability.consumeable.max_highlighted ~= nil
++    local card_key = consumable_card.config
++      and consumable_card.config.center
++      and consumable_card.config.center.key
++    local is_aura = card_key == "c_aura"
++    local requires_cards = consumable_card.ability.consumeable.max_highlighted ~= nil or is_aura
+
+     -- Step 3: State Validation for Card-Selecting Consumables
+     if requires_cards and G.STATE ~= G.STATES.SELECTING_HAND then
+@@ -92,8 +96,8 @@ return {
+
+     -- Step 5: Explicit Min/Max Card Count Validation
+     if requires_cards then
+-      local min_cards = consumable_card.ability.consumeable.min_highlighted or 1
+-      local max_cards = consumable_card.ability.consumeable.max_highlighted
++      local min_cards = is_aura and 1 or (consumable_card.ability.consumeable.min_highlighted or 1)
++      local max_cards = is_aura and 1 or consumable_card.ability.consumeable.max_highlighted
+       local card_count = #args.cards
+
+       -- Check if consumable requires exact number of cards
+@@ -143,15 +147,37 @@ return {
+
+     -- Step 6: Card Selection Setup
+     if requires_cards then
+-      -- Clear existing selection
+-      for i = #G.hand.highlighted, 1, -1 do
+-        G.hand:remove_from_highlighted(G.hand.highlighted[i], true)
++      -- Cerulean Bell's forced selection is a visible, mandatory UI choice.
++      -- Refuse requests that would silently clear it before adding targets.
++      for _, hand_card in ipairs(G.hand.cards) do
++        if hand_card.ability and hand_card.ability.forced_selection then
++          local includes_forced = false
++          for _, card_idx in ipairs(args.cards) do
++            if G.hand.cards[card_idx + 1] == hand_card then
++              includes_forced = true
++              break
 +            end
++          end
++          if not includes_forced then
++            send_response({
++              message = "Consumable targets must include Cerulean Bell's forced card",
++              name = BB_ERROR_NAMES.NOT_ALLOWED,
++            })
++            return
++          end
++        end
+       end
+
++      -- Match the UI: ordinary highlights clear, while Cerulean's forced
++      -- selection remains highlighted.
++      G.hand:unhighlight_all()
 +
-+            -- Match the UI: preserve Cerulean Bell's forced selection.
-+            G.hand:unhighlight_all()
-@@ -270 +287,3 @@ return {
--              G.hand:add_to_highlighted(G.hand.cards[hand_pos], true)
-+              if not G.hand.cards[hand_pos].highlighted then
-+                G.hand:add_to_highlighted(G.hand.cards[hand_pos], true)
-+              end
-@@ -296,0 +297 @@ return {
-+      local pack_state_before = G.STATE
-@@ -306 +307,3 @@ return {
--          if pack_choices_before == 2 and G.GAME.pack_choices and G.GAME.pack_choices == 1 then
-+          if pack_choices_before > 1
-+            and G.GAME.pack_choices
-+            and G.GAME.pack_choices == pack_choices_before - 1 then
-@@ -312 +315 @@ return {
--              and G.STATE == G.STATES.SMODS_BOOSTER_OPENED
-+              and G.STATE == pack_state_before
-diff --git a/tests/lua/endpoints/test_pack.py b/tests/lua/endpoints/test_pack.py
-index 1ff2a51..1a6f386 100644
---- a/tests/lua/endpoints/test_pack.py
-+++ b/tests/lua/endpoints/test_pack.py
-@@ -412,0 +413,23 @@ class TestPackEndpointMegaPack:
-+    def test_vanilla_mega_standard_returns_between_selections(
-+        self, client: httpx.Client
-+    ) -> None:
-+        """The first vanilla Mega Standard pick returns while the pack stays open."""
-+        load_fixture(client, "pack", "state-SHOP--packs.count-0")
-+        assert_gamestate_response(api(client, "add", {"key": "p_standard_mega_1"}))
-+        before = assert_gamestate_response(
-+            api(client, "buy", {"pack": 0}), state="STANDARD_PACK"
-+        )
-+
-+        after_first = assert_gamestate_response(
-+            api(client, "pack", {"card": 0}), state="STANDARD_PACK"
-+        )
-+        assert after_first["cards"]["count"] == before["cards"]["count"] + 1
-+        assert "pack" in after_first
-+        assert len(after_first["pack"]["cards"]) == 4
-+
-+        after_second = assert_gamestate_response(
-+            api(client, "pack", {"card": 0}), state="SHOP"
-+        )
-+        assert after_second["cards"]["count"] == before["cards"]["count"] + 2
-+        assert "pack" not in after_second
-+
+       -- Add cards using proper method
+       for _, card_idx in ipairs(args.cards) do
+         local hand_card = G.hand.cards[card_idx + 1] -- Convert 0-based to 1-based
+-        G.hand:add_to_highlighted(hand_card, true) -- silent=true
++        if not hand_card.highlighted then
++          G.hand:add_to_highlighted(hand_card, true) -- silent=true
++        end
+       end
+     end
+
 diff --git a/src/lua/settings.lua b/src/lua/settings.lua
 index e92043c..58731bb 100644
 --- a/src/lua/settings.lua
 +++ b/src/lua/settings.lua
-@@ -41,0 +42,3 @@ BalatroBot configure settings in Balatro using the following environment variabl
+@@ -39,6 +39,9 @@ BalatroBot configure settings in Balatro using the following environment variabl
+
+   - BALATROBOT_PIXEL_ART_SMOOTHING: whether to enable pixel art smoothing.
+       1 for enable pixel art smoothing, 0 for disable (default: 0)
 +
 +  - BALATROBOT_ALL_UNLOCKED: whether to use Balatro's fully-unlocked profile semantics.
 +      1 for the normal Unlock All card pool, 0 for the active career profile (default: 0)
-@@ -60,0 +64 @@ BB_SETTINGS = {
+ ]]
+
+ ---@diagnostic disable: duplicate-set-field
+@@ -58,6 +61,7 @@ BB_SETTINGS = {
+   animation_fps = tonumber(os.getenv("BALATROBOT_ANIMATION_FPS")) or 10,
+   no_reduced_motion = os.getenv("BALATROBOT_NO_REDUCED_MOTION") == "1" or false,
+   pixel_art_smoothing = os.getenv("BALATROBOT_PIXEL_ART_SMOOTHING") == "1" or false,
 +  all_unlocked = os.getenv("BALATROBOT_ALL_UNLOCKED") == "1" or false,
-@@ -118,0 +123,39 @@ end
+ }
+
+ ---@type boolean?
+@@ -116,6 +120,45 @@ local function configure_settings()
+   G.SETTINGS.WINDOW.vsync = 0
+ end
+
 +--- Applies the same center flags as Balatro's normal Unlock All profile action.
 +--- This is transient benchmark configuration; it does not save or mutate run state.
 +---@return nil
@@ -243,18 +786,28 @@ index e92043c..58731bb 100644
 +  sendInfoMessage("Using transient all-unlocked benchmark profile", "BB.SETTINGS")
 +end
 +
-@@ -263,0 +307,4 @@ BB_SETTINGS.setup = function()
+ --- Configures headless mode by minimizing and hiding the window
+ --- Disables all rendering operations, graphics, and window updates
+ ---@return nil
+@@ -261,6 +304,10 @@ BB_SETTINGS.setup = function()
+   configure_love_update()
+   configure_settings()
+
 +  if BB_SETTINGS.all_unlocked then
 +    configure_all_unlocked()
 +  end
 +
+   if BB_SETTINGS.headless and BB_SETTINGS.render_on_api then
+     sendWarnMessage("Headless mode and render on API mode are mutually exclusive. Disabling headless", "BB.SETTINGS")
+     BB_SETTINGS.headless = false
 diff --git a/src/lua/utils/gamestate.lua b/src/lua/utils/gamestate.lua
+index 5d9d29f..966575e 100644
 --- a/src/lua/utils/gamestate.lua
 +++ b/src/lua/utils/gamestate.lua
 @@ -318,9 +318,10 @@ local function extract_card_modifier(card)
      modifier.eternal = true
    end
- 
+
 -  -- Perishable (from perish_tally - only include if > 0)
 -  if card.ability and card.ability.perish_tally and card.ability.perish_tally > 0 then
 -    modifier.perishable = card.ability.perish_tally
@@ -263,22 +816,83 @@ diff --git a/src/lua/utils/gamestate.lua b/src/lua/utils/gamestate.lua
 +  if card.ability and card.ability.perishable then
 +    modifier.perishable = card.ability.perish_tally or 0
    end
- 
+
    -- Rental (boolean from ability)
-@@ -388,6 +389,9 @@ local function extract_card_value(card)
+@@ -388,6 +389,17 @@ local function extract_card_value(card)
      if card.ability.driver_tally then ab.driver_tally = card.ability.driver_tally end
      -- Loyalty Card: remaining hands until trigger
      if card.ability.loyalty_remaining ~= nil then ab.loyalty_remaining = card.ability.loyalty_remaining end
 +    -- To Do List's current target is runtime state, not the prototype's
 +    -- initial `extra.poker_hand`. It is visible in the normal card tooltip.
 +    if card.ability.to_do_poker_hand then ab.poker_hand = card.ability.to_do_poker_hand end
++    -- The Idol's current rank and suit are printed in its normal tooltip.
++    if card.config and card.config.center_key == "j_idol" then
++      local idol = G.GAME.current_round and G.GAME.current_round.idol_card
++      if idol then
++        ab.idol_rank = convert_rank_to_enum(idol.rank)
++        ab.idol_suit = convert_suit_to_enum(idol.suit)
++      end
++    end
      -- Only include if non-empty
      if next(ab) ~= nil then
        value.ability = ab
-@@ -418,6 +422,11 @@ local function extract_card_state(card)
+@@ -397,6 +409,52 @@ local function extract_card_value(card)
+   return value
+ end
+
++---Extract the unordered permanent deck shown by vanilla's View Deck screen.
++---@return table[] composition
++local function extract_deck_composition()
++  local grouped = {}
++  for _, card in ipairs(G.playing_cards or {}) do
++    local value = extract_card_value(card)
++    local modifier = extract_card_modifier(card)
++    local rank = value.rank
++    local suit = value.suit
++    if modifier.enhancement == "STONE" then
++      rank = "?"
++      suit = "?"
++    end
++    if not rank or not suit then
++      error("BalatroBot cannot project permanent deck identity")
++    end
++    local permanent_bonus = value.perma_bonus or 0
++    local key = table.concat({
++      rank,
++      suit,
++      modifier.enhancement or "",
++      modifier.edition or "",
++      modifier.seal or "",
++      tostring(permanent_bonus),
++    }, "|")
++    if not grouped[key] then
++      grouped[key] = {
++        rank = rank,
++        suit = suit,
++        enhancement = modifier.enhancement,
++        edition = modifier.edition,
++        seal = modifier.seal,
++        permanent_bonus = permanent_bonus,
++        count = 0,
++      }
++    end
++    grouped[key].count = grouped[key].count + 1
++  end
++  local keys = {}
++  for key in pairs(grouped) do keys[#keys + 1] = key end
++  table.sort(keys)
++  local composition = {}
++  for _, key in ipairs(keys) do composition[#composition + 1] = grouped[key] end
++  return composition
++end
++
+ ---Extracts state information from a card
+ ---@param card table The card object
+ ---@return Card.State state The Card.State object
+@@ -418,6 +476,11 @@ local function extract_card_state(card)
      state.highlight = true
    end
- 
+
 +  -- Cerulean Bell marks the selected card in the normal hand UI.
 +  if card.ability and card.ability.forced_selection then
 +    state.forced_selection = true
@@ -286,9 +900,9 @@ diff --git a/src/lua/utils/gamestate.lua b/src/lua/utils/gamestate.lua
 +
    return state
  end
- 
-@@ -437,8 +446,9 @@ local function extract_card_state(card)
- 
+
+@@ -437,8 +500,9 @@ end
+
  ---Extracts a complete Card object from a game card
  ---@param card table The game card object
 ----@return Card card The Card object
@@ -299,10 +913,10 @@ diff --git a/src/lua/utils/gamestate.lua b/src/lua/utils/gamestate.lua
    -- Determine set
    local set = "DEFAULT"
    if card.ability and card.ability.set then
-@@ -462,6 +472,17 @@ local function extract_card(card)
+@@ -462,6 +526,17 @@ local function extract_card(card)
      end
    end
- 
+
 +  -- A face-down Joker's identity-to-position association is private under
 +  -- Amber Acorn.  Expose only an anonymous occupied Joker slot; do not retain
 +  -- the key, object id, label, ability/runtime, modifiers, stickers, or cost.
@@ -317,7 +931,7 @@ diff --git a/src/lua/utils/gamestate.lua b/src/lua/utils/gamestate.lua
    -- Extract key (prefer card_key for playing cards, fallback to center_key)
    local key = ""
    if card.config then
-@@ -479,7 +500,7 @@ local function extract_card(card)
+@@ -479,7 +554,7 @@ local function extract_card(card)
      label = card.label or "",
      value = extract_card_value(card),
      modifier = extract_card_modifier(card),
@@ -326,8 +940,8 @@ diff --git a/src/lua/utils/gamestate.lua b/src/lua/utils/gamestate.lua
      cost = extract_card_cost(card),
    }
  end
-@@ -490,8 +511,9 @@ local function extract_card(card)
- 
+@@ -490,8 +565,9 @@ end
+
  ---Extracts an Area object from a game area (like G.jokers, G.hand, etc.)
  ---@param area table The game area object
 +---@param anonymous_hidden_jokers boolean? Redact hidden occupants as anonymous slots
@@ -337,7 +951,7 @@ diff --git a/src/lua/utils/gamestate.lua b/src/lua/utils/gamestate.lua
    if not area then
      return nil
    end
-@@ -499,7 +521,7 @@ local function extract_area(area)
+@@ -499,7 +575,7 @@ local function extract_area(area)
    local cards = {}
    if area.cards then
      for i, card in pairs(area.cards) do
@@ -345,8 +959,18 @@ diff --git a/src/lua/utils/gamestate.lua b/src/lua/utils/gamestate.lua
 +      cards[i] = extract_card(card, anonymous_hidden_jokers)
      end
    end
- 
-@@ -724,6 +746,7 @@ function gamestate.get_blinds_info()
+
+@@ -578,6 +654,9 @@ local function extract_round_info()
+     round.reroll_cost = G.GAME.current_round.reroll_cost
+   end
+
++  round.boss_rerolled = G.GAME.round_resets
++    and G.GAME.round_resets.boss_rerolled == true
++
+   -- Chips is stored in G.GAME not G.GAME.current_round
+   if G.GAME.chips then
+     round.chips = G.GAME.chips
+@@ -724,6 +803,7 @@ function gamestate.get_blinds_info()
      small = {
        type = "SMALL",
        status = "UPCOMING",
@@ -354,7 +978,7 @@ diff --git a/src/lua/utils/gamestate.lua b/src/lua/utils/gamestate.lua
        name = "",
        effect = "",
        score = 0,
-@@ -733,6 +756,7 @@ function gamestate.get_blinds_info()
+@@ -733,6 +813,7 @@ function gamestate.get_blinds_info()
      big = {
        type = "BIG",
        status = "UPCOMING",
@@ -362,7 +986,7 @@ diff --git a/src/lua/utils/gamestate.lua b/src/lua/utils/gamestate.lua
        name = "",
        effect = "",
        score = 0,
-@@ -742,6 +766,7 @@ function gamestate.get_blinds_info()
+@@ -742,6 +823,7 @@ function gamestate.get_blinds_info()
      boss = {
        type = "BOSS",
        status = "UPCOMING",
@@ -370,10 +994,10 @@ diff --git a/src/lua/utils/gamestate.lua b/src/lua/utils/gamestate.lua
        name = "",
        effect = "",
        score = 0,
-@@ -835,6 +860,14 @@ function gamestate.get_blinds_info()
- 
+@@ -835,6 +917,14 @@ function gamestate.get_blinds_info()
+
    -- Boss blind has no tags (tag_name and tag_effect remain empty strings)
- 
+
 +  -- A disabled boss is visibly crossed out in the ordinary game UI. Export
 +  -- the state only on the active blind; future blind prototypes are enabled.
 +  for _, blind in pairs(blinds) do
@@ -384,8 +1008,8 @@ diff --git a/src/lua/utils/gamestate.lua b/src/lua/utils/gamestate.lua
 +
    return blinds
  end
- 
-@@ -864,6 +897,11 @@ function gamestate.get_gamestate()
+
+@@ -864,12 +954,18 @@ function gamestate.get_gamestate()
      state_data.ante_num = (G.GAME.round_resets and G.GAME.round_resets.ante) or 0
      state_data.money = G.GAME.dollars or 0
      state_data.won = G.GAME.won
@@ -394,10 +1018,17 @@ diff --git a/src/lua/utils/gamestate.lua b/src/lua/utils/gamestate.lua
 +    -- player could also remember from public action history.
 +    state_data.pack_choices_remaining = G.GAME.pack_choices or 0
 +    state_data.last_tarot_planet = G.GAME.last_tarot_planet or ""
- 
+
      -- Deck (optional)
      if G.GAME.selected_back and G.GAME.selected_back.effect and G.GAME.selected_back.effect.center then
-@@ -897,6 +935,12 @@ function gamestate.get_gamestate()
+       local deck_key = G.GAME.selected_back.effect.center.key
+       state_data.deck = get_deck_name(deck_key)
+     end
++    state_data.deck_composition = extract_deck_composition()
+
+     -- Stake (optional)
+     if G.GAME.stake then
+@@ -897,6 +993,12 @@ function gamestate.get_gamestate()
      -- Poker hands
      if G.GAME.hands then
        state_data.hands = extract_hand_info(G.GAME.hands)
@@ -408,90 +1039,161 @@ diff --git a/src/lua/utils/gamestate.lua b/src/lua/utils/gamestate.lua
 +        state_data.poker_hand_iteration_order[#state_data.poker_hand_iteration_order + 1] = hand_name
 +      end
      end
- 
+
      -- Round info
-@@ -907,12 +951,17 @@ function gamestate.get_gamestate()
+@@ -907,7 +1009,7 @@ function gamestate.get_gamestate()
    end
- 
+
    -- Always available areas
 -  state_data.jokers = extract_area(G.jokers)
 +  state_data.jokers = extract_area(G.jokers, true)
    state_data.consumables = extract_area(G.consumeables) -- Note: typo in game code
- 
+
    -- Cards remaining in deck
-   if G.deck then
+@@ -915,6 +1017,11 @@ function gamestate.get_gamestate()
      state_data.cards = extract_area(G.deck)
-+  end
-+
+   end
+
 +  -- Private discard-pile order affects how cards return to the deck.
 +  if G.discard then
 +    state_data.discard = extract_area(G.discard)
-   end
- 
++  end
++
    -- Hand (count is 0 during not playing phase)
-diff --git a/src/lua/endpoints/use.lua b/src/lua/endpoints/use.lua
-index 7801ed3..4f265c6 100644
---- a/src/lua/endpoints/use.lua
-+++ b/src/lua/endpoints/use.lua
-@@ -58 +58,5 @@ return {
--    local requires_cards = consumable_card.ability.consumeable.max_highlighted ~= nil
-+    local card_key = consumable_card.config
-+      and consumable_card.config.center
-+      and consumable_card.config.center.key
-+    local is_aura = card_key == "c_aura"
-+    local requires_cards = consumable_card.ability.consumeable.max_highlighted ~= nil or is_aura
-@@ -95,2 +99,2 @@ return {
--      local min_cards = consumable_card.ability.consumeable.min_highlighted or 1
--      local max_cards = consumable_card.ability.consumeable.max_highlighted
-+      local min_cards = is_aura and 1 or (consumable_card.ability.consumeable.min_highlighted or 1)
-+      local max_cards = is_aura and 1 or consumable_card.ability.consumeable.max_highlighted
-@@ -146,9 +150,31 @@ return {
--      -- Clear existing selection
--      for i = #G.hand.highlighted, 1, -1 do
--        G.hand:remove_from_highlighted(G.hand.highlighted[i], true)
--      end
--
--      -- Add cards using proper method
--      for _, card_idx in ipairs(args.cards) do
--        local hand_card = G.hand.cards[card_idx + 1] -- Convert 0-based to 1-based
--        G.hand:add_to_highlighted(hand_card, true) -- silent=true
-+      -- Cerulean Bell's forced selection is a visible, mandatory UI choice.
-+      -- Refuse requests that would silently clear it before adding targets.
-+      for _, hand_card in ipairs(G.hand.cards) do
-+        if hand_card.ability and hand_card.ability.forced_selection then
-+          local includes_forced = false
-+          for _, card_idx in ipairs(args.cards) do
-+            if G.hand.cards[card_idx + 1] == hand_card then
-+              includes_forced = true
-+              break
-+            end
-+          end
-+          if not includes_forced then
-+            send_response({
-+              message = "Consumable targets must include Cerulean Bell's forced card",
-+              name = BB_ERROR_NAMES.NOT_ALLOWED,
-+            })
-+            return
-+          end
-+        end
-+      end
-+
-+      -- Match the UI: ordinary highlights clear, while Cerulean's forced
-+      -- selection remains highlighted.
-+      G.hand:unhighlight_all()
-+
-+      -- Add cards using proper method
-+      for _, card_idx in ipairs(args.cards) do
-+        local hand_card = G.hand.cards[card_idx + 1] -- Convert 0-based to 1-based
-+        if not hand_card.highlighted then
-+          G.hand:add_to_highlighted(hand_card, true) -- silent=true
-+        end
-+      end
+   if G.hand then
+     state_data.hand = extract_area(G.hand)
 diff --git a/src/lua/utils/openrpc.json b/src/lua/utils/openrpc.json
-index 6dafa99..e51b42f 100644
+index 6dafa99..0ad3593 100644
 --- a/src/lua/utils/openrpc.json
 +++ b/src/lua/utils/openrpc.json
-@@ -1226,6 +1226,10 @@
+@@ -121,7 +121,7 @@
+     {
+       "name": "buy",
+       "summary": "Buy a card from the shop",
+-      "description": "Buy a card, voucher, or pack from the shop. Must provide exactly one of: card, voucher, or pack.",
++      "description": "Buy a card, voucher, or pack from the shop. Must provide exactly one of: card, voucher, or pack. A Planet card may use mode 'use' to invoke Balatro's atomic buy-and-use action.",
+       "tags": [
+         {
+           "$ref": "#/components/tags/shop"
+@@ -154,6 +154,15 @@
+             "type": "integer",
+             "minimum": 0
+           }
++        },
++        {
++          "name": "mode",
++          "description": "Shop-card purchase mode; 'use' is restricted to a usable Planet",
++          "required": false,
++          "schema": {
++            "type": "string",
++            "enum": ["store", "use"]
++          }
+         }
+       ],
+       "result": {
+@@ -647,6 +656,32 @@
+         }
+       ]
+     },
++    {
++      "name": "reroll_boss",
++      "summary": "Reroll the visible Boss Blind",
++      "description": "Spend $10 using Retcon or an unused Director's Cut to reroll the Boss Blind.",
++      "tags": [
++        {
++          "$ref": "#/components/tags/blinds"
++        }
++      ],
++      "params": [],
++      "result": {
++        "name": "gamestate",
++        "description": "Complete game state after the boss reroll",
++        "schema": {
++          "$ref": "#/components/schemas/GameState"
++        }
++      },
++      "errors": [
++        {
++          "$ref": "#/components/errors/InvalidState"
++        },
++        {
++          "$ref": "#/components/errors/NotAllowed"
++        }
++      ]
++    },
+     {
+       "name": "save",
+       "summary": "Save the current run state to a file",
+@@ -1117,6 +1152,13 @@
+             "$ref": "#/components/schemas/Area",
+             "description": "Cards remaining in deck (available during run)"
+           },
++          "deck_composition": {
++            "type": "array",
++            "description": "Unordered permanent cards shown by the View Deck screen",
++            "items": {
++              "$ref": "#/components/schemas/DeckCompositionEntry"
++            }
++          },
+           "pack": {
+             "$ref": "#/components/schemas/Area",
+             "description": "Currently open pack (available during pack opening phase)"
+@@ -1138,9 +1180,35 @@
+           "state",
+           "round_num",
+           "ante_num",
+-          "money"
++          "money",
++          "deck_composition"
+         ]
+       },
++      "DeckCompositionEntry": {
++        "type": "object",
++        "description": "One public permanent-card composition bucket",
++        "additionalProperties": false,
++        "properties": {
++          "rank": {
++            "oneOf": [
++              {"$ref": "#/components/schemas/Rank"},
++              {"type": "string", "enum": ["?"]}
++            ]
++          },
++          "suit": {
++            "oneOf": [
++              {"$ref": "#/components/schemas/Suit"},
++              {"type": "string", "enum": ["?"]}
++            ]
++          },
++          "enhancement": {"$ref": "#/components/schemas/Enhancement"},
++          "edition": {"$ref": "#/components/schemas/Edition"},
++          "seal": {"$ref": "#/components/schemas/Seal"},
++          "permanent_bonus": {"type": "integer"},
++          "count": {"type": "integer", "minimum": 1}
++        },
++        "required": ["rank", "suit", "permanent_bonus", "count"]
++      },
+       "Hand": {
+         "type": "object",
+         "description": "Poker hand information",
+@@ -1210,11 +1278,16 @@
+             "type": "integer",
+             "description": "Current cost to reroll the shop"
+           },
++          "boss_rerolled": {
++            "type": "boolean",
++            "description": "Whether Director's Cut was used this ante"
++          },
+           "chips": {
+             "type": "integer",
+             "description": "Current chips scored in this round"
+           }
+-        }
++        },
++        "required": ["boss_rerolled"]
+       },
+       "Blind": {
+         "type": "object",
+@@ -1226,6 +1299,10 @@
            "status": {
              "$ref": "#/components/schemas/BlindStatus"
            },
@@ -502,7 +1204,7 @@ index 6dafa99..e51b42f 100644
            "name": {
              "type": "string",
              "description": "Name of the blind (e.g., 'Small', 'Big' or the Boss name)"
-@@ -1250,6 +1254,7 @@
+@@ -1250,6 +1327,7 @@
          "required": [
            "type",
            "status",
@@ -510,7 +1212,7 @@ index 6dafa99..e51b42f 100644
            "name",
            "effect",
            "score"
-@@ -1280,7 +1285,14 @@
+@@ -1275,7 +1353,14 @@
              "type": "array",
              "description": "Array of cards in this area",
              "items": {
@@ -526,11 +1228,10 @@ index 6dafa99..e51b42f 100644
              }
            }
          },
-@@ -1332,6 +1344,29 @@
-           "state",
+@@ -1328,6 +1413,29 @@
            "cost"
          ]
-+      },
+       },
 +      "HiddenJokerSlot": {
 +        "type": "object",
 +        "description": "Anonymous occupied Joker position while the card is face down",
@@ -553,14 +1254,29 @@ index 6dafa99..e51b42f 100644
 +          }
 +        },
 +        "required": ["set", "state"]
-       },
++      },
        "CardValue": {
          "type": "object",
+         "description": "Value information for the card",
 diff --git a/src/lua/utils/types.lua b/src/lua/utils/types.lua
-index 53f43b1..b92e5c6 100644
+index 53f43b1..e6fea9a 100644
 --- a/src/lua/utils/types.lua
 +++ b/src/lua/utils/types.lua
-@@ -50,6 +50,7 @@
+@@ -24,6 +24,7 @@
+ ---@field consumables Area? Consumables area
+ ---@field hand Area? Hand area (available during playing phase)
+ ---@field cards Area? Cards remaining in deck (available during run)
++---@field deck_composition DeckCompositionEntry[]? Unordered permanent cards shown by View Deck
+ ---@field pack Area? Currently open pack (available during opeing pack phase)
+ ---@field shop Area? Shop area (available during shop phase)
+ ---@field vouchers Area? Vouchers area (available during shop phase)
+@@ -45,11 +46,13 @@
+ ---@field discards_left integer? Number of discards remaining in this round
+ ---@field discards_used integer? Number of discards used in this round
+ ---@field reroll_cost integer? Current cost to reroll the shop
++---@field boss_rerolled boolean Whether Director's Cut was used this ante
+ ---@field chips integer? Current chips scored in this round
+
  ---@class Blind
  ---@field type Blind.Type Type of the blind
  ---@field status Blind.Status Status of the bilnd
@@ -568,7 +1284,7 @@ index 53f43b1..b92e5c6 100644
  ---@field name string Name of the blind (e.g., "Small", "Big" or the Boss name)
  ---@field effect string Description of the blind's effect
  ---@field score integer Score requirement to beat this blind
-@@ -61,7 +62,11 @@
+@@ -60,7 +63,11 @@
  ---@field count integer Current number of cards in this area
  ---@field limit integer Maximum number of cards allowed in this area
  ---@field highlighted_limit integer? Maximum number of cards that can be highlighted (hand area only)
@@ -578,14 +1294,111 @@ index 53f43b1..b92e5c6 100644
 +---@class HiddenJokerSlot
 +---@field set "JOKER" The containing card set
 +---@field state {hidden: true} Proof that this occupied position is anonymous
- 
+
  ---@class Card
  ---@field id integer Unique identifier for the card (sort_id)
+@@ -76,6 +83,17 @@
+ ---@field suit Card.Value.Suit? Suit (Hearts, Diamonds, Clubs, Spades) - only for playing cards
+ ---@field rank Card.Value.Rank? Rank - only for playing cards
+ ---@field effect string Description of the card's effect (from UI)
++---@field perma_bonus integer? Permanent bonus chips on a playing card
++---@field ability table? Public runtime values printed by a card tooltip
++
++---@class DeckCompositionEntry
++---@field rank Card.Value.Rank|"?" Public rank, or ? for a Stone card
++---@field suit Card.Value.Suit|"?" Public suit, or ? for a Stone card
++---@field enhancement Card.Modifier.Enhancement? Enhancement type
++---@field edition Card.Modifier.Edition? Edition type
++---@field seal Card.Modifier.Seal? Seal type
++---@field permanent_bonus integer Permanent bonus chips
++---@field count integer Number of matching permanent cards
+
+ ---@class Card.Modifier
+ ---@field seal Card.Modifier.Seal? Seal type (playing cards)
+diff --git a/tests/lua/endpoints/test_buy.py b/tests/lua/endpoints/test_buy.py
+index 5aaa608..c1f7541 100644
+--- a/tests/lua/endpoints/test_buy.py
++++ b/tests/lua/endpoints/test_buy.py
+@@ -129,6 +129,74 @@ class TestBuyEndpoint:
+             "Cannot purchase consumable card, consumable slots are full. Current: 2, Limit: 2",
+         )
+
++    @pytest.mark.flaky(reruns=2)
++    def test_buy_and_use_planet_with_consumable_slots_full(
++        self, client: httpx.Client
++    ) -> None:
++        gamestate = load_fixture(
++            client,
++            "buy",
++            "state-SHOP--consumables.count-2--shop.cards[1].set-PLANET",
++        )
++        planet = gamestate["shop"]["cards"][1]
++        initial_levels = {
++            name: hand["level"] for name, hand in gamestate["hands"].items()
++        }
++        initial_consumables = list(gamestate["consumables"]["cards"])
++        initial_shop_count = gamestate["shop"]["count"]
++        initial_money = gamestate["money"]
++
++        response = api(client, "buy", {"card": 1, "mode": "use"})
++        result = assert_gamestate_response(response)
++
++        changed = [
++            name
++            for name, hand in result["hands"].items()
++            if hand["level"] != initial_levels[name]
++        ]
++        assert len(changed) == 1
++        assert result["hands"][changed[0]]["level"] == initial_levels[changed[0]] + 1
++        assert result["state"] == "SHOP"
++        assert result["money"] == initial_money - planet["cost"]["buy"]
++        assert result["shop"]["count"] == initial_shop_count - 1
++        assert result["consumables"]["cards"] == initial_consumables
++        assert result["last_tarot_planet"] == planet["key"]
++
++    def test_buy_and_use_rejects_non_planet(self, client: httpx.Client) -> None:
++        gamestate = load_fixture(
++            client, "buy", "state-SHOP--shop.cards[0].set-JOKER"
++        )
++        assert gamestate["shop"]["cards"][0]["set"] == "JOKER"
++        assert_error_response(
++            api(client, "buy", {"card": 0, "mode": "use"}),
++            "NOT_ALLOWED",
++            "Buy-and-use is available only for a usable Planet card",
++        )
++
++    def test_invalid_purchase_mode_rejects_without_mutation(
++        self, client: httpx.Client
++    ) -> None:
++        before = load_fixture(
++            client, "buy", "state-SHOP--shop.cards[0].set-JOKER"
++        )
++        assert_error_response(
++            api(client, "buy", {"card": 0, "mode": "garbage"}),
++            "BAD_REQUEST",
++            "Invalid purchase mode. Must be one of: store, use",
++        )
++        after = assert_gamestate_response(api(client, "gamestate", {}))
++        assert after == before
++
++    def test_purchase_mode_rejects_non_card_purchase(
++        self, client: httpx.Client
++    ) -> None:
++        load_fixture(client, "buy", "state-SHOP--voucher.cards[0].set-VOUCHER")
++        assert_error_response(
++            api(client, "buy", {"voucher": 0, "mode": "use"}),
++            "BAD_REQUEST",
++            "Purchase mode is valid only with card",
++        )
++
+     def test_buy_vouchers_slot_empty(self, client: httpx.Client) -> None:
+         """Test buy endpoint when player has the maximum number of vouchers."""
+         gamestate = load_fixture(client, "buy", "state-SHOP--voucher.count-0")
 diff --git a/tests/lua/endpoints/test_gamestate.py b/tests/lua/endpoints/test_gamestate.py
-index 2c26a12..d886f00 100644
+index e35af2b..eba2599 100644
 --- a/tests/lua/endpoints/test_gamestate.py
 +++ b/tests/lua/endpoints/test_gamestate.py
-@@ -143,6 +143,7 @@ class TestGamestateBlinds:
+@@ -144,6 +144,7 @@ class TestGamestateBlinds:
          expected_blinds = {
              "small": {
                  "type": "SMALL",
@@ -593,7 +1406,7 @@ index 2c26a12..d886f00 100644
                  "name": "Small Blind",
                  "effect": "",
                  "score": 300,
-@@ -152,6 +153,7 @@ class TestGamestateBlinds:
+@@ -151,6 +152,7 @@ class TestGamestateBlinds:
                  "tag_name": "Polychrome Tag",
              },
              "big": {
@@ -601,7 +1414,7 @@ index 2c26a12..d886f00 100644
                  "effect": "",
                  "name": "Big Blind",
                  "score": 450,
-@@ -162,6 +164,7 @@ class TestGamestateBlinds:
+@@ -159,6 +161,7 @@ class TestGamestateBlinds:
                  "type": "BIG",
              },
              "boss": {
@@ -609,15 +1422,107 @@ index 2c26a12..d886f00 100644
                  "effect": "-1 Hand Size",
                  "name": "The Manacle",
                  "score": 600,
-diff --git a/balatrobot.lua b/balatrobot.lua
-index a7cfe8c..58e8f14 100644
---- a/balatrobot.lua
-+++ b/balatrobot.lua
-@@ -37,0 +38 @@ BB_ENDPOINTS = {
-+  "src/lua/endpoints/reroll_boss.lua",
+diff --git a/uv.lock b/uv.lock
+index e64f17c..dfaa6cd 100644
+--- a/uv.lock
++++ b/uv.lock
+@@ -48,7 +48,7 @@ wheels = [
+
+ [[package]]
+ name = "balatrobot"
+-version = "1.4.0"
++version = "1.4.1"
+ source = { editable = "." }
+ dependencies = [
+     { name = "httpx" },
+diff --git a/src/lua/endpoints/checkpoint.lua b/src/lua/endpoints/checkpoint.lua
+new file mode 100644
+index 0000000..2fbc93a
+--- /dev/null
++++ b/src/lua/endpoints/checkpoint.lua
+@@ -0,0 +1,79 @@
++-- Bounded in-memory checkpoints for privileged evaluator/search infrastructure.
++
++local RUN_RESTORE = assert(SMODS.load_file("src/lua/utils/run_restore.lua"))()
++local MAX_SNAPSHOTS = 64
++
++BB_CHECKPOINT_STORE = BB_CHECKPOINT_STORE or { entries = {}, count = 0, next_id = 1 }
++BB_CHECKPOINT_CLEAR = function()
++  BB_CHECKPOINT_STORE.entries = {}
++  BB_CHECKPOINT_STORE.count = 0
++end
++
++local function error_response(send_response, message, name)
++  send_response({ message = message, name = name or BB_ERROR_NAMES.BAD_REQUEST })
++end
++
++---@type Endpoint
++return {
++  name = "checkpoint",
++  description = "Create, restore, or delete a private in-memory run checkpoint",
++  schema = {
++    op = { type = "string", required = true, description = "create, restore, delete, or clear" },
++    snapshot_id = { type = "string", required = false, description = "Opaque checkpoint ID" },
++  },
++  requires_state = nil,
++
++  execute = function(args, send_response)
++    if args.op == "clear" then
++      BB_CHECKPOINT_CLEAR()
++      send_response({ success = true })
++      return
++    end
++    if args.op == "delete" then
++      if not BB_CHECKPOINT_STORE.entries[args.snapshot_id] then
++        error_response(send_response, "Unknown checkpoint")
++        return
++      end
++      BB_CHECKPOINT_STORE.entries[args.snapshot_id] = nil
++      BB_CHECKPOINT_STORE.count = BB_CHECKPOINT_STORE.count - 1
++      send_response({ success = true, snapshot_id = args.snapshot_id })
++      return
++    end
++    if args.op == "create" then
++      if G.STAGE ~= G.STAGES.RUN or G.F_NO_SAVING == true or G.action ~= nil
++        or not RUN_RESTORE.ready() then
++        error_response(send_response, "Checkpoint requires a settled decision state", BB_ERROR_NAMES.INVALID_STATE)
++        return
++      end
++      if BB_CHECKPOINT_STORE.count >= MAX_SNAPSHOTS then
++        error_response(send_response, "Checkpoint limit reached", BB_ERROR_NAMES.NOT_ALLOWED)
++        return
++      end
++
++      local old_run = G.FILE_HANDLER and G.FILE_HANDLER.run
++      local old_queued = G.FILE_HANDLER and G.FILE_HANDLER.update_queued
++      save_run()
++      local packed = STR_PACK(G.ARGS.save_run)
++      G.FILE_HANDLER.run = old_run
++      G.FILE_HANDLER.update_queued = old_queued
++      local snapshot_id = "s" .. tostring(BB_CHECKPOINT_STORE.next_id)
++      BB_CHECKPOINT_STORE.next_id = BB_CHECKPOINT_STORE.next_id + 1
++      BB_CHECKPOINT_STORE.entries[snapshot_id] = packed
++      BB_CHECKPOINT_STORE.count = BB_CHECKPOINT_STORE.count + 1
++      send_response({ snapshot_id = snapshot_id, bytes = #packed })
++      return
++    end
++    if args.op == "restore" then
++      local packed = BB_CHECKPOINT_STORE.entries[args.snapshot_id]
++      if not packed then
++        error_response(send_response, "Unknown checkpoint")
++        return
++      end
++      RUN_RESTORE.restore(packed, send_response, function()
++        send_response({ success = true, snapshot_id = args.snapshot_id })
++      end)
++      return
++    end
++    error_response(send_response, "Unknown checkpoint operation")
++  end,
++}
 diff --git a/src/lua/endpoints/reroll_boss.lua b/src/lua/endpoints/reroll_boss.lua
 new file mode 100644
-index 0000000..21dd04b
+index 0000000..3c35b78
 --- /dev/null
 +++ b/src/lua/endpoints/reroll_boss.lua
 @@ -0,0 +1,62 @@
@@ -683,234 +1588,95 @@ index 0000000..21dd04b
 +    }))
 +  end,
 +}
-diff --git a/src/lua/utils/gamestate.lua b/src/lua/utils/gamestate.lua
-index 5d9d29f..c8ef3f9 100644
---- a/src/lua/utils/gamestate.lua
-+++ b/src/lua/utils/gamestate.lua
-@@ -577,6 +599,9 @@ local function extract_round_info()
-   if G.GAME.current_round.reroll_cost then
-     round.reroll_cost = G.GAME.current_round.reroll_cost
-   end
- 
-+  round.boss_rerolled = G.GAME.round_resets
-+    and G.GAME.round_resets.boss_rerolled == true
+diff --git a/src/lua/utils/run_restore.lua b/src/lua/utils/run_restore.lua
+new file mode 100644
+index 0000000..512c380
+--- /dev/null
++++ b/src/lua/utils/run_restore.lua
+@@ -0,0 +1,86 @@
++-- Shared game-native run restore and readiness checks.
 +
-   -- Chips is stored in G.GAME not G.GAME.current_round
-   if G.GAME.chips then
-     round.chips = G.GAME.chips
-diff --git a/src/lua/utils/openrpc.json b/src/lua/utils/openrpc.json
-index 6dafa99..e57b022 100644
---- a/src/lua/utils/openrpc.json
-+++ b/src/lua/utils/openrpc.json
-@@ -649,0 +650,26 @@
-+    {
-+      "name": "reroll_boss",
-+      "summary": "Reroll the visible Boss Blind",
-+      "description": "Spend $10 using Retcon or an unused Director's Cut to reroll the Boss Blind.",
-+      "tags": [
-+        {
-+          "$ref": "#/components/tags/blinds"
-+        }
-+      ],
-+      "params": [],
-+      "result": {
-+        "name": "gamestate",
-+        "description": "Complete game state after the boss reroll",
-+        "schema": {
-+          "$ref": "#/components/schemas/GameState"
-+        }
-+      },
-+      "errors": [
-+        {
-+          "$ref": "#/components/errors/InvalidState"
-+        },
-+        {
-+          "$ref": "#/components/errors/NotAllowed"
-+        }
-+      ]
-+    },
-@@ -1209,10 +1235,15 @@
-           "reroll_cost": {
-             "type": "integer",
-             "description": "Current cost to reroll the shop"
-           },
-+          "boss_rerolled": {
-+            "type": "boolean",
-+            "description": "Whether Director's Cut was used this ante"
-+          },
-           "chips": {
-             "type": "integer",
-             "description": "Current chips scored in this round"
-           }
--        }
-+        },
-+        "required": ["boss_rerolled"]
-       },
-diff --git a/src/lua/utils/types.lua b/src/lua/utils/types.lua
-index 53f43b1..a3e3e6c 100644
---- a/src/lua/utils/types.lua
-+++ b/src/lua/utils/types.lua
-@@ -47,0 +48 @@
-+---@field boss_rerolled boolean Whether Director's Cut was used this ante
-diff --git a/src/lua/utils/gamestate.lua b/src/lua/utils/gamestate.lua
---- a/src/lua/utils/gamestate.lua
-+++ b/src/lua/utils/gamestate.lua
-@@ -392,6 +392,14 @@ local function extract_card_value(card)
-     -- To Do List's current target is runtime state, not the prototype's
-     -- initial `extra.poker_hand`. It is visible in the normal card tooltip.
-     if card.ability.to_do_poker_hand then ab.poker_hand = card.ability.to_do_poker_hand end
-+    -- The Idol's current rank and suit are printed in its normal tooltip.
-+    if card.config and card.config.center_key == "j_idol" then
-+      local idol = G.GAME.current_round and G.GAME.current_round.idol_card
-+      if idol then
-+        ab.idol_rank = convert_rank_to_enum(idol.rank)
-+        ab.idol_suit = convert_suit_to_enum(idol.suit)
-+      end
++local run_restore = {}
++
++local function num_items(area)
++  local count = 0
++  for _, card in ipairs((area and area.cards) or {}) do
++    if card.children and card.children.buy_button and card.children.buy_button.definition then
++      count = count + 1
 +    end
-     -- Only include if non-empty
-     if next(ab) ~= nil then
-       value.ability = ab
-@@ -401,6 +409,52 @@ local function extract_card_value(card)
-   return value
- end
-
-+---Extract the unordered permanent deck shown by vanilla's View Deck screen.
-+---@return table[] composition
-+local function extract_deck_composition()
-+  local grouped = {}
-+  for _, card in ipairs(G.playing_cards or {}) do
-+    local value = extract_card_value(card)
-+    local modifier = extract_card_modifier(card)
-+    local rank = value.rank
-+    local suit = value.suit
-+    if modifier.enhancement == "STONE" then
-+      rank = "?"
-+      suit = "?"
-+    end
-+    if not rank or not suit then
-+      error("BalatroBot cannot project permanent deck identity")
-+    end
-+    local permanent_bonus = value.perma_bonus or 0
-+    local key = table.concat({
-+      rank,
-+      suit,
-+      modifier.enhancement or "",
-+      modifier.edition or "",
-+      modifier.seal or "",
-+      tostring(permanent_bonus),
-+    }, "|")
-+    if not grouped[key] then
-+      grouped[key] = {
-+        rank = rank,
-+        suit = suit,
-+        enhancement = modifier.enhancement,
-+        edition = modifier.edition,
-+        seal = modifier.seal,
-+        permanent_bonus = permanent_bonus,
-+        count = 0,
-+      }
-+    end
-+    grouped[key].count = grouped[key].count + 1
 +  end
-+  local keys = {}
-+  for key in pairs(grouped) do keys[#keys + 1] = key end
-+  table.sort(keys)
-+  local composition = {}
-+  for _, key in ipairs(keys) do composition[#composition + 1] = grouped[key] end
-+  return composition
++  return count
 +end
 +
- ---Extracts state information from a card
- ---@param card table The card object
- ---@return Card.State state The Card.State object
-@@ -911,6 +965,7 @@ local function extract_gamestate()
-       local deck_key = G.GAME.selected_back.effect.center.key
-       state_data.deck = get_deck_name(deck_key)
-     end
-+    state_data.deck_composition = extract_deck_composition()
-
-     -- Stake (optional)
-     if G.GAME.stake then
-diff --git a/src/lua/utils/openrpc.json b/src/lua/utils/openrpc.json
---- a/src/lua/utils/openrpc.json
-+++ b/src/lua/utils/openrpc.json
-@@ -1142,6 +1142,13 @@
-           "cards": {
-             "$ref": "#/components/schemas/Area",
-             "description": "Cards remaining in deck (available during run)"
-+          },
-+          "deck_composition": {
-+            "type": "array",
-+            "description": "Unordered permanent cards shown by the View Deck screen",
-+            "items": {
-+              "$ref": "#/components/schemas/DeckCompositionEntry"
-+            }
-           },
-           "pack": {
-             "$ref": "#/components/schemas/Area",
-@@ -1164,9 +1171,35 @@
-           "state",
-           "round_num",
-           "ante_num",
--          "money"
-+          "money",
-+          "deck_composition"
-         ]
-       },
-+      "DeckCompositionEntry": {
-+        "type": "object",
-+        "description": "One public permanent-card composition bucket",
-+        "additionalProperties": false,
-+        "properties": {
-+          "rank": {
-+            "oneOf": [
-+              {"$ref": "#/components/schemas/Rank"},
-+              {"type": "string", "enum": ["?"]}
-+            ]
-+          },
-+          "suit": {
-+            "oneOf": [
-+              {"$ref": "#/components/schemas/Suit"},
-+              {"type": "string", "enum": ["?"]}
-+            ]
-+          },
-+          "enhancement": {"$ref": "#/components/schemas/Enhancement"},
-+          "edition": {"$ref": "#/components/schemas/Edition"},
-+          "seal": {"$ref": "#/components/schemas/Seal"},
-+          "permanent_bonus": {"type": "integer"},
-+          "count": {"type": "integer", "minimum": 1}
-+        },
-+        "required": ["rank", "suit", "permanent_bonus", "count"]
-+      },
-       "Hand": {
-         "type": "object",
-         "description": "Poker hand information",
-diff --git a/src/lua/utils/types.lua b/src/lua/utils/types.lua
---- a/src/lua/utils/types.lua
-+++ b/src/lua/utils/types.lua
-@@ -24,6 +24,7 @@
- ---@field consumables Area? Consumables area
- ---@field hand Area? Hand area (available during playing phase)
- ---@field cards Area? Cards remaining in deck (available during run)
-+---@field deck_composition DeckCompositionEntry[]? Unordered permanent cards shown by View Deck
- ---@field pack Area? Currently open pack (available during opeing pack phase)
- ---@field shop Area? Shop area (available during shop phase)
- ---@field vouchers Area? Vouchers area (available during shop phase)
-@@ -82,6 +83,17 @@
- ---@field suit Card.Value.Suit? Suit (Hearts, Diamonds, Clubs, Spades) - only for playing cards
- ---@field rank Card.Value.Rank? Rank - only for playing cards
- ---@field effect string Description of the card's effect (from UI)
-+---@field perma_bonus integer? Permanent bonus chips on a playing card
-+---@field ability table? Public runtime values printed by a card tooltip
++function run_restore.ready()
++  if not G.STATE_COMPLETE or G.CONTROLLER.locked then return false end
++  if G.CONTROLLER.locks and G.CONTROLLER.locks.load then return false end
 +
-+---@class DeckCompositionEntry
-+---@field rank Card.Value.Rank|"?" Public rank, or ? for a Stone card
-+---@field suit Card.Value.Suit|"?" Public suit, or ? for a Stone card
-+---@field enhancement Card.Modifier.Enhancement? Enhancement type
-+---@field edition Card.Modifier.Edition? Edition type
-+---@field seal Card.Modifier.Seal? Seal type
-+---@field permanent_bonus integer Permanent bonus chips
-+---@field count integer Number of matching permanent cards
-
- ---@class Card.Modifier
- ---@field seal Card.Modifier.Seal? Seal type (playing cards)
++  if G.STATE == G.STATES.BLIND_SELECT then
++    return G.GAME.blind_on_deck ~= nil
++      and G.blind_select_opts ~= nil
++      and G.blind_select_opts.small ~= nil
++      and G.blind_select_opts.small:get_UIE_by_ID("tag_Small") ~= nil
++  end
++  if G.STATE == G.STATES.SELECTING_HAND then
++    return G.hand ~= nil and G.hand.cards ~= nil
++  end
++  if G.STATE == G.STATES.ROUND_EVAL and G.round_eval then
++    for _, box in ipairs(G.I.UIBOX) do
++      if box.config and box.config.major == G.round_eval
++        and box:get_UIE_by_ID("cash_out_button") then return true end
++    end
++    return false
++  end
++  if G.STATE == G.STATES.SHOP then
++    return num_items(G.shop_booster) > 0
++      or num_items(G.shop_jokers) > 0
++      or num_items(G.shop_vouchers) > 0
++  end
++  if G.STATE == G.STATES.SMODS_BOOSTER_OPENED
++    or G.STATE == G.STATES.TAROT_PACK
++    or G.STATE == G.STATES.PLANET_PACK
++    or G.STATE == G.STATES.SPECTRAL_PACK
++    or G.STATE == G.STATES.STANDARD_PACK
++    or G.STATE == G.STATES.BUFFOON_PACK then
++    return G.pack_cards and G.pack_cards.cards and #G.pack_cards.cards > 0
++  end
++  return false
++end
++
++function run_restore.restore(serialized, send_response, on_ready)
++  local ok, save_table = pcall(STR_UNPACK, serialized)
++  if not ok or type(save_table) ~= "table" then
++    send_response({ message = "Invalid saved run", name = BB_ERROR_NAMES.INTERNAL_ERROR })
++    return
++  end
++
++  G:delete_run()
++  G.SAVED_GAME = save_table
++  local original_print = print
++  print = function(message)
++    if type(message) == "string" and message:find("ERROR LOADING GAME: Card area") then return end
++    original_print(message)
++  end
++  ok, save_table = pcall(G.start_run, G, { savetext = G.SAVED_GAME })
++  print = original_print
++  if not ok then
++    send_response({
++      message = "Failed to restore saved run: " .. tostring(save_table),
++      name = BB_ERROR_NAMES.INTERNAL_ERROR,
++    })
++    return
++  end
++
++  G.E_MANAGER:add_event(Event({
++    no_delete = true,
++    trigger = "condition",
++    blocking = false,
++    func = function()
++      if run_restore.ready() then on_ready() return true end
++      return false
++    end,
++  }))
++end
++
++return run_restore

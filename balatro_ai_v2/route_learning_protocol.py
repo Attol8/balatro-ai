@@ -12,7 +12,6 @@ import json
 from pathlib import Path
 from typing import Any
 
-from balatro_ai_v2.strategy_model import STRATEGY_MODEL_SCHEMA_DIGEST
 from balatro_ai_v2.route_teacher_protocol import ROUTE_TEACHER_PROTOCOL_ID
 
 
@@ -23,6 +22,11 @@ ROUTE_LEARNING_PREREGISTRATION = (
 ROUTE_LEARNING_COLLECTION_MODE = "route_terminal_paired_utility"
 ROUTE_LEARNING_COMPARATOR = "same_action_null_route_v1"
 ROUTE_LEARNING_ARTIFACT_FORMAT = 1
+# The immutable v1 protocol was preregistered against strategy-model schema v9.
+# Preserve that identity after the live strategy model evolves.
+ROUTE_LEARNING_BASE_MODEL_SCHEMA_DIGEST = (
+    "08e9d348dfbd247ab5aeb86cf650686c9e28538b6e29ec07dc5fd9ddc1965e88"
+)
 
 MODEL_CONFIG = {
     "hidden_size": 64,
@@ -272,7 +276,7 @@ def validate_route_learning_preregistration(spec: object) -> dict[str, Any]:
             "action_influence": False,
             "rollout_authority": False,
             "certificate_required": True,
-            "base_model_schema_digest": STRATEGY_MODEL_SCHEMA_DIGEST,
+            "base_model_schema_digest": ROUTE_LEARNING_BASE_MODEL_SCHEMA_DIGEST,
         },
     ):
         raise RouteLearningProtocolError("route artifact is not shadow-only")

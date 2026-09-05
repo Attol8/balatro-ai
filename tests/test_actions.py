@@ -7,6 +7,7 @@ from typing import Any
 import pytest
 
 from balatro_ai_v2.actions import (
+    BuyMode,
     BuyShopCard,
     CashOut,
     ChoosePackCard,
@@ -49,6 +50,7 @@ from state_factory import item_card, playing_card, state
         PlayCards((HandSlot(0), HandSlot(2))),
         DiscardCards((HandSlot(1),)),
         BuyShopCard(ShopSlot(0)),
+        BuyShopCard(ShopSlot(0), BuyMode.USE),
         ReorderHand((HandSlot(1), HandSlot(0))),
     ],
 )
@@ -359,6 +361,76 @@ def test_magic_trick_shop_card_purchase_uses_money_not_item_capacity() -> None:
     credit_raw["jokers"]["limit"] = 1
     credit_raw["shop"]["cards"][0]["cost"]["buy"] = 0
     assert is_legal(to_public_observation(credit_raw), action)
+
+
+def test_shop_planet_buy_and_use_bypasses_storage_but_not_public_use_gates() -> None:
+    raw = state("SHOP", money=10)
+    raw["shop"] = {
+        "cards": [
+            item_card("c_mercury", card_id=90, kind="PLANET", buy=3),
+            item_card("c_magician", card_id=91, kind="TAROT", buy=3),
+            item_card("c_modded_planet", card_id=94, kind="PLANET", buy=3),
+        ],
+        "count": 3,
+        "highlighted_limit": 1,
+        "limit": 2,
+    }
+    raw["consumables"] = {
+        "cards": [
+            item_card("c_uranus", card_id=92, kind="PLANET"),
+            item_card("c_pluto", card_id=93, kind="PLANET"),
+        ],
+        "count": 2,
+        "highlighted_limit": 1,
+        "limit": 2,
+    }
+    observation = to_public_observation(raw)
+    store = BuyShopCard(ShopSlot(0))
+    use = BuyShopCard(ShopSlot(0), BuyMode.USE)
+    targeted_use = BuyShopCard(ShopSlot(1), BuyMode.USE)
+    unknown_use = BuyShopCard(ShopSlot(2), BuyMode.USE)
+
+    assert not is_legal(observation, store)
+    assert is_legal(observation, use)
+    assert use in iter_legal_actions(observation)
+    assert not is_legal(observation, targeted_use)
+    assert targeted_use not in iter_legal_actions(observation)
+    assert not is_legal(observation, unknown_use)
+    assert unknown_use not in iter_legal_actions(observation)
+    assert action_to_rpc(use, observation) == ("buy", {"card": 0, "mode": "use"})
+    assert action_from_data(action_to_data(use)) == use
+    assert not is_legal(replace(observation, money=2), use)
+
+
+def test_negative_shop_consumable_can_be_stored_when_tray_is_nominally_full() -> None:
+    raw = state("SHOP", money=10)
+    raw["shop"] = {
+        "cards": [
+            item_card(
+                "c_mercury",
+                card_id=90,
+                kind="PLANET",
+                modifier=["NEGATIVE"],
+                buy=3,
+            )
+        ],
+        "count": 1,
+        "highlighted_limit": 1,
+        "limit": 2,
+    }
+    raw["consumables"] = {
+        "cards": [
+            item_card("c_uranus", card_id=92, kind="PLANET"),
+            item_card("c_pluto", card_id=93, kind="PLANET"),
+        ],
+        "count": 2,
+        "highlighted_limit": 1,
+        "limit": 2,
+    }
+    observation = to_public_observation(raw)
+
+    assert is_legal(observation, BuyShopCard(ShopSlot(0)))
+    assert is_legal(observation, BuyShopCard(ShopSlot(0), BuyMode.USE))
 
 
 def test_reorder_generator_exposes_only_adjacent_swaps() -> None:

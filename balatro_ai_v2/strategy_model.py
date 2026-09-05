@@ -31,6 +31,7 @@ except ImportError as exc:  # pragma: no cover - exercised in base-only installs
     raise RuntimeError("install the 'model' extra to use the strategy model") from exc
 
 from balatro_ai_v2.actions import (
+    BuyMode,
     BuyPack,
     BuyShopCard,
     BuyVoucher,
@@ -70,7 +71,7 @@ from balatro_ai_v2.strategy_context import PublicStrategyContext
 from balatro_ai_v2.strategy_options import StrategyIntent
 
 
-STRATEGY_MODEL_FORMAT_VERSION: Final = 9
+STRATEGY_MODEL_FORMAT_VERSION: Final = 10
 
 
 class StrategyModelError(RuntimeError):
@@ -415,6 +416,7 @@ _SCALARS = (
     "action_primary_slot",
     "action_secondary_slot",
     "action_cost",
+    "action_buy_and_use",
 )
 _FEATURE_NAMES = (
     *_SCALARS,
@@ -1609,6 +1611,8 @@ class PublicStrategyTensorizer:
                 relate("hand", slot.value, (order + 1) / len(action.cards))
         elif isinstance(action, BuyShopCard):
             relate("shop", action.card.value)
+            if action.mode == BuyMode.USE:
+                features[_FEATURE_INDEX["action_buy_and_use"]] = 1.0
             _put_scaled(
                 features,
                 "action_primary_slot",

@@ -407,7 +407,7 @@ class JackdawBackend:
         self.metadata = BackendMetadata(
             backend_name="Jackdaw",
             backend_version=f"0.1.0+{JACKDAW_REVISION}",
-            adapter_version="6",
+            adapter_version="7",
             game_version="Balatro-1.0.1o-model",
             runtime_version="Python",
             capabilities=BackendCapabilities(
@@ -488,6 +488,8 @@ class JackdawBackend:
         try:
             if method == "reroll_boss":
                 raw_after = self._reroll_boss_compatibility()
+            elif method == "buy" and params.get("mode") == "use":
+                raw_after = self._buy_and_use_planet_compatibility(params)
             elif method == "play":
                 with (
                     self._play_compatibility(),
@@ -600,6 +602,121 @@ class JackdawBackend:
             rng,
             win_ante=game_state.get("win_ante", 8),
         )
+        return self._backend.handle("gamestate", {})
+
+    def _buy_and_use_planet_compatibility(
+        self, params: Mapping[str, Any]
+    ) -> dict[str, Any]:
+        """Mirror vanilla's atomic shop Planet buy-and-use transaction."""
+
+        from jackdaw.engine.actions import GamePhase
+        from jackdaw.engine.consumables import _PLANET_HAND, can_use_consumable
+        from jackdaw.engine.data.hands import HandType
+        from jackdaw.engine.game import (
+            _fire_shop_joker_context,
+            _release_used_key,
+            _use_consumable_card,
+        )
+        from jackdaw.engine.shop import reprice_shop
+
+        game_state = getattr(self._backend, "_gs", None)
+        if not isinstance(game_state, dict):
+            raise RuntimeError("Jackdaw game state is unavailable for buy-and-use")
+        if game_state.get("phase") != GamePhase.SHOP:
+            raise self._rpc_error(-32002, "Buy-and-use requires SHOP")
+        index = params.get("card")
+        shop_cards = game_state.get("shop_cards")
+        if (
+            not isinstance(index, int)
+            or isinstance(index, bool)
+            or not isinstance(shop_cards, list)
+            or not 0 <= index < len(shop_cards)
+        ):
+            raise self._rpc_error(-32602, "Invalid buy-and-use shop index")
+        card = shop_cards[index]
+        ability = getattr(card, "ability", None)
+        planet_hand = _PLANET_HAND.get(getattr(card, "center_key", None))
+        if (
+            not isinstance(ability, dict)
+            or ability.get("set") != "Planet"
+            or planet_hand is None
+        ):
+            raise self._rpc_error(-32003, "Buy-and-use supports known Planets only")
+        dollars = game_state.get("dollars")
+        bankrupt_at = game_state.get("bankrupt_at")
+        cost = getattr(card, "cost", None)
+        if (
+            not isinstance(dollars, int)
+            or isinstance(dollars, bool)
+            or not isinstance(bankrupt_at, int)
+            or isinstance(bankrupt_at, bool)
+            or not isinstance(cost, int)
+            or isinstance(cost, bool)
+            or dollars - cost < bankrupt_at
+        ):
+            raise self._rpc_error(-32003, "Cannot afford buy-and-use Planet")
+        consumables = game_state.get("consumables")
+        jokers = game_state.get("jokers")
+        if not isinstance(consumables, list) or not isinstance(jokers, list):
+            raise RuntimeError("Jackdaw buy-and-use inventory state is invalid")
+        if not can_use_consumable(
+            card,
+            highlighted=[],
+            hand_cards=game_state.get("hand", []),
+            jokers=jokers,
+            consumables=consumables,
+            joker_limit=game_state.get("joker_slots", 5),
+            consumable_limit=game_state.get("consumable_slots", 2),
+            game_state=game_state,
+        ):
+            raise self._rpc_error(-32003, "Planet cannot be bought and used")
+        hand_levels = game_state.get("hand_levels")
+        if hand_levels is None:
+            raise RuntimeError("Jackdaw hand levels are unavailable for buy-and-use")
+        hand_type = HandType(planet_hand)
+        initial_level = hand_levels.get_state(hand_type).level
+        initial_shop_count = len(shop_cards)
+        initial_consumable_count = len(consumables)
+        initial_consumable_slots = game_state.get("consumable_slots")
+        initial_cards_purchased = game_state.get("cards_purchased", 0)
+        if (
+            not isinstance(initial_consumable_slots, int)
+            or isinstance(initial_consumable_slots, bool)
+            or not isinstance(initial_cards_purchased, int)
+            or isinstance(initial_cards_purchased, bool)
+        ):
+            raise RuntimeError("Jackdaw buy-and-use accounting state is invalid")
+
+        snapshot = deepcopy(game_state)
+        try:
+            shop_cards.pop(index)
+            card.add_to_deck(game_state)
+            # Pinned Jackdaw's JokerContext has no purchased-card field; none of
+            # its implemented buying-card effects consumes that identity.
+            _fire_shop_joker_context(game_state, buying_card=True)
+            game_state["cards_purchased"] = initial_cards_purchased + 1
+            if game_state.get("inflation_modifier"):
+                game_state["inflation"] = int(game_state.get("inflation", 0)) + 1
+                reprice_shop(game_state)
+            game_state["dollars"] = dollars - cost
+            _use_consumable_card(game_state, card)
+            card.remove_from_deck(game_state)
+            _release_used_key(game_state, card)
+
+            if (
+                len(shop_cards) != initial_shop_count - 1
+                or len(consumables) != initial_consumable_count
+                or game_state.get("consumable_slots") != initial_consumable_slots
+                or game_state.get("dollars") != dollars - cost
+                or game_state.get("cards_purchased") != initial_cards_purchased + 1
+                or game_state.get("last_tarot_planet") != card.center_key
+                or hand_levels.get_state(hand_type).level != initial_level + 1
+            ):
+                raise RuntimeError("Jackdaw buy-and-use postcondition mismatch")
+        except BaseException:
+            game_state.clear()
+            game_state.update(snapshot)
+            raise
         return self._backend.handle("gamestate", {})
 
     def close(self) -> None:

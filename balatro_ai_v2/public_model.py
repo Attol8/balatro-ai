@@ -52,8 +52,8 @@ from balatro_ai_v2.public_state import (
 )
 
 
-MODEL_FORMAT_VERSION: Final = 8
-PUBLIC_MODEL_ACTION_PROPOSAL_SCHEMA: Final = "factorized_tactical_elite_observation_v8"
+MODEL_FORMAT_VERSION: Final = 9
+PUBLIC_MODEL_ACTION_PROPOSAL_SCHEMA: Final = "factorized_tactical_elite_observation_v9"
 _REORDER_ACTIONS = (ReorderHand, ReorderJokers, ReorderConsumables)
 _ACTION_FAMILIES = {
     SelectBlind: "select_blind",

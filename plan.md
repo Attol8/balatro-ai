@@ -1383,6 +1383,43 @@ direct action through `is_legal`. This is a fail-closed correction only; do not
 enable buy-and-use or pack-phase inventory operations until BalatroBot,
 Jackdaw, and an organic authority trace establish each exact contract.
 
+First buy-and-use vertical slice: admit `BuyShopCard(mode=use)` only for a
+visible affordable Planet whose existing public no-target consumable rule is
+usable at the current shop. This action bypasses consumable storage capacity,
+matching vanilla's `buy_and_use` button, but does not admit targeted Tarot or
+Spectral cards, invent a target, or expose an intermediate hand. The RPC is the
+ordinary `buy` endpoint with the explicit string mode `use`. BalatroBot must
+select the card's real buy-and-use UI definition and return only after the shop
+count and money change exactly once, the Planet is absent from inventory, the
+corresponding public hand level changes, and the controller/use locks settle
+back in `SHOP`. Missing button/state or any non-Planet use request fails closed.
+Jackdaw must mirror vanilla's atomic order behind the evaluator boundary:
+remove the offer, add it to deck effects without storing it, fire purchase
+context once, charge it, apply its no-target Planet use, and release it only
+after the use chain. Roll back the private candidate state atomically if any
+step rejects and end with the original consumable capacity. Correct the
+existing store-capacity rule at the same boundary: a Negative consumable may
+enter a nominally full tray. Add full-slot, Negative, affordability, wrong-kind,
+codec/RPC, model-identity, candidate round-trip, Constellation/Satellite, and
+authority endpoint tests. Preserve the store action beside the new use action;
+neither the baseline nor search may assume one dominates. Organic real-Balatro
+Planet buy-and-use plus zero observed-state differential mismatch is required
+before the capability is considered authority-certified.
+
+Implementation status: the Planet-only vertical slice is built through the
+public action/codec, BalatroBot adapter, real `buy_and_use` authority UI,
+Jackdaw compatibility transaction, semantic diagnostics, and both public model
+families. The authority endpoint passes a real-Balatro full-tray transition and
+invalid-mode/wrong-kind rejections; candidate tests cover a Negative Planet,
+Constellation, usage accounting, unknown-key rejection, and in-place rollback
+after a forced post-purchase failure under Credit Card. The regenerated
+BalatroBot readiness patch now applies cleanly to its pinned upstream tree and
+reverse-checks against the installed mod. Keep the capability provisional: the
+test fixtures are mutation-assisted and therefore are contract tests, not
+promoted evidence. Next commit this vertical slice, then capture a natural
+public-policy shop Planet on fresh nonprotected development seeds and require
+an exact authority/candidate transition before calling it certified.
+
 After that correction, instrument clone, root-step, continuation/scoring, and
 allocation/GC time at terminal-teacher anchors. The Arcana tail is valid
 exhaustive targeting: 13 decisions with at least 100 roots account for 2,017 of
