@@ -248,11 +248,13 @@ def _example_weights(
     examples: Sequence[RoutePairedExample],
     *,
     head: str | None = None,
+    scalar_nonzero: bool = False,
 ) -> tuple[float, ...]:
     eligible = tuple(
         example
         for example in examples
-        if head is None or all(example.targets.masks[head])
+        if (head is None or all(example.targets.masks[head]))
+        and (not scalar_nonzero or sum(example.targets.scalar) != 0.0)
     )
     eligible_decisions = {
         (example.record.run_group, example.record_index) for example in eligible
@@ -262,7 +264,10 @@ def _example_weights(
     return tuple(
         (
             0.0
-            if head is not None and not all(example.targets.masks[head])
+            if head is not None
+            and not all(example.targets.masks[head])
+            or scalar_nonzero
+            and sum(example.targets.scalar) == 0.0
             else 1.0
             / decisions_per_run[example.record.run_group]
             / pairs_per_decision[example.record_index]
@@ -301,6 +306,7 @@ def route_training_loss(
     )
     output = model(batch)
     example_weights = _example_weights(examples)
+    ordering_example_weights = _example_weights(examples, scalar_nonzero=True)
     head_weights = {head: _example_weights(examples, head=head) for head in HEADS}
     losses: dict[str, list[Tensor]] = {name: [] for name in TARGETS}
     ordering_values: list[Tensor] = []
@@ -344,7 +350,7 @@ def route_training_loss(
                     )
                 )
             )
-            ordering_weights.append(weight)
+            ordering_weights.append(ordering_example_weights[example_index])
         for head in HEADS:
             if all(example.targets.masks[head]):
                 head_target = sum(example.targets.heads[head]) / len(

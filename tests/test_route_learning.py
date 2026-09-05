@@ -195,6 +195,21 @@ def test_head_weighting_ignores_pairs_without_that_head():
     assert sum(weights[:2]) == weights[2]
 
 
+def test_ordering_weighting_ignores_insensitive_pairs():
+    record_a = _record(1)
+    record_b = replace(record_a, run_group="origin-" + "2" * 32)
+    example_a = route_paired_examples((record_a,))[0]
+    example_b = replace(route_paired_examples((record_b,))[0], record=record_b)
+    insensitive = replace(
+        example_a,
+        record_index=1,
+        targets=replace(example_a.targets, scalar=(0.0, 0.0)),
+    )
+    weights = _example_weights((example_a, insensitive, example_b), scalar_nonzero=True)
+    assert weights[0] == weights[2]
+    assert weights[1] == 0.0
+
+
 def test_null_mismatch_masks_only_the_affected_head():
     torch.manual_seed(9)
     record = _record(1, null_ante8=True)
