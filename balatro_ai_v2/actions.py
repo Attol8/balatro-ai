@@ -112,6 +112,11 @@ class RerollShop:
 
 
 @dataclass(frozen=True, slots=True)
+class RerollBoss:
+    pass
+
+
+@dataclass(frozen=True, slots=True)
 class PlayCards:
     cards: tuple[HandSlot, ...]
 
@@ -206,6 +211,7 @@ PublicAction: TypeAlias = (
     | CashOut
     | LeaveShop
     | RerollShop
+    | RerollBoss
     | PlayCards
     | DiscardCards
     | BuyShopCard
@@ -240,6 +246,8 @@ def iter_legal_actions(observation: PublicObservation) -> Iterator[PublicAction]
             yield SelectBlind()
         if selected is not None and selected.kind != "BOSS":
             yield SkipBlind()
+        if is_legal(observation, RerollBoss()):
+            yield RerollBoss()
     elif phase == Phase.SELECTING_HAND:
         hand_slots = tuple(HandSlot(index) for index in range(len(observation.hand)))
         maximum = min(5, observation.selection_limit, len(hand_slots))
@@ -346,6 +354,22 @@ def is_legal(observation: PublicObservation, action: PublicAction) -> bool:
         return phase == Phase.SHOP
     if isinstance(action, RerollShop):
         return phase == Phase.SHOP and _can_spend(observation, observation.round.reroll_cost)
+    if isinstance(action, RerollBoss):
+        selectable_boss = any(
+            blind.kind == "BOSS" and blind.status in {"SELECT", "UPCOMING"}
+            for blind in observation.blinds
+        )
+        has_retcon = "v_retcon" in observation.used_vouchers
+        has_unused_directors_cut = (
+            "v_directors_cut" in observation.used_vouchers
+            and not observation.round.boss_rerolled
+        )
+        return (
+            phase == Phase.BLIND_SELECT
+            and selectable_boss
+            and _can_spend(observation, 10)
+            and (has_retcon or has_unused_directors_cut)
+        )
     if isinstance(action, PlayCards):
         return (
             phase == Phase.SELECTING_HAND
@@ -514,7 +538,10 @@ def _has_room(
 
 
 def action_to_data(action: PublicAction) -> dict[str, object]:
-    if isinstance(action, (SelectBlind, SkipBlind, CashOut, LeaveShop, RerollShop, SkipPack)):
+    if isinstance(
+        action,
+        (SelectBlind, SkipBlind, CashOut, LeaveShop, RerollShop, RerollBoss, SkipPack),
+    ):
         return {"type": _action_type(action)}
     if isinstance(action, (PlayCards, DiscardCards)):
         return {"type": _action_type(action), "cards": [slot.value for slot in action.cards]}
@@ -561,6 +588,8 @@ def action_from_data(data: Mapping[str, object]) -> PublicAction:
         return LeaveShop()
     if kind == "reroll_shop":
         return RerollShop()
+    if kind == "reroll_boss":
+        return RerollBoss()
     if kind == "skip_pack":
         return SkipPack()
     if kind == "play_cards":
@@ -611,6 +640,7 @@ def _action_type(action: object) -> str:
         CashOut: "cash_out",
         LeaveShop: "leave_shop",
         RerollShop: "reroll_shop",
+        RerollBoss: "reroll_boss",
         PlayCards: "play_cards",
         DiscardCards: "discard_cards",
         SkipPack: "skip_pack",

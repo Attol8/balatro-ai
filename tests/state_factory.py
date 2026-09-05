@@ -149,6 +149,7 @@ def state(
             "hands_played": 0,
             "most_played_poker_hand": "High Card",
             "reroll_cost": 5,
+            "boss_rerolled": False,
         },
         "round_num": 0,
         "seed": seed,

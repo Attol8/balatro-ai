@@ -116,6 +116,7 @@ def _round(value: object) -> RoundObservation:
         hands_played=_integer(raw["hands_played"], "round.hands_played"),
         discards_used=_integer(raw["discards_used"], "round.discards_used"),
         reroll_cost=_integer(raw["reroll_cost"], "round.reroll_cost"),
+        boss_rerolled=_boolean(raw["boss_rerolled"], "round.boss_rerolled"),
         ancient_suit=_optional_string(raw["ancient_suit"], "round.ancient_suit"),
     )
 

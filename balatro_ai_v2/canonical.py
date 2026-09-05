@@ -80,6 +80,7 @@ _BLIND_FIELDS = {
 }
 _ROUND_FIELDS = {
     "ancient_suit",
+    "boss_rerolled",
     "chips",
     "discards_left",
     "discards_used",

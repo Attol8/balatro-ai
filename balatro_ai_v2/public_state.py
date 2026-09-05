@@ -189,7 +189,12 @@ class RoundObservation:
     hands_played: int
     discards_used: int
     reroll_cost: int
+    boss_rerolled: bool
     ancient_suit: str | None = None
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.boss_rerolled, bool):
+            raise ValueError("boss_rerolled must be boolean")
 
 
 @dataclass(frozen=True, slots=True)

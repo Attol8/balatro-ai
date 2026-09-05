@@ -30,6 +30,7 @@ from balatro_ai_v2.actions import (
     ReorderConsumables,
     ReorderHand,
     ReorderJokers,
+    RerollBoss,
     RerollShop,
     SelectBlind,
     SellConsumable,
@@ -51,8 +52,8 @@ from balatro_ai_v2.public_state import (
 )
 
 
-MODEL_FORMAT_VERSION: Final = 6
-PUBLIC_MODEL_ACTION_PROPOSAL_SCHEMA: Final = "factorized_tactical_hidden_joker_v6"
+MODEL_FORMAT_VERSION: Final = 7
+PUBLIC_MODEL_ACTION_PROPOSAL_SCHEMA: Final = "factorized_tactical_boss_reroll_v7"
 _REORDER_ACTIONS = (ReorderHand, ReorderJokers, ReorderConsumables)
 _ACTION_FAMILIES = {
     SelectBlind: "select_blind",
@@ -60,6 +61,7 @@ _ACTION_FAMILIES = {
     CashOut: "cash_out",
     LeaveShop: "leave_shop",
     RerollShop: "reroll_shop",
+    RerollBoss: "reroll_boss",
     PlayCards: "play_cards",
     DiscardCards: "discard_cards",
     BuyShopCard: "buy_shop_card",
@@ -562,6 +564,7 @@ def _observation_features(observation: PublicObservation, size: int) -> list[flo
         ("consumable_limit", observation.consumable_limit, 6),
     ):
         vector.number(name, value, scale)
+    vector.add("round.boss_rerolled", float(observation.round.boss_rerolled))
     vector.number("won", int(observation.won), 1)
     vector.category("pack_kind", observation.pack_kind or "<NONE>")
     vector.number("pack_choices_remaining", observation.pack_choices_remaining, 4)

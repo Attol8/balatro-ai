@@ -398,7 +398,7 @@ class JackdawBackend:
         self.metadata = BackendMetadata(
             backend_name="Jackdaw",
             backend_version=f"0.1.0+{JACKDAW_REVISION}",
-            adapter_version="4",
+            adapter_version="5",
             game_version="Balatro-1.0.1o-model",
             runtime_version="Python",
             capabilities=BackendCapabilities(
@@ -477,7 +477,9 @@ class JackdawBackend:
         boss_disabling_sale = self._selected_boss_disabling_sale(method, params)
         self._apply_pending_skip_dollars()
         try:
-            if method == "play":
+            if method == "reroll_boss":
+                raw_after = self._reroll_boss_compatibility()
+            elif method == "play":
                 with (
                     self._play_compatibility(),
                     self._observatory_scoring_compatibility(),
@@ -547,6 +549,49 @@ class JackdawBackend:
             rpc_observations=() if self.lightweight else (after.observed.raw_json,),
             after=after,
         )
+
+    def _reroll_boss_compatibility(self) -> dict[str, Any]:
+        """Execute vanilla Director's Cut/Retcon semantics in pinned Jackdaw."""
+
+        from jackdaw.engine.actions import GamePhase
+        from jackdaw.engine.blind import get_new_boss
+
+        game_state = getattr(self._backend, "_gs", None)
+        if not isinstance(game_state, dict):
+            raise RuntimeError("Jackdaw game state is unavailable for boss reroll")
+        if game_state.get("phase") != GamePhase.BLIND_SELECT:
+            raise self._rpc_error(-32002, "Boss reroll requires BLIND_SELECT")
+        round_resets = game_state.get("round_resets")
+        used_vouchers = game_state.get("used_vouchers")
+        if not isinstance(round_resets, dict) or not isinstance(used_vouchers, Mapping):
+            raise RuntimeError("Jackdaw boss-reroll state is incomplete")
+        available = int(game_state.get("dollars", 0)) - int(
+            game_state.get("bankrupt_at", 0)
+        )
+        retcon = bool(used_vouchers.get("v_retcon"))
+        directors_cut = bool(used_vouchers.get("v_directors_cut"))
+        if available < 10:
+            raise self._rpc_error(-32003, "Cannot afford boss reroll")
+        if not retcon and not (
+            directors_cut and round_resets.get("boss_rerolled") is False
+        ):
+            raise self._rpc_error(-32003, "Boss reroll voucher is unavailable")
+        rng = game_state.get("rng")
+        if rng is None:
+            raise RuntimeError("Jackdaw boss-reroll RNG is unavailable")
+        bosses_used = game_state.setdefault("bosses_used", {})
+        if not isinstance(bosses_used, dict):
+            raise RuntimeError("Jackdaw boss usage state is invalid")
+
+        game_state["dollars"] = int(game_state.get("dollars", 0)) - 10
+        round_resets["boss_rerolled"] = True
+        round_resets.setdefault("blind_choices", {})["Boss"] = get_new_boss(
+            int(round_resets.get("ante", 1)),
+            bosses_used,
+            rng,
+            win_ante=game_state.get("win_ante", 8),
+        )
+        return self._backend.handle("gamestate", {})
 
     def close(self) -> None:
         self._handle("menu", {})
@@ -1810,6 +1855,15 @@ def _normalize_jackdaw_bridge(
         private.get("current_round") if isinstance(private, Mapping) else None
     )
     if isinstance(round_state, dict) and isinstance(current_round, Mapping):
+        round_resets = private.get("round_resets")
+        boss_rerolled = (
+            round_resets.get("boss_rerolled")
+            if isinstance(round_resets, Mapping)
+            else None
+        )
+        if not isinstance(boss_rerolled, bool):
+            raise RuntimeError("Jackdaw boss-rerolled state is unavailable")
+        round_state["boss_rerolled"] = boss_rerolled
         before_first_blind = private.get("round", 0) == 0 and (
             phase == "BLIND_SELECT" or (in_pack and not pack_from_shop)
         )

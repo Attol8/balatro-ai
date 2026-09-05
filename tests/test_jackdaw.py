@@ -16,10 +16,12 @@ from balatro_ai_v2.actions import (
     LeaveShop,
     PackOfferSlot,
     PlayCards,
+    RerollBoss,
     SelectBlind,
     ShopSlot,
     SkipPack,
     action_from_data,
+    iter_legal_actions,
 )
 from balatro_ai_v2.backend import RunSpec
 from balatro_ai_v2.balatrobot.adapter import to_public_observation
@@ -67,6 +69,34 @@ def test_candidate_data_bootstrap_rejects_existing_mismatch(tmp_path) -> None:
         jackdaw.JackdawUnavailable, match="installed Jackdaw data hash mismatch"
     ):
         jackdaw._ensure_jackdaw_data(module)
+
+
+def test_candidate_boss_reroll_consumes_money_rng_and_public_allowance() -> None:
+    pytest.importorskip("jackdaw")
+    backend = jackdaw.JackdawBackend()
+    backend.reset(RunSpec("RED", "WHITE", "17"))
+    game_state = backend._backend._gs
+    game_state["used_vouchers"]["v_retcon"] = True
+    game_state["dollars"] = 30
+    backend._current = backend._observation(backend._backend.handle("gamestate", {}))
+    before = backend.current_public
+    assert before is not None
+    old_boss = next(blind.name for blind in before.blinds if blind.kind == "BOSS")
+
+    result = backend.step(RerollBoss())
+
+    after = backend.current_public
+    assert result.status == "accepted"
+    assert after is not None
+    assert after.money == 20
+    assert after.round.boss_rerolled is True
+    assert next(blind.name for blind in after.blinds if blind.kind == "BOSS") != old_boss
+    assert RerollBoss() in tuple(iter_legal_actions(after))
+
+    repeated = backend.step(RerollBoss())
+    assert repeated.status == "accepted"
+    assert backend.current_public is not None
+    assert backend.current_public.money == 10
 
 
 def test_candidate_pack_capacity_survives_selections_and_resets() -> None:
@@ -470,7 +500,7 @@ def test_bridge_normalization_preserves_candidate_round_timing() -> None:
             "most_played_poker_hand": "High Card",
         },
         "round": 1,
-        "round_resets": {"hands": 4, "discards": 4},
+        "round_resets": {"hands": 4, "discards": 4, "boss_rerolled": False},
     }
 
     original_raw = json.loads(json.dumps(raw))
@@ -521,6 +551,7 @@ def test_bridge_normalization_redacts_amber_jokers_before_public_projection() ->
         "consumables": [],
         "current_round": {},
         "round": 1,
+        "round_resets": {"boss_rerolled": False},
     }
 
     normalized = jackdaw._normalize_jackdaw_bridge(raw, private)
@@ -556,6 +587,7 @@ def test_bridge_normalization_exposes_cerulean_forced_slot_from_empty_card_state
             "most_played_poker_hand": "High Card",
         },
         "round": 1,
+        "round_resets": {"boss_rerolled": False},
     }
 
     normalized = jackdaw._normalize_jackdaw_bridge(raw, private)
@@ -582,6 +614,7 @@ def test_bridge_normalization_exposes_disabled_cerulean_without_forced_slot() ->
         "consumables": [],
         "current_round": {},
         "round": 1,
+        "round_resets": {"boss_rerolled": False},
     }
 
     normalized = jackdaw._normalize_jackdaw_bridge(raw, private)

@@ -3960,3 +3960,28 @@ as public behavior coverage and route/pivot supervision, but they will not be
 treated as an oracle: determinized search corrections and terminal outcome
 targets remain necessary to surpass demonstrations and avoid copying seed- or
 build-specific habits.
+
+### Public Boss reroll capability (2026-09-05)
+
+The first elite-route action increment adds a typed `RerollBoss` root. It is
+legal only at Blind Select with a visible selectable/upcoming Boss, $10 of
+public purchasing capacity, and either Retcon or Director's Cut whose
+per-ante allowance remains unused. A strict `round.boss_rerolled` boolean is
+now part of the public observation, canonical trace, policy/environment wire,
+and both model feature families. The replacement is not previewed: BalatroBot
+invokes vanilla `G.FUNCS.reroll_boss`, and Jackdaw consumes its ordinary RNG
+through `get_new_boss`, including the configured showdown interval.
+
+Retcon repetition, Director's Cut exhaustion, Credit Card affordability, typed
+codec/RPC mapping, model semantics, and a real Jackdaw state transition are
+covered. The repository authority patch now contains endpoint registration,
+the Lua endpoint, public round export, OpenRPC contract, and annotations. It
+applies cleanly to an untouched BalatroBot checkout; the resulting managed
+files match the installed development mod exactly and OpenRPC parses as JSON.
+This is implementation evidence only. A naturally acquired voucher and organic
+Balatro-versus-Jackdaw reroll transition remain required before authority
+promotion.
+
+Verification: 883 repository tests pass and Ruff passes. The public policy
+protocol is v8, canonical trace schema v9, environment canonical schema v10,
+both learned model formats v7, teacher schema v8, and search protocol v13.

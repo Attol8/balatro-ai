@@ -205,6 +205,40 @@ Finite integral scientific-notation scores are retained as arbitrary-size public
 integers and encoded with bounded linear/log features; fractional and non-finite
 score values fail closed.
 
+### Elite-route capability order (active 2026-09-05)
+
+Do not collect the reserved v12 teacher cohort until the action/state surface
+can represent the decisions that create elite Endless engines. Add capabilities
+in this order, proving candidate behavior and clean authority-patch replay at
+each boundary:
+
+1. **Boss reroll.** Expose one `RerollBoss` action only in Blind Select when a
+   Boss is selectable, the public economy can pay the fixed $10 cost, and the
+   run owns Retcon or an unused Director's Cut. Export the public
+   `boss_rerolled` allowance bit, consume ordinary game RNG, and reveal only
+   the resulting visible Boss. Never preview or enumerate replacement bosses.
+2. **Route state.** Keep the lexicographic `RunGoal` separate from a persistent,
+   revisable route: victory, held-card retrigger, played-card retrigger, or
+   consumable duplication. Track absent/assembling/online prerequisites from
+   public state and history; search identity includes action, intent, and route.
+3. **Public elite observations.** Add a public permanent-deck aggregate and the
+   visible runtime target of target-dependent Jokers such as Idol. The aggregate
+   may expose remembered deck composition, never draw order or which identity
+   occupies a face-down hand slot. Hidden twins must remain identical.
+4. **Inventory choreography.** Support shop buy-and-use and legal pack-phase
+   use/sell/reorder operations only after exact BalatroBot and Jackdaw semantics
+   are established. Capacity and money checks remain centralized typed
+   legality; unknown pack behavior fails closed.
+5. **Trajectory iteration.** Ingest strong public trajectories for route and
+   pivot coverage, then correct them with paired determinized search and
+   complete-run terminal labels. Demonstrations are neither authority evidence
+   nor an oracle and may not bring seed/private state into the model.
+
+After these capabilities, profile the exact continuation scorer and clone/step
+costs again. Optimize measured bottlenecks without changing selected actions on
+a frozen development replay. Then freeze source/config/model digests and use
+unused development seeds 1975--2274 for a new preregistered collection.
+
 ## Relational expert-iteration increment (active 2026-09-04)
 
 The next increment turns the architecture into a measurable candidate without

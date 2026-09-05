@@ -17,6 +17,7 @@ from balatro_ai_v2.actions import (
     PlayCards,
     OpenedPackSlot,
     ReorderHand,
+    RerollBoss,
     SelectBlind,
     SellJoker,
     ShopSlot,
@@ -42,6 +43,7 @@ from state_factory import item_card, playing_card, state
         SelectBlind(),
         CashOut(),
         LeaveShop(),
+        RerollBoss(),
         PlayCards((HandSlot(0), HandSlot(2))),
         DiscardCards((HandSlot(1),)),
         BuyShopCard(ShopSlot(0)),
@@ -82,6 +84,46 @@ def test_blind_action_generator_never_yields_an_illegal_select() -> None:
 
     assert not any(isinstance(action, SelectBlind) for action in actions)
     assert all(is_legal(observation, action) for action in actions)
+
+
+def test_boss_reroll_requires_public_voucher_money_and_selectable_boss() -> None:
+    raw = state("BLIND_SELECT", money=10)
+    raw["used_vouchers"] = ["v_directors_cut"]
+    observation = to_public_observation(raw)
+    action = RerollBoss()
+
+    assert is_legal(observation, action)
+    assert action in iter_legal_actions(observation)
+    assert action_to_rpc(action, observation) == ("reroll_boss", {})
+
+    assert not is_legal(replace(observation, money=9), action)
+    assert not is_legal(replace(observation, used_vouchers=()), action)
+    assert not is_legal(replace(observation, phase=observation.phase.SHOP), action)
+
+
+def test_directors_cut_is_once_per_ante_but_retcon_is_not() -> None:
+    raw = state("BLIND_SELECT", money=30)
+    raw["used_vouchers"] = ["v_directors_cut"]
+    raw["round"]["boss_rerolled"] = True
+
+    assert not is_legal(to_public_observation(raw), RerollBoss())
+
+    raw["used_vouchers"] = ["v_directors_cut", "v_retcon"]
+    assert is_legal(to_public_observation(raw), RerollBoss())
+
+
+def test_boss_reroll_honours_public_credit_card_floor() -> None:
+    raw = state("BLIND_SELECT", money=-10)
+    raw["used_vouchers"] = ["v_retcon"]
+    raw["jokers"]["cards"] = [
+        item_card("j_credit_card", card_id=30, kind="JOKER")
+    ]
+    raw["jokers"]["count"] = 1
+
+    assert is_legal(to_public_observation(raw), RerollBoss())
+
+    raw["jokers"]["cards"][0]["state"] = {"debuff": True}
+    assert not is_legal(to_public_observation(raw), RerollBoss())
 
 
 def test_hand_actions_are_not_limited_to_old_eight_card_mask() -> None:

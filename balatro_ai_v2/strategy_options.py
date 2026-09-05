@@ -23,6 +23,7 @@ from balatro_ai_v2.actions import (
     ReorderConsumables,
     ReorderHand,
     ReorderJokers,
+    RerollBoss,
     RerollShop,
     SelectBlind,
     SellConsumable,
@@ -320,6 +321,10 @@ def _classify_action(
         classified.extend(_classify_skip(observation))
     elif isinstance(action, RerollShop):
         classified.append((StrategyIntent.STABILIZE, ("search_visible_shop",)))
+    elif isinstance(action, RerollBoss):
+        classified.append(
+            (StrategyIntent.BOSS_PREPARATION, ("reroll_visible_boss",))
+        )
     elif isinstance(action, (PlayCards, DiscardCards)):
         classified.extend(_classify_hand_action(observation, engine, action))
     elif isinstance(action, BuyShopCard):

@@ -20,6 +20,7 @@ from balatro_ai_v2.actions import (
     ReorderConsumables,
     ReorderHand,
     ReorderJokers,
+    RerollBoss,
     RerollShop,
     SelectBlind,
     SellConsumable,
@@ -168,6 +169,7 @@ def to_public_observation(raw: Mapping[str, Any]) -> PublicObservation:
             hands_played=_required_int(round_raw, "hands_played"),
             discards_used=_required_int(round_raw, "discards_used"),
             reroll_cost=_required_int(round_raw, "reroll_cost"),
+            boss_rerolled=_required_bool(round_raw, "boss_rerolled"),
             ancient_suit=_optional_key(round_raw, "ancient_suit"),
         ),
         blinds=blinds,
@@ -220,6 +222,8 @@ def action_to_rpc(action: PublicAction, observation: PublicObservation) -> tuple
         return "next_round", {}
     if isinstance(action, RerollShop):
         return "reroll", {}
+    if isinstance(action, RerollBoss):
+        return "reroll_boss", {}
     if isinstance(action, PlayCards):
         return "play", {"cards": [slot.value for slot in action.cards]}
     if isinstance(action, DiscardCards):

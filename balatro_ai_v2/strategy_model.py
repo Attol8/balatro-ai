@@ -43,6 +43,7 @@ from balatro_ai_v2.actions import (
     ReorderConsumables,
     ReorderHand,
     ReorderJokers,
+    RerollBoss,
     RerollShop,
     SelectBlind,
     SellConsumable,
@@ -69,7 +70,7 @@ from balatro_ai_v2.strategy_context import PublicStrategyContext
 from balatro_ai_v2.strategy_options import StrategyIntent
 
 
-STRATEGY_MODEL_FORMAT_VERSION: Final = 6
+STRATEGY_MODEL_FORMAT_VERSION: Final = 7
 
 
 class StrategyModelError(RuntimeError):
@@ -111,6 +112,7 @@ class ActionKind(IntEnum):
     REORDER_HAND = 15
     REORDER_JOKERS = 16
     REORDER_CONSUMABLES = 17
+    REROLL_BOSS = 18
 
 
 _ACTION_KIND = {
@@ -119,6 +121,7 @@ _ACTION_KIND = {
     CashOut: ActionKind.CASH_OUT,
     LeaveShop: ActionKind.LEAVE_SHOP,
     RerollShop: ActionKind.REROLL_SHOP,
+    RerollBoss: ActionKind.REROLL_BOSS,
     PlayCards: ActionKind.PLAY_CARDS,
     DiscardCards: ActionKind.DISCARD_CARDS,
     BuyShopCard: ActionKind.BUY_SHOP_CARD,
@@ -356,6 +359,7 @@ _SCALARS = (
     "hands_played",
     "discards_used",
     "reroll_cost",
+    "boss_rerolled",
     "hand_limit",
     "selection_limit",
     "draw_count",
@@ -992,6 +996,7 @@ class PublicStrategyTensorizer:
             ("hands_played", observation.round.hands_played, 10),
             ("discards_used", observation.round.discards_used, 10),
             ("reroll_cost", observation.round.reroll_cost, 20),
+            ("boss_rerolled", int(observation.round.boss_rerolled), 1),
             ("hand_limit", observation.hand_limit, 20),
             ("selection_limit", observation.selection_limit, 10),
             ("draw_count", observation.draw_count, 52),
@@ -1419,6 +1424,20 @@ class PublicStrategyTensorizer:
             if selected is None:
                 raise StrategyModelError("blind action has no selected public blind")
             relate("blind", selected)
+        elif isinstance(action, RerollBoss):
+            boss = next(
+                (
+                    i
+                    for i, blind in enumerate(observation.blinds)
+                    if blind.kind == "BOSS"
+                    and blind.status in {"SELECT", "UPCOMING"}
+                ),
+                None,
+            )
+            if boss is None:
+                raise StrategyModelError("boss reroll has no public Boss Blind")
+            relate("blind", boss)
+            _put_scaled(features, "action_cost", 10, 100)
         elif isinstance(action, (PlayCards, DiscardCards)):
             _put_scaled(features, "action_selection_size", len(action.cards), 5)
             for order, slot in enumerate(action.cards):
@@ -1464,7 +1483,9 @@ class PublicStrategyTensorizer:
             _reorder_relations(relate, "joker", action.order)
         elif isinstance(action, ReorderConsumables):
             _reorder_relations(relate, "consumable", action.order)
-        elif not isinstance(action, (CashOut, LeaveShop, RerollShop, SkipPack)):
+        elif not isinstance(
+            action, (CashOut, LeaveShop, RerollShop, RerollBoss, SkipPack)
+        ):
             raise StrategyModelError(
                 f"unsupported public action semantics for {action!r}"
             )

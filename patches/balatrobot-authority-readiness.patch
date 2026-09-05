@@ -609,3 +609,146 @@ index 2c26a12..d886f00 100644
                  "effect": "-1 Hand Size",
                  "name": "The Manacle",
                  "score": 600,
+diff --git a/balatrobot.lua b/balatrobot.lua
+index a7cfe8c..58e8f14 100644
+--- a/balatrobot.lua
++++ b/balatrobot.lua
+@@ -37,0 +38 @@ BB_ENDPOINTS = {
++  "src/lua/endpoints/reroll_boss.lua",
+diff --git a/src/lua/endpoints/reroll_boss.lua b/src/lua/endpoints/reroll_boss.lua
+new file mode 100644
+index 0000000..21dd04b
+--- /dev/null
++++ b/src/lua/endpoints/reroll_boss.lua
+@@ -0,0 +1,62 @@
++-- src/lua/endpoints/reroll_boss.lua
++
++---@class Request.Endpoint.RerollBoss.Params
++
++---@type Endpoint
++return {
++  name = "reroll_boss",
++  description = "Spend $10 to reroll the visible Boss Blind",
++  schema = {},
++  requires_state = { G.STATES.BLIND_SELECT },
++
++  ---@param _ Request.Endpoint.RerollBoss.Params
++  ---@param send_response fun(response: Response.Endpoint)
++  execute = function(_, send_response)
++    local round_resets = G.GAME.round_resets
++    local used_vouchers = G.GAME.used_vouchers or {}
++    local available_money = G.GAME.dollars - G.GAME.bankrupt_at
++    local has_retcon = used_vouchers.v_retcon
++    local has_unused_directors_cut = used_vouchers.v_directors_cut
++      and not round_resets.boss_rerolled
++
++    if available_money < 10 then
++      send_response({
++        message = "Not enough dollars to reroll the Boss Blind",
++        name = BB_ERROR_NAMES.NOT_ALLOWED,
++      })
++      return
++    end
++    if not has_retcon and not has_unused_directors_cut then
++      send_response({
++        message = "Boss reroll requires Retcon or unused Director's Cut",
++        name = BB_ERROR_NAMES.NOT_ALLOWED,
++      })
++      return
++    end
++    if not round_resets.blind_choices or not round_resets.blind_choices.Boss then
++      send_response({
++        message = "No Boss Blind is available to reroll",
++        name = BB_ERROR_NAMES.NOT_ALLOWED,
++      })
++      return
++    end
++
++    local expected_money = G.GAME.dollars - 10
++    G.FUNCS.reroll_boss({})
++
++    G.E_MANAGER:add_event(Event({
++      trigger = "condition",
++      blocking = false,
++      func = function()
++        local complete = G.STATE == G.STATES.BLIND_SELECT
++          and G.GAME.dollars == expected_money
++          and G.GAME.round_resets.boss_rerolled == true
++          and not G.CONTROLLER.locks.boss_reroll
++        if complete then
++          send_response(BB_GAMESTATE.get_gamestate())
++        end
++        return complete
++      end,
++    }))
++  end,
++}
+diff --git a/src/lua/utils/gamestate.lua b/src/lua/utils/gamestate.lua
+index 5d9d29f..c8ef3f9 100644
+--- a/src/lua/utils/gamestate.lua
++++ b/src/lua/utils/gamestate.lua
+@@ -577,6 +599,9 @@ local function extract_round_info()
+   if G.GAME.current_round.reroll_cost then
+     round.reroll_cost = G.GAME.current_round.reroll_cost
+   end
+ 
++  round.boss_rerolled = G.GAME.round_resets
++    and G.GAME.round_resets.boss_rerolled == true
++
+   -- Chips is stored in G.GAME not G.GAME.current_round
+   if G.GAME.chips then
+     round.chips = G.GAME.chips
+diff --git a/src/lua/utils/openrpc.json b/src/lua/utils/openrpc.json
+index 6dafa99..e57b022 100644
+--- a/src/lua/utils/openrpc.json
++++ b/src/lua/utils/openrpc.json
+@@ -649,0 +650,26 @@
++    {
++      "name": "reroll_boss",
++      "summary": "Reroll the visible Boss Blind",
++      "description": "Spend $10 using Retcon or an unused Director's Cut to reroll the Boss Blind.",
++      "tags": [
++        {
++          "$ref": "#/components/tags/blinds"
++        }
++      ],
++      "params": [],
++      "result": {
++        "name": "gamestate",
++        "description": "Complete game state after the boss reroll",
++        "schema": {
++          "$ref": "#/components/schemas/GameState"
++        }
++      },
++      "errors": [
++        {
++          "$ref": "#/components/errors/InvalidState"
++        },
++        {
++          "$ref": "#/components/errors/NotAllowed"
++        }
++      ]
++    },
+@@ -1209,10 +1235,15 @@
+           "reroll_cost": {
+             "type": "integer",
+             "description": "Current cost to reroll the shop"
+           },
++          "boss_rerolled": {
++            "type": "boolean",
++            "description": "Whether Director's Cut was used this ante"
++          },
+           "chips": {
+             "type": "integer",
+             "description": "Current chips scored in this round"
+           }
+-        }
++        },
++        "required": ["boss_rerolled"]
+       },
+diff --git a/src/lua/utils/types.lua b/src/lua/utils/types.lua
+index 53f43b1..a3e3e6c 100644
+--- a/src/lua/utils/types.lua
++++ b/src/lua/utils/types.lua
+@@ -47,0 +48 @@
++---@field boss_rerolled boolean Whether Director's Cut was used this ante

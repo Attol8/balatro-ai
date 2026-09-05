@@ -19,7 +19,7 @@ from balatro_ai_v2.public_state import PublicObservation
 
 ENV_PROTOCOL_VERSION: Final = 2
 ENV_REWARD_SCHEMA: Final = "sparse_terminal_v1"
-ENV_CANONICAL_SCHEMA_VERSION: Final = 9
+ENV_CANONICAL_SCHEMA_VERSION: Final = 10
 MAX_ENV_REQUEST_BYTES: Final = 64_000
 MAX_ENV_RESPONSE_BYTES: Final = 1_000_000
 EnvWireError = JsonlProtocolError

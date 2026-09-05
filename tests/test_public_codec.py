@@ -75,6 +75,11 @@ def test_public_observation_codec_rejects_boolean_integer() -> None:
     with pytest.raises(PublicCodecError, match="ante must be an integer"):
         public_observation_from_data(data)
 
+    data = public_observation_to_data(to_public_observation(state()))
+    data["round"]["boss_rerolled"] = 1
+    with pytest.raises(PublicCodecError, match="round.boss_rerolled must be a boolean"):
+        public_observation_from_data(data)
+
 
 def test_finite_scientific_scores_canonicalize_to_unbounded_public_integers() -> None:
     raw = state("ROUND_EVAL")
