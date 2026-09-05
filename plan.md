@@ -1581,6 +1581,18 @@ delta; positive paired log-best-hand delta; and more xMult/scaling acquisitions
 in affected candidate runs. Insufficient coverage or any survival regression
 kills the slice.
 
+Late-shop screen preregistration: reserve unused development seeds 2441--2460,
+nonce `late-shop-engine-v1`, Red Deck/White Stake, six samples, one-Ante
+horizon, 200 rollout steps, `z=1`, strategic continuation/options, Ante cap 20,
+1,200 decisions, six workers, and recorded search decisions. The retained
+control is commit `6a986bf`; freeze its report before committing or running the
+candidate. Reports live under `runs/experiments/late-shop-engine-v1/`. Count a
+direct intervention only where the candidate continuation baseline is
+`RerollShop` at the expanded step-three boundary on a state shared with the
+control; downstream trajectory changes are consequences, not additional
+qualifying interventions. The predeclared strength and coverage kill rules
+above remain unchanged.
+
 ## Active development loop
 
 The two disjoint 30-seed screens are enough to retain one-ante strategic
