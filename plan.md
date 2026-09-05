@@ -1040,6 +1040,31 @@ strength interval. A mismatch without an admissible specialist retires v16 for
 further code diagnosis; a complete match authorizes preregistration of one fresh
 small capability/cost screen.
 
+The v16 causal replay passes the repair gate. It completed 12/12 with zero
+rejected rollouts, zero specialist overrides, and exactly the v15 control's two
+wins, 5.67 mean antes, 8/12 survival to Ante 6, Ante-9 maximum progression,
+69,102 best hand, per-seed terminal/final observations, action aggregates, and
+decision counts. After filtering the 76 new single-ordinary-root overlay checks,
+all 926 multi-root decisions match the control's phase, ante, continuation
+baseline, ordinary selected action, ordinary root count, and sample count in
+sequence. The overlay generated and evaluated 199 specialist roots across 72
+decisions; five best challengers had positive paired means, but none had a
+positive lower bound. The closest lower bound was -0.031 for a played-retrigger
+pack choice on seed `2309`. Extra work was 22,168 rollout steps (+2.53%), while
+normalized throughput was 95.4 versus 96.7 steps/second (-1.37%). The repair is
+therefore behaviorally exact and its marginal overhead is bounded.
+
+Do not spend a fresh screen merely to confirm an inert one-ante overlay. The
+causal replay shows the next strength bottleneck: specialist routes need a
+long-horizon public leaf/terminal value that can recognize engine assembly before
+it immediately improves survival. Audit the existing frozen expert-iteration and
+success-teacher artifacts next. If their provenance, coverage, and target gates
+are valid, train a v16-compatible relational route value and keep it shadow-only
+until calibration and counterfactual replay show that it ranks the five near-miss
+specialists correctly without displacing ordinary survival. If the artifacts are
+invalid or route-poor, repair the collection protocol and collect high-quality
+public trajectories/terminal labels on unused development seeds before training.
+
 The retired v11 design remains a pre-win/early-Endless continuation increment,
 not the complete high-score policy. Its useful continuation machinery is retained
 inside the broader program above, while its collection protocol remains retired.

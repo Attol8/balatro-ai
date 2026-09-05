@@ -4181,3 +4181,34 @@ and control/report reconciliation all have regressions. Verification is 941 full
 repository tests, 96 focused search/determinization/report tests, Ruff, and clean
 diff whitespace. No game outcome is claimed yet; the next v16 evidence is a causal
 replay of already-observed seeds `2299-2310`.
+
+### v16 causal replay passes with no specialist admission (2026-09-05)
+
+The preregistered replay report
+`runs/experiments/elite-route-screen/v16-route-causal-replay-seeds2299-2310.json`
+completed 12/12. It exactly reproduces the rejected screen's ordinary v15 control:
+two wins, mean 5.67 antes, 8/12 to Ante 6, maximum progression through Ante 9,
+mean log10 best hand 4.2613, and maximum best hand 69,102. For every seed, the
+terminal fields, full final public observation, total decision count, and semantic
+action aggregates are equal. Filtering v16's additional single-ordinary-root
+checks leaves 926 multi-root decisions; their ordered phase, ante, continuation
+baseline, ordinary selected action, ordinary root count, and sample count all
+match the control. This is repair evidence only because every seed was already
+observed under v15.
+
+The overlay generated 199 non-Victory roots over 72 decisions and selected none.
+Five best challengers had positive paired mean progress, but all lower confidence
+bounds were non-positive. The closest was a played-retrigger pack choice on seed
+`2309`, mean +0.272 and lower bound -0.031. There were no specialist rejections,
+unavailable lanes, route escapes, or abandonments. Root fan-out had median one and
+maximum 36. v16 used 897,350 rollout steps versus 875,182 for control (+2.53%);
+throughput was 95.4 versus 96.7 steps/second (-1.37%). The old v15 route arm's
+collapse is therefore fully attributed to replacing ordinary selection, not to
+an unavoidable route cost.
+
+This result does not justify a fresh confirmatory screen. A one-ante scalar value
+cannot reward assembling a Baron/Mime, Idol/Triboulet, or Perkeo engine before it
+changes immediate survival. The next strength experiment must supply a calibrated
+long-horizon public value from valid expert-iteration/terminal evidence, first in
+shadow and counterfactual replay. If current frozen data lacks route diversity or
+valid provenance, repair and recollect it rather than training a misleading model.
