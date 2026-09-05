@@ -3985,3 +3985,38 @@ promotion.
 Verification: 883 repository tests pass and Ruff passes. The public policy
 protocol is v8, canonical trace schema v9, environment canonical schema v10,
 both learned model formats v7, teacher schema v8, and search protocol v13.
+
+### Elite-route public observation checkpoint (2026-09-05)
+
+The policy can now observe the same permanent deck composition exposed by
+vanilla's View Deck UI, as an unordered multiset without card IDs, pile
+locations, debuff state, or presentation text. BalatroBot derives it from
+`G.playing_cards`; Jackdaw derives it from the unique permanent playing cards
+across its live piles and deliberately ignores Jackdaw's stale advisory
+`playing_cards_count`. The declared public deck size is instead reconstructed
+from the composition itself. Counts, admitted rank/suit/modifier enums, Stone
+obscuration, uniqueness, and the total are strict at both canonical and public
+adapter boundaries.
+
+The Idol's ordinary tooltip target is now a typed rank/suit pair admitted only
+for a visible Idol. Hidden Amber Acorn slots remain anonymous. Both model
+families encode the target and permanent composition. Pure public route
+profiles expose held-retrigger, played-retrigger, and consumable-duplication
+anchors, compatible enablers, offered components, payload quality, and copy
+capacity. The rotating Idol target affects readiness only while selecting a
+hand; Wild and Smeared compatibility is included, and exhausted Seltzer is not
+an active enabler. These profiles are diagnostic groundwork and do not yet
+change candidate selection.
+
+The installed BalatroBot serializer, OpenRPC document, and Lua annotations
+match a clean replay of `patches/balatrobot-authority-readiness.patch` onto the
+pinned upstream checkout; OpenRPC parses as JSON. The observation-dependent
+contracts advance to policy protocol v9, canonical trace schema v10,
+environment schema v11, adapter v6, public and relational model formats v8,
+teacher schema v9, capacity model v5, terminal projection v5, and search v14.
+Verification: 906 repository tests and Ruff pass; the non-patch diff is free of
+whitespace errors.
+A naturally observed real-Balatro View Deck/Idol transition remains required
+authority evidence. The next implementation increment must bound relational
+full-deck entities for very large Endless decks and make route state persistent
+before it can move behavior or score.

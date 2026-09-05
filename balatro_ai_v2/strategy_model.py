@@ -70,7 +70,7 @@ from balatro_ai_v2.strategy_context import PublicStrategyContext
 from balatro_ai_v2.strategy_options import StrategyIntent
 
 
-STRATEGY_MODEL_FORMAT_VERSION: Final = 7
+STRATEGY_MODEL_FORMAT_VERSION: Final = 8
 
 
 class StrategyModelError(RuntimeError):
@@ -91,6 +91,7 @@ class EntityKind(IntEnum):
     OPENED_ITEM = 10
     USED_VOUCHER = 11
     LAST_CONSUMABLE = 12
+    FULL_DECK_CARD = 13
 
 
 class ActionKind(IntEnum):
@@ -333,6 +334,7 @@ _IDENTITY_TOKENS = (
     "<hidden-card>",
     "<hidden-joker>",
     "<deck-card>",
+    "<full-deck-card>",
     "<small-blind>",
     "<big-blind>",
     *sorted(JOKER_CATALOG),
@@ -447,6 +449,7 @@ def _model_schema_digest() -> str:
         key: {
             "role": profile.role,
             "tags": sorted(profile.tags),
+            "route_tags": sorted(profile.route_tags),
             "order_sensitive": profile.order_sensitive,
             "score_effect": profile.score_effect,
         }
@@ -1156,6 +1159,33 @@ class PublicStrategyTensorizer:
                 ),
             )
 
+        canonical_full_deck = sorted(
+            observation.full_deck,
+            key=lambda entry: (
+                entry.card.rank,
+                entry.card.suit,
+                entry.card.enhancement or "",
+                entry.card.edition or "",
+                entry.card.seal or "",
+                entry.card.permanent_bonus,
+            ),
+        )
+        for index, entry in enumerate(canonical_full_deck):
+            features = _features()
+            _card_features(features, entry.card)
+            _put_scaled(features, "count", entry.count, 52)
+            append(
+                "full_deck",
+                index,
+                _entity(
+                    EntityKind.FULL_DECK_CARD,
+                    "<full-deck-card>",
+                    features,
+                    index,
+                    len(canonical_full_deck),
+                ),
+            )
+
         for index, stat in enumerate(observation.hand_stats):
             if stat.name not in _HAND_NAMES:
                 raise StrategyModelError(f"unsupported poker hand {stat.name!r}")
@@ -1359,6 +1389,10 @@ class PublicStrategyTensorizer:
                     _put_category(
                         features, "target_hand", runtime.target_hand, _HAND_NAMES
                     )
+                if runtime.target_rank is not None:
+                    _put_category(features, "rank", runtime.target_rank, _RANKS)
+                if runtime.target_suit is not None:
+                    _put_category(features, "suit", runtime.target_suit, _SUITS)
             identity = item.key
         elif kind in {"TAROT", "PLANET", "SPECTRAL"}:
             if item.key not in _CONSUMABLE_KEYS or public_consumable_rule(item) is None:

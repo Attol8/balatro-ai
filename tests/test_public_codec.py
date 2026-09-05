@@ -67,6 +67,11 @@ def test_public_observation_codec_rejects_unknown_and_missing_fields() -> None:
     with pytest.raises(PublicCodecError, match="missing=.*money"):
         public_observation_from_data(missing)
 
+    wrong_total = public_observation_to_data(to_public_observation(state()))
+    wrong_total["full_deck"][0]["count"] = 49
+    with pytest.raises(ValueError, match="equal the declared deck size"):
+        public_observation_from_data(wrong_total)
+
 
 def test_public_observation_codec_rejects_boolean_integer() -> None:
     data = public_observation_to_data(to_public_observation(state()))
@@ -240,6 +245,38 @@ def test_public_observation_codec_round_trips_fixed_joker_runtime_only() -> None
 
     shop[0]["runtime"]["future_rng"] = "NOPE"  # type: ignore[index]
     with pytest.raises(PublicCodecError, match="joker runtime fields differ"):
+        public_observation_from_data(data)
+
+
+def test_public_codec_rejects_partial_or_unknown_idol_target() -> None:
+    raw = state("SHOP")
+    raw["shop"]["cards"][0] = playing_card("H_K", card_id=20)
+    raw["jokers"]["cards"] = [
+        {
+            "cost": {"buy": 6, "sell": 3},
+            "id": 90,
+            "key": "j_idol",
+            "label": "The Idol",
+            "modifier": [],
+            "set": "JOKER",
+            "state": {},
+            "value": {
+                "ability": {"idol_rank": "K", "idol_suit": "H"},
+                "effect": "Retrigger",
+            },
+        }
+    ]
+    raw["jokers"]["count"] = 1
+    data = public_observation_to_data(to_public_observation(raw))
+    assert public_observation_from_data(data) == to_public_observation(raw)
+
+    data["jokers"][0]["runtime"]["target_suit"] = None
+    with pytest.raises(PublicCodecError, match="both rank and suit"):
+        public_observation_from_data(data)
+
+    data = public_observation_to_data(to_public_observation(raw))
+    data["jokers"][0]["key"] = "j_joker"
+    with pytest.raises(PublicCodecError, match="only a visible Idol"):
         public_observation_from_data(data)
 
 

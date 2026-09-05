@@ -15,10 +15,16 @@ from enum import Enum
 from fractions import Fraction
 
 from balatro_ai_v2.boss_rules import BossConstraint, boss_rule
-from balatro_ai_v2.build_strategy import infer_build_plan
+from balatro_ai_v2.build_strategy import infer_build_plan, planet_hand
 from balatro_ai_v2.consumable_rules import public_consumable_rule
 from balatro_ai_v2.joker_catalog import JOKER_CATALOG, JokerRole
-from balatro_ai_v2.public_state import HiddenJokerSlot, PublicObservation
+from balatro_ai_v2.public_state import (
+    HiddenJokerSlot,
+    Phase,
+    PublicItem,
+    PublicObservation,
+    VisiblePlayingCard,
+)
 
 
 class RunGoal(str, Enum):
@@ -26,6 +32,22 @@ class RunGoal(str, Enum):
 
     VICTORY = "victory"
     ENDLESS = "endless"
+
+
+class RunRoute(str, Enum):
+    """A revisable multi-ante build route, separate from the run objective."""
+
+    VICTORY = "victory"
+    HELD_RETRIGGER = "held_retrigger"
+    PLAYED_RETRIGGER = "played_retrigger"
+    CONSUMABLE_DUPLICATION = "consumable_duplication"
+
+
+class RouteStage(str, Enum):
+    ABSENT = "absent"
+    SEEDED = "seeded"
+    ASSEMBLING = "assembling"
+    ONLINE = "online"
 
 
 class CopyKind(str, Enum):
@@ -135,6 +157,18 @@ class BossVulnerability:
 
 
 @dataclass(frozen=True, slots=True)
+class RouteProfile:
+    route: RunRoute
+    stage: RouteStage
+    anchors: tuple[str, ...]
+    enablers: tuple[str, ...]
+    offered_components: tuple[str, ...]
+    payload_count: int
+    premium_payload_count: int
+    copy_count: int
+
+
+@dataclass(frozen=True, slots=True)
 class PublicEngineState:
     goal: RunGoal
     ante: int
@@ -146,6 +180,10 @@ class PublicEngineState:
     consumables: ConsumableProfile
     hand_development: HandDevelopment
     boss: BossVulnerability
+    routes: tuple[RouteProfile, ...]
+
+    def route(self, route: RunRoute) -> RouteProfile:
+        return next(profile for profile in self.routes if profile.route == route)
 
 
 @dataclass(frozen=True, slots=True)
@@ -203,18 +241,288 @@ def derive_engine_state(observation: PublicObservation) -> PublicEngineState:
 
     scoring = _scoring_engine(observation)
     hand_development = _hand_development(observation)
+    available_deck = _available_deck(observation)
     return PublicEngineState(
         goal=RunGoal.ENDLESS if observation.won else RunGoal.VICTORY,
         ante=observation.ante,
         antes_cleared=observation.antes_cleared,
         won=observation.won,
         scoring=scoring,
-        available_deck=_available_deck(observation),
+        available_deck=available_deck,
         economy=_economy(observation),
         consumables=_consumables(observation),
         hand_development=hand_development,
         boss=_boss_vulnerability(observation, scoring, hand_development),
+        routes=_route_profiles(observation, hand_development),
     )
+
+
+def _route_profiles(
+    observation: PublicObservation,
+    hand_development: HandDevelopment,
+) -> tuple[RouteProfile, ...]:
+    visible_jokers = tuple(
+        joker for joker in observation.jokers if isinstance(joker, PublicItem)
+    )
+    profiles = tuple(
+        profile
+        for joker in visible_jokers
+        if (profile := JOKER_CATALOG.get(joker.key)) is not None
+    )
+    copy_count = sum("copy" in profile.route_tags for profile in profiles)
+    offers = tuple(
+        item
+        for item in (*observation.shop, *observation.opened_pack)
+        if isinstance(item, PublicItem) and item.kind == "JOKER"
+    )
+
+    held_anchors = _route_keys(visible_jokers, "held_anchor")
+    held_enablers = _route_keys(visible_jokers, "held_enabler")
+    held_offers = _offered_route_keys(
+        offers, {"held_anchor", "held_enabler", "copy"}
+    )
+    king_count = sum(
+        entry.count for entry in observation.full_deck if entry.card.rank == "K"
+    )
+    premium_kings = sum(
+        entry.count
+        for entry in observation.full_deck
+        if entry.card.rank == "K"
+        and (entry.card.enhancement == "STEEL" or entry.card.seal == "RED")
+    )
+    red_seal_kings = sum(
+        entry.count
+        for entry in observation.full_deck
+        if entry.card.rank == "K" and entry.card.seal == "RED"
+    )
+
+    played_anchors = _route_keys(visible_jokers, "played_anchor")
+    played_offers = _offered_route_keys(
+        offers, {"played_anchor", "played_enabler", "copy"}
+    )
+    idol_targets = {
+        (joker.runtime.target_rank, joker.runtime.target_suit)
+        for joker in visible_jokers
+        if joker.key == "j_idol"
+        and joker.runtime is not None
+        and joker.runtime.target_rank is not None
+        and joker.runtime.target_suit is not None
+        and observation.phase == Phase.SELECTING_HAND
+    }
+    has_triboulet = any(joker.key == "j_triboulet" for joker in visible_jokers)
+    smeared = any(joker.key == "j_smeared" for joker in visible_jokers)
+
+    def played_payload(card: VisiblePlayingCard) -> bool:
+        return any(
+            _matches_idol_target(card, rank, suit, smeared)
+            for rank, suit in idol_targets
+            if rank is not None and suit is not None
+        ) or (
+            has_triboulet and card.rank in {"K", "Q"}
+        )
+
+    played_payload_count = sum(
+        entry.count for entry in observation.full_deck if played_payload(entry.card)
+    )
+    premium_played = sum(
+        entry.count
+        for entry in observation.full_deck
+        if played_payload(entry.card)
+        and (entry.card.seal == "RED" or entry.card.enhancement == "GLASS")
+    )
+    pareidolia = any(joker.key == "j_pareidolia" for joker in visible_jokers)
+    played_enablers = tuple(
+        sorted(
+            joker.key
+            for joker in visible_jokers
+            if _compatible_played_enabler(
+                joker, idol_targets, has_triboulet, pareidolia
+            )
+        )
+    )
+    has_red_payload = any(
+        entry.card.seal == "RED" and played_payload(entry.card)
+        for entry in observation.full_deck
+    )
+
+    consumable_anchors = _route_keys(visible_jokers, "consumable_anchor")
+    observatory = "v_observatory" in observation.used_vouchers
+    consumable_enablers = ("v_observatory",) if observatory else ()
+    cryptids = tuple(
+        item for item in observation.consumables if item.key == "c_cryptid"
+    )
+    matching_planets = tuple(
+        item
+        for item in observation.consumables
+        if observatory
+        and item.kind == "PLANET"
+        and planet_hand(item.key) == hand_development.primary_hand
+    )
+    consumable_payload = (*cryptids, *matching_planets)
+    consumable_offers = tuple(
+        sorted(
+            item.key
+            for item in (*observation.shop, *observation.opened_pack, *observation.vouchers)
+            if isinstance(item, PublicItem)
+            and item.key
+            in {
+                "j_perkeo",
+                "j_blueprint",
+                "j_brainstorm",
+                "c_cryptid",
+                "v_observatory",
+            }
+        )
+    )
+
+    return (
+        RouteProfile(RunRoute.VICTORY, RouteStage.ONLINE, (), (), (), 0, 0, 0),
+        RouteProfile(
+            RunRoute.HELD_RETRIGGER,
+            _route_stage(
+                held_anchors,
+                held_enablers,
+                held_offers,
+                owned_branch=premium_kings > 0,
+                online=bool(held_anchors)
+                and king_count > 0
+                and (bool(held_enablers) or red_seal_kings > 0),
+            ),
+            held_anchors,
+            held_enablers,
+            held_offers,
+            king_count,
+            premium_kings,
+            copy_count,
+        ),
+        RouteProfile(
+            RunRoute.PLAYED_RETRIGGER,
+            _route_stage(
+                played_anchors,
+                played_enablers,
+                played_offers,
+                owned_branch=played_payload_count > 0 or has_red_payload,
+                online=bool(played_anchors)
+                and played_payload_count > 0
+                and (bool(played_enablers) or has_red_payload),
+            ),
+            played_anchors,
+            played_enablers,
+            played_offers,
+            played_payload_count,
+            premium_played,
+            copy_count,
+        ),
+        RouteProfile(
+            RunRoute.CONSUMABLE_DUPLICATION,
+            _route_stage(
+                consumable_anchors,
+                consumable_enablers,
+                consumable_offers,
+                owned_branch=bool(consumable_payload),
+                online=bool(consumable_anchors) and bool(consumable_payload),
+            ),
+            consumable_anchors,
+            consumable_enablers,
+            consumable_offers,
+            len(consumable_payload),
+            sum(item.edition == "NEGATIVE" for item in consumable_payload),
+            copy_count,
+        ),
+    )
+
+
+def _route_stage(
+    anchors: tuple[str, ...],
+    enablers: tuple[str, ...],
+    offered_components: tuple[str, ...],
+    *,
+    owned_branch: bool,
+    online: bool,
+) -> RouteStage:
+    if online:
+        return RouteStage.ONLINE
+    if anchors or enablers or owned_branch:
+        return RouteStage.ASSEMBLING
+    if offered_components:
+        return RouteStage.SEEDED
+    return RouteStage.ABSENT
+
+
+def _route_keys(
+    jokers: tuple[PublicItem, ...], tag: str
+) -> tuple[str, ...]:
+    return tuple(
+        sorted(
+            joker.key
+            for joker in jokers
+            if (profile := JOKER_CATALOG.get(joker.key)) is not None
+            and tag in profile.route_tags
+            and _route_joker_available(joker)
+        )
+    )
+
+
+def _offered_route_keys(
+    offers: tuple[PublicItem, ...], tags: set[str]
+) -> tuple[str, ...]:
+    return tuple(
+        sorted(
+            item.key
+            for item in offers
+            if JOKER_CATALOG.get(item.key) is not None
+            and JOKER_CATALOG[item.key].route_tags.intersection(tags)
+        )
+    )
+
+
+def _compatible_played_enabler(
+    joker: PublicItem,
+    idol_targets: set[tuple[str | None, str | None]],
+    has_triboulet: bool,
+    pareidolia: bool,
+) -> bool:
+    key = joker.key
+    profile = JOKER_CATALOG.get(key)
+    if (
+        profile is None
+        or "played_enabler" not in profile.route_tags
+        or not _route_joker_available(joker)
+    ):
+        return False
+    if key in {"j_dusk", "j_selzer", "j_hanging_chad"}:
+        return True
+    target_ranks = {rank for rank, _ in idol_targets if rank is not None}
+    if has_triboulet:
+        target_ranks.update({"K", "Q"})
+    if key == "j_sock_and_buskin":
+        return pareidolia or bool(target_ranks.intersection({"J", "Q", "K"}))
+    if key == "j_hack":
+        return bool(target_ranks.intersection({"2", "3", "4", "5"}))
+    return False
+
+
+def _route_joker_available(joker: PublicItem) -> bool:
+    if joker.key != "j_selzer":
+        return True
+    return (
+        joker.runtime is not None and (joker.runtime.remaining_hands or 0) > 0
+    )
+
+
+def _matches_idol_target(
+    card: VisiblePlayingCard,
+    rank: str,
+    suit: str,
+    smeared: bool,
+) -> bool:
+    if card.rank != rank:
+        return False
+    if card.enhancement == "WILD" or card.suit == suit:
+        return True
+    if not smeared:
+        return False
+    return {card.suit, suit} <= {"H", "D"} or {card.suit, suit} <= {"S", "C"}
 
 
 def _scoring_engine(observation: PublicObservation) -> ScoringEngine:
@@ -474,7 +782,10 @@ __all__ = [
     "HandDevelopment",
     "KNOWN_VOUCHERS",
     "PublicEngineState",
+    "RouteProfile",
+    "RouteStage",
     "RunGoal",
+    "RunRoute",
     "ScoringEngine",
     "derive_engine_state",
 ]

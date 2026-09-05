@@ -34,7 +34,7 @@ from balatro_ai_v2.strategy_engine import RunGoal, derive_engine_state
 from balatro_ai_v2.strategy_options import StrategyIntent
 
 
-STRATEGY_TEACHER_SCHEMA_VERSION = 8
+STRATEGY_TEACHER_SCHEMA_VERSION = 9
 _RUN_GROUP = re.compile(r"origin-[0-9a-f]{32}")
 _SHA256 = re.compile(r"[0-9a-f]{64}")
 

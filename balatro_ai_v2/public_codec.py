@@ -65,6 +65,9 @@ def public_observation_from_data(data: object) -> PublicObservation:
         remaining_deck=tuple(
             _deck_count(value) for value in _array(raw["remaining_deck"], "remaining_deck", 512)
         ),
+        full_deck=tuple(
+            _deck_count(value) for value in _array(raw["full_deck"], "full_deck", 512)
+        ),
         draw_count=_integer(raw["draw_count"], "draw_count"),
         deck_size=_integer(raw["deck_size"], "deck_size"),
         hand_stats=tuple(
@@ -192,20 +195,25 @@ def _hand_stat(value: object) -> HandStat:
 def _item(value: object) -> PublicItem:
     raw = _object(value, "public item")
     _require_fields(raw, _ITEM_FIELDS, "public item")
-    return PublicItem(
-        key=_string(raw["key"], "item.key"),
-        label=_string(raw["label"], "item.label"),
-        kind=_string(raw["kind"], "item.kind"),
-        effect_text=_string(raw["effect_text"], "item.effect_text"),
-        edition=_optional_string(raw["edition"], "item.edition"),
-        eternal=_boolean(raw["eternal"], "item.eternal"),
-        perishable_rounds=_optional_integer(raw["perishable_rounds"], "item.perishable_rounds"),
-        rental=_boolean(raw["rental"], "item.rental"),
-        debuffed=_boolean(raw["debuffed"], "item.debuffed"),
-        buy_cost=_optional_integer(raw["buy_cost"], "item.buy_cost"),
-        sell_cost=_optional_integer(raw["sell_cost"], "item.sell_cost"),
-        runtime=_joker_runtime(raw["runtime"]),
-    )
+    try:
+        return PublicItem(
+            key=_string(raw["key"], "item.key"),
+            label=_string(raw["label"], "item.label"),
+            kind=_string(raw["kind"], "item.kind"),
+            effect_text=_string(raw["effect_text"], "item.effect_text"),
+            edition=_optional_string(raw["edition"], "item.edition"),
+            eternal=_boolean(raw["eternal"], "item.eternal"),
+            perishable_rounds=_optional_integer(
+                raw["perishable_rounds"], "item.perishable_rounds"
+            ),
+            rental=_boolean(raw["rental"], "item.rental"),
+            debuffed=_boolean(raw["debuffed"], "item.debuffed"),
+            buy_cost=_optional_integer(raw["buy_cost"], "item.buy_cost"),
+            sell_cost=_optional_integer(raw["sell_cost"], "item.sell_cost"),
+            runtime=_joker_runtime(raw["runtime"]),
+        )
+    except ValueError as exc:
+        raise PublicCodecError(str(exc)) from exc
 
 
 def _joker_runtime(value: object) -> PublicJokerRuntime | None:
@@ -213,18 +221,23 @@ def _joker_runtime(value: object) -> PublicJokerRuntime | None:
         return None
     raw = _object(value, "joker runtime")
     _require_fields(raw, _JOKER_RUNTIME_FIELDS, "joker runtime")
-    return PublicJokerRuntime(
-        current_mult=_optional_integer(raw["current_mult"], "runtime.current_mult"),
-        current_chips=_optional_integer(raw["current_chips"], "runtime.current_chips"),
-        current_x_mult=_optional_number(raw["current_x_mult"], "runtime.current_x_mult"),
-        current_dollars=_optional_integer(raw["current_dollars"], "runtime.current_dollars"),
-        remaining_hands=_optional_integer(raw["remaining_hands"], "runtime.remaining_hands"),
-        loyalty_remaining=_optional_integer(
-            raw["loyalty_remaining"], "runtime.loyalty_remaining"
-        ),
-        driver_tally=_optional_integer(raw["driver_tally"], "runtime.driver_tally"),
-        target_hand=_optional_string(raw["target_hand"], "runtime.target_hand"),
-    )
+    try:
+        return PublicJokerRuntime(
+            current_mult=_optional_integer(raw["current_mult"], "runtime.current_mult"),
+            current_chips=_optional_integer(raw["current_chips"], "runtime.current_chips"),
+            current_x_mult=_optional_number(raw["current_x_mult"], "runtime.current_x_mult"),
+            current_dollars=_optional_integer(raw["current_dollars"], "runtime.current_dollars"),
+            remaining_hands=_optional_integer(raw["remaining_hands"], "runtime.remaining_hands"),
+            loyalty_remaining=_optional_integer(
+                raw["loyalty_remaining"], "runtime.loyalty_remaining"
+            ),
+            driver_tally=_optional_integer(raw["driver_tally"], "runtime.driver_tally"),
+            target_hand=_optional_string(raw["target_hand"], "runtime.target_hand"),
+            target_rank=_optional_string(raw["target_rank"], "runtime.target_rank"),
+            target_suit=_optional_string(raw["target_suit"], "runtime.target_suit"),
+        )
+    except ValueError as exc:
+        raise PublicCodecError(str(exc)) from exc
 
 
 def _offer(value: object) -> PublicOffer:

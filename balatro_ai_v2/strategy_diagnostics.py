@@ -11,7 +11,7 @@ from balatro_ai_v2.strategy_engine import derive_engine_state
 from balatro_ai_v2.strategy_options import PersistentIntent, iter_strategy_options
 
 
-STRATEGY_DIAGNOSTIC_SCHEMA_VERSION = 3
+STRATEGY_DIAGNOSTIC_SCHEMA_VERSION = 4
 
 
 def strategy_snapshot(
@@ -30,6 +30,18 @@ def strategy_snapshot(
         "active_intent_decisions": active_intent.decisions if active_intent is not None else 0,
         "option_count": len(options),
         "option_counts_by_intent": dict(sorted(option_counts.items())),
+        "routes": {
+            profile.route.value: {
+                "stage": profile.stage.value,
+                "anchors": list(profile.anchors),
+                "enablers": list(profile.enablers),
+                "offered_components": list(profile.offered_components),
+                "payload_count": profile.payload_count,
+                "premium_payload_count": profile.premium_payload_count,
+                "copy_count": profile.copy_count,
+            }
+            for profile in engine.routes
+        },
         "scoring": {
             "role_counts": dict(engine.scoring.role_counts),
             "archetype_tags": sorted(engine.scoring.archetype_tags),

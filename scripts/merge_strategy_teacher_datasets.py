@@ -49,7 +49,7 @@ _EXPECTED_BUDGET = {
 _REORDER_ACTIONS = (ReorderHand, ReorderJokers, ReorderConsumables)
 _PROTOCOL_ID = "contextual-continuation-development-v4"
 _NONCE = "contextual-continuation-v12-frozen"
-_SEARCH_VERSION = "determinized-search-v13"
+_SEARCH_VERSION = "determinized-search-v14"
 _EXPECTED_SEARCH = {
     **_EXPECTED_BUDGET,
     "max_decisions": 1200,

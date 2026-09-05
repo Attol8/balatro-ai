@@ -8,11 +8,13 @@ import pytest
 
 from balatro_ai_v2.balatrobot.adapter import to_public_observation
 from balatro_ai_v2.boss_rules import BossConstraint
-from balatro_ai_v2.public_state import PublicItem
+from balatro_ai_v2.public_state import Phase, PublicItem, PublicJokerRuntime
 from balatro_ai_v2.strategy_engine import (
     CopyKind,
     GoalUtility,
+    RouteStage,
     RunGoal,
+    RunRoute,
     derive_engine_state,
 )
 from state_factory import state
@@ -106,6 +108,166 @@ def test_available_deck_profile_and_public_liabilities_are_compositional() -> No
     assert engine.economy.credit_floor == -20
     assert engine.economy.rental_liability_per_round == 3
     assert engine.economy.free_rerolls == 1
+
+
+def test_elite_route_profiles_are_compositional_and_separate_from_goal() -> None:
+    raw = state("SELECTING_HAND")
+    raw["deck_composition"] = [
+        {
+            "rank": "K",
+            "suit": "H",
+            "enhancement": "STEEL",
+            "edition": None,
+            "seal": "RED",
+            "permanent_bonus": 0,
+            "count": 52,
+        }
+    ]
+    observation = replace(
+        to_public_observation(raw),
+        jokers=(_joker("j_baron"), _joker("j_mime")),
+    )
+
+    engine = derive_engine_state(observation)
+    held = engine.route(RunRoute.HELD_RETRIGGER)
+
+    assert engine.goal == RunGoal.VICTORY
+    assert held.stage == RouteStage.ONLINE
+    assert held.anchors == ("j_baron",)
+    assert held.enablers == ("j_mime",)
+    assert held.payload_count == 52
+    assert held.premium_payload_count == 52
+
+
+def test_perkeo_route_survives_public_win_goal_switch() -> None:
+    raw = state("SELECTING_HAND")
+    raw["consumables"]["cards"] = [
+        {
+            "cost": {"buy": 3, "sell": 1},
+            "id": 80,
+            "key": "c_cryptid",
+            "label": "Cryptid",
+            "modifier": [],
+            "set": "SPECTRAL",
+            "state": {},
+            "value": {"ability": {"x_mult": 1}, "effect": "Duplicate cards"},
+        }
+    ]
+    raw["consumables"]["count"] = 1
+    observation = replace(
+        to_public_observation(raw),
+        jokers=(_joker("j_perkeo"),),
+    )
+    won = replace(observation, ante=9, antes_cleared=8, won=True)
+
+    before = derive_engine_state(observation)
+    after = derive_engine_state(won)
+
+    assert before.goal == RunGoal.VICTORY
+    assert after.goal == RunGoal.ENDLESS
+    assert before.route(RunRoute.CONSUMABLE_DUPLICATION) == after.route(
+        RunRoute.CONSUMABLE_DUPLICATION
+    )
+    assert after.route(RunRoute.CONSUMABLE_DUPLICATION).stage == RouteStage.ONLINE
+
+
+def test_played_route_uses_full_deck_and_typed_idol_target() -> None:
+    raw = state("SELECTING_HAND")
+    raw["deck_composition"] = [
+        {
+            "rank": "K",
+            "suit": "H",
+            "enhancement": "GLASS",
+            "edition": None,
+            "seal": "RED",
+            "permanent_bonus": 0,
+            "count": 52,
+        }
+    ]
+    observation = replace(
+        to_public_observation(raw),
+        jokers=(
+            _joker(
+                "j_idol",
+                runtime=PublicJokerRuntime(target_rank="K", target_suit="H"),
+            ),
+            _joker("j_sock_and_buskin"),
+        ),
+    )
+
+    profile = derive_engine_state(observation).route(RunRoute.PLAYED_RETRIGGER)
+
+    assert profile.stage == RouteStage.ONLINE
+    assert profile.payload_count == 52
+    assert profile.premium_payload_count == 52
+    assert profile.enablers == ("j_sock_and_buskin",)
+
+    changed_target = replace(
+        observation,
+        jokers=(
+            replace(
+                observation.jokers[0],
+                runtime=PublicJokerRuntime(target_rank="A", target_suit="S"),
+            ),
+            observation.jokers[1],
+        ),
+    )
+    assert (
+        derive_engine_state(changed_target)
+        .route(RunRoute.PLAYED_RETRIGGER)
+        .payload_count
+        == 0
+    )
+
+
+def test_idol_route_respects_wild_smeared_and_depleted_seltzer() -> None:
+    raw = state("SELECTING_HAND")
+    raw["deck_composition"] = [
+        {
+            "rank": "K",
+            "suit": "D",
+            "enhancement": "WILD",
+            "edition": None,
+            "seal": None,
+            "permanent_bonus": 0,
+            "count": 52,
+        }
+    ]
+    target = _joker(
+        "j_idol",
+        runtime=PublicJokerRuntime(target_rank="K", target_suit="H"),
+    )
+    depleted = _joker(
+        "j_selzer", runtime=PublicJokerRuntime(remaining_hands=0)
+    )
+    observation = replace(
+        to_public_observation(raw), jokers=(target, depleted)
+    )
+
+    wild = derive_engine_state(observation).route(RunRoute.PLAYED_RETRIGGER)
+    assert wild.payload_count == 52
+    assert "j_selzer" not in wild.enablers
+
+    ordinary_diamonds = replace(
+        observation,
+        full_deck=tuple(
+            replace(entry, card=replace(entry.card, enhancement=None))
+            for entry in observation.full_deck
+        ),
+        jokers=(target, _joker("j_smeared")),
+    )
+    smeared = derive_engine_state(ordinary_diamonds).route(
+        RunRoute.PLAYED_RETRIGGER
+    )
+    assert smeared.payload_count == 52
+
+    stale_shop_target = replace(observation, phase=Phase.SHOP)
+    assert (
+        derive_engine_state(stale_shop_target)
+        .route(RunRoute.PLAYED_RETRIGGER)
+        .payload_count
+        == 0
+    )
 
 
 def test_boss_vulnerability_uses_audited_rule_and_visible_engine_tags() -> None:

@@ -647,7 +647,7 @@ def test_strategy_option_search_is_legal_goal_conditioned_and_carries_intent() -
         policy = DeterminizedSearchPolicy(
             backend=backend,
             continuation=continuation,
-            budget=RolloutBudget(samples=1, horizon_antes=1, max_steps=20),
+            budget=RolloutBudget(samples=1, horizon_antes=1, max_steps=200),
             enable_strategy_options=True,
             include_reorders=True,
         )
@@ -713,7 +713,7 @@ def test_strategy_rollouts_do_not_mutate_an_ordinary_stateful_continuation() -> 
         policy = DeterminizedSearchPolicy(
             backend=backend,
             continuation=continuation,
-            budget=RolloutBudget(samples=1, horizon_antes=1, max_steps=20),
+            budget=RolloutBudget(samples=1, horizon_antes=1, max_steps=200),
             enable_strategy_options=True,
         )
 

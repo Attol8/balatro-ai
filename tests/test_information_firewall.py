@@ -71,6 +71,77 @@ def test_face_down_card_identity_is_completely_anonymous() -> None:
     assert left_public == right_public
 
 
+def test_full_deck_is_unordered_public_composition_without_private_ids() -> None:
+    raw = state("SELECTING_HAND")
+    raw["deck_composition"] = [
+        {
+            "rank": "K",
+            "suit": "H",
+            "enhancement": "STEEL",
+            "edition": "POLYCHROME",
+            "seal": "RED",
+            "permanent_bonus": 7,
+            "count": 52,
+        }
+    ]
+
+    observation = to_public_observation(raw)
+
+    assert len(observation.full_deck) == 1
+    assert observation.full_deck[0].count == observation.deck_size == 52
+    assert observation.full_deck[0].card.rank == "K"
+    assert '"id":' not in observation.canonical_json()
+
+    raw["deck_composition"][0]["private_id"] = 99
+    with pytest.raises(ObservationError, match="fields differ"):
+        to_public_observation(raw)
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        ("rank", "PRIVATE_RANK", "rank or suit"),
+        ("suit", "PRIVATE_SUIT", "rank or suit"),
+        ("enhancement", "PRIVATE_ENHANCEMENT", "enhancement"),
+        ("edition", "PRIVATE_EDITION", "edition"),
+        ("seal", "PRIVATE_SEAL", "seal"),
+    ],
+)
+def test_full_deck_rejects_unknown_card_semantics(
+    field: str, value: str, message: str
+) -> None:
+    raw = state()
+    raw["deck_composition"][0][field] = value
+
+    with pytest.raises(ObservationError, match=message):
+        to_public_observation(raw)
+
+
+def test_full_deck_rejects_unobscured_stone_identity() -> None:
+    raw = state()
+    raw["deck_composition"][0]["enhancement"] = "STONE"
+
+    with pytest.raises(ObservationError, match="Stone identity must be obscured"):
+        to_public_observation(raw)
+
+
+def test_full_deck_does_not_encode_hidden_hand_location() -> None:
+    left = state("SELECTING_HAND")
+    right = deepcopy(left)
+    left_hidden = playing_card("S_A", card_id=800, hidden=True)
+    right_hidden = playing_card("D_2", card_id=999, hidden=True)
+    left["hand"]["cards"][0] = left_hidden
+    right["hand"]["cards"][0] = right_hidden
+    left["cards"]["cards"][0] = deepcopy(right_hidden)
+    right["cards"]["cards"][0] = deepcopy(left_hidden)
+
+    left_public = to_public_observation(left)
+    right_public = to_public_observation(right)
+
+    assert left_public.full_deck == right_public.full_deck
+    assert left_public == right_public
+
+
 def test_face_down_edition_does_not_change_aura_observation() -> None:
     plain = state("SELECTING_HAND")
     edited = deepcopy(plain)
@@ -220,6 +291,12 @@ def test_admitted_joker_runtime_is_fixed_and_tooltip_visible() -> None:
         item_card("j_loyalty_card", card_id=105, kind="JOKER", ability={"loyalty_remaining": 0}),
         item_card("j_drivers_license", card_id=106, kind="JOKER", ability={"driver_tally": 16}),
         item_card("j_todo_list", card_id=107, kind="JOKER", ability={"poker_hand": "Flush"}),
+        item_card(
+            "j_idol",
+            card_id=108,
+            kind="JOKER",
+            ability={"idol_rank": "K", "idol_suit": "H"},
+        ),
     ]
     raw["jokers"]["count"] = len(raw["jokers"]["cards"])
 
@@ -233,6 +310,25 @@ def test_admitted_joker_runtime_is_fixed_and_tooltip_visible() -> None:
     assert runtimes[5] is not None and runtimes[5].loyalty_remaining == 0
     assert runtimes[6] is not None and runtimes[6].driver_tally == 16
     assert runtimes[7] is not None and runtimes[7].target_hand == "Flush"
+    assert runtimes[8] is not None
+    assert (runtimes[8].target_rank, runtimes[8].target_suit) == ("K", "H")
+
+
+def test_visible_idol_target_is_strict_but_hidden_idol_remains_anonymous() -> None:
+    raw = state("SELECTING_HAND")
+    raw["jokers"]["cards"] = [
+        item_card("j_idol", card_id=108, kind="JOKER", ability={"idol_rank": "K"})
+    ]
+    raw["jokers"]["count"] = 1
+
+    with pytest.raises(ObservationError, match="both rank and suit"):
+        to_public_observation(raw)
+
+    raw["jokers"]["cards"] = [{"set": "JOKER", "state": {"hidden": True}}]
+    raw["blinds"]["small"]["status"] = "DEFEATED"
+    raw["blinds"]["boss"].update(name="Amber Acorn", status="CURRENT")
+    observation = to_public_observation(raw)
+    assert observation.jokers == (HiddenJokerSlot(),)
 
 
 def test_unlisted_or_malformed_joker_ability_never_crosses_the_firewall() -> None:

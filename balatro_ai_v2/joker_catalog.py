@@ -26,6 +26,14 @@ JokerRole: TypeAlias = Literal[
     "utility",
 ]
 JokerRarity: TypeAlias = Literal[1, 2, 3, 4]
+JokerRouteTag: TypeAlias = Literal[
+    "held_anchor",
+    "held_enabler",
+    "played_anchor",
+    "played_enabler",
+    "consumable_anchor",
+    "copy",
+]
 
 ArchetypeTag: TypeAlias = Literal[
     "high_card",
@@ -86,6 +94,7 @@ class JokerProfile:
     order_sensitive: bool
     score_effect: bool
     rarity: JokerRarity = 1
+    route_tags: frozenset[JokerRouteTag] = frozenset()
 
     @property
     def role(self) -> JokerRole:
@@ -430,8 +439,26 @@ _NON_COMMON_RARITIES = {
     **{key: 3 for key in _RARITY_3_KEYS},
     **{key: 4 for key in _RARITY_4_KEYS},
 }
+_ROUTE_TAGS: dict[str, frozenset[JokerRouteTag]] = {
+    "j_baron": frozenset({"held_anchor"}),
+    "j_mime": frozenset({"held_enabler"}),
+    "j_idol": frozenset({"played_anchor"}),
+    "j_triboulet": frozenset({"played_anchor"}),
+    "j_dusk": frozenset({"played_enabler"}),
+    "j_hack": frozenset({"played_enabler"}),
+    "j_selzer": frozenset({"played_enabler"}),
+    "j_sock_and_buskin": frozenset({"played_enabler"}),
+    "j_hanging_chad": frozenset({"played_enabler"}),
+    "j_perkeo": frozenset({"consumable_anchor"}),
+    "j_blueprint": frozenset({"copy"}),
+    "j_brainstorm": frozenset({"copy"}),
+}
 _PROFILES = tuple(
-    replace(profile, rarity=_NON_COMMON_RARITIES.get(profile.key, 1))
+    replace(
+        profile,
+        rarity=_NON_COMMON_RARITIES.get(profile.key, 1),
+        route_tags=_ROUTE_TAGS.get(profile.key, frozenset()),
+    )
     for profile in _PROFILES
 )
 
@@ -441,6 +468,8 @@ if any(not profile.key.startswith("j_") for profile in _PROFILES):
     raise RuntimeError("base Joker catalog contains a non-Joker key")
 if set(_NON_COMMON_RARITIES) - {profile.key for profile in _PROFILES}:
     raise RuntimeError("Joker rarity catalog contains an unknown key")
+if set(_ROUTE_TAGS) - {profile.key for profile in _PROFILES}:
+    raise RuntimeError("Joker route catalog contains an unknown key")
 if len(_NON_COMMON_RARITIES) != sum(
     len(keys) for keys in (_RARITY_2_KEYS, _RARITY_3_KEYS, _RARITY_4_KEYS)
 ):
@@ -467,6 +496,7 @@ __all__ = [
     "JokerProfile",
     "JokerRarity",
     "JokerRole",
+    "JokerRouteTag",
     "get_joker_profile",
     "lookup_joker",
 ]

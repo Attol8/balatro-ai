@@ -12,6 +12,14 @@ def test_strategy_snapshot_is_stable_json_and_public_only() -> None:
     observation = to_public_observation(raw)
 
     snapshot = strategy_snapshot(observation)
+
+    assert snapshot["schema_version"] == 4
+    assert set(snapshot["routes"]) == {
+        "victory",
+        "held_retrigger",
+        "played_retrigger",
+        "consumable_duplication",
+    }
     encoded = json.dumps(snapshot, sort_keys=True)
 
     assert snapshot["goal"] == "victory"

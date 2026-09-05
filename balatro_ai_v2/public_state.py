@@ -83,6 +83,14 @@ class DeckCardCount:
     card: VisiblePlayingCard
     count: int
 
+    def __post_init__(self) -> None:
+        if (
+            isinstance(self.count, bool)
+            or not isinstance(self.count, int)
+            or self.count <= 0
+        ):
+            raise ValueError("deck card count must be a positive integer")
+
 
 @dataclass(frozen=True, slots=True)
 class PublicJokerRuntime:
@@ -96,6 +104,35 @@ class PublicJokerRuntime:
     loyalty_remaining: int | None = None
     driver_tally: int | None = None
     target_hand: str | None = None
+    target_rank: str | None = None
+    target_suit: str | None = None
+
+    def __post_init__(self) -> None:
+        if (self.target_rank is None) != (self.target_suit is None):
+            raise ValueError("Joker card target must contain both rank and suit")
+        if self.target_rank is not None and self.target_rank not in {
+            "2",
+            "3",
+            "4",
+            "5",
+            "6",
+            "7",
+            "8",
+            "9",
+            "T",
+            "J",
+            "Q",
+            "K",
+            "A",
+        }:
+            raise ValueError("unsupported Joker target rank")
+        if self.target_suit is not None and self.target_suit not in {
+            "S",
+            "H",
+            "D",
+            "C",
+        }:
+            raise ValueError("unsupported Joker target suit")
 
 
 @dataclass(frozen=True, slots=True)
@@ -126,6 +163,11 @@ class PublicItem:
             raise ValueError(f"unsupported public item kind {self.kind!r}")
         if self.runtime is not None and self.kind != "JOKER":
             raise ValueError("only Jokers may carry Joker runtime")
+        has_card_target = (
+            self.runtime is not None and self.runtime.target_rank is not None
+        )
+        if has_card_target != (self.key == "j_idol"):
+            raise ValueError("only a visible Idol may carry its required card target")
 
 
 PublicOffer: TypeAlias = PublicItem | VisiblePlayingCard
@@ -212,6 +254,7 @@ class PublicObservation:
     selection_limit: int
     required_hand_slots: tuple[int, ...]
     remaining_deck: tuple[DeckCardCount, ...]
+    full_deck: tuple[DeckCardCount, ...]
     draw_count: int
     deck_size: int
     hand_stats: tuple[HandStat, ...]
@@ -231,6 +274,12 @@ class PublicObservation:
     won: bool
 
     def __post_init__(self) -> None:
+        if len({entry.card for entry in self.full_deck}) != len(self.full_deck):
+            raise ValueError("full deck composition must contain unique card entries")
+        if any(entry.card.debuffed or entry.card.effect_text for entry in self.full_deck):
+            raise ValueError("full deck composition cannot contain transient card state")
+        if sum(entry.count for entry in self.full_deck) != self.deck_size:
+            raise ValueError("full deck composition must equal the declared deck size")
         visible_jokers = tuple(
             joker for joker in self.jokers if isinstance(joker, PublicItem)
         )

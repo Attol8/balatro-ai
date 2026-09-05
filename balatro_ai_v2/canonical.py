@@ -21,6 +21,7 @@ _TOP_LEVEL_FIELDS = {
     "cards",
     "consumables",
     "deck",
+    "deck_composition",
     "discard",
     "hand",
     "poker_hand_iteration_order",
@@ -47,6 +48,7 @@ _REQUIRED_TOP_LEVEL_FIELDS = {
     "cards",
     "consumables",
     "deck",
+    "deck_composition",
     "discard",
     "hand",
     "hands",
@@ -89,6 +91,17 @@ _ROUND_FIELDS = {
     "most_played_poker_hand",
     "reroll_cost",
 }
+_DECK_RANKS = frozenset(
+    {"2", "3", "4", "5", "6", "7", "8", "9", "T", "J", "Q", "K", "A"}
+)
+_DECK_SUITS = frozenset({"S", "H", "D", "C"})
+_DECK_ENHANCEMENTS = frozenset(
+    {"BONUS", "MULT", "WILD", "GLASS", "STEEL", "STONE", "GOLD", "LUCKY"}
+)
+_DECK_EDITIONS = frozenset(
+    {"FOIL", "HOLO", "HOLOGRAPHIC", "POLYCHROME", "NEGATIVE"}
+)
+_DECK_SEALS = frozenset({"RED", "BLUE", "GOLD", "GOLD SEAL", "PURPLE"})
 _VANILLA_BOOSTER_VARIANT_COUNTS = {
     ("arcana", "normal"): 4,
     ("arcana", "jumbo"): 2,
@@ -263,6 +276,84 @@ def _validate_state(raw: Mapping[str, Any]) -> None:
         raw["pack_choices_remaining"], int
     ):
         raise CanonicalizationError("pack_choices_remaining must be an integer")
+    deck_composition = raw["deck_composition"]
+    if not isinstance(deck_composition, list):
+        raise CanonicalizationError("deck_composition must be a list")
+    composition_fields = {
+        "rank",
+        "suit",
+        "enhancement",
+        "edition",
+        "seal",
+        "permanent_bonus",
+        "count",
+    }
+    required_composition_fields = {"rank", "suit", "permanent_bonus", "count"}
+    composition_signatures: set[tuple[object, ...]] = set()
+    composition_total = 0
+    for index, entry in enumerate(deck_composition):
+        item = _expect_mapping(entry, f"deck_composition[{index}]")
+        _reject_unknown(item, composition_fields, f"deck_composition[{index}]")
+        missing = required_composition_fields - set(item)
+        if missing:
+            raise CanonicalizationError(
+                f"deck_composition[{index}] missing fields: {sorted(missing)}"
+            )
+        if not isinstance(item["rank"], str) or not item["rank"]:
+            raise CanonicalizationError(
+                f"deck_composition[{index}].rank must be a non-empty string"
+            )
+        if not isinstance(item["suit"], str) or not item["suit"]:
+            raise CanonicalizationError(
+                f"deck_composition[{index}].suit must be a non-empty string"
+            )
+        for field in ("enhancement", "edition", "seal"):
+            if item.get(field) is not None and (
+                not isinstance(item[field], str) or not item[field]
+            ):
+                raise CanonicalizationError(
+                    f"deck_composition[{index}].{field} must be null or a non-empty string"
+                )
+        enhancement = item.get("enhancement")
+        edition = item.get("edition")
+        seal = item.get("seal")
+        if enhancement not in _DECK_ENHANCEMENTS | {None}:
+            raise CanonicalizationError("deck_composition enhancement is unsupported")
+        if edition not in _DECK_EDITIONS | {None}:
+            raise CanonicalizationError("deck_composition edition is unsupported")
+        if seal not in _DECK_SEALS | {None}:
+            raise CanonicalizationError("deck_composition seal is unsupported")
+        if enhancement == "STONE":
+            if item["rank"] != "?" or item["suit"] != "?":
+                raise CanonicalizationError(
+                    "deck_composition Stone identity must be obscured"
+                )
+        elif item["rank"] not in _DECK_RANKS or item["suit"] not in _DECK_SUITS:
+            raise CanonicalizationError("deck_composition rank or suit is unsupported")
+        permanent_bonus = item["permanent_bonus"]
+        count = item["count"]
+        if isinstance(permanent_bonus, bool) or not isinstance(permanent_bonus, int):
+            raise CanonicalizationError(
+                f"deck_composition[{index}].permanent_bonus must be an integer"
+            )
+        if isinstance(count, bool) or not isinstance(count, int) or count <= 0:
+            raise CanonicalizationError(
+                f"deck_composition[{index}].count must be a positive integer"
+            )
+        signature = tuple(
+            item.get(field) for field in sorted(composition_fields - {"count"})
+        )
+        if signature in composition_signatures:
+            raise CanonicalizationError("deck_composition contains a duplicate entry")
+        composition_signatures.add(signature)
+        composition_total += count
+
+    cards_area = _expect_mapping(raw["cards"], "cards")
+    deck_limit = cards_area.get("limit")
+    if isinstance(deck_limit, bool) or not isinstance(deck_limit, int):
+        raise CanonicalizationError("cards.limit must be an integer")
+    if composition_total != deck_limit:
+        raise CanonicalizationError("deck_composition total must equal cards.limit")
 
     for area_name in (
         "cards",

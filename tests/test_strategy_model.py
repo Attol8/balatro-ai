@@ -719,6 +719,35 @@ def test_strategy_tensor_distinguishes_disabled_current_boss() -> None:
     )
 
 
+def test_strategy_tensor_encodes_unordered_full_deck_composition() -> None:
+    observation = _observation()
+    action = tuple(iter_legal_actions(observation))[0]
+    reversed_deck = replace(
+        observation, full_deck=tuple(reversed(observation.full_deck))
+    )
+    first = next(entry for entry in observation.full_deck if entry.count > 1)
+    second = next(entry for entry in observation.full_deck if entry is not first)
+    changed = replace(
+        observation,
+        full_deck=tuple(
+            replace(entry, count=entry.count - 1)
+            if entry is first
+            else replace(entry, count=entry.count + 1)
+            if entry is second
+            else entry
+            for entry in observation.full_deck
+        ),
+    )
+    tensorizer = PublicStrategyTensorizer(_config())
+
+    original = tensorizer.tensorize((observation,), ((action,),))
+    reordered = tensorizer.tensorize((reversed_deck,), ((action,),))
+    redistributed = tensorizer.tensorize((changed,), ((action,),))
+
+    assert torch.equal(original.entity_features, reordered.entity_features)
+    assert not torch.equal(original.entity_features, redistributed.entity_features)
+
+
 def test_exact_vanilla_skip_tag_is_admitted() -> None:
     observation = _observation()
     tagged = replace(
@@ -747,7 +776,7 @@ def test_strategy_checkpoint_round_trip_and_digest(tmp_path) -> None:
     assert loaded.calibration == StrategyCalibration()
     assert loaded.provenance == {"training_status": "untrained"}
     payload = torch.load(path, weights_only=True)
-    assert payload["format_version"] == STRATEGY_MODEL_FORMAT_VERSION == 7
+    assert payload["format_version"] == STRATEGY_MODEL_FORMAT_VERSION == 8
     assert set(payload) == {
         "format_version",
         "schema_digest",

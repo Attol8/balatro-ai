@@ -103,6 +103,27 @@ def test_unknown_authority_schema_fails_closed() -> None:
         BalatroBotCanonicalizer().canonicalize(raw)
 
 
+@pytest.mark.parametrize("bad_count", [True, 0, 1.5])
+def test_deck_composition_counts_fail_closed(bad_count: object) -> None:
+    raw = state()
+    raw["deck_composition"][0]["count"] = bad_count
+
+    with pytest.raises(CanonicalizationError, match="count must be a positive integer"):
+        BalatroBotCanonicalizer().canonicalize(raw)
+
+
+def test_deck_composition_duplicate_and_total_fail_closed() -> None:
+    duplicate = state()
+    duplicate["deck_composition"].append(deepcopy(duplicate["deck_composition"][0]))
+    with pytest.raises(CanonicalizationError, match="duplicate entry"):
+        BalatroBotCanonicalizer().canonicalize(duplicate)
+
+    wrong_total = state()
+    wrong_total["deck_composition"][0]["count"] -= 1
+    with pytest.raises(CanonicalizationError, match="total must equal"):
+        BalatroBotCanonicalizer().canonicalize(wrong_total)
+
+
 def test_anonymous_hidden_joker_slots_are_canonical_without_entity_ids() -> None:
     left = state("SELECTING_HAND")
     left["jokers"] = {

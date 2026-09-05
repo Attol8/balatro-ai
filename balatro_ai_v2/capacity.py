@@ -29,7 +29,7 @@ from balatro_ai_v2.public_state import (
 )
 
 
-CAPACITY_MODEL_VERSION = 4
+CAPACITY_MODEL_VERSION = 5
 CAPACITY_SAMPLE_METHOD = "public-digest-monte-carlo-without-replacement-v1"
 _SAMPLED_PHASES = frozenset({Phase.BLIND_SELECT, Phase.ROUND_EVAL, Phase.SHOP, Phase.PACK})
 _UNSUPPORTED_CAPACITY_BOSS_CONSTRAINTS = frozenset(

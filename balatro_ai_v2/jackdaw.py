@@ -13,6 +13,7 @@ import json
 import os
 import subprocess
 import tempfile
+from collections import Counter
 from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from copy import deepcopy
@@ -72,6 +73,14 @@ _SECRET_HANDS = {
     },
 }
 _SUIT_LETTER = {"Spades": "S", "Hearts": "H", "Clubs": "C", "Diamonds": "D"}
+_RANK_LETTER = {
+    **{str(value): str(value) for value in range(2, 10)},
+    "10": "T",
+    "Jack": "J",
+    "Queen": "Q",
+    "King": "K",
+    "Ace": "A",
+}
 _OPTIONAL_AREAS = {"shop", "vouchers", "packs", "pack"}
 _PRIVATE_AREA_KEYS = {
     "cards": "deck",
@@ -398,7 +407,7 @@ class JackdawBackend:
         self.metadata = BackendMetadata(
             backend_name="Jackdaw",
             backend_version=f"0.1.0+{JACKDAW_REVISION}",
-            adapter_version="5",
+            adapter_version="6",
             game_version="Balatro-1.0.1o-model",
             runtime_version="Python",
             capabilities=BackendCapabilities(
@@ -1636,6 +1645,7 @@ def _normalize_jackdaw_bridge(
 
     result = deepcopy(raw) if copy_raw else raw
     private = game_state if isinstance(game_state, Mapping) else {}
+    result["deck_composition"] = _jackdaw_deck_composition(private)
     pack_choices = private.get("pack_choices_remaining", 0)
     if (
         not isinstance(pack_choices, int)
@@ -1731,19 +1741,15 @@ def _normalize_jackdaw_bridge(
             area["highlighted_limit"] = highlighted_limit
     deck_area = result.get("cards")
     if isinstance(deck_area, dict):
-        permanent_deck_size = (
-            private.get("playing_cards_count") if isinstance(private, Mapping) else None
+        composition = result.get("deck_composition")
+        if not isinstance(composition, list):
+            raise RuntimeError("Jackdaw permanent deck composition is unavailable")
+        permanent_deck_size = sum(
+            entry.get("count", 0)
+            for entry in composition
+            if isinstance(entry, Mapping)
         )
-        if not isinstance(permanent_deck_size, int) and isinstance(private, Mapping):
-            piles = (
-                private.get("deck"),
-                private.get("hand"),
-                private.get("discard_pile"),
-            )
-            if all(isinstance(pile, list) for pile in piles):
-                permanent_deck_size = sum(len(pile) for pile in piles)
-        if isinstance(permanent_deck_size, int):
-            deck_area["limit"] = permanent_deck_size
+        deck_area["limit"] = permanent_deck_size
 
     for area_name in (
         "cards",
@@ -1839,6 +1845,24 @@ def _normalize_jackdaw_bridge(
             value = card.get("value")
             if isinstance(value, dict):
                 _apply_balatrobot_card_values(value, private_card)
+                if card.get("key") == "j_idol":
+                    current_round = private.get("current_round")
+                    idol_card = (
+                        current_round.get("idol_card")
+                        if isinstance(current_round, Mapping)
+                        else None
+                    )
+                    if not isinstance(idol_card, Mapping):
+                        raise RuntimeError("Jackdaw Idol target is unavailable")
+                    rank = _RANK_LETTER.get(str(idol_card.get("rank")))
+                    suit = _SUIT_LETTER.get(str(idol_card.get("suit")))
+                    if rank is None or suit is None:
+                        raise RuntimeError("Jackdaw Idol target is invalid")
+                    ability = value.setdefault("ability", {})
+                    if not isinstance(ability, dict):
+                        raise RuntimeError("Jackdaw Idol ability is invalid")
+                    ability["idol_rank"] = rank
+                    ability["idol_suit"] = suit
             if str(card.get("set") or "").upper() in {"DEFAULT", "ENHANCED"}:
                 card["cost"] = {
                     "buy": max(1, int(getattr(private_card, "cost", 0))),
@@ -1895,6 +1919,80 @@ def _normalize_jackdaw_bridge(
                 result[name] = deepcopy(stale_shop_areas[name])
 
     return result
+
+
+def _jackdaw_deck_composition(
+    game_state: Mapping[str, Any],
+) -> list[dict[str, object]]:
+    """Return the unordered permanent deck shown by vanilla's deck view."""
+
+    from jackdaw.bridge.serializer import serialize_card
+
+    cards: list[Any] = []
+    seen_card_ids: set[int] = set()
+    for area_name in ("deck", "hand", "discard_pile", "play"):
+        area = game_state.get(area_name, [])
+        if area is None:
+            area = []
+        if not isinstance(area, list):
+            raise RuntimeError(f"Jackdaw {area_name} state is invalid")
+        for card in area:
+            card_id = id(card)
+            if card_id not in seen_card_ids:
+                seen_card_ids.add(card_id)
+                cards.append(card)
+    counts: Counter[tuple[str, str, str | None, str | None, str | None, int]] = Counter()
+    for card in cards:
+        serialized = serialize_card(card)
+        value = serialized.get("value")
+        modifier = serialized.get("modifier")
+        if not isinstance(value, dict) or not isinstance(modifier, Mapping):
+            raise RuntimeError("Jackdaw permanent deck card is invalid")
+        _apply_balatrobot_card_values(value, card)
+        enhancement = modifier.get("enhancement")
+        rank = value.get("rank")
+        suit = value.get("suit")
+        if enhancement == "STONE":
+            rank = suit = "?"
+        if not isinstance(rank, str) or not isinstance(suit, str):
+            raise RuntimeError("Jackdaw permanent deck identity is unavailable")
+        permanent_bonus = value.get("perma_bonus", 0)
+        if isinstance(permanent_bonus, bool) or not isinstance(permanent_bonus, int):
+            raise RuntimeError("Jackdaw permanent card bonus is invalid")
+        counts[
+            (
+                rank,
+                suit,
+                str(enhancement) if enhancement is not None else None,
+                str(modifier.get("edition"))
+                if modifier.get("edition") is not None
+                else None,
+                str(modifier.get("seal")) if modifier.get("seal") is not None else None,
+                permanent_bonus,
+            )
+        ] += 1
+    return [
+        {
+            "rank": rank,
+            "suit": suit,
+            "enhancement": enhancement,
+            "edition": edition,
+            "seal": seal,
+            "permanent_bonus": permanent_bonus,
+            "count": count,
+        }
+        for (rank, suit, enhancement, edition, seal, permanent_bonus), count in sorted(
+            counts.items(),
+            key=lambda pair: (
+                pair[0][0],
+                pair[0][1],
+                pair[0][2] or "",
+                pair[0][3] or "",
+                pair[0][4] or "",
+                pair[0][5],
+            ),
+        )
+    ]
 
 
 def _empty_shop_areas(raw: Mapping[str, Any]) -> dict[str, dict[str, Any]]:

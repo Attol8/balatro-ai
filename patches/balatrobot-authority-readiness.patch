@@ -752,3 +752,165 @@ index 53f43b1..a3e3e6c 100644
 +++ b/src/lua/utils/types.lua
 @@ -47,0 +48 @@
 +---@field boss_rerolled boolean Whether Director's Cut was used this ante
+diff --git a/src/lua/utils/gamestate.lua b/src/lua/utils/gamestate.lua
+--- a/src/lua/utils/gamestate.lua
++++ b/src/lua/utils/gamestate.lua
+@@ -392,6 +392,14 @@ local function extract_card_value(card)
+     -- To Do List's current target is runtime state, not the prototype's
+     -- initial `extra.poker_hand`. It is visible in the normal card tooltip.
+     if card.ability.to_do_poker_hand then ab.poker_hand = card.ability.to_do_poker_hand end
++    -- The Idol's current rank and suit are printed in its normal tooltip.
++    if card.config and card.config.center_key == "j_idol" then
++      local idol = G.GAME.current_round and G.GAME.current_round.idol_card
++      if idol then
++        ab.idol_rank = convert_rank_to_enum(idol.rank)
++        ab.idol_suit = convert_suit_to_enum(idol.suit)
++      end
++    end
+     -- Only include if non-empty
+     if next(ab) ~= nil then
+       value.ability = ab
+@@ -401,6 +409,52 @@ local function extract_card_value(card)
+   return value
+ end
+
++---Extract the unordered permanent deck shown by vanilla's View Deck screen.
++---@return table[] composition
++local function extract_deck_composition()
++  local grouped = {}
++  for _, card in ipairs(G.playing_cards or {}) do
++    local value = extract_card_value(card)
++    local modifier = extract_card_modifier(card)
++    local rank = value.rank
++    local suit = value.suit
++    if modifier.enhancement == "STONE" then
++      rank = "?"
++      suit = "?"
++    end
++    if not rank or not suit then
++      error("BalatroBot cannot project permanent deck identity")
++    end
++    local permanent_bonus = value.perma_bonus or 0
++    local key = table.concat({
++      rank,
++      suit,
++      modifier.enhancement or "",
++      modifier.edition or "",
++      modifier.seal or "",
++      tostring(permanent_bonus),
++    }, "|")
++    if not grouped[key] then
++      grouped[key] = {
++        rank = rank,
++        suit = suit,
++        enhancement = modifier.enhancement,
++        edition = modifier.edition,
++        seal = modifier.seal,
++        permanent_bonus = permanent_bonus,
++        count = 0,
++      }
++    end
++    grouped[key].count = grouped[key].count + 1
++  end
++  local keys = {}
++  for key in pairs(grouped) do keys[#keys + 1] = key end
++  table.sort(keys)
++  local composition = {}
++  for _, key in ipairs(keys) do composition[#composition + 1] = grouped[key] end
++  return composition
++end
++
+ ---Extracts state information from a card
+ ---@param card table The card object
+ ---@return Card.State state The Card.State object
+@@ -911,6 +965,7 @@ local function extract_gamestate()
+       local deck_key = G.GAME.selected_back.effect.center.key
+       state_data.deck = get_deck_name(deck_key)
+     end
++    state_data.deck_composition = extract_deck_composition()
+
+     -- Stake (optional)
+     if G.GAME.stake then
+diff --git a/src/lua/utils/openrpc.json b/src/lua/utils/openrpc.json
+--- a/src/lua/utils/openrpc.json
++++ b/src/lua/utils/openrpc.json
+@@ -1142,6 +1142,13 @@
+           "cards": {
+             "$ref": "#/components/schemas/Area",
+             "description": "Cards remaining in deck (available during run)"
++          },
++          "deck_composition": {
++            "type": "array",
++            "description": "Unordered permanent cards shown by the View Deck screen",
++            "items": {
++              "$ref": "#/components/schemas/DeckCompositionEntry"
++            }
+           },
+           "pack": {
+             "$ref": "#/components/schemas/Area",
+@@ -1164,9 +1171,35 @@
+           "state",
+           "round_num",
+           "ante_num",
+-          "money"
++          "money",
++          "deck_composition"
+         ]
+       },
++      "DeckCompositionEntry": {
++        "type": "object",
++        "description": "One public permanent-card composition bucket",
++        "additionalProperties": false,
++        "properties": {
++          "rank": {
++            "oneOf": [
++              {"$ref": "#/components/schemas/Rank"},
++              {"type": "string", "enum": ["?"]}
++            ]
++          },
++          "suit": {
++            "oneOf": [
++              {"$ref": "#/components/schemas/Suit"},
++              {"type": "string", "enum": ["?"]}
++            ]
++          },
++          "enhancement": {"$ref": "#/components/schemas/Enhancement"},
++          "edition": {"$ref": "#/components/schemas/Edition"},
++          "seal": {"$ref": "#/components/schemas/Seal"},
++          "permanent_bonus": {"type": "integer"},
++          "count": {"type": "integer", "minimum": 1}
++        },
++        "required": ["rank", "suit", "permanent_bonus", "count"]
++      },
+       "Hand": {
+         "type": "object",
+         "description": "Poker hand information",
+diff --git a/src/lua/utils/types.lua b/src/lua/utils/types.lua
+--- a/src/lua/utils/types.lua
++++ b/src/lua/utils/types.lua
+@@ -24,6 +24,7 @@
+ ---@field consumables Area? Consumables area
+ ---@field hand Area? Hand area (available during playing phase)
+ ---@field cards Area? Cards remaining in deck (available during run)
++---@field deck_composition DeckCompositionEntry[]? Unordered permanent cards shown by View Deck
+ ---@field pack Area? Currently open pack (available during opeing pack phase)
+ ---@field shop Area? Shop area (available during shop phase)
+ ---@field vouchers Area? Vouchers area (available during shop phase)
+@@ -82,6 +83,17 @@
+ ---@field suit Card.Value.Suit? Suit (Hearts, Diamonds, Clubs, Spades) - only for playing cards
+ ---@field rank Card.Value.Rank? Rank - only for playing cards
+ ---@field effect string Description of the card's effect (from UI)
++---@field perma_bonus integer? Permanent bonus chips on a playing card
++---@field ability table? Public runtime values printed by a card tooltip
++
++---@class DeckCompositionEntry
++---@field rank Card.Value.Rank|"?" Public rank, or ? for a Stone card
++---@field suit Card.Value.Suit|"?" Public suit, or ? for a Stone card
++---@field enhancement Card.Modifier.Enhancement? Enhancement type
++---@field edition Card.Modifier.Edition? Edition type
++---@field seal Card.Modifier.Seal? Seal type
++---@field permanent_bonus integer Permanent bonus chips
++---@field count integer Number of matching permanent cards
+
+ ---@class Card.Modifier
+ ---@field seal Card.Modifier.Seal? Seal type (playing cards)

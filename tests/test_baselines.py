@@ -1539,7 +1539,12 @@ def test_joker_value_uses_typed_roles_and_fails_closed_for_unknown_keys() -> Non
 
 @pytest.mark.parametrize("key", ["j_fortune_teller", "j_idol"])
 def test_unimplemented_semantic_scorer_has_zero_phase1_value(key: str) -> None:
-    assert _joker_value(PublicItem(key, key, "JOKER")) == 0
+    runtime = (
+        PublicJokerRuntime(target_rank="K", target_suit="H")
+        if key == "j_idol"
+        else None
+    )
+    assert _joker_value(PublicItem(key, key, "JOKER", runtime=runtime)) == 0
 
 
 @pytest.mark.parametrize("key", ["j_blueprint", "j_brainstorm", "j_hiker"])
@@ -2228,7 +2233,13 @@ def test_unsupported_conditional_xmult_does_not_satisfy_upgrade_check() -> None:
         offer_key="j_credit_card",
         joker_cards=[
             item_card("j_jolly", card_id=40, kind="JOKER", sell=2),
-            item_card("j_idol", card_id=41, kind="JOKER", sell=2),
+            item_card(
+                "j_idol",
+                card_id=41,
+                kind="JOKER",
+                sell=2,
+                ability={"idol_rank": "K", "idol_suit": "H"},
+            ),
             item_card("j_sly", card_id=42, kind="JOKER", sell=2),
             item_card("j_mad", card_id=43, kind="JOKER", sell=2),
             item_card("j_clever", card_id=44, kind="JOKER", sell=2),

@@ -71,6 +71,8 @@ _PACK_KINDS = {
 _EDITIONS = {"FOIL", "HOLO", "HOLOGRAPHIC", "POLYCHROME", "NEGATIVE"}
 _ENHANCEMENTS = {"BONUS", "MULT", "WILD", "GLASS", "STEEL", "STONE", "GOLD", "LUCKY"}
 _SEALS = {"RED", "BLUE", "GOLD", "GOLD SEAL", "PURPLE"}
+_RANKS = {"2", "3", "4", "5", "6", "7", "8", "9", "T", "J", "Q", "K", "A"}
+_SUITS = {"S", "H", "D", "C"}
 
 _CURRENT_MULT_JOKERS = frozenset(
     {
@@ -136,6 +138,7 @@ def to_public_observation(raw: Mapping[str, Any]) -> PublicObservation:
         if isinstance(public_card, HiddenHandCard)
     )
     deck_counts = Counter(deck_cards)
+    full_deck_counts = _deck_composition(raw)
 
     round_raw = _required_mapping(raw, "round")
     blinds_raw = _required_mapping(raw, "blinds")
@@ -180,6 +183,12 @@ def to_public_observation(raw: Mapping[str, Any]) -> PublicObservation:
         remaining_deck=tuple(
             DeckCardCount(card=card, count=count)
             for card, count in sorted(deck_counts.items(), key=lambda pair: _playing_card_sort_key(pair[0]))
+        ),
+        full_deck=tuple(
+            DeckCardCount(card=card, count=count)
+            for card, count in sorted(
+                full_deck_counts.items(), key=lambda pair: _playing_card_sort_key(pair[0])
+            )
         ),
         draw_count=len(deck_cards),
         deck_size=_required_int(deck_area, "limit"),
@@ -378,6 +387,63 @@ def _playing_card(raw: Mapping[str, Any], *, respect_hidden: bool) -> VisiblePla
     )
 
 
+def _deck_composition(raw: Mapping[str, Any]) -> Counter[VisiblePlayingCard]:
+    entries = raw.get("deck_composition")
+    if not isinstance(entries, list):
+        raise ObservationError("deck_composition must be a list")
+    counts: Counter[VisiblePlayingCard] = Counter()
+    fields = {
+        "rank",
+        "suit",
+        "enhancement",
+        "edition",
+        "seal",
+        "permanent_bonus",
+        "count",
+    }
+    required = {"rank", "suit", "permanent_bonus", "count"}
+    for index, entry in enumerate(entries):
+        if (
+            not isinstance(entry, Mapping)
+            or set(entry) - fields
+            or required - set(entry)
+        ):
+            raise ObservationError(
+                f"deck_composition[{index}] fields differ from the public contract"
+            )
+        count = entry["count"]
+        if isinstance(count, bool) or not isinstance(count, int) or count <= 0:
+            raise ObservationError("deck composition count must be a positive integer")
+        rank = _required_string(entry, "rank")
+        suit = _required_string(entry, "suit")
+        enhancement = _optional_key(entry, "enhancement")
+        edition = _optional_key(entry, "edition")
+        seal = _optional_key(entry, "seal")
+        if enhancement not in _ENHANCEMENTS | {None}:
+            raise ObservationError("deck composition enhancement is unsupported")
+        if edition not in _EDITIONS | {None}:
+            raise ObservationError("deck composition edition is unsupported")
+        if seal not in _SEALS | {None}:
+            raise ObservationError("deck composition seal is unsupported")
+        if enhancement == "STONE":
+            if rank != OBSCURED_CARD_ATTRIBUTE or suit != OBSCURED_CARD_ATTRIBUTE:
+                raise ObservationError("deck composition Stone identity must be obscured")
+        elif rank not in _RANKS or suit not in _SUITS:
+            raise ObservationError("deck composition rank or suit is unsupported")
+        card = VisiblePlayingCard(
+            rank=rank,
+            suit=suit,
+            enhancement=enhancement,
+            edition=edition,
+            seal=seal,
+            permanent_bonus=_required_int(entry, "permanent_bonus"),
+        )
+        if card in counts:
+            raise ObservationError("deck composition contains a duplicate card entry")
+        counts[card] = count
+    return counts
+
+
 def _item(raw: Mapping[str, Any]) -> PublicItem:
     value = _required_mapping(raw, "value")
     cost = _required_mapping(raw, "cost")
@@ -429,16 +495,23 @@ def _joker_runtime(key: str, kind: str, value: Mapping[str, Any]) -> PublicJoker
     if not isinstance(ability, Mapping):
         raise ObservationError("joker ability must be an object")
 
-    runtime = PublicJokerRuntime(
-        current_mult=_runtime_int(ability, "mult") if key in _CURRENT_MULT_JOKERS else None,
-        current_chips=_runtime_int(ability, "chips") if key in _CURRENT_CHIP_JOKERS else None,
-        current_x_mult=_runtime_number(ability, "x_mult") if key in _CURRENT_X_MULT_JOKERS else None,
-        current_dollars=_runtime_int(ability, "dollars") if key == "j_rocket" else None,
-        remaining_hands=_runtime_int(ability, "extra") if key == "j_selzer" else None,
-        loyalty_remaining=_runtime_int(ability, "loyalty_remaining") if key == "j_loyalty_card" else None,
-        driver_tally=_runtime_int(ability, "driver_tally") if key == "j_drivers_license" else None,
-        target_hand=_runtime_string(ability, "poker_hand") if key == "j_todo_list" else None,
-    )
+    try:
+        runtime = PublicJokerRuntime(
+            current_mult=_runtime_int(ability, "mult") if key in _CURRENT_MULT_JOKERS else None,
+            current_chips=_runtime_int(ability, "chips") if key in _CURRENT_CHIP_JOKERS else None,
+            current_x_mult=_runtime_number(ability, "x_mult") if key in _CURRENT_X_MULT_JOKERS else None,
+            current_dollars=_runtime_int(ability, "dollars") if key == "j_rocket" else None,
+            remaining_hands=_runtime_int(ability, "extra") if key == "j_selzer" else None,
+            loyalty_remaining=_runtime_int(ability, "loyalty_remaining") if key == "j_loyalty_card" else None,
+            driver_tally=_runtime_int(ability, "driver_tally") if key == "j_drivers_license" else None,
+            target_hand=_runtime_string(ability, "poker_hand") if key == "j_todo_list" else None,
+            target_rank=_runtime_string(ability, "idol_rank") if key == "j_idol" else None,
+            target_suit=_runtime_string(ability, "idol_suit") if key == "j_idol" else None,
+        )
+    except ValueError as exc:
+        raise ObservationError(str(exc)) from exc
+    if key == "j_idol" and runtime.target_rank is None:
+        raise ObservationError("visible Idol requires its tooltip target")
     return runtime if runtime != PublicJokerRuntime() else None
 
 

@@ -193,7 +193,7 @@ def _component(
             "command": ["collector"],
         },
         "search_protocol": {
-            "version": "determinized-search-v13",
+            "version": "determinized-search-v14",
             "continuation": "strategic",
             "policy_seed": "baseline-v1",
             "budget": {

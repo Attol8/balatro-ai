@@ -182,6 +182,34 @@ def test_remaining_deck_encoding_is_order_invariant_and_count_sensitive() -> Non
     assert not torch.equal(original.values, changed.values)
 
 
+def test_full_deck_encoding_is_order_invariant_and_composition_sensitive() -> None:
+    observation = to_public_observation(state())
+    reversed_deck = replace(
+        observation, full_deck=tuple(reversed(observation.full_deck))
+    )
+    first = next(entry for entry in observation.full_deck if entry.count > 1)
+    second = next(entry for entry in observation.full_deck if entry is not first)
+    changed = replace(
+        observation,
+        full_deck=tuple(
+            replace(entry, count=entry.count - 1)
+            if entry is first
+            else replace(entry, count=entry.count + 1)
+            if entry is second
+            else entry
+            for entry in observation.full_deck
+        ),
+    )
+    model = _model()
+
+    original = _step(model, observation)
+    reordered = _step(model, reversed_deck)
+    redistributed = _step(model, changed)
+
+    assert torch.equal(original.values, reordered.values)
+    assert not torch.equal(original.values, redistributed.values)
+
+
 def test_model_encodes_visible_permanent_card_bonus() -> None:
     observation = to_public_observation(state("SELECTING_HAND"))
     card = observation.hand[0]

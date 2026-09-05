@@ -30,6 +30,25 @@ from balatro_ai_v2.public_state import HiddenJokerSlot, PublicShopPlayingCard
 from state_factory import item_card, state
 
 
+def _candidate_playing_card(raw_card: dict[str, object], **ability: object) -> object:
+    from jackdaw.engine.card_factory import create_playing_card
+    from jackdaw.engine.data.enums import Rank, Suit
+
+    value = raw_card["value"]
+    assert isinstance(value, dict)
+    suit = next(candidate for candidate in Suit if candidate.value.startswith(str(value["suit"])))
+    rank = next(
+        candidate
+        for candidate in Rank
+        if candidate.value == {"T": "10", "J": "Jack", "Q": "Queen", "K": "King", "A": "Ace"}.get(
+            str(value["rank"]), str(value["rank"])
+        )
+    )
+    card = create_playing_card(suit, rank)
+    card.ability.update(ability)
+    return card
+
+
 def test_candidate_module_is_lazy_and_revision_is_pinned() -> None:
     assert jackdaw.JACKDAW_REVISION == "dbedc66255fe594cce7b7cccc188c8a11649d9ec"
 
@@ -97,6 +116,39 @@ def test_candidate_boss_reroll_consumes_money_rng_and_public_allowance() -> None
     assert repeated.status == "accepted"
     assert backend.current_public is not None
     assert backend.current_public.money == 10
+
+
+def test_candidate_exposes_visible_idol_tooltip_target() -> None:
+    pytest.importorskip("jackdaw")
+    from jackdaw.engine.card_factory import create_joker
+
+    backend = jackdaw.JackdawBackend()
+    backend.reset(RunSpec("RED", "WHITE", "2"))
+    backend._backend._gs["jokers"].append(create_joker("j_idol"))
+
+    backend.observe()
+
+    assert backend.current_public is not None
+    idol = backend.current_public.jokers[0]
+    assert idol.runtime is not None
+    assert idol.runtime.target_rank in {"2", "3", "4", "5", "6", "7", "8", "9", "T", "J", "Q", "K", "A"}
+    assert idol.runtime.target_suit in {"S", "H", "D", "C"}
+
+
+def test_candidate_deck_composition_repairs_stale_private_count() -> None:
+    pytest.importorskip("jackdaw")
+    backend = jackdaw.JackdawBackend()
+    backend.reset(RunSpec("RED", "WHITE", "2"))
+    game_state = backend._backend._gs
+    game_state["playing_cards_count"] = 52
+    game_state["deck"].pop()
+    game_state["deck"].pop()
+
+    backend.observe()
+
+    assert backend.current_public is not None
+    assert backend.current_public.deck_size == 50
+    assert sum(entry.count for entry in backend.current_public.full_deck) == 50
 
 
 def test_candidate_pack_capacity_survives_selections_and_resets() -> None:
@@ -484,7 +536,10 @@ def test_bridge_normalization_preserves_candidate_round_timing() -> None:
     raw["round"]["discards_left"] = 0
     raw["used_vouchers"] = {"v_grabber": True}
     private = {
-        "deck": [SimpleNamespace(ability={"x_mult": 1}) for _ in raw["cards"]["cards"]],
+        "deck": [
+            _candidate_playing_card(card, x_mult=1)
+            for card in raw["cards"]["cards"]
+        ],
         "discard_pile": [],
         "hand": [],
         "jokers": [],
@@ -541,9 +596,15 @@ def test_bridge_normalization_redacts_amber_jokers_before_public_projection() ->
         card["state"] = {"hidden": True}
     private = {
         "blind": SimpleNamespace(name="Amber Acorn", disabled=False),
-        "deck": [SimpleNamespace(ability={"x_mult": 1}) for _ in raw["cards"]["cards"]],
+        "deck": [
+            _candidate_playing_card(card, x_mult=1)
+            for card in raw["cards"]["cards"]
+        ],
         "discard_pile": [],
-        "hand": [SimpleNamespace(ability={"x_mult": 1}) for _ in raw["hand"]["cards"]],
+        "hand": [
+            _candidate_playing_card(card, x_mult=1)
+            for card in raw["hand"]["cards"]
+        ],
         "jokers": [
             SimpleNamespace(ability={"x_mult": 1}),
             SimpleNamespace(ability={"x_mult": 1}),
@@ -571,13 +632,15 @@ def test_bridge_normalization_exposes_cerulean_forced_slot_from_empty_card_state
     raw["blinds"]["small"]["status"] = "DEFEATED"
     raw["blinds"]["boss"].update(name="Cerulean Bell", status="CURRENT")
     private_hand = [
-        SimpleNamespace(ability={"x_mult": 1}),
-        SimpleNamespace(ability={"x_mult": 1, "forced_selection": True}),
-        SimpleNamespace(ability={"x_mult": 1}),
+        _candidate_playing_card(card, x_mult=1, forced_selection=index == 1)
+        for index, card in enumerate(raw["hand"]["cards"])
     ]
     private = {
         "blind": SimpleNamespace(name="Cerulean Bell", disabled=False),
-        "deck": [SimpleNamespace(ability={"x_mult": 1}) for _ in raw["cards"]["cards"]],
+        "deck": [
+            _candidate_playing_card(card, x_mult=1)
+            for card in raw["cards"]["cards"]
+        ],
         "discard_pile": [],
         "hand": private_hand,
         "jokers": [],
@@ -604,10 +667,16 @@ def test_bridge_normalization_exposes_disabled_cerulean_without_forced_slot() ->
     raw = state("SELECTING_HAND")
     raw["blinds"]["small"]["status"] = "DEFEATED"
     raw["blinds"]["boss"].update(name="Cerulean Bell", status="CURRENT")
-    cards = [SimpleNamespace(ability={"x_mult": 1}) for _ in raw["hand"]["cards"]]
+    cards = [
+        _candidate_playing_card(card, x_mult=1)
+        for card in raw["hand"]["cards"]
+    ]
     private = {
         "blind": SimpleNamespace(name="Cerulean Bell", disabled=True),
-        "deck": [SimpleNamespace(ability={"x_mult": 1}) for _ in raw["cards"]["cards"]],
+        "deck": [
+            _candidate_playing_card(card, x_mult=1)
+            for card in raw["cards"]["cards"]
+        ],
         "discard_pile": [],
         "hand": cards,
         "jokers": [],

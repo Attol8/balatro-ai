@@ -52,8 +52,8 @@ from balatro_ai_v2.public_state import (
 )
 
 
-MODEL_FORMAT_VERSION: Final = 7
-PUBLIC_MODEL_ACTION_PROPOSAL_SCHEMA: Final = "factorized_tactical_boss_reroll_v7"
+MODEL_FORMAT_VERSION: Final = 8
+PUBLIC_MODEL_ACTION_PROPOSAL_SCHEMA: Final = "factorized_tactical_elite_observation_v8"
 _REORDER_ACTIONS = (ReorderHand, ReorderJokers, ReorderConsumables)
 _ACTION_FAMILIES = {
     SelectBlind: "select_blind",
@@ -576,6 +576,8 @@ def _observation_features(observation: PublicObservation, size: int) -> list[flo
         _add_card(vector, f"hand.{index}", card)
     for entry in observation.remaining_deck:
         _add_card(vector, "remaining", entry.card, weight=math.log1p(entry.count))
+    for entry in observation.full_deck:
+        _add_card(vector, "full_deck", entry.card, weight=math.log1p(entry.count))
     for region in ("jokers", "consumables", "vouchers", "packs"):
         for index, item in enumerate(getattr(observation, region)):
             _add_item(vector, f"{region}.{index}", item)
@@ -758,6 +760,11 @@ def _add_item(
     vector.number(f"{prefix}.debuffed", int(item.debuffed), 1)
     vector.number(f"{prefix}.buy_cost", item.buy_cost or 0, 50)
     vector.number(f"{prefix}.sell_cost", item.sell_cost or 0, 50)
+    if item.runtime is not None:
+        if item.runtime.target_rank is not None:
+            vector.category(f"{prefix}.runtime.target_rank", item.runtime.target_rank)
+        if item.runtime.target_suit is not None:
+            vector.category(f"{prefix}.runtime.target_suit", item.runtime.target_suit)
 
 
 class _HashedVector:

@@ -867,6 +867,15 @@ Ante 8. Implement in this order:
    search cost. Only an artifact that advances both survival and upper-tail score
    proceeds to protected authority evaluation.
 
+Implementation checkpoint: the permanent View Deck composition and the Idol's
+visible current target are now typed public state. Pure route profiles distinguish
+victory, held retrigger, played retrigger, and consumable duplication without
+changing actions yet. Idol readiness uses its target only during an active hand,
+accounts for Wild/Smeared public semantics, and treats a depleted Seltzer as
+unavailable. The next increment makes the route a revisable public-history state,
+threads it through candidate identity and the learned context, and retains an
+explicit victory fallback.
+
 The retired v11 design remains a pre-win/early-Endless continuation increment,
 not the complete high-score policy. Its useful continuation machinery is retained
 inside the broader program above, while its collection protocol remains retired.

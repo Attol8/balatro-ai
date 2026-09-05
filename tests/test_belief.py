@@ -98,18 +98,23 @@ def test_zero_draws_and_impossible_minimum_are_exact() -> None:
 
 
 @pytest.mark.parametrize(
-    ("entries", "draw_count", "message"),
+    ("entry_count", "draw_count", "message"),
     [
-        ((_entry("A", "S", 1),), 2, "sum to draw_count"),
-        ((_entry("A", "S", 0),), 0, "positive integers"),
-        ((_entry("A", "S", -1),), -1, "non-negative"),
+        (1, 2, "sum to draw_count"),
+        (0, 0, "positive integer"),
+        (-1, 0, "positive integer"),
     ],
 )
 def test_invalid_public_populations_fail_closed(
-    entries: tuple[DeckCardCount, ...], draw_count: int, message: str
+    entry_count: int, draw_count: int, message: str
 ) -> None:
     with pytest.raises(ValueError, match=message):
-        PublicDrawBelief(entries, draw_count)
+        PublicDrawBelief((_entry("A", "S", entry_count),), draw_count)
+
+
+def test_negative_public_draw_count_fails_closed() -> None:
+    with pytest.raises(ValueError, match="non-negative"):
+        PublicDrawBelief((_entry("A", "S", 1),), -1)
 
 
 def test_invalid_draw_request_fails_closed() -> None:
