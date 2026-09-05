@@ -1022,6 +1022,24 @@ unavailability. The implementation and report protocol are v16; 941 repository
 tests and Ruff pass. The next action is the already-observed causal replay, not a
 fresh strength panel.
 
+Preregister one v16 causal replay of development seeds `2299-2310`, publishing
+only `runs/experiments/elite-route-screen/v16-route-causal-replay-seeds2299-2310.json`.
+Use Red/White, strategic continuation, policy seed `baseline-v1`, nonce
+`elite-route-v15-screen`, six samples, one-ante horizon, 200 rollout steps,
+`z=1`, 1,200 decisions, Ante-20 cap, eight workers, decision recording, and
+`--strategy-options`; these exactly match the rejected v15 screen apart from the
+frozen v16 source. Require 12/12 complete runs, zero rejected ordinary rollouts,
+and reconciliation against
+`runs/experiments/elite-route-screen/v15-control-seeds2299-2310.json`. Before the
+first specialist override, selected public actions and terminal outcomes must
+match control. Every specialist override must name a non-Victory route, have a
+strictly positive recorded paired lower bound, and explain any later divergence.
+If there are no specialist overrides, require exact per-seed outcome and recorded
+action-sequence identity. This replay is repair evidence only and never enters a
+strength interval. A mismatch without an admissible specialist retires v16 for
+further code diagnosis; a complete match authorizes preregistration of one fresh
+small capability/cost screen.
+
 The retired v11 design remains a pre-win/early-Endless continuation increment,
 not the complete high-score policy. Its useful continuation machinery is retained
 inside the broader program above, while its collection protocol remains retired.
