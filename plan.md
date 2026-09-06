@@ -1694,6 +1694,19 @@ positive paired mean antes and log-best-hand deltas, more positive-ante seeds
 than negative-ante seeds, and no reduction in combined final xMult/scaling
 roles across trajectory-divergent seeds. Any failure restores `< 3` again.
 
+Late-shop v2 result: reject the expanded continuation window and restore the
+retained `shop_steps < 3` predicate. Both paired panels completed 40/40 with
+zero rejected or unavailable roots; wins (3) and Ante-6 survivors (13) were
+unchanged, mean antes moved 4.375 to 4.425, and mean log10 best-hand moved
+3.91146 to 3.91605. Twenty-seven identical-action/final-state seeds changed
+rollout-step counts, clearing the conservative direct-intervention gate.
+However, exactly two seeds improved and two regressed, failing the strict
+positive-over-negative rule, and combined final xMult/scaling roles on the
+eight trajectory-divergent seeds fell from 10 to 8. Do not tune around the
+small positive aggregate. Retain the independently valid root-domain contract
+test, delete the candidate-only boundary test, and record this as evidence that
+unpriced extra rerolls do not reliably assemble stronger engines.
+
 ## Active development loop
 
 The two disjoint 30-seed screens are enough to retain one-ante strategic

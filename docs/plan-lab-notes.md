@@ -4705,6 +4705,20 @@ and be a new weaker protocol. The v1 outcome remains rejected because its gate
 was frozen, but no root cap will be implemented. A fresh v2 experiment may
 test the unchanged reroll hypothesis under the actual search contract.
 
+The v2 paired screen on seeds 2461--2500 rejects that hypothesis under the
+correct root contract. Both reports completed 40/40 with no rejected or
+unavailable roots. Control/candidate results were respectively 3/3 wins,
+13/13 Ante-6 survivors, 4.375/4.425 mean antes cleared, and
+3.91146/3.91605 mean log10 best-hand score. Twenty-seven seeds preserved the
+exact played search-action sequence and final observation while changing
+rollout-step totals, exceeding the preregistered ten-seed lower bound for a
+direct continuation intervention. Outcome direction was nevertheless tied:
+seeds 2464 and 2484 improved, while 2467 and 2491 regressed. Across the eight
+trajectory-divergent seeds, final xMult roles fell from six to four and scaling
+roles stayed four to four. This fails both the strict positive-seed plurality
+and no-role-reduction gates. Restore `< 3`; retain only the search root-domain
+regression. Reports remain under `runs/experiments/late-shop-engine-v2/`.
+
 ### Exact PACK target-validation optimization (2026-09-06)
 
 The retained 186-action seed-2439 PACK fixture exposed a duplicate public

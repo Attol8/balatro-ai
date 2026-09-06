@@ -20,7 +20,6 @@ from balatro_ai_v2.actions import (
     LeaveShop,
     PackOfferSlot,
     PlayCards,
-    PublicAction,
     ReorderJokers,
     RerollShop,
     SelectBlind,
@@ -2553,44 +2552,6 @@ def test_strategic_baseline_rerolls_full_weak_build_with_excess_cash() -> None:
     )
 
     assert isinstance(action, RerollShop)
-
-
-@pytest.mark.parametrize(
-    ("shop_steps", "expected_type"),
-    [(3, RerollShop), (4, LeaveShop)],
-)
-def test_upgrade_reroll_preserves_two_replacement_actions(
-    shop_steps: int,
-    expected_type: type[PublicAction],
-) -> None:
-    raw = state("SHOP", money=60)
-    raw["ante_num"] = 6
-    raw["shop"]["cards"] = [
-        item_card("j_credit_card", card_id=20, kind="JOKER")
-    ]
-    raw["shop"]["count"] = 1
-    raw["jokers"]["cards"] = [
-        item_card("j_joker", card_id=40 + index, kind="JOKER")
-        for index in range(5)
-    ]
-    raw["jokers"]["count"] = 5
-    raw["vouchers"]["cards"] = []
-    raw["vouchers"]["count"] = 0
-    raw["packs"]["cards"] = []
-    raw["packs"]["count"] = 0
-    observation = to_public_observation(raw)
-    history = tuple(
-        PublicHistoryStep(observation, RerollShop(), observation)
-        for _ in range(shop_steps)
-    )
-
-    action = PublicStrategicPolicy().choose_action(
-        observation,
-        lambda: iter_legal_actions(observation),
-        history,
-    )
-
-    assert isinstance(action, expected_type)
 
 
 def test_reserve_blocked_joker_offer_does_not_suppress_building_reroll() -> None:
