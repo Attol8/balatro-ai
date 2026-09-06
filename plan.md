@@ -1615,8 +1615,9 @@ full-run improvement without a matched replay.
 
 Strength replan: throughput is no longer the immediate score ceiling. Across
 the descriptive frozen v9/v10 trajectories, 340 of 365 losses (93.2%) end on
-Pair or Two Pair; 192 of 243 losses with a full Joker row have no xMult, while
-352 losses have empty consumables and terminal cash is commonly substantial.
+Pair or Two Pair; 116 of 243 losses with a full Joker row have zero xMult roles
+under the stored schema-5 role classifier, while 352 losses have empty
+consumables and terminal cash is commonly substantial.
 In 64 qualifying late shops with at least $20, a full non-scaling row, and a
 legal reroll, the policy left 47 times and rerolled twice. These artifacts are
 diagnostic only where their promotion protocols failed, but the repeated shape
@@ -1631,6 +1632,12 @@ shop actions; no regression in wins or Ante-6 survival; nonnegative paired ante
 delta; positive paired log-best-hand delta; and more xMult/scaling acquisitions
 in affected candidate runs. Insufficient coverage or any survival regression
 kills the slice.
+
+Evidence correction: the earlier 192/243 xMult claim had no reproducible
+definition and is withdrawn. Recomputing directly from the committed v9/v10
+reports gives 116/243 full-row losses with
+`strategy.scoring.role_counts.x_mult == 0`. This remains descriptive and does
+not alter the already-frozen v2 experiment or its verdict rules.
 
 Late-shop screen preregistration: reserve unused development seeds 2441--2460,
 nonce `late-shop-engine-v1`, Red Deck/White Stake, six samples, one-Ante

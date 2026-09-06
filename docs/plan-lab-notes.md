@@ -4654,9 +4654,10 @@ timing-v1-seed2439-after-boss-single/`.
 ### Late-shop multiplicative-engine hypothesis (2026-09-05)
 
 A descriptive audit of the frozen v9/v10 trajectories finds 340 of 365 losses
-committed to Pair or Two Pair. Of 243 losses with a full Joker row, 192 have no
-xMult Joker; 352 losses have empty consumables, while median terminal cash is
-$17 in v9 and $20 in v10. Among 64 late-shop teacher states across 35 groups
+committed to Pair or Two Pair. Of 243 losses with a full Joker row, 116 have
+zero xMult roles under the stored schema-5 role classifier; 352 losses have
+empty consumables, while median terminal cash is $17 in v9 and $20 in v10.
+Among 64 late-shop teacher states across 35 groups
 with at least $20, a full row without xMult/scaling, a legal reroll, and at
 least three current shop actions, the continuation left 47 times and rerolled
 only twice. The v9 corpus and invalid v10 batch 02 are used only descriptively,
@@ -4667,6 +4668,13 @@ using the already-declared `needs_upgrade`, legality, reserve, and six-action
 budget. This leaves two actions for the intended reroll--sale--purchase line.
 It receives a paired 20-seed fresh-development screen with the kill rules in
 `plan.md`; no result can promote an artifact without the later frozen gate.
+
+Evidence correction (2026-09-06): the original 192/243 xMult sentence did not
+name a reproducible metric. Direct recomputation from the saved schema-5 report
+field gives 116/243 full-row losses with
+`strategy.scoring.role_counts.x_mult == 0`. The undefined 192 numerator is
+withdrawn. This correction does not change the direction of the descriptive
+engine-completeness hypothesis or the frozen v2 acceptance rules.
 
 The paired development screen on seeds 2441--2460 completed both panels with
 zero rejected or unavailable roots. The candidate moved mean antes cleared
