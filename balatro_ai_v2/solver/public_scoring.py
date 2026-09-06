@@ -166,6 +166,7 @@ class _PreparedScoreContext:
     held_retrigger_jokers: tuple[PublicItem, ...]
     main_jokers: tuple[PublicItem | None, ...]
     splash: bool
+    misprint_value: int | None = None
 
 
 def _prepare_score_context(observation: PublicObservation) -> _PreparedScoreContext:
@@ -365,6 +366,7 @@ def _score_play_prepared(
             hand_name,
             stats,
             joker,
+            misprint_value=context.misprint_value,
         )
         chips += joker_chips
         mult += joker_mult
@@ -557,6 +559,7 @@ def _joker_main_effect(
     hand_name: str,
     stats: Mapping[str, HandStat],
     joker: PublicItem,
+    *, misprint_value: int | None = None,
 ) -> tuple[int, int | Fraction, int | Fraction]:
     key = joker.key
     runtime = joker.runtime
@@ -654,7 +657,7 @@ def _joker_main_effect(
     elif key == "j_bootstraps":
         mult += 2 * (max(0, observation.money) // 5)
     elif key == "j_misprint":
-        mult += Fraction(23, 2)
+        mult += Fraction(23, 2) if misprint_value is None else misprint_value
     elif key == "j_erosion":
         starting_size = 40 if observation.deck.upper() == "ABANDONED" else 52
         chips += 4 * max(0, starting_size - observation.deck_size)

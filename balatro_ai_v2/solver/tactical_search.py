@@ -63,10 +63,13 @@ def choose_tactical(
     model_green_joker: bool = False,
     model_static_debuffs: bool = False,
     preserve_green_plays: bool = False,
+    model_misprint_probability: bool = False,
 ) -> TacticalChoice:
     """Prefer a clear now, or a materially better sampled discard/refill."""
     if isinstance(samples, bool) or not isinstance(samples, int) or not 1 <= samples <= 64:
         raise ValueError("samples must be an integer in 1..64")
+    if not isinstance(model_misprint_probability, bool):
+        raise ValueError("model_misprint_probability must be boolean")
 
     def unchanged(reason: str) -> TacticalChoice:
         return TacticalChoice(baseline, None, None, 0, reason)
@@ -94,10 +97,19 @@ def choose_tactical(
     target = max(0, blind.score - observation.round.chips)
     baseline_score = _action_score(observation, baseline) if isinstance(baseline, PlayCards) else score
     stochastic = _stochastic_scoring(observation)
-    if isinstance(baseline, PlayCards) and baseline_score >= target and _is_scoring_family_eligible(observation, baseline):
+    probability_play = None
+    if model_misprint_probability and observation.round.hands_left == 1:
+        from balatro_ai_v2.solver.misprint_distribution import best_misprint_play
+        probability_play = best_misprint_play(observation, target,
+                                              preferred=baseline if isinstance(baseline, PlayCards) else None)
+        if probability_play is not None:
+            play, score, hand_name = probability_play.action, probability_play.expected_score, probability_play.family
+            if probability_play.clear_probability == 1:
+                return TacticalChoice(play, score, baseline_score, 0, "Misprint modeled clear probability 1.000")
+    if probability_play is None and isinstance(baseline, PlayCards) and baseline_score >= target and _is_scoring_family_eligible(observation, baseline):
         reason = "preserve strategic estimated clear" if stochastic else "preserve strategic clearing play"
         return TacticalChoice(baseline, baseline_score, baseline_score, 0, reason)
-    if score >= target:
+    if probability_play is None and score >= target:
         return TacticalChoice(play, score, baseline_score, 0, "estimated clear now" if stochastic else "clear blind now")
     if (model_green_joker and preserve_green_plays and isinstance(baseline, PlayCards)
             and observation.round.hands_left > 1
@@ -139,24 +151,55 @@ def choose_tactical(
     shared_draws = [tuple(rng.sample(deck, max_draw)) for _ in range(samples)]
     scored = []
     cache: dict[PublicObservation, float] = {}
+    probability_cache = {}
     for discard in candidates:
         outcomes = []
+        distributions = []
         for drawn in shared_draws:
             after = _after_discard(observation, discard, drawn, sort_mode=sort_mode,
                                    model_green_joker=model_green_joker)
+            if probability_play is not None:
+                if after not in probability_cache:
+                    probability_cache[after] = best_misprint_play(after, target)
+                distribution = probability_cache[after]
+                if distribution is None:
+                    # An unsupported successor cannot enter a probability
+                    # denominator. Re-run the original control decision.
+                    return choose_tactical(observation, baseline, samples=samples,
+                                           model_green_joker=model_green_joker,
+                                           model_static_debuffs=model_static_debuffs,
+                                           preserve_green_plays=preserve_green_plays)
+                distributions.append(distribution)
+                outcomes.append(distribution.expected_score)
+                continue
             if after not in cache:
                 next_play = _best_play(after)
                 cache[after] = next_play[1] if next_play is not None else 0.0
             outcomes.append(cache[after])
         # Cap at the blind requirement: enormous rare scores must not dominate
         # the choice over reliable survival. Keep raw expectation for diagnostics.
-        utility = sum(min(target, value) for value in outcomes) / samples
-        clear_probability = sum(value >= target for value in outcomes) / samples
+        utility = (sum(d.capped_score for d in distributions) if distributions else
+                   sum(min(target, value) for value in outcomes)) / samples
+        clear_probability = (sum(d.clear_probability for d in distributions) if distributions else
+                             sum(value >= target for value in outcomes)) / samples
         scored.append((utility, clear_probability, sum(outcomes) / samples, discard))
     last_hand = observation.round.hands_left == 1
     winner = max(scored, key=lambda row: ((row[1], row[0]) if last_hand else (row[0], row[1]), -len(row[3].cards),
                                          tuple(-slot.value for slot in row[3].cards)))
     utility, clear_probability, expected, discard = winner
+    if probability_play is not None:
+        current_probability = probability_play.clear_probability
+        improves = clear_probability > current_probability + 1 / 24
+        no_quit = (clear_probability == current_probability == 0 and probability_play.maximum_score < target)
+        if improves or no_quit:
+            reason = (f"sampled Misprint clear probability {clear_probability:.3f} versus current {current_probability:.3f}; "
+                      "public refill samples, not a guarantee")
+            if no_quit:
+                reason += "; current maximum loses, unsampled outs may remain"
+            return TacticalChoice(discard, expected, baseline_score, samples, reason)
+        return TacticalChoice(play, score, baseline_score, samples,
+                              f"retain Misprint probability-best play; current clear probability {current_probability:.3f}; "
+                              f"sampled refill {clear_probability:.3f} does not exceed heuristic improvement margin")
     if last_hand and score < target and not stochastic and clear_probability == 0:
         # Playing ends the run under this deterministic model. Zero sampled
         # clears does not rule out unsampled outs or another useful refill.

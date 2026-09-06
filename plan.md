@@ -280,3 +280,46 @@ all debuff flags matched. This validates the exercised activation slice, not ful
 future-blind survival. The permanent `full_deck` contract deliberately excludes
 transient debuffs; only sampled hands and synthetic Remaining counts carry them.
 809 tests pass with the candidate installed (740 plus 69 skips without it).
+
+### Final-hand stochastic survival objective
+
+V6 is running frozen at `8407cdd`. Meanwhile V5's two losses with unused discards
+both contain Misprint: D0's last physical play has 10/24 modeled clearing outcomes,
+and D8's has 18/24. The current estimated-clear early return ignores that risk.
+Add a default-off final-hand Misprint probability comparison. Admit exactly one
+active Misprint, no copying or other modeled random scoring, and retain existing
+discard-transition guards. Enumerate its 24 public outcomes for each physical
+play; optimize one play across all outcomes, not a different play for each roll.
+Compare that probability with common sampled refills, accounting for Banner and
+other supported discard effects. Preserve all controls; this is not a blanket
+force-discard rule or proof either recorded loss was avoidable.
+
+The default-off probability layer is implemented and retains the existing guards.
+It compares mean clearing probability across sampled refills, with an explicit
+heuristic 1/24 improvement margin (not a statistical confidence bound). D0's
+current chance is 41.7% versus 23.4% after its best sampled discard; D8 is 75%
+versus 78.1%, below that margin. An offline scan of all eight V5 final-hand states
+with active Misprint changed zero actions relative to the same-input control.
+Therefore do not schedule a full live promotion batch on this evidence. Keep the
+model available for targeted probability diagnostics; redirect the next playing-
+strength experiment toward strategic build development, not a forced-discard fix.
+Verification: 827 tests pass with the optional candidate installed; the host
+passes 758 with 69 optional skips. No registered live policy enables this layer.
+At 64 refill samples the two final-loss checks still retain playing: D0's best
+refill estimate is 22.2% versus 41.7% now; D8 is 76.7% versus 75% now.
+
+### Next strategic experiment: publicly known current-ante boss readiness
+
+The V6 D3 trace is action-identical to V4 (165 decisions). Corrected forecasts
+detect the deficit, but two rerolls are still exhausted before leaving with $51.
+D2 exposes a more general horizon problem: at ante8 shop190, Violet's 300,000
+requirement is already public and the bot has $68. Shops191–192 optimize for the
+50,000 Small Blind; shops197–202 optimize for the 75,000 Big Blind. Only shop209
+begins treating 300,000 as the target. Final actual total is 118,130.
+
+Next test current-ante boss readiness from the first shop where that boss is
+publicly visible. It should affect candidate build valuation and a bounded
+ante-level preparation budget, while protecting immediate-blind survival. This
+is not knowledge of an unrevealed future boss and not indiscriminate rerolling.
+Do not assume a winning alternative exists in the diagnosed traces; measure a
+frozen new policy on the development panel before held-out evaluation.

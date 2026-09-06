@@ -12,6 +12,71 @@ from solver_state_factory import state
 from balatro_ai_v2.solver.public_state import PublicJokerRuntime
 
 
+@pytest.mark.parametrize("refill_probability,expect_discard", [(0.8, True), (0.51, False)])
+def test_misprint_probability_mode_compares_distributions_not_mean(monkeypatch, refill_probability, expect_discard):
+    import sys
+    from types import SimpleNamespace
+    obs = observation(["H_A", "C_A", "S_K", "D_K", "C_9"], ["S_2"], target=100)
+    obs = replace(obs, round=replace(obs.round, hands_left=1),
+                  jokers=(PublicItem("j_misprint", "Misprint", "JOKER"),))
+    baseline = play(0, 1, 2, 3)
+    calls = []
+    def best(o, target, preferred=None):
+        calls.append(o)
+        return SimpleNamespace(action=baseline, expected_score=150, family="Two Pair",
+                               clear_probability=0.5 if o is obs else refill_probability,
+                               capped_score=75, maximum_score=200)
+    monkeypatch.setitem(sys.modules, "balatro_ai_v2.solver.misprint_distribution", SimpleNamespace(best_misprint_play=best))
+    choice = choose_tactical(obs, baseline, samples=2, model_misprint_probability=True)
+    assert isinstance(choice.action, DiscardCards) == expect_discard
+    assert len(calls) > 1 and choice.samples == 2
+    assert "probability" in choice.reason
+
+
+def test_misprint_unsupported_helper_retains_default_exactly(monkeypatch):
+    import sys
+    from types import SimpleNamespace
+    obs = observation(["H_A", "C_A", "S_K", "D_K", "C_9"], ["S_2"], target=5000)
+    obs = replace(obs, round=replace(obs.round, hands_left=1))
+    monkeypatch.setitem(sys.modules, "balatro_ai_v2.solver.misprint_distribution",
+                        SimpleNamespace(best_misprint_play=lambda *a, **kw: None))
+    assert choose_tactical(obs, play(0), samples=2, model_misprint_probability=True) == choose_tactical(obs, play(0), samples=2)
+
+
+def test_misprint_probability_flag_is_boolean():
+    obs = observation(["H_A", "C_3"], ["S_2"])
+    with pytest.raises(ValueError, match="boolean"):
+        choose_tactical(obs, play(0), model_misprint_probability=1)
+
+
+def test_real_misprint_distribution_final_hand_no_quit():
+    obs = observation(["H_A", "C_A", "S_K", "D_K", "C_9"], ["S_2"], target=5000)
+    obs = replace(obs, round=replace(obs.round, hands_left=1),
+                  jokers=(PublicItem("j_misprint", "Misprint", "JOKER"),))
+    choice = choose_tactical(obs, play(0, 1, 2, 3), samples=2, model_misprint_probability=True)
+    assert isinstance(choice.action, DiscardCards)
+    assert "current maximum loses" in choice.reason
+    assert choice.samples == 2
+
+
+@pytest.mark.parametrize("probability,maximum,expect_discard", [(1, 6000, False), (0, 50, True)])
+def test_misprint_certain_clear_and_impossible_current_play(monkeypatch, probability, maximum, expect_discard):
+    import sys
+    from types import SimpleNamespace
+    obs = observation(["H_A", "C_A", "S_K", "D_K", "C_9"], ["S_2"], target=5000)
+    obs = replace(obs, round=replace(obs.round, hands_left=1),
+                  jokers=(PublicItem("j_misprint", "Misprint", "JOKER"),))
+    baseline = play(0, 1, 2, 3)
+    def best(o, target, preferred=None):
+        return SimpleNamespace(action=baseline, expected_score=maximum, family="Two Pair",
+                               clear_probability=probability, capped_score=min(maximum, target),
+                               maximum_score=maximum)
+    monkeypatch.setitem(sys.modules, "balatro_ai_v2.solver.misprint_distribution", SimpleNamespace(best_misprint_play=best))
+    choice = choose_tactical(obs, baseline, samples=2, model_misprint_probability=True)
+    assert isinstance(choice.action, DiscardCards) == expect_discard
+    assert choice.samples == (2 if expect_discard else 0)
+
+
 @pytest.mark.parametrize("boss", ["The Club", "The Pillar", "The Goad", "The Head", "The Window", "The Plant"])
 def test_static_debuff_bosses_are_opt_in_only(boss):
     obs = observation(["H_A", "C_3", "S_7"], ["H_4", "C_5", "D_6"], boss=boss, target=10000)

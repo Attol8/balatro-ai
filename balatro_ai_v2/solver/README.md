@@ -2,7 +2,7 @@
 
 Imported from `balatro-ai-v2` git revision `1c19cccce240222204b1edd0dc8b071875248842` using `git show`, not the mutable source checkout.
 
-This package preserves the source policy logic. Local transformations are namespace changes from `balatro_ai_v2` to `balatro_ai_v2.solver`, flattening `balatrobot.adapter` to `solver.adapter`, namespaced test fixture imports, adjusting a test's source-file lookup, and importing `PublicHistoryStep` directly from its defining `policy` module instead of its runner re-export. The package initializer is local. No candidate engine, trained model, or search framework is included. Optional lazy search constructors in `build_public_baseline` require modules outside this import; the supported integration is `PublicStrategicPolicy`.
+The initial import preserved the source policy logic. Its mechanical transformations were namespace changes from `balatro_ai_v2` to `balatro_ai_v2.solver`, flattening `balatrobot.adapter` to `solver.adapter`, namespaced test fixture imports, adjusting a test's source-file lookup, and importing `PublicHistoryStep` directly from its defining `policy` module instead of its runner re-export. The package initializer is local. Subsequent additions include local search layers and an optional public-root candidate wrapper; see [candidate provenance](CANDIDATE_PROVENANCE.md). No trained model or original strategy-search framework is included. Optional lazy search constructors in `build_public_baseline` require modules outside the import; the supported strategic integration is `PublicStrategicPolicy`.
 
 Use `adapter.to_public_observation(raw)` to cross the privileged/public boundary, `actions.iter_legal_actions(observation)` for public actions, and `PublicStrategicPolicy.choose_action(observation, action_source, history)` for decisions. `adapter.action_to_rpc(action, observation)` validates and converts the selected action. `public_codec.public_observation_to_data` and `public_observation_from_data` serialize only the typed public contract. Raw snapshots must never be sent to the policy.
 
@@ -12,6 +12,13 @@ Local changes after import: `public_scoring.py` excludes debuffed Twos from Wee
 Joker growth, correcting a 104-point overprediction found in the live development
 panel. `shop_search.py` and `tactical_search.py` are new local search layers; their
 estimates are not claims of full-game simulation or exact stochastic outcomes.
+
+`misprint_distribution.py` models one uncopied Misprint's 24 outcomes on a final
+hand. `SearchPolicy(model_misprint_probability=True)` enables the experimental
+comparison; every registered live policy leaves it off. Existing discard guards
+still apply. The same-input eight-state V5 audit changed no actions, so this is
+not a demonstrated improvement. Its 1/24 action margin is a heuristic, not a
+confidence bound; other scorer limitations remain.
 
 Original source SHA-256 digests (before namespace transformations):
 
