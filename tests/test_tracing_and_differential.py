@@ -71,6 +71,10 @@ def test_trace_is_exclusive_sequenced_and_hash_chained(tmp_path: Path) -> None:
 
     assert [row["seq"] for row in rows] == [0, 1, 2]
     assert rows[0]["event"] == "manifest"
+    assert rows[0]["schema_version"] == 2
+    assert rows[0]["manifest"]["action_contract"] == (
+        "public_legality_pack_inventory_sale_v10"
+    )
     with pytest.raises(FileExistsError):
         AuthorityTraceWriter(path, _manifest())
 
@@ -87,6 +91,36 @@ def test_trace_tampering_is_detected(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="hash mismatch"):
         read_verified_trace(path)
+
+
+def test_trace_rejects_duplicate_json_keys(tmp_path: Path) -> None:
+    path = tmp_path / "trace.jsonl"
+    path.write_text(
+        '{"schema_version":1,"schema_version":1,"run_id":"run-1",'
+        '"seq":0,"event":"manifest","previous_hash":null,"row_hash":"x"}\n'
+    )
+
+    with pytest.raises(ValueError, match="duplicate JSON key"):
+        read_verified_trace(path)
+
+
+def test_trace_rejects_boolean_schema_and_sequence_numbers(tmp_path: Path) -> None:
+    for name, row in (
+        (
+            "schema",
+            '{"schema_version":true,"run_id":"run-1","seq":0,'
+            '"event":"manifest","previous_hash":null,"row_hash":"x"}\n',
+        ),
+        (
+            "sequence",
+            '{"schema_version":1,"run_id":"run-1","seq":false,'
+            '"event":"manifest","previous_hash":null,"row_hash":"x"}\n',
+        ),
+    ):
+        path = tmp_path / f"{name}.jsonl"
+        path.write_text(row)
+        with pytest.raises(ValueError):
+            read_verified_trace(path)
 
 
 def test_trace_rejects_old_canonical_schema(tmp_path: Path) -> None:

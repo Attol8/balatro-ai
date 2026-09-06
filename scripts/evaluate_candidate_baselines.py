@@ -26,6 +26,7 @@ from balatro_ai_v2.evaluation_protocol import (
 )
 from balatro_ai_v2.jackdaw import JackdawBackend, JackdawUnavailable, verify_jackdaw_runtime
 from balatro_ai_v2.policy_process import PolicyProcess
+from balatro_ai_v2.policy_wire import POLICY_ACTION_CONTRACT
 from balatro_ai_v2.public_state import PublicBlind, PublicObservation
 from balatro_ai_v2.strategy_diagnostics import strategy_snapshot, summarize_strategy_results
 from balatro_ai_v2.strategy_tuning import StrategyTuning
@@ -147,7 +148,8 @@ def main() -> None:
             launch_headless=False,
             profile_mode="all_unlocked",
             inference_budget=(
-                "policy_action_contract=public_legality_v5;random_public_actions<=256;"
+                f"policy_action_contract={POLICY_ACTION_CONTRACT};"
+                "random_public_actions<=256;"
                 "tactical_candidates<=2048;draw_branches<=512;"
                 f"{exact_budget}"
                 f"policy_timeout_seconds={args.policy_timeout}"

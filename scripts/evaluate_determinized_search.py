@@ -58,6 +58,7 @@ from balatro_ai_v2.jackdaw import (
     JackdawUnavailable,
     verify_jackdaw_runtime,
 )
+from balatro_ai_v2.policy_wire import POLICY_ACTION_CONTRACT
 from balatro_ai_v2.strategy_diagnostics import (
     strategy_snapshot,
     summarize_strategy_results,
@@ -1473,6 +1474,7 @@ def main() -> None:
             profile_mode="all_unlocked",
             model_path=args.strategy_shadow_model,
             inference_budget=(
+                f"policy_action_contract={POLICY_ACTION_CONTRACT};"
                 f"determinized_rollouts;{budget.canonical()};{strategy_mode};{shadow_mode};"
                 f"workers={args.workers};ante_cap={args.ante_cap}"
             ),
@@ -1559,6 +1561,7 @@ def main() -> None:
             profile_mode="all_unlocked",
             model_path=args.strategy_shadow_model,
             inference_budget=(
+                f"policy_action_contract={POLICY_ACTION_CONTRACT};"
                 f"determinized_rollouts;{budget.canonical()};{strategy_mode};{shadow_mode};"
                 f"workers={args.workers};ante_cap={args.ante_cap}"
             ),
@@ -1760,6 +1763,7 @@ def main() -> None:
             profile_mode="all_unlocked",
             model_path=args.strategy_shadow_model,
             inference_budget=(
+                f"policy_action_contract={POLICY_ACTION_CONTRACT};"
                 f"determinized_rollouts;{budget.canonical()};{strategy_mode};{shadow_mode};"
                 f"workers={args.workers};ante_cap={args.ante_cap}"
             ),

@@ -42,6 +42,7 @@ from balatro_ai_v2.jackdaw import (
     verify_jackdaw_runtime,
 )
 from balatro_ai_v2.policy_process import PolicyProcess
+from balatro_ai_v2.policy_wire import POLICY_ACTION_CONTRACT
 
 
 def main() -> None:
@@ -132,7 +133,8 @@ def main() -> None:
                 launch_headless=args.headless_server,
                 profile_mode=profile_mode,
                 inference_budget=(
-                    "tactical_candidates<=2048;policy_action_contract=public_legality_v5;"
+                    "tactical_candidates<=2048;"
+                    f"policy_action_contract={POLICY_ACTION_CONTRACT};"
                     "random_public_actions<=256;draw_branches<=512;"
                     f"{exact_budget}"
                     f"shop_actions<={args.max_shop_actions};policy_timeout_seconds={args.policy_timeout}"

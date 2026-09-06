@@ -13,9 +13,11 @@ from typing import Any
 from uuid import uuid4
 
 from balatro_ai_v2.backend import BackendMetadata, RunSpec
+from balatro_ai_v2.policy_wire import POLICY_ACTION_CONTRACT
 
 
-TRACE_SCHEMA_VERSION = 1
+TRACE_SCHEMA_VERSION = 2
+LEGACY_TRACE_SCHEMA_VERSION = 1
 CANONICAL_SCHEMA_VERSION = 10
 
 
@@ -44,6 +46,7 @@ class TraceManifest:
     mods: tuple[str, ...] = ()
     trace_schema_version: int = TRACE_SCHEMA_VERSION
     canonical_schema_version: int = CANONICAL_SCHEMA_VERSION
+    action_contract: str = POLICY_ACTION_CONTRACT
 
 
 def build_manifest(
@@ -79,6 +82,7 @@ def build_manifest(
             "launch_fast": launch_fast,
             "launch_headless": launch_headless,
             "profile_mode": profile_mode,
+            "action_contract": POLICY_ACTION_CONTRACT,
         }
     )
     return TraceManifest(
@@ -103,6 +107,7 @@ def build_manifest(
         profile_mode=profile_mode,
         max_antes_cleared=max_antes_cleared,
         mods=mods,
+        action_contract=POLICY_ACTION_CONTRACT,
     )
 
 
@@ -135,45 +140,66 @@ class AuthorityTraceWriter:
 
 
 def read_verified_trace(path: Path) -> tuple[dict[str, Any], ...]:
+    return read_verified_trace_bytes(path.read_bytes())
+
+
+def read_verified_trace_bytes(raw: bytes) -> tuple[dict[str, Any], ...]:
     rows: list[dict[str, Any]] = []
     previous_hash: str | None = None
     run_id: str | None = None
-    with path.open(encoding="utf-8") as handle:
-        for line_number, line in enumerate(handle, 1):
-            try:
-                row = json.loads(line)
-            except json.JSONDecodeError as exc:
-                raise ValueError(
-                    f"invalid JSON on trace line {line_number}: {exc}"
-                ) from exc
-            if not isinstance(row, dict):
-                raise ValueError(f"trace line {line_number} is not an object")
-            if row.get("schema_version") != TRACE_SCHEMA_VERSION:
-                raise ValueError(
-                    f"unsupported schema version at trace line {line_number}"
-                )
-            row_run_id = row.get("run_id")
-            if not isinstance(row_run_id, str) or not row_run_id:
-                raise ValueError(f"missing run ID at trace line {line_number}")
-            if run_id is None:
-                run_id = row_run_id
-            elif row_run_id != run_id:
-                raise ValueError(f"run ID changed at trace line {line_number}")
-            if not isinstance(row.get("event"), str) or not row["event"]:
-                raise ValueError(f"missing event name at trace line {line_number}")
-            if row.get("seq") != len(rows):
-                raise ValueError(f"non-contiguous sequence at trace line {line_number}")
-            if row.get("previous_hash") != previous_hash:
-                raise ValueError(f"broken hash chain at trace line {line_number}")
-            claimed_hash = row.pop("row_hash", None)
-            if not isinstance(claimed_hash, str):
-                raise ValueError(f"missing row hash at trace line {line_number}")
-            actual_hash = _row_hash(row)
-            row["row_hash"] = claimed_hash
-            if claimed_hash != actual_hash:
-                raise ValueError(f"row hash mismatch at trace line {line_number}")
-            previous_hash = actual_hash
-            rows.append(row)
+    trace_schema_version: int | None = None
+    try:
+        lines = raw.decode("utf-8").splitlines()
+    except UnicodeDecodeError as exc:
+        raise ValueError("trace is not valid UTF-8") from exc
+    for line_number, line in enumerate(lines, 1):
+        try:
+            row = json.loads(line, object_pairs_hook=_reject_duplicate_json_keys)
+        except (json.JSONDecodeError, ValueError) as exc:
+            raise ValueError(
+                f"invalid JSON on trace line {line_number}: {exc}"
+            ) from exc
+        if not isinstance(row, dict):
+            raise ValueError(f"trace line {line_number} is not an object")
+        row_schema_version = row.get("schema_version")
+        if isinstance(row_schema_version, bool) or not isinstance(
+            row_schema_version, int
+        ) or row_schema_version not in {
+            LEGACY_TRACE_SCHEMA_VERSION,
+            TRACE_SCHEMA_VERSION,
+        }:
+            raise ValueError(f"unsupported schema version at trace line {line_number}")
+        if trace_schema_version is None:
+            trace_schema_version = row_schema_version
+        elif row_schema_version != trace_schema_version:
+            raise ValueError(f"schema version changed at trace line {line_number}")
+        row_run_id = row.get("run_id")
+        if not isinstance(row_run_id, str) or not row_run_id:
+            raise ValueError(f"missing run ID at trace line {line_number}")
+        if run_id is None:
+            run_id = row_run_id
+        elif row_run_id != run_id:
+            raise ValueError(f"run ID changed at trace line {line_number}")
+        if not isinstance(row.get("event"), str) or not row["event"]:
+            raise ValueError(f"missing event name at trace line {line_number}")
+        row_sequence = row.get("seq")
+        if (
+            isinstance(row_sequence, bool)
+            or not isinstance(row_sequence, int)
+            or row_sequence != len(rows)
+        ):
+            raise ValueError(f"non-contiguous sequence at trace line {line_number}")
+        if row.get("previous_hash") != previous_hash:
+            raise ValueError(f"broken hash chain at trace line {line_number}")
+        claimed_hash = row.pop("row_hash", None)
+        if not isinstance(claimed_hash, str):
+            raise ValueError(f"missing row hash at trace line {line_number}")
+        actual_hash = _row_hash(row)
+        row["row_hash"] = claimed_hash
+        if claimed_hash != actual_hash:
+            raise ValueError(f"row hash mismatch at trace line {line_number}")
+        previous_hash = actual_hash
+        rows.append(row)
     if not rows or rows[0].get("event") != "manifest":
         raise ValueError("trace must begin with exactly one manifest")
     if sum(row.get("event") == "manifest" for row in rows) != 1:
@@ -181,11 +207,35 @@ def read_verified_trace(path: Path) -> tuple[dict[str, Any], ...]:
     manifest = rows[0].get("manifest")
     if not isinstance(manifest, dict):
         raise ValueError("trace manifest payload is missing")
+    manifest_schema_version = manifest.get(
+        "trace_schema_version",
+        LEGACY_TRACE_SCHEMA_VERSION
+        if trace_schema_version == LEGACY_TRACE_SCHEMA_VERSION
+        else None,
+    )
+    if manifest_schema_version != trace_schema_version:
+        raise ValueError("trace row and manifest schema versions disagree")
+    if trace_schema_version == TRACE_SCHEMA_VERSION and (
+        not isinstance(manifest.get("action_contract"), str)
+        or not manifest["action_contract"]
+    ):
+        raise ValueError("trace manifest has no public action contract")
     if manifest.get("canonical_schema_version") != CANONICAL_SCHEMA_VERSION:
         raise ValueError("unsupported canonical schema version")
     if manifest.get("profile_mode") not in {"all_unlocked", "career"}:
         raise ValueError("trace manifest has no supported profile mode")
     return tuple(rows)
+
+
+def _reject_duplicate_json_keys(
+    pairs: list[tuple[str, object]],
+) -> dict[str, object]:
+    result: dict[str, object] = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError(f"duplicate JSON key {key!r}")
+        result[key] = value
+    return result
 
 
 def _row_hash(row: dict[str, object]) -> str:

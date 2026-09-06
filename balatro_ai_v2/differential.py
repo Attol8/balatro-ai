@@ -45,6 +45,7 @@ _DETERMINISM_MANIFEST_FIELDS = (
     "profile_mode",
     "mods",
     "canonical_schema_version",
+    "action_contract",
 )
 
 

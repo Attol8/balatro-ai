@@ -1728,6 +1728,49 @@ traces remain in the three named local evidence directories because they total
 roughly 100 MB. The capability is now authority-certified and may enter public
 strategic options and expert trajectory capture.
 
+Expert-trajectory admission design: build the learning input firewall before
+collecting or training on demonstrations. Use a separate schema from rollout
+teacher records: one opaque complete-run group contains an ordered sequence of
+typed public `(before, action, after)` transitions, the exact legal candidate
+list reconstructed under `public_legality_pack_inventory_sale_v10`, the unique
+demonstrated index, safe capture/backend provenance, and only public terminal
+metrics. Intent and route labels remain absent because a played action does not
+prove the demonstrator's counterfactual plan.
+
+Import only hash-chained authoritative traces named in one strict cohort
+manifest with exact SHA-256 members. HMAC the source digest into an opaque run
+group and whitelist only `run_start.public`, transition action/public successor,
+safe manifest identity, and public `run_end` metrics; never copy run seed,
+authority raw/canonical frames, raw IDs/digests, RPC method/params/observations,
+or commands. Require a clean authoritative capture, one shared capture protocol,
+all cohort members, accepted-only transitions, public temporal continuity,
+legal and uniquely enumerated demonstrations, recomputed best-hand/outcome
+agreement, and terminal consistency. `ante_cap` is admissible for behavior
+coverage but explicitly censors long-horizon outcome labels; every other
+incomplete endpoint is inadmissible.
+
+Publish dataset and report all-or-nothing without overwriting. Materialize
+behavior examples with their complete public prefix, null intent/route, and a
+whole-run deterministic split helper. Preserve every exact legal candidate;
+decisions above the relational model's 512-action bound are counted unsupported
+and never truncated. Acceptance requires strict JSON round trip and stable
+digest, private/unknown-field rejection, hidden-twin equivalence after opaque
+provenance is ignored, zero split-group overlap, an organic pack-sale-to-choice
+fixture, and tensorization of every supported example. This increment has no
+model training or policy-influence authority.
+
+Admission hardening after adversarial review: advance authority traces to schema
+2 and bind the exact public action contract as a first-class manifest field;
+schema-1 traces remain readable for historical replay but are never expert
+inputs. The seed-free capture protocol binds controller/model/config identity,
+all execution and censoring bounds, launch/profile settings, exact BalatroBot
+metadata/capabilities, and declared deck/stake agreement. Reject semantic source
+duplicates, booleans in integer fields, rows beyond the declared decision cap,
+noncanonical output bytes, and bounded-resource overflow. Prove tensor support
+by actually tensorizing every claimed row with its prefix-derived public context.
+The dataset and report must share one previously nonexistent directory so one
+directory rename publishes both or neither.
+
 Strength replan: throughput is no longer the immediate score ceiling. Across
 the descriptive frozen v9/v10 trajectories, 340 of 365 losses (93.2%) end on
 Pair or Two Pair; 116 of 243 losses with a full Joker row have zero xMult roles

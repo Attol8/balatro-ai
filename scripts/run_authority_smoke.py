@@ -27,6 +27,7 @@ from balatro_ai_v2.balatrobot.process import (
 from balatro_ai_v2.balatrobot.runner import AuthorityRunner, NoBuySmokePolicy
 from balatro_ai_v2.balatrobot.tracing import AuthorityTraceWriter, build_manifest
 from balatro_ai_v2.policy_process import PolicyProcess
+from balatro_ai_v2.policy_wire import POLICY_ACTION_CONTRACT
 
 
 def main() -> None:
@@ -100,7 +101,7 @@ def main() -> None:
             policy = policy_process
             policy_name = f"{implementation_name}:process-v1"
             inference_budget = (
-                "policy_action_contract=public_legality_v5;"
+                f"policy_action_contract={POLICY_ACTION_CONTRACT};"
                 f"policy_timeout_seconds={args.policy_timeout}"
             )
         spec = RunSpec(deck=args.deck, stake=args.stake, seed=args.seed)
