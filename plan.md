@@ -122,8 +122,9 @@ Policy fingerprints and profile metadata belong in every experiment manifest.
    1 win / 19 losses, no errors or truncations; peak-hand median 20,083.5,
    maximum 175,500. The 95% Wilson win-rate interval is approximately 0.9–23.6%.
    This is not reliable performance.
-2. Now separately evaluate opt-in planet purchases with the same seeds and engine
-   profile; preserve the control policy. Inspect trajectories, not just averages.
+2. Completed the isolated planet-purchase comparison with the same seeds/profile:
+   1/20 wins, no errors/truncations, identical winning seed. D0000013 lost at
+   Ante 6 instead of 7; no evidence of improvement. Do not promote this variant.
 3. Address the largest evidenced remaining failure with one isolated change.
 4. Freeze a materially stronger policy before opening held-out H seeds. Report
    confidence intervals, errors, truncations and score distributions with wins.
@@ -142,12 +143,18 @@ bounded history-based hidden-joker belief model is being developed for Amber
 Acorn; it must not infer the actual hidden permutation. Shop purchase placement
 is under review because appending Blueprint undervalues its available copies.
 
-After the planet ablation, evaluate `search-v2` on the same development suite.
+Now evaluate `search-v2` on the same development suite.
 It combines the independently tested Green, boss, ordering, remembered-inventory,
 and executable Blueprint-placement changes. This is a package comparison, not
 individual causal attribution; isolated switches remain available for regressions.
 The scorer's missing deterministic copier targets are also being corrected from
 installed source. Record that physics revision explicitly rather than pretending
-it is the old control. Planet purchasing remains separate pending its results.
+it is the old control. Planet purchasing remains separate following its negative
+development comparison.
+
+The combined run is frozen at clean revision
+`a619afc` in `runs/search-v2-001/`. Full suite: 666 passing tests. The isolated
+planet evidence is retained in `runs/search-planets-001/`; it is not included
+in the combined policy.
 
 The milestone remains incomplete until live performance supports reliable wins.
