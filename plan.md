@@ -1613,6 +1613,121 @@ regressions all preserve legacy output, independently legal actions, and
 fail-closed behavior. Retain the exact local cleanup, but do not claim a
 full-run improvement without a matched replay.
 
+Pack-phase inventory-sale design: admit only vanilla's observable sale button
+for owned inventory while a known vanilla booster remains open. The dumped
+vanilla `Card:can_sell_card` has no pack exclusion, and its focus UI attaches
+the sell action to owned Joker and consumable areas independently of booster
+state. Pinned Jackdaw already permits `SellCard` in `PACK_OPENING`; the missing
+boundaries are this repository's public legality and BalatroBot's endpoint
+state/completion contract. Split sale phases from held-use phases, append
+visible non-Eternal Joker sales and consumable sales after the existing pack
+choice roots, and admit them only for ARCANA, CELESTIAL, SPECTRAL, STANDARD, or
+BUFFOON. SMODS and unknown packs remain fail closed. Do not enable held
+consumable use, hand/Joker/consumable reorder, pack-offer sale, or any composite
+action in this slice.
+
+The authority endpoint must accept the five vanilla pack states and complete
+only when the same pack state/area remains open with its choice count unchanged,
+in addition to the existing exact money and sold-card disappearance checks.
+Shop and selecting-hand behavior must remain unchanged. Add exact public
+legality/order, Eternal/hidden, unknown-pack, RPC, semantic-label, candidate
+transition, Campfire/selling-self, and readiness-patch source tests. Run the
+complete suite and candidate public round trips before committing. Then use a
+deterministic public coverage policy on a predeclared fresh development scan to
+reach one natural pack-phase inventory sale in real Balatro and replay the
+whole trace through pinned Jackdaw with zero observed-state mismatch. Until
+that organic transition passes, the action is provisional contract coverage
+and cannot enter strength search or teacher collection.
+
+The organic gate is preregistered on fresh development seeds 2501-2520,
+Red/White, deterministic `pack_sale` coverage policy, three shop actions,
+mixed pack selection, Ante cap 3, and 300 decisions. Run the complete range;
+do not select a successful seed after inspection. The gate requires at least
+one accepted Joker-or-consumable sale whose public pre-state is PACK, with the
+same pack kind, offer, and remaining choice count after the sale, plus zero
+authority rejection and zero Jackdaw observed-state mismatch across every
+completed trace. The installed endpoint and readiness patch are bound by
+SHA-256 `6cc921acb0f3778bf6d5fda461c0a419fe39c23aa44390481840253f763aee69`.
+
+The preregistered scan passed seed 2501 for 58/58 transitions with three
+organic pack sales, then stopped on seed 2502 after 35 exact transitions. The
+first mismatch is a hand-order tie after The Sun changed an original Diamond
+to Hearts and Ouija later changed every rank to Five. Vanilla `Card:set_base`
+preserves `base.suit_nominal_original` across both transformations; Jackdaw's
+`Card.set_base` reconstructs it from the current suit, so two otherwise equal
+Hearts reverse order on the next sorted draw. Repair this at the candidate
+wrapper boundary by temporarily preserving the existing original-suit nominal
+inside every non-initial `set_base` call. Do not normalize or ignore card order.
+Pin a constructed Sun-then-Ouija ordering regression and replay the complete
+seed-2502 authority trace before resuming the untouched 2501-2520 gate under a
+new exact output directory; the original stopped attempt remains evidence.
+The corrected ordering exposes one adjacent candidate defect when that same
+Ouija hand plays Five of a Kind: Jackdaw records the secret hand internally
+but leaves its `visible` flag false, so the bridge publishes a stale zero-play
+default. Vanilla reveals a secret hand on its first play. Patch the candidate's
+`HandLevels.record_play` only for this visibility transition and pin both the
+internal flag and public serializer output before continuing replay.
+Attempt 2 then passed seeds 2501-2502 and stopped at seed 2503 transition 3:
+the authority's newly offered Driver's License visibly reports an enhanced-card
+tally of zero, while Jackdaw leaves that runtime field absent until scoring.
+This is another `Card:update` parity gap, analogous to the existing
+Swashbuckler and Stencil refreshes. Derive the tally from the unique permanent
+playing cards across deck, hand, discard, and play; refresh owned, shop, and
+pack Driver's Licenses before projection; and test zero plus an enhanced card.
+Do not fill unrelated missing ability fields.
+After that repair seed 2503 reaches its first Standard-pack pick. The selected
+Wild Diamond Four is present with the correct modifier, but Jackdaw orders it
+after the otherwise identical plain card in `deck_composition`. Balatro sorts
+the serialized pipe-delimited key, where `W` precedes the next `|`; the bridge
+sorts a tuple, where empty string precedes `WILD`. Sort by the exact authority
+key and pin same-rank/suit plain-versus-modified ordering rather than treating
+the public list as unordered.
+Seed 2503 then replays through 48 transitions and differs only on the terminal
+loss snapshot: Balatro still exposes Turtle Bean's pre-decay hand limit 13,
+while Jackdaw synchronously applies the queued end-of-round decay and emits 12.
+This is the same authority timing boundary already proven for terminal Rental
+charges. The next exact diff shows that vanilla has already decremented the
+Joker's visible `h_size` from five to four but has not yet applied the queued
+CardArea size event. Capture only the hand limit when a live non-expiring
+Turtle Bean is present; on immediate GAME_OVER restore that limit while
+retaining the ability decay. Do not generalize to unobserved terminal Joker
+callbacks. Add a terminal-loss regression and continue full-trace replay.
+
+Attempt 3 passed seeds 2501--2505 in exact lockstep and stopped at seed 2506
+after 37 exact transitions. A Spectral-pack Cryptid then creates two copies of
+the selected Diamond Two. Vanilla creates them in hand and, as the pack closes,
+emplaces the newest copy first at the deck front; pinned Jackdaw creates fresh
+objects but appends them at the deck tail. Preserve exact observable deck order:
+capture the unique permanent-card identities before only a pack Cryptid use,
+require exactly its declared number of fresh copies afterward, move those
+copies to the deck front newest-first, and synchronize the permanent-card
+count. Pin the postcondition and replay all 49 seed-2506 transitions. Do not
+change held Cryptid behavior or treat hidden deck order as unordered.
+
+The continuation then passed seeds 2507--2515 and stopped at seed 2516 after
+41 exact transitions. The next cash-out offers Lucky Cat in Balatro but
+Arrowhead in Jackdaw. The earlier Arcana choice created two Lucky cards and
+both candidates expose them identically; however, pinned Jackdaw's private
+`deck_enhancements` pool-filter cache remains absent, so its enhancement-gated
+Joker pool excludes Lucky Cat. Refresh that private cache from unique permanent
+cards across deck, hand, discard, and play at the observation boundary, where
+the existing Driver's License projection already derives the same live set.
+Pin base/enhanced/deduplicated and removal cases, then replay the complete
+seed-2516 authority trace before resuming untouched seeds 2517--2520. Do not
+special-case Lucky Cat, alter RNG, or normalize the differing shop offer.
+
+Pack-sale organic result: pass the frozen seeds 2501--2520 gate after repairing
+the candidate defects exposed by the immutable authority traces. All 20 runs
+replay in observed lockstep for 1,009/1,009 accepted transitions with zero
+authority rejection. Sixty-six inventory sales occur while a vanilla pack is
+open (41 Jokers and 25 consumables); every one preserves the pack state, offer,
+and remaining choice count. The compact evidence summary and exact trace-set
+digest are committed at
+`runs/evidence/pack-inventory-sale-organic-v1-summary.json`; raw hash-chained
+traces remain in the three named local evidence directories because they total
+roughly 100 MB. The capability is now authority-certified and may enter public
+strategic options and expert trajectory capture.
+
 Strength replan: throughput is no longer the immediate score ceiling. Across
 the descriptive frozen v9/v10 trajectories, 340 of 365 losses (93.2%) end on
 Pair or Two Pair; 116 of 243 losses with a full Joker row have zero xMult roles

@@ -15,12 +15,18 @@ from balatro_ai_v2.actions import (
     DiscardCards,
     HandSlot,
     LeaveShop,
+    OpenedPackSlot,
     PackOfferSlot,
     PlayCards,
     RerollBoss,
     SelectBlind,
+    SellConsumable,
+    SellJoker,
     ShopSlot,
     SkipPack,
+    ConsumableSlot,
+    JokerSlot,
+    ChoosePackCard,
     action_from_data,
     iter_legal_actions,
 )
@@ -181,6 +187,36 @@ def test_candidate_deck_composition_matches_sparse_authority_wire_shape() -> Non
             "permanent_bonus": 0,
             "count": 1,
         },
+    ]
+
+
+def test_candidate_deck_composition_uses_authority_pipe_key_order() -> None:
+    pytest.importorskip("jackdaw")
+    from jackdaw.engine.card_factory import create_playing_card
+    from jackdaw.engine.data.enums import Rank, Suit
+
+    plain = create_playing_card(Suit.DIAMONDS, Rank.FOUR)
+    wild = create_playing_card(
+        Suit.DIAMONDS,
+        Rank.FOUR,
+        enhancement="m_wild",
+        seal="Purple",
+    )
+
+    composition = jackdaw._jackdaw_deck_composition(
+        {"deck": [plain, wild], "hand": [], "discard_pile": [], "play": []}
+    )
+
+    assert composition == [
+        {
+            "rank": "4",
+            "suit": "D",
+            "enhancement": "WILD",
+            "seal": "PURPLE",
+            "permanent_bonus": 0,
+            "count": 1,
+        },
+        {"rank": "4", "suit": "D", "permanent_bonus": 0, "count": 1},
     ]
 
 
@@ -860,6 +896,91 @@ def test_stencil_display_xmult_tracks_visible_joker_slots(
     assert pack_stencil.ability["x_mult"] == 1
 
 
+def test_drivers_license_display_tally_tracks_permanent_enhancements() -> None:
+    base = object()
+    plain = SimpleNamespace(base=base, center_key="c_base")
+    enhanced = SimpleNamespace(base=base, center_key="m_bonus")
+    driver = SimpleNamespace(center_key="j_drivers_license", ability={})
+    shop_driver = SimpleNamespace(center_key="j_drivers_license", ability={})
+    pack_driver = SimpleNamespace(center_key="j_drivers_license", ability={})
+    game_state = {
+        "deck": [plain, enhanced],
+        "hand": [],
+        "discard_pile": [],
+        "play": [enhanced],
+        "jokers": [driver],
+        "shop_cards": [shop_driver],
+        "pack_cards": [pack_driver],
+    }
+
+    jackdaw._refresh_drivers_license_tally(game_state)
+
+    assert driver.ability["driver_tally"] == 1
+    assert shop_driver.ability["driver_tally"] == 1
+    assert pack_driver.ability["driver_tally"] == 1
+
+    game_state["deck"] = [plain]
+    game_state["play"] = []
+    jackdaw._refresh_drivers_license_tally(game_state)
+
+    assert driver.ability["driver_tally"] == 0
+
+
+def test_candidate_refreshes_enhancement_gated_joker_pool_state() -> None:
+    base = object()
+    plain = SimpleNamespace(base=base, center_key="c_base")
+    lucky = SimpleNamespace(base=base, center_key="m_lucky")
+    gold = SimpleNamespace(base=base, center_key="m_gold")
+    game_state = {
+        "deck": [plain, lucky],
+        "hand": [gold],
+        "discard_pile": [],
+        "play": [lucky],
+        "deck_enhancements": {"m_stale"},
+    }
+
+    jackdaw._refresh_deck_enhancements(game_state)
+
+    assert game_state["deck_enhancements"] == {"m_gold", "m_lucky"}
+
+    game_state["deck"] = [plain]
+    game_state["hand"] = []
+    game_state["play"] = []
+    jackdaw._refresh_deck_enhancements(game_state)
+
+    assert game_state["deck_enhancements"] == set()
+
+
+def test_candidate_places_pack_cryptid_copies_at_deck_front_newest_first() -> None:
+    original = SimpleNamespace(center_key="c_base")
+    other = SimpleNamespace(center_key="c_base")
+    first_copy = SimpleNamespace(center_key="c_base")
+    second_copy = SimpleNamespace(center_key="c_base")
+    backend = object.__new__(jackdaw.JackdawBackend)
+    backend._backend = SimpleNamespace(
+        _gs={
+            "deck": [original, other, first_copy, second_copy],
+            "hand": [],
+            "discard_pile": [],
+            "play": [],
+            "playing_cards_count": 2,
+        }
+    )
+
+    changed = backend._place_pack_cryptid_copies(
+        (frozenset({id(original), id(other)}), 2)
+    )
+
+    assert changed is True
+    assert backend._backend._gs["deck"] == [
+        second_copy,
+        first_copy,
+        original,
+        other,
+    ]
+    assert backend._backend._gs["playing_cards_count"] == 4
+
+
 def test_card_modifier_normalization_preserves_explicit_empty_effect(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1029,6 +1150,141 @@ def test_candidate_planet_buy_and_use_is_atomic_at_full_capacity() -> None:
         assert constellation.ability["x_mult"] == pytest.approx(before_x_mult + 0.1)
     finally:
         backend.close()
+
+
+def test_candidate_pack_inventory_sales_preserve_pack_and_fire_campfire() -> None:
+    pytest.importorskip("jackdaw")
+    from jackdaw.engine.actions import GamePhase
+    from jackdaw.engine.card_factory import create_consumable, create_joker
+
+    backend = jackdaw.JackdawBackend()
+    try:
+        backend.reset(RunSpec("RED", "WHITE", "9005"))
+        game_state = backend._backend._gs
+        campfire = create_joker("j_campfire")
+        owned = create_joker("j_joker")
+        owned.sell_cost = 2
+        consumable = create_consumable("c_mercury")
+        consumable.sell_cost = 1
+        offered = create_joker("j_greedy_joker")
+        game_state["phase"] = GamePhase.PACK_OPENING
+        game_state["pack_type"] = "Buffoon"
+        game_state["pack_cards"] = [offered]
+        game_state["pack_choices_remaining"] = 1
+        game_state["jokers"] = [campfire, owned]
+        game_state["joker_slots"] = 2
+        game_state["consumables"] = [consumable]
+        game_state["consumable_slots"] = 2
+        game_state["dollars"] = 10
+        backend.observe()
+
+        before = backend.current_public
+        assert before is not None
+        assert before.pack_kind == "BUFFOON"
+        assert ChoosePackCard(OpenedPackSlot(0)) not in tuple(
+            iter_legal_actions(before)
+        )
+        assert SellJoker(JokerSlot(1)) in tuple(iter_legal_actions(before))
+
+        sold_joker = backend.step(SellJoker(JokerSlot(1)))
+
+        after_joker = backend.current_public
+        assert sold_joker.status == "accepted"
+        assert after_joker is not None
+        assert after_joker.phase.value == "PACK"
+        assert after_joker.pack_kind == "BUFFOON"
+        assert after_joker.pack_choices_remaining == 1
+        assert len(after_joker.opened_pack) == 1
+        assert after_joker.money == 12
+        assert campfire.ability["x_mult"] == pytest.approx(1.25)
+        assert ChoosePackCard(OpenedPackSlot(0)) in tuple(
+            iter_legal_actions(after_joker)
+        )
+
+        sold_consumable = backend.step(SellConsumable(ConsumableSlot(0)))
+
+        after_consumable = backend.current_public
+        assert sold_consumable.status == "accepted"
+        assert after_consumable is not None
+        assert after_consumable.phase.value == "PACK"
+        assert after_consumable.pack_kind == "BUFFOON"
+        assert after_consumable.pack_choices_remaining == 1
+        assert len(after_consumable.opened_pack) == 1
+        assert after_consumable.money == 13
+        assert campfire.ability["x_mult"] == pytest.approx(1.5)
+    finally:
+        backend.close()
+
+
+def test_candidate_preserves_original_suit_tiebreaker_across_sun_and_ouija() -> (
+    None
+):
+    pytest.importorskip("jackdaw")
+    from jackdaw.engine.card_factory import create_playing_card
+    from jackdaw.engine.data.enums import Rank, Suit
+    from jackdaw.engine.game import _sort_hand_desc
+
+    changed_diamond = create_playing_card(Suit.DIAMONDS, Rank.FOUR)
+    original_heart = create_playing_card(Suit.HEARTS, Rank.JACK)
+    assert changed_diamond.base is not None
+    assert original_heart.base is not None
+    diamond_original = changed_diamond.base.suit_nominal_original
+    heart_original = original_heart.base.suit_nominal_original
+    backend = jackdaw.JackdawBackend()
+
+    with backend._original_suit_nominal_compatibility():
+        changed_diamond.change_suit("Hearts")
+        changed_diamond.change_rank("5")
+        original_heart.change_rank("5")
+
+    hand = [changed_diamond, original_heart]
+    _sort_hand_desc(hand)
+
+    assert changed_diamond.base is not None
+    assert original_heart.base is not None
+    assert changed_diamond.base.suit_nominal_original == diamond_original
+    assert original_heart.base.suit_nominal_original == heart_original
+    assert hand == [original_heart, changed_diamond]
+
+
+def test_candidate_reveals_secret_hand_on_first_play() -> None:
+    pytest.importorskip("jackdaw")
+    from jackdaw.bridge.serializer import serialize_hands
+    from jackdaw.engine.data.hands import HandType
+    from jackdaw.engine.hand_levels import HandLevels
+
+    hand_levels = HandLevels()
+    backend = jackdaw.JackdawBackend()
+
+    with backend._secret_hand_visibility_compatibility():
+        hand_levels.record_play(HandType.FIVE_OF_A_KIND)
+
+    state = hand_levels.get_state(HandType.FIVE_OF_A_KIND)
+    assert state.visible is True
+    assert state.played == 1
+    assert serialize_hands(hand_levels)["Five of a Kind"]["played"] == 1
+
+
+def test_candidate_defers_nonexpiring_turtle_bean_decay_at_terminal_snapshot() -> (
+    None
+):
+    turtle = SimpleNamespace(
+        center_key="j_turtle_bean",
+        ability={"extra": {"h_size": 5, "h_mod": 1}},
+    )
+    backend = object.__new__(jackdaw.JackdawBackend)
+    backend._backend = SimpleNamespace(
+        _gs={"hand_size": 13, "jokers": [turtle]}
+    )
+
+    snapshot = backend._terminal_turtle_bean_snapshot("play")
+    backend._backend._gs["hand_size"] = 12
+    turtle.ability["extra"]["h_size"] = 4
+    backend._restore_terminal_turtle_bean(snapshot)
+
+    assert backend._backend._gs["hand_size"] == 13
+    assert turtle.ability["extra"] == {"h_size": 4, "h_mod": 1}
+    assert backend._terminal_turtle_bean_snapshot("gamestate") is None
 
 
 def test_candidate_buy_and_use_rejection_does_not_mutate_state() -> None:

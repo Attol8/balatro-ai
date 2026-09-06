@@ -71,7 +71,7 @@ from balatro_ai_v2.strategy_context import PublicStrategyContext
 from balatro_ai_v2.strategy_options import StrategyIntent
 
 
-STRATEGY_MODEL_FORMAT_VERSION: Final = 10
+STRATEGY_MODEL_FORMAT_VERSION: Final = 11
 
 
 class StrategyModelError(RuntimeError):

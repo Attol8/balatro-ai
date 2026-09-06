@@ -22,6 +22,7 @@ from balatro_ai_v2.actions import (
     ReorderJokers,
     RerollBoss,
     SelectBlind,
+    SellConsumable,
     SellJoker,
     ShopSlot,
     SkipPack,
@@ -393,8 +394,13 @@ def test_pack_generation_preserves_capacity_and_hidden_target_filters() -> None:
     observation = to_public_observation(raw)
 
     actions = tuple(iter_legal_actions(observation))
+    pack_actions = tuple(
+        action
+        for action in actions
+        if isinstance(action, (ChoosePackCard, SkipPack))
+    )
 
-    assert tuple(action_to_data(action) for action in actions) == tuple(
+    assert tuple(action_to_data(action) for action in pack_actions) == tuple(
         action_to_data(action) for action in _legacy_pack_actions(observation)
     )
     assert all(is_legal(observation, action) for action in actions)
@@ -692,6 +698,60 @@ def test_smods_pack_does_not_imply_unproved_inventory_reorder_permission() -> No
         for action in iter_legal_actions(observation)
     )
     assert all(not is_legal(observation, action) for action in reorders)
+
+
+def test_vanilla_pack_appends_owned_inventory_sales_after_pack_choices() -> None:
+    raw = state("BUFFOON_PACK")
+    eternal = item_card("j_eternal", card_id=41, kind="JOKER")
+    eternal["modifier"] = {"eternal": True}
+    raw["jokers"] = {
+        "cards": [
+            item_card("j_joker", card_id=40, kind="JOKER"),
+            eternal,
+        ],
+        "count": 2,
+        "highlighted_limit": 1,
+        "limit": 5,
+    }
+    raw["consumables"] = {
+        "cards": [item_card("c_mercury", card_id=50, kind="PLANET")],
+        "count": 1,
+        "highlighted_limit": 1,
+        "limit": 2,
+    }
+    observation = to_public_observation(raw)
+
+    actions = tuple(iter_legal_actions(observation))
+    sales = tuple(
+        action
+        for action in actions
+        if isinstance(action, (SellJoker, SellConsumable))
+    )
+
+    assert sales == (SellJoker(JokerSlot(0)), SellConsumable(ConsumableSlot(0)))
+    assert actions[-2:] == sales
+    assert all(is_legal(observation, action) for action in sales)
+    assert not is_legal(observation, SellJoker(JokerSlot(1)))
+    assert not any(isinstance(action, UseConsumable) for action in actions)
+    assert action_to_rpc(sales[0], observation) == ("sell", {"joker": 0})
+    assert action_to_rpc(sales[1], observation) == ("sell", {"consumable": 0})
+
+
+def test_smods_pack_inventory_sales_fail_closed() -> None:
+    raw = state("BUFFOON_PACK")
+    raw["state"] = "SMODS_BOOSTER_OPENED"
+    raw["jokers"]["cards"] = [item_card("j_joker", card_id=40, kind="JOKER")]
+    raw["jokers"]["count"] = 1
+    raw["consumables"]["cards"] = [
+        item_card("c_mercury", card_id=50, kind="PLANET")
+    ]
+    raw["consumables"]["count"] = 1
+    observation = to_public_observation(raw)
+    sales = (SellJoker(JokerSlot(0)), SellConsumable(ConsumableSlot(0)))
+    actions = tuple(iter_legal_actions(observation))
+
+    assert all(not is_legal(observation, action) for action in sales)
+    assert all(action not in actions for action in sales)
 
 
 def test_eternal_joker_cannot_be_sold() -> None:

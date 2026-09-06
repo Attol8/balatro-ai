@@ -1400,7 +1400,7 @@ def _route_preregistration_args(tmp_path: Path, module):
         "immutable_batches": True,
         "collection_only": True,
         "training_authorized": False,
-        "schema_version": 11,
+        "schema_version": 12,
         "implementation_revision": "a" * 40,
         "expected_source_digest": "b" * 64,
         "seed_provenance": "development",
@@ -1488,7 +1488,7 @@ def test_route_preregistration_binds_exact_action_inert_batch(tmp_path) -> None:
 
     assert binding["protocol_id"] == module.ROUTE_TEACHER_PROTOCOL_ID
     assert binding["batch_id"] == "batch-01"
-    assert binding["schema_version"] == 11
+    assert binding["schema_version"] == 12
     assert binding["collection_only"] is True
     assert binding["training_authorized"] is False
     assert binding["expected_source_digest"] == spec["expected_source_digest"]
@@ -1631,7 +1631,7 @@ def test_route_pilot_reauthenticates_dataset_report_and_support_gate(
         "immutable_batches": True,
         "collection_only": True,
         "training_authorized": False,
-        "schema_version": 11,
+        "schema_version": 12,
         "implementation_revision": spec["implementation_revision"],
         "expected_source_digest": spec["expected_source_digest"],
         "candidate_runtime": candidate_runtime,
@@ -1677,7 +1677,7 @@ def test_route_pilot_reauthenticates_dataset_report_and_support_gate(
         "strategy_teacher_dataset": {
             "status": "written",
             "mode": "route_terminal_paired_utility",
-            "schema_version": 11,
+            "schema_version": 12,
             "sha256": teacher_digest,
             "records": len(records),
             "groups": len({record.run_group for record in records}),

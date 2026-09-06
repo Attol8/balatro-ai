@@ -228,8 +228,18 @@ PublicAction: TypeAlias = (
 )
 
 
-_SELL_USE_PHASES = {Phase.SELECTING_HAND, Phase.SHOP}
+_USE_PHASES = {Phase.SELECTING_HAND, Phase.SHOP}
 _REORDER_PHASES = {Phase.SELECTING_HAND, Phase.SHOP}
+_VANILLA_PACK_KINDS = frozenset(
+    {"ARCANA", "CELESTIAL", "SPECTRAL", "STANDARD", "BUFFOON"}
+)
+
+
+def _inventory_sale_phase_legal(observation: PublicObservation) -> bool:
+    return observation.phase in _USE_PHASES or (
+        observation.phase == Phase.PACK
+        and observation.pack_kind in _VANILLA_PACK_KINDS
+    )
 
 
 def iter_legal_actions(observation: PublicObservation) -> Iterator[PublicAction]:
@@ -297,7 +307,7 @@ def iter_legal_actions(observation: PublicObservation) -> Iterator[PublicAction]
                         tuple(HandSlot(target) for target in target_indexes),
                     )
 
-    if phase in _SELL_USE_PHASES:
+    if _inventory_sale_phase_legal(observation):
         for index, item in enumerate(observation.jokers):
             if isinstance(item, HiddenJokerSlot):
                 continue
@@ -308,6 +318,8 @@ def iter_legal_actions(observation: PublicObservation) -> Iterator[PublicAction]
             sell = SellConsumable(ConsumableSlot(index))
             if is_legal(observation, sell):
                 yield sell
+            if phase == Phase.PACK:
+                continue
             for target_indexes in iter_public_targets(observation, item, from_pack=False):
                 use = UseConsumable(
                     ConsumableSlot(index),
@@ -423,7 +435,7 @@ def is_legal(observation: PublicObservation, action: PublicAction) -> bool:
         )
     if isinstance(action, SellJoker):
         return (
-            phase in _SELL_USE_PHASES
+            _inventory_sale_phase_legal(observation)
             and action.joker.value < len(observation.jokers)
             and not isinstance(
                 observation.jokers[action.joker.value], HiddenJokerSlot
@@ -431,9 +443,11 @@ def is_legal(observation: PublicObservation, action: PublicAction) -> bool:
             and not observation.jokers[action.joker.value].eternal
         )
     if isinstance(action, SellConsumable):
-        return phase in _SELL_USE_PHASES and action.consumable.value < len(observation.consumables)
+        return _inventory_sale_phase_legal(
+            observation
+        ) and action.consumable.value < len(observation.consumables)
     if isinstance(action, UseConsumable):
-        if phase not in _SELL_USE_PHASES or action.consumable.value >= len(observation.consumables):
+        if phase not in _USE_PHASES or action.consumable.value >= len(observation.consumables):
             return False
         item = observation.consumables[action.consumable.value]
         if action.targets and phase != Phase.SELECTING_HAND:

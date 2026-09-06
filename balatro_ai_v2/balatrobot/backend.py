@@ -68,7 +68,7 @@ class BalatroBotBackend:
         self.metadata = BackendMetadata(
             backend_name="BalatroBot/LÖVE",
             backend_version=self.backend_version,
-            adapter_version="7",
+            adapter_version="8",
             game_version=self.game_version,
             runtime_version=self.runtime_version,
             capabilities=BackendCapabilities(

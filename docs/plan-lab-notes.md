@@ -4770,3 +4770,30 @@ Across 300 loaded repetitions, enumeration p50/p95 moved from
 2,101.5/5,883.3 to 1,799.6/4,811.7 microseconds. This is local evidence only;
 no end-to-end speed claim is made while the six-worker capability panel is
 running concurrently.
+
+### Pack-phase inventory-sale authority certification (2026-09-06)
+
+Public legality and both candidate adapters now admit selling owned visible,
+non-Eternal Jokers or owned consumables while a known vanilla booster is open.
+The action remains fail closed for unknown/SMODS packs and does not admit held
+use, reorder, pack-offer sale, or composite replacement actions. The readiness
+patch SHA-256 is
+`6cc921acb0f3778bf6d5fda461c0a419fe39c23aa44390481840253f763aee69`.
+
+The frozen Red/White seeds 2501--2520 campaign exposed five independent
+candidate parity defects while retaining immutable authority traces: original
+suit-nominal loss across Sun/Ouija transformations, unrevealed secret-hand
+state, missing Driver's License display tally, non-Lua deck-composition sort,
+and premature terminal Turtle Bean hand-size application. Aggregate replay
+then exposed pack Cryptid copy order on seed 2506, while the continuation found
+a stale enhancement-gated Joker pool on seed 2516. Each was repaired at the
+candidate boundary with a focused regression; no observation was normalized
+away and no failed seed was selected out.
+
+The final aggregate gate passes 20/20 runs and 1,009/1,009 transitions with
+zero authority rejection or observed-state mismatch. It contains 66 organic
+pack-phase inventory sales: 41 Jokers and 25 consumables. Every sale preserves
+the exact pack state, opened offer, and remaining choice count. The committed
+compact summary binds every raw trace hash and the aggregate trace-set digest;
+the three raw directories remain local because their hash-chained observations
+total roughly 100 MB. This certifies action fidelity, not policy strength.
