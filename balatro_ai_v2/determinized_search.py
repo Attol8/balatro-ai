@@ -21,7 +21,7 @@ import time
 from collections import Counter
 from contextlib import contextmanager
 from copy import deepcopy
-from collections.abc import Iterator, Sequence
+from collections.abc import Callable, Iterator, Sequence
 from dataclasses import asdict, dataclass, field, is_dataclass
 
 from balatro_ai_v2.actions import (
@@ -574,8 +574,12 @@ class SearchCounters:
 class DeterminizedSearchPolicy:
     """Roots at strategic decisions, valued by paired determinized rollouts."""
 
-    backend: JackdawBackend
+    backend: JackdawBackend | None
     continuation: PublicPolicy
+    root_factory: Callable[
+        [PublicObservation, Sequence[PublicHistoryStep], str, int],
+        JackdawBackend,
+    ] | None = None
     rollout_continuation: PublicPolicy | None = None
     nonce: str = "search-v1"
     budget: RolloutBudget = RolloutBudget()
@@ -722,12 +726,7 @@ class DeterminizedSearchPolicy:
         frozen_samples: list[FrozenJackdawBackend] = []
         try:
             for index in range(self.budget.samples):
-                sample = sample_candidate(
-                    self.backend,
-                    observation,
-                    history,
-                    sample_seed(observation, self.nonce, index),
-                )
+                sample = self._sample_root(observation, history, self.nonce, index)
                 try:
                     frozen_samples.append(freeze_backend(sample))
                 finally:
@@ -1014,12 +1013,7 @@ class DeterminizedSearchPolicy:
         frozen_samples: list[FrozenJackdawBackend] = []
         try:
             for index in range(self.budget.samples):
-                sample = sample_candidate(
-                    self.backend,
-                    observation,
-                    history,
-                    sample_seed(observation, self.nonce, index),
-                )
+                sample = self._sample_root(observation, history, self.nonce, index)
                 try:
                     frozen_samples.append(freeze_backend(sample))
                 finally:
@@ -1745,15 +1739,11 @@ class DeterminizedSearchPolicy:
                 time.perf_counter_ns() if self.timing is not None else None
             )
             try:
-                sample = sample_candidate(
-                    self.backend,
+                sample = self._sample_root(
                     observation,
                     history,
-                    sample_seed(
-                        observation,
-                        f"{self.nonce}:success-terminal-v1",
-                        sample_index,
-                    ),
+                    f"{self.nonce}:success-terminal-v1",
+                    sample_index,
                 )
                 try:
                     frozen_sample = freeze_backend(sample)
@@ -2031,6 +2021,22 @@ class DeterminizedSearchPolicy:
                 "clone",
                 time.perf_counter_ns() - started,
             )
+
+    def _sample_root(
+        self,
+        observation: PublicObservation,
+        history: Sequence[PublicHistoryStep],
+        nonce: str,
+        index: int,
+    ) -> JackdawBackend:
+        if self.root_factory is not None:
+            return self.root_factory(observation, history, nonce, index)
+        return sample_candidate(
+            self.backend,  # type: ignore[arg-type]
+            observation,
+            history,
+            sample_seed(observation, nonce, index),
+        )
 
     def _close_rollout_clone(
         self,

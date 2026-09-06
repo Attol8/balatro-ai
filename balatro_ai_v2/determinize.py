@@ -79,8 +79,10 @@ class FrozenJackdawBackend:
                 stale_shop_areas,
                 scalar_bridge_values,
                 lightweight_normalized,
+                card_sort_id_counter,
             ) = pickle.loads(self._payload)
             clone = JackdawBackend(lightweight=True)
+            _restore_card_sort_id_counter(card_sort_id_counter)
             clone._backend._gs = game_state
             clone._active_pack_cards = active_pack_cards
             clone._stale_shop_areas = stale_shop_areas
@@ -131,6 +133,7 @@ def freeze_backend(backend: JackdawBackend) -> FrozenJackdawBackend:
                 backend._stale_shop_areas,
                 tuple(getattr(backend, name) for name in _SCALAR_BRIDGE_FIELDS),
                 backend._lightweight_normalized,
+                _card_sort_id_floor(source_state),
             ),
             protocol=pickle.HIGHEST_PROTOCOL,
         )
@@ -145,6 +148,23 @@ def clone_backend(backend: JackdawBackend) -> JackdawBackend:
     """Deep-copy the candidate and its bridge compatibility state into a fresh backend."""
 
     return freeze_backend(backend).clone()
+
+
+def _card_sort_id_floor(game_state: Mapping[str, Any]) -> int:
+    """Largest live ID; future cards only need to sort after live cards."""
+
+    return max((int(card.sort_id) for card in _iter_cards(game_state)), default=0)
+
+
+def _restore_card_sort_id_counter(value: int) -> None:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise DeterminizationUnavailable("frozen card sort-ID counter is invalid")
+    # Jackdaw models Balatro's G.sort_id as a module global. Restoring it for
+    # every sequential branch prevents prior sibling rollouts from changing
+    # IDs (and therefore RNG pre-sort order) of newly created cards.
+    import jackdaw.engine.card as card_module
+
+    card_module._sort_id_counter = value
 
 
 def sample_candidate(

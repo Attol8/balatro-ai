@@ -67,6 +67,25 @@ def test_smoke_cli_accepts_isolated_public_baseline() -> None:
     assert args.policy_timeout == 8
 
 
+def test_smoke_cli_exposes_public_root_search_budget() -> None:
+    args = _load_script().build_parser().parse_args(
+        [
+            "--policy",
+            "public-search",
+            "--search-samples",
+            "2",
+            "--search-max-steps",
+            "80",
+            "--no-search-strategy-options",
+        ]
+    )
+
+    assert args.policy == "public-search"
+    assert args.search_samples == 2
+    assert args.search_max_steps == 80
+    assert not args.search_strategy_options
+
+
 def test_smoke_cli_exposes_candidate_trace_replay() -> None:
     args = _load_script().build_parser().parse_args(
         [

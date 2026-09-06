@@ -1892,6 +1892,39 @@ no forbidden import or private input in the policy child, fail-closed fallback
 coverage, complete suite, then a fresh non-fast live run whose action decisions
 are computed online rather than selected by a seed-specific transcript.
 
+Public-root implementation slice: begin with `BLIND_SELECT`, because a fresh
+root there can already search the complete next-Ante route while avoiding the
+much larger problem of reconstructing a partially consumed hand. The builder
+is evaluator-parent-only and accepts exactly `PublicObservation`, public
+history, a policy nonce, and a particle index. It initializes a clean pinned
+Jackdaw run with a seed derived from those public inputs, replaces the visible
+deck multiset, owned items and their admitted tooltip runtimes, hand levels,
+economy, area limits, vouchers, blind identities/status/tags, and round
+counters, then samples every unobserved target and ordering from its own RNG.
+It rejects non-empty hands, a remaining/full-deck mismatch, hidden Jokers,
+unknown cards/items/blinds/tags, incomplete history, and any owned mechanic
+whose decision-bearing runtime is not in the public contract. The final gate is
+an exact public round trip before the root can be frozen or rolled out. Tests
+must cover an organic later-Ante state, deterministic same-index hidden twins,
+distinct hidden futures across particle indexes, structural forbidden-input
+guards, and fail-closed rejection. Only after this constructor is sound should
+the live policy wrapper call the existing scalar search; unsupported phases
+continue through the public strategic control.
+
+Public-root slice result: implemented and wired through an isolated JSONL
+search worker. Organic Red/White play round-trips at the initial boundary and
+through ten later blind-selection decisions, including modified decks, owned
+Jokers, consumables, vouchers, hand levels, and process-owned hidden poker-hand
+iteration order. Same public input/nonce/index rebuilds the same canonical
+private belief root; another index changes the hidden root without changing its
+public projection. Frozen rollout branches now restore a root-local live-card
+ID floor, closing a discovered sibling-order dependence when shops create new
+cards. Unsupported skip-tag history, The Ox, The Pillar, incomplete public
+runtime, nonempty hands, transient areas, and malformed histories fall back to
+control. The complete suite passes at 1,204 tests. This certifies only the
+constructor and online execution path; real-Balatro strength and authority
+behavior remain to be measured on fresh launches.
+
 Strength replan: throughput is no longer the immediate score ceiling. Across
 the descriptive frozen v9/v10 trajectories, 340 of 365 losses (93.2%) end on
 Pair or Two Pair; 116 of 243 losses with a full Joker row have zero xMult roles

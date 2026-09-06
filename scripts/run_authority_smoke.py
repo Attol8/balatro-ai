@@ -131,6 +131,46 @@ def main() -> None:
             policy = NoBuySmokePolicy()
             policy_name = "NoBuySmokePolicy"
             inference_budget = "none"
+        elif args.policy == "public-search":
+            command = (
+                sys.executable,
+                "-m",
+                "balatro_ai_v2.public_search_child",
+                "--continuation",
+                "strategic",
+                "--policy-nonce",
+                args.policy_seed,
+                "--samples",
+                str(args.search_samples),
+                "--horizon-antes",
+                str(args.search_horizon_antes),
+                "--max-steps",
+                str(args.search_max_steps),
+                "--override-z",
+                str(args.search_override_z),
+                *(
+                    ("--strategy-options",)
+                    if args.search_strategy_options
+                    else ()
+                ),
+            )
+            policy_process = PolicyProcess(
+                "public-search",
+                command=command,
+                timeout_seconds=args.policy_timeout,
+            )
+            policy = policy_process
+            policy_name = "PublicRootDeterminizedSearchPolicy:process-v1"
+            inference_budget = (
+                f"policy_action_contract={POLICY_ACTION_CONTRACT};"
+                "root_source=public_observation_history_v1;"
+                f"samples={args.search_samples};"
+                f"horizon_antes={args.search_horizon_antes};"
+                f"max_steps={args.search_max_steps};"
+                f"override_z={args.search_override_z};"
+                f"strategy_options={args.search_strategy_options};"
+                f"policy_timeout_seconds={args.policy_timeout}"
+            )
         else:
             _, implementation_name = build_public_baseline(args.policy, args.policy_seed)
             policy_process = PolicyProcess(
@@ -240,9 +280,22 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--deck", default="RED")
     parser.add_argument("--stake", default="WHITE")
     parser.add_argument("--seed")
-    parser.add_argument("--policy", choices=("smoke", *PUBLIC_BASELINE_NAMES), default="smoke")
+    parser.add_argument(
+        "--policy",
+        choices=("smoke", "public-search", *PUBLIC_BASELINE_NAMES),
+        default="smoke",
+    )
     parser.add_argument("--policy-seed", default="authority-v1")
     parser.add_argument("--policy-timeout", type=float, default=5.0)
+    parser.add_argument("--search-samples", type=int, default=6)
+    parser.add_argument("--search-horizon-antes", type=int, default=1)
+    parser.add_argument("--search-max-steps", type=int, default=200)
+    parser.add_argument("--search-override-z", type=float, default=1.0)
+    parser.add_argument(
+        "--search-strategy-options",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+    )
     parser.add_argument("--max-decisions", type=int, default=800)
     parser.add_argument("--max-settle-polls", type=int, default=40)
     parser.add_argument("--settle-poll-delay", type=float, default=0.02)
