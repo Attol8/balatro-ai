@@ -57,7 +57,7 @@ class RunConfig:
             raise ValueError("decision, poll, and ante limits must be positive")
         if self.poll_interval < 0 or self.split not in {"dev", "heldout"}:
             raise ValueError("invalid poll interval or seed split")
-        if self.policy not in {"baseline", "strategic", "search"}:
+        if self.policy not in {"baseline", "strategic", "search", "search-planets"}:
             raise ValueError(f"unknown policy: {self.policy}")
 
 
@@ -89,9 +89,9 @@ def make_policy(name: str) -> Policy:
     if name == "strategic":
         from balatro_ai_v2.live.strategic import StrategicPolicy
         return StrategicPolicy()
-    if name == "search":
+    if name in {"search", "search-planets"}:
         from balatro_ai_v2.live.strategic import SearchPolicy
-        return SearchPolicy()
+        return SearchPolicy(evaluate_planets=name == "search-planets")
     raise ValueError(f"unknown policy: {name}")
 
 
@@ -146,7 +146,7 @@ def run_episode(
 
     def observe(raw: dict) -> dict:
         raw = normalize_outcome(raw, previously_won=result["won"])
-        if config.policy in {"strategic", "search"}:
+        if config.policy in {"strategic", "search", "search-planets"}:
             from balatro_ai_v2.live.strategic import project_strategic_observation
             public = project_strategic_observation(raw)
         else:

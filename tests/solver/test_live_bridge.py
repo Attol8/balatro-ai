@@ -1,7 +1,7 @@
 from copy import deepcopy
 
 from balatro_ai_v2.live.observation import public_observation
-from balatro_ai_v2.live.runner import RunConfig, replay, run_episode
+from balatro_ai_v2.live.runner import RunConfig, make_policy, replay, run_episode
 from balatro_ai_v2.live.strategic import StrategicPolicy, project_strategic_observation
 from solver_state_factory import state
 
@@ -53,3 +53,26 @@ def test_strategic_final_boss_loss_does_not_violate_typed_win_invariant(tmp_path
 
     result = run_episode(Client(), StrategicPolicy(), "TEST", tmp_path / "run.jsonl", RunConfig(stable_reads=1, policy="strategic"))
     assert result["status"] == "lost" and result["won"] is False
+
+
+def test_planet_variant_is_explicit_and_control_remains_disabled():
+    assert make_policy('search').shop_search.evaluate_planets is False
+    assert make_policy('search-planets').shop_search.evaluate_planets is True
+    assert RunConfig(policy='search-planets').policy == 'search-planets'
+
+
+def test_planet_variant_projects_typed_state_and_replays(tmp_path):
+    initial = state('SELECTING_HAND', seed='TEST')
+    final = state('GAME_OVER', seed='TEST')
+
+    class Client:
+        def rpc(self, method, params=None):
+            return deepcopy(initial if method == 'start' else final)
+
+    path = tmp_path / 'planets.jsonl'
+    result = run_episode(Client(), make_policy('search-planets'), 'TEST', path,
+                         RunConfig(stable_reads=1, policy='search-planets'))
+    assert result['status'] == 'lost'
+    replayed = replay(path)
+    assert replayed['matching'] == replayed['decisions'] == 1
+    assert replayed['complete_trace']

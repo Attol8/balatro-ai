@@ -73,3 +73,56 @@ rates. The newer public scorer and legal-action model are useful assets.
 First live baseline: three complete losses, reaching antes 2/4/5. The broader batch
 completed ten losses before the game process disconnected on seed D0000010; the
 failure trace was retained. Runtime restart/diagnosis precedes further live runs.
+
+## Current architecture and experiment contract
+
+```text
+Real Balatro → settled public snapshot → typed public state
+                                          ├─ exact/estimated hand scorer
+                                          ├─ sampled discard search
+                                          └─ sampled shop upgrade comparisons
+                                      → legal action → real Balatro
+Each boundary → append-only evidence → offline replay + batch results
+```
+
+The initial target is Red Deck / White Stake, with a fixed all-unlocked profile.
+Survival through Ante 8 is the primary objective; peak hand score is secondary.
+Policy inputs exclude run seeds, hidden card identities and ordered draw piles.
+Draw hypotheses come from unordered public deck counts, not engine checkpoints.
+The API adapter alone sees raw engine state and emits the whitelisted policy schema.
+
+Keep numerical execution separate from longer-horizon strategy. Exhaustively score
+legal visible hands; sample unknown draws with common random numbers; compare shop
+upgrades against identical sample hands. These are bounded approximations, not full
+run value estimates. A language model may later help propose build strategies, but
+it should not replace arithmetic or certify its own decisions. Revisit full-blind
+search and a learned run-value function after trustworthy real-run data exists.
+
+Use one local engine worker initially. Poll for stable public state between actions,
+never retry an ambiguous mutation, and stop a batch on execution errors. Before
+scaling workers, isolate profile/save paths and ports and verify deterministic runs.
+Policy fingerprints and profile metadata belong in every experiment manifest.
+
+### Evidence so far
+
+- Imported strategic policy: 0/20 completed all-unlocked development runs won,
+  maximum Ante 7. Many losses retained cash that could have bought strength.
+- Numerical search reaches Ante 8 and much higher hand scores, but no confirmed win
+  yet. The first batch exposed a premature native victory flag on a losing final
+  boss; victories now require a confirmed post-Ante-8 boundary.
+- The next diagnostic batch completed nine losses and one intentionally truncated
+  run. It exposed asynchronous boss updates causing an unnecessary second joker
+  sale. This batch is not a clean policy comparison.
+- Stable-state execution is covered by regression tests; the full suite passes
+  595 tests. A fresh 20-seed control batch uses the fixed boundary.
+
+### Next decisions
+
+1. Finish the frozen search control on development seeds D0000000–D0000019.
+2. Separately evaluate opt-in planet purchases with the same seeds and engine
+   profile; preserve the control policy. Inspect trajectories, not just averages.
+3. Address the largest evidenced remaining failure with one isolated change.
+4. Freeze a materially stronger policy before opening held-out H seeds. Report
+   confidence intervals, errors, truncations and score distributions with wins.
+
+The milestone remains incomplete until live performance supports reliable wins.
