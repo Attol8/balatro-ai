@@ -1788,6 +1788,12 @@ shop is observed, so subsequent slot actions remove the same physical card.
 Do not normalize IDs in output or reorder distinct offers. Require an exact
 full-trace replay, including the later purchase of slot zero.
 
+Result: the clean non-fast schema-2 seed-2507 recapture from `f070123` passes
+68/68 exact transitions after both boundary repairs. Strict import preserves
+all five pack sale-to-choice pairs and tensorizes all 68 decisions. This closes
+the admission mechanism's organic gate only; the deterministic coverage policy
+is explicitly excluded from quality training cohorts.
+
 Strength replan: throughput is no longer the immediate score ceiling. Across
 the descriptive frozen v9/v10 trajectories, 340 of 365 losses (93.2%) end on
 Pair or Two Pair; 116 of 243 losses with a full Joker row have zero xMult roles

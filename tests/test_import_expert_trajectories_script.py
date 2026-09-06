@@ -19,7 +19,7 @@ _ORGANIC_TRACE = (
 )
 _CURRENT_ORGANIC_TRACE = (
     _ROOT
-    / "runs/evidence/expert-admission-organic-v1-source"
+    / "runs/evidence/expert-admission-organic-v3-source"
     / "red-white-seed2507.jsonl"
 )
 

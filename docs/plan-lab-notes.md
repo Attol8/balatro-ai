@@ -4829,3 +4829,29 @@ The same trace exposes a new candidate-fidelity defect at transition 30:
 pinned Jackdaw has 44 permanent cards where Balatro has 51 after a pack choice.
 It remains valid real-authority input, but the simulator mismatch must be fixed
 and replayed before this trajectory can support any candidate-result claim.
+
+Follow-up identifies the transition-30 difference as an authority settlement
+defect: non-fast BalatroBot returned a Tarot-pack state after dealing one card,
+while seven draw events remained queued. The authority backend now requires a
+targeted-pack hand to reach its visible limit or exhaust the deck. A max-40
+capture then correctly failed unsettled rather than exposing the partial hand;
+the non-fast capture protocol therefore raises its declared poll ceiling to 400.
+
+The corrected capture advanced to transition 55 and exposed one candidate
+representation defect: vanilla physically emplaces two identical generated
+boosters in reverse creation order. Reversing only rendered IDs failed on the
+next slot-zero purchase; mirroring the underlying two-card emplacement when
+center key and cost are identical replayed all later actions. Distinct booster
+offers remain untouched. Commit `f070123` contains that repair and 1,177 tests.
+
+The final clean non-fast schema-2 recapture from `f070123` passes 68/68 exact
+candidate transitions with all five pack sales and five immediately following
+choices. Its source SHA-256 is
+`547628893bbd25ae3b651ba1543a51f0cd88308310930cb1b95134b0ca999215`.
+Strict import again admits and tensorizes 68/68 decisions with maximum 445
+candidates and no seed in output; the public dataset SHA-256 is
+`8d0cf06b436b59cbbaeb9cb24ac84c2bc3c868d3f6da24da4ea418d49cc2ef59`.
+The authoritative source, cohort manifest, public dataset, and import report
+are committed under `runs/evidence/expert-admission-organic-v3-*`. This closes
+the organic admission/fidelity proof; it still does not promote the coverage
+policy as an expert or authorize training on it.
