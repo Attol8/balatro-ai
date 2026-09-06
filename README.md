@@ -58,6 +58,8 @@ Experimental variants keep that search control unchanged:
 - `search-v3`: restricts purchase priority to Blueprint; its development batch won
   2/20 runs, versus 1/20 for V2 and the initial search control.
 - `search-v4`: adds static-debuff refill search and preserves early Green Joker plays.
+- `search-v5`: extends the reroll limit from two to five only below forecast pace,
+  retaining enough cash for a subsequent purchase.
 
 Each variant is an ablation, not an established improvement. Draw estimates use
 eight shared samples; shop estimates use six synthetic hands and approximate

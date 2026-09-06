@@ -191,4 +191,12 @@ The Green guard and static support are opt-in to V4; the terminal correction is
 a scorer-objective repair in the new source revision. V3's running artifact was
 unchanged. Full suite: 687 tests pass.
 
+V4 is running from clean revision `14a3696` in `runs/search-v4-001/`.
+Prepare the separate V5 reroll ablation: V3's final-shop audit found 11/18 losses
+already below mean-based pace, with multiple runs retaining $26–$60. An optional
+survival budget raises the cap from two to five only when below forecast pace;
+the existing reserve plus six dollars for a possible purchase remains protected.
+Safe shops retain the old cap. This tests spending under an existing forecast,
+not a claim that that forecast is calibrated. Full suite: 693 passing tests.
+
 The milestone remains incomplete until live performance supports reliable wins.

@@ -44,11 +44,16 @@ def _owned_fingerprints(jokers: tuple) -> tuple:
 
 class ShopSearch:
     def __init__(self, samples: int = 6, max_rerolls: int = 2, evaluate_planets: bool = False, project_next_boss: bool = False,
-                 evaluate_blueprint_placement: bool = False, prioritize_all_jokers: bool = True):
+                 evaluate_blueprint_placement: bool = False, prioritize_all_jokers: bool = True,
+                 survival_rerolls: int | None = None):
         if not 1 <= samples <= 12 or not 0 <= max_rerolls <= 5:
             raise ValueError('shop search budgets must be bounded')
         self.samples = samples
         self.max_rerolls = max_rerolls
+        if survival_rerolls is not None and (isinstance(survival_rerolls, bool)
+                or not isinstance(survival_rerolls, int) or not max_rerolls <= survival_rerolls <= 5):
+            raise ValueError('survival_rerolls must be an integer between max_rerolls and five')
+        self.survival_rerolls = survival_rerolls
         if not isinstance(evaluate_planets, bool):
             raise ValueError('evaluate_planets must be boolean')
         self.evaluate_planets = evaluate_planets
@@ -139,12 +144,15 @@ class ShopSearch:
         # Optimistic continuation bonuses must not lock up survival cash when
         # ordinary first-hand capacity is below the next blind's pace.
         weak = min(current_first, current) * (1 if needle else 3) < target
+        reroll_limit = self.survival_rerolls if weak and self.survival_rerolls is not None else self.max_rerolls
         reserve = 2 if weak else min(25, 8 + 3 * max(0, observation.ante - 1))
         diagnostics = {'current_capacity': current, 'next_blind_target': target,
                        'reserve': reserve, 'samples': self.samples,
                        'current_first_hand': current_first, 'current_repeat_hand': current_repeat,
                        'current_final_hand': current_final,
                        'continuation_assumption': '50% first / 35% same-family repeat / 15% final; no intervening discards; Green Joker +1 per prior play'}
+        if self.survival_rerolls is not None:
+            diagnostics.update(reroll_limit=reroll_limit, below_forecast_pace=weak)
         if self.project_next_boss:
             diagnostics.update(boss_projection=projection_reason,
                                projected_hand_budget=1 if needle else 4,
@@ -284,11 +292,11 @@ class ShopSearch:
                       if step.before.round_no == observation.round_no)
         # Cost growth also bounds rerolls when callers provide no history.
         cost = observation.round.reroll_cost
-        if (weak and rerolls < self.max_rerolls and cost < 5 + self.max_rerolls
+        if (weak and rerolls < reroll_limit and cost < 5 + reroll_limit
                 and observation.money - cost >= reserve + 6
                 and is_legal(observation, RerollShop())):
             return ShopChoice(RerollShop(), 'Search for a scoring upgrade while the build is below next-blind pace.', diagnostics)
-        if isinstance(baseline_action, RerollShop) and (rerolls >= self.max_rerolls or cost >= 5 + self.max_rerolls):
+        if isinstance(baseline_action, RerollShop) and (rerolls >= reroll_limit or cost >= 5 + reroll_limit):
             return ShopChoice(LeaveShop(), 'Stop after the bounded shop reroll budget.', diagnostics)
         if planet_screen:
             return ShopChoice(baseline_action, 'Preserve baseline after scoring available planets.', diagnostics)

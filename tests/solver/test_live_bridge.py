@@ -109,6 +109,12 @@ def test_v4_adds_static_debuff_search_and_green_growth_guard():
     assert not make_policy('search-v3').preserve_green_plays
 
 
+def test_v5_only_extends_survival_rerolls():
+    assert make_policy('search-v4').shop_search.survival_rerolls is None
+    assert make_policy('search-v5').shop_search.survival_rerolls == 5
+    assert make_policy('search-v5').shop_search.max_rerolls == 2
+
+
 def test_hidden_variant_is_isolated_and_uses_recorded_observation(monkeypatch):
     from balatro_ai_v2.solver.adapter import to_public_observation
     from balatro_ai_v2.solver.actions import PlayCards, HandSlot

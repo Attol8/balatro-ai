@@ -1,4 +1,5 @@
 from dataclasses import replace
+import pytest
 
 from balatro_ai_v2.solver.actions import BuyMode, BuyPack, BuyVoucher, PackOfferSlot, VoucherSlot, BuyShopCard, LeaveShop, RerollShop, SellJoker, ShopSlot, UseConsumable, ConsumableSlot, is_legal
 from balatro_ai_v2.solver.adapter import to_public_observation
@@ -78,6 +79,31 @@ def test_reroll_is_bounded_by_history_and_money():
     assert planner.choose(obs, LeaveShop(), history) is None
     assert isinstance(planner.choose(obs, RerollShop(), history).action, LeaveShop)
     assert planner.choose(replace(obs, money=5), LeaveShop()) is None
+
+
+def test_survival_rerolls_extend_only_weak_shops_and_keep_purchase_cash():
+    obs = shop(money=30)
+    obs = replace(obs, round=replace(obs.round, reroll_cost=7))
+    history = (PublicHistoryStep(obs, RerollShop(), obs),) * 2
+    control = ShopSearch(samples=1)
+    candidate = ShopSearch(samples=1, survival_rerolls=5)
+    assert control.choose(obs, LeaveShop(), history) is None
+    choice = candidate.choose(obs, LeaveShop(), history)
+    assert isinstance(choice.action, RerollShop)
+    assert choice.diagnostics['reroll_limit'] == 5
+    assert candidate.choose(replace(obs, money=14), LeaveShop(), history) is None
+    safe = replace(obs, blinds=tuple(replace(b, score=1) for b in obs.blinds))
+    choice = candidate.choose(safe, RerollShop(), history)
+    assert isinstance(choice.action, LeaveShop)
+    assert choice.diagnostics['reroll_limit'] == 2
+    exhausted = history + history + history[:1]
+    assert isinstance(candidate.choose(obs, RerollShop(), exhausted).action, LeaveShop)
+
+
+@pytest.mark.parametrize('budget', [True, 1, 6, 2.5])
+def test_survival_reroll_budget_is_bounded(budget):
+    with pytest.raises(ValueError):
+        ShopSearch(survival_rerolls=budget)
 
 
 def test_private_seed_and_order_never_enter_sampling():
