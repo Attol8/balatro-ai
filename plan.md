@@ -1693,6 +1693,18 @@ Turtle Bean is present; on immediate GAME_OVER restore that limit while
 retaining the ability decay. Do not generalize to unobserved terminal Joker
 callbacks. Add a terminal-loss regression and continue full-trace replay.
 
+Attempt 3 passed seeds 2501--2515 in exact lockstep and stopped at seed 2516
+after 41 exact transitions. The next cash-out offers Lucky Cat in Balatro but
+Arrowhead in Jackdaw. The earlier Arcana choice created two Lucky cards and
+both candidates expose them identically; however, pinned Jackdaw's private
+`deck_enhancements` pool-filter cache remains absent, so its enhancement-gated
+Joker pool excludes Lucky Cat. Refresh that private cache from unique permanent
+cards across deck, hand, discard, and play at the observation boundary, where
+the existing Driver's License projection already derives the same live set.
+Pin base/enhanced/deduplicated and removal cases, then replay the complete
+seed-2516 authority trace before resuming untouched seeds 2517--2520. Do not
+special-case Lucky Cat, alter RNG, or normalize the differing shop offer.
+
 Strength replan: throughput is no longer the immediate score ceiling. Across
 the descriptive frozen v9/v10 trajectories, 340 of 365 losses (93.2%) end on
 Pair or Two Pair; 116 of 243 losses with a full Joker row have zero xMult roles

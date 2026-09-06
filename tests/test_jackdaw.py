@@ -926,6 +926,31 @@ def test_drivers_license_display_tally_tracks_permanent_enhancements() -> None:
     assert driver.ability["driver_tally"] == 0
 
 
+def test_candidate_refreshes_enhancement_gated_joker_pool_state() -> None:
+    base = object()
+    plain = SimpleNamespace(base=base, center_key="c_base")
+    lucky = SimpleNamespace(base=base, center_key="m_lucky")
+    gold = SimpleNamespace(base=base, center_key="m_gold")
+    game_state = {
+        "deck": [plain, lucky],
+        "hand": [gold],
+        "discard_pile": [],
+        "play": [lucky],
+        "deck_enhancements": {"m_stale"},
+    }
+
+    jackdaw._refresh_deck_enhancements(game_state)
+
+    assert game_state["deck_enhancements"] == {"m_gold", "m_lucky"}
+
+    game_state["deck"] = [plain]
+    game_state["hand"] = []
+    game_state["play"] = []
+    jackdaw._refresh_deck_enhancements(game_state)
+
+    assert game_state["deck_enhancements"] == set()
+
+
 def test_card_modifier_normalization_preserves_explicit_empty_effect(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

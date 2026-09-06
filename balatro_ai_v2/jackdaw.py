@@ -369,6 +369,30 @@ def _refresh_drivers_license_tally(game_state: Mapping[str, Any]) -> None:
             ability["driver_tally"] = enhanced_count
 
 
+def _refresh_deck_enhancements(game_state: dict[str, Any]) -> None:
+    """Keep enhancement-gated Joker pools aligned with live permanent cards."""
+
+    seen: set[int] = set()
+    enhancements: set[str] = set()
+    for area_name in ("deck", "hand", "discard_pile", "play"):
+        cards = game_state.get(area_name, [])
+        if not isinstance(cards, list):
+            raise RuntimeError(f"Jackdaw {area_name} state is unavailable")
+        for card in cards:
+            identity = id(card)
+            if identity in seen:
+                continue
+            seen.add(identity)
+            center_key = getattr(card, "center_key", None)
+            if getattr(card, "base", None) is not None and center_key not in {
+                None,
+                "",
+                "c_base",
+            }:
+                enhancements.add(str(center_key))
+    game_state["deck_enhancements"] = enhancements
+
+
 def _clear_completed_cerulean_forced_selections(
     game_state: Mapping[str, Any],
 ) -> None:
@@ -1242,8 +1266,9 @@ class JackdawBackend:
         # Both adapters must pass independently.  The public conversion catches
         # leaks/unsupported shapes; canonicalization catches semantic drift.
         game_state = getattr(self._backend, "_gs", None)
-        if not isinstance(game_state, Mapping):
+        if not isinstance(game_state, dict):
             raise RuntimeError("Jackdaw backend does not expose its active game state")
+        _refresh_deck_enhancements(game_state)
         _refresh_swashbuckler_mult(game_state)
         _refresh_stencil_x_mult(game_state)
         _refresh_drivers_license_tally(game_state)
