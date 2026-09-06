@@ -5178,3 +5178,20 @@ the full suite, and `git diff --check`. Only a clean implementation commit may
 be used to calculate the source digest and create the separate immutable v17
 preregistration. Then open batches 1 and 2 only and apply the frozen first-100
 gate before any further collection or training.
+
+### Contextual continuation v17 interrupted (2026-09-06)
+
+The clean v17 implementation and separate preregistration passed the full
+1,268-test suite, repository-wide Ruff, freeze validation, and key/hash checks.
+Batch 01 was opened for seeds 3502--3551 with the frozen six-sample,
+one-ante, 200-step, 1,200-decision command and six workers. It was stopped on
+request while seed 3502 was the only printed completion: 0 antes cleared,
+26 decisions, 7 searched decisions, 0 search changes, and 21 seconds. The
+remaining workers were terminated; no evaluator or worker process remains.
+
+The evaluator's atomic publication contract left no v17 report, teacher
+dataset, or partial batch directory. The observed seed outcome nevertheless
+consumes the immutable panel: retire all v17 seeds 3502--3801 without restart,
+waiver, or training use. The v17 preregistration and origin key remain frozen
+and untouched. Before any further collection, choose and preregister a fresh
+collision-free range and update the retirement guard accordingly.

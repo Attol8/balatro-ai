@@ -2549,6 +2549,13 @@ teacher data exists. Treat the current script diff as unvalidated work in
 progress; resume at the exact-test migration below before committing any v17
 implementation.
 
+The first v17 batch was then opened and stopped on request after seed 3502
+completed (0 antes, 26 decisions, 7 searched, 0 changes); the remaining
+workers were terminated before any batch completed. No report, teacher dataset,
+or partial output directory was atomically published. Because an outcome was
+observed, retire the entire reserved v17 range 3502--3801 and do not restart it.
+Select a fresh collision-free range before resuming collection.
+
 - Extend the evaluator's unconditional retired range through v16 seeds
   3202--3501 before checking any supplied preregistration. This makes the
   no-restart rule executable rather than relying only on documentation.
