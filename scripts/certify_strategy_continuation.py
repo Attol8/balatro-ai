@@ -9,6 +9,7 @@ import json
 import os
 import sys
 import tempfile
+from dataclasses import asdict
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -16,6 +17,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from balatro_ai_v2.strategy_continuation import (
     CONTINUATION_CERTIFICATE_VERSION,
     RolloutContinuationCertificate,
+)
+from balatro_ai_v2.strategy_learning import (
+    PAIRED_UTILITY_ONLY_LOSS_WEIGHTS,
+    PAIRED_UTILITY_ONLY_OBJECTIVE,
 )
 from balatro_ai_v2.strategy_model import (
     STRATEGY_MODEL_SCHEMA_DIGEST,
@@ -42,6 +47,8 @@ def main() -> None:
         policy = holdout["policy"]
         gate = report["calibration_gate"]
         calibration = report["calibration"]
+        objective = report["objective"]
+        loss_weights = report["loss_weights"]
     except (KeyError, TypeError) as exc:
         raise SystemExit("training report is missing certification evidence") from exc
     if (
@@ -62,6 +69,8 @@ def main() -> None:
         or gate.get("zero_false_tie_overrides") is not True
         or gate.get("non_positive_recommendation_regret") is not True
         or gate.get("positive_recommended_utility_gain") is not True
+        or objective != PAIRED_UTILITY_ONLY_OBJECTIVE
+        or loss_weights != asdict(PAIRED_UTILITY_ONLY_LOSS_WEIGHTS)
         or int(policy.get("recommendations", 0)) < 1
         or int(policy.get("recommendation_groups", 0)) < 59
         or int(policy.get("recommendation_errors", -1)) != 0
@@ -79,12 +88,15 @@ def main() -> None:
     ):
         raise SystemExit("rollout certification requires the frozen 182/59/59 split")
     strata = holdout.get("strata")
-    if not isinstance(strata, dict):
+    phase_policy = holdout.get("phase_policy")
+    if not isinstance(strata, dict) or not isinstance(phase_policy, dict):
         raise SystemExit("holdout report has no support strata")
     support_phases = tuple(dict.fromkeys(args.support_phase))
     present_phases = {str(key).split(":", 1)[0] for key in strata}
     if not support_phases or any(
-        phase not in present_phases for phase in support_phases
+        phase not in present_phases
+        or not _phase_support_passed(phase_policy.get(phase))
+        for phase in support_phases
     ):
         raise SystemExit("requested continuation phase lacks holdout support")
     model = load_strategy_model(args.model)
@@ -97,6 +109,8 @@ def main() -> None:
         or model.provenance.get("collection_report_sha256")
         != dataset.get("collection_report_sha256")
         or model.provenance.get("calibration", {}).get("gate") != gate
+        or model.provenance.get("trainer", {}).get("objective") != objective
+        or model.provenance.get("trainer", {}).get("loss_weights") != loss_weights
     ):
         raise SystemExit("model artifact is not immutable shadow-only evidence")
     certificate = RolloutContinuationCertificate(
@@ -113,6 +127,17 @@ def main() -> None:
     encoded = json.dumps(certificate.as_dict(), sort_keys=True, separators=(",", ":"))
     _publish_exclusive(args.output_json, encoded + "\n")
     print(encoded)
+
+
+def _phase_support_passed(value: object) -> bool:
+    return bool(
+        isinstance(value, dict)
+        and int(value.get("recommendation_groups", 0)) >= 10
+        and int(value.get("recommendation_errors", -1)) == 0
+        and int(value.get("false_tie_overrides", -1)) == 0
+        and float(value.get("mean_recommendation_regret", 1.0)) <= 0.0
+        and float(value.get("mean_recommended_utility_gain", 0.0)) > 0.0
+    )
 
 
 def _publish_exclusive(path: Path, encoded: str) -> None:

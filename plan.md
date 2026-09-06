@@ -2535,6 +2535,50 @@ bound above zero, with the strategic layer held fixed.
 
 Search quality is bounded by the continuation. Improve it from search.
 
+### Active slice: paired-utility continuation v13
+
+The protocol-v14 coverage census and fresh seed-2507/2432 diagnostics make the
+next bottleneck concrete: every eligible strategic root is searchable and
+rollouts sustain roughly 190--197 steps/second, but the continuation still
+dies predominantly on Pair/Two Pair builds.  Do not spend another panel on
+search budget or hand-written route rules before improving that continuation.
+
+- Reuse the relational action model and train its policy logits only against
+  paired, baseline-relative `search_utility` plus the paired ordering loss.
+  Give the selected-action and five endpoint heads zero training weight; they
+  are not evidence for continuation authority.
+- Name and serialize the exact objective and loss vector in both the model
+  provenance and training report.  Continuation certification must authenticate
+  the same frozen utility-only contract and reject multitask or tampered
+  evidence.
+- Bound training and evaluation memory at 16 decisions per tensorized chunk.
+  Accumulate globally normalized chunk gradients and take one optimizer step per
+  epoch, exactly preserving the existing full-batch run/decision/alternative
+  weighting.  Freeze the chunk size with every other training argument.
+- Repair the contextual-v13 merger's stale search-version freeze and include
+  the utility-only training objective in its preregistered training contract.
+- Commit and fully test these implementation changes before creating the
+  contextual-v13 preregistration.  The preregistration is a separate commit and
+  is the only tracked change permitted after the implementation revision.
+- Collect the first two immutable 50-run batches on development seeds
+  1975--2074, then apply the frozen first-100 kill gate.  Continue through all
+  six batches only if collection is complete, rejection/censor free, and meets
+  its sensitivity and victory-coverage requirements.
+- Merge the 300 complete run groups, train with the frozen 182/59/59 split,
+  calibrate on the calibration split, and issue rollout-only authority only if
+  the untouched holdout has 59 recommendation-bearing groups, zero unsafe
+  recommendations and false ties, non-positive regret, and positive paired
+  utility gain.
+- A certificate only admits the learned continuation inside determinized
+  rollouts.  It does not authorize live actions or a terminal leaf value.  A
+  behavior panel against the current continuation is required before widening
+  to a two-ante horizon.
+- The first certificate falls back on routed roots, which were absent from the
+  dense teacher, and after any current-ante play when Pillar is live or publicly
+  reachable.  Each authorized phase must independently show at least ten
+  recommendation-bearing holdout groups with zero errors/false ties, positive
+  utility, and non-positive regret.
+
 - **Targets.** Every eligible strategic search decision is stored with its
   public observation, legal action/intent roots, paired scalar rollout targets,
   chosen root, opaque complete-run group, and teacher-config digest under

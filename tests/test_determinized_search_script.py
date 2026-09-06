@@ -1078,12 +1078,12 @@ def test_contextual_preregistration_binds_batch_budget_and_outputs(tmp_path) -> 
     root = tmp_path
     teacher = root / module._CONTEXTUAL_BATCHES[0]["teacher_jsonl"]
     report = root / module._CONTEXTUAL_BATCHES[0]["report_json"]
-    origin_key = root / "runs/secrets/contextual-continuation-v12-origin.key"
+    origin_key = root / "runs/secrets/contextual-continuation-v13-origin.key"
     origin_key.parent.mkdir(parents=True)
     origin_key.write_bytes(b"k" * 32)
     preregistration = tmp_path / "prereg.json"
     spec = {
-        "protocol_id": "contextual-continuation-development-v4",
+        "protocol_id": "contextual-continuation-development-v5",
         "status": "reserved",
         "immutable_batches": True,
         "seed_provenance": "development",
@@ -1098,16 +1098,17 @@ def test_contextual_preregistration_binds_batch_budget_and_outputs(tmp_path) -> 
             "max_decisions": 1200,
             "ante_cap": 12,
             "workers": 6,
-            "nonce": "contextual-continuation-v12-frozen",
+            "nonce": "contextual-continuation-v13-frozen",
             "continuation": "strategic",
             "policy_seed": "baseline-v1",
             "strategy_options": False,
             "include_reorders": False,
             "dense_teacher": True,
         },
+        "training": module._CONTEXTUAL_TRAINING,
         "origin_mapping": {
             "algorithm": "hmac-sha256-truncated-128",
-            "key_path": "runs/secrets/contextual-continuation-v12-origin.key",
+            "key_path": "runs/secrets/contextual-continuation-v13-origin.key",
             "key_sha256": hashlib.sha256(b"k" * 32).hexdigest(),
         },
         "batches": list(module._CONTEXTUAL_BATCHES),
@@ -1133,7 +1134,7 @@ def test_contextual_preregistration_binds_batch_budget_and_outputs(tmp_path) -> 
             "--workers",
             "6",
             "--nonce",
-            "contextual-continuation-v12-frozen",
+            "contextual-continuation-v13-frozen",
             "--dense-teacher",
             "--teacher-jsonl",
             str(teacher),

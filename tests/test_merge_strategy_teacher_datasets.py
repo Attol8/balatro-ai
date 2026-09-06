@@ -16,6 +16,7 @@ from balatro_ai_v2.actions import (
     iter_legal_actions,
 )
 from balatro_ai_v2.balatrobot.adapter import to_public_observation
+from balatro_ai_v2.determinized_search import SEARCH_VERSION
 from balatro_ai_v2.strategy_engine import RunGoal
 from balatro_ai_v2.strategy_teacher import (
     StrategyRolloutTarget,
@@ -114,7 +115,7 @@ def _preregistration(tmp_path: Path, script, monkeypatch):
     monkeypatch.setattr(script, "_validate_source_freeze", lambda *_args: None)
     monkeypatch.setattr(script, "_verify_merger_checkout", lambda *_args: None)
     key = b"0123456789abcdef0123456789abcdef"
-    key_path = tmp_path / "runs/secrets/contextual-continuation-v12-origin.key"
+    key_path = tmp_path / "runs/secrets/contextual-continuation-v13-origin.key"
     key_path.parent.mkdir(parents=True)
     key_path.write_bytes(key)
     batches = [
@@ -123,11 +124,11 @@ def _preregistration(tmp_path: Path, script, monkeypatch):
             "seed_start": seed_start,
             "seeds": 50,
             "teacher_jsonl": (
-                "runs/experiments/contextual-continuation-v12/"
+                "runs/experiments/contextual-continuation-v13/"
                 f"batch-{index:02d}/teacher.jsonl"
             ),
             "report_json": (
-                "runs/experiments/contextual-continuation-v12/"
+                "runs/experiments/contextual-continuation-v13/"
                 f"batch-{index:02d}/report.json"
             ),
         }
@@ -151,7 +152,7 @@ def _preregistration(tmp_path: Path, script, monkeypatch):
         "search": script._EXPECTED_SEARCH,
         "origin_mapping": {
             "algorithm": "hmac-sha256-truncated-128",
-            "key_path": "runs/secrets/contextual-continuation-v12-origin.key",
+            "key_path": "runs/secrets/contextual-continuation-v13-origin.key",
             "key_sha256": hashlib.sha256(key).hexdigest(),
         },
         "batches": batches,
@@ -159,7 +160,7 @@ def _preregistration(tmp_path: Path, script, monkeypatch):
         "coverage_gate": coverage_gate,
         "first_100_kill_gate": first_gate,
     }
-    path = tmp_path / "experiments/contextual-continuation-v12-preregistration.json"
+    path = tmp_path / "experiments/contextual-continuation-v13-preregistration.json"
     path.parent.mkdir(parents=True)
     path.write_text(json.dumps(spec), encoding="utf-8")
     return path, key_path, key, spec, hashlib.sha256(path.read_bytes()).hexdigest()
@@ -174,7 +175,7 @@ def _component(
     preregistration_digest: str,
     spec: dict[str, object],
 ):
-    root = tmp_path / "runs/experiments/contextual-continuation-v12"
+    root = tmp_path / "runs/experiments/contextual-continuation-v13"
     root = root / f"batch-{index:02d}"
     root.mkdir(parents=True, exist_ok=True)
     dataset = root / "teacher.jsonl"
@@ -195,7 +196,7 @@ def _component(
             "command": ["collector"],
         },
         "search_protocol": {
-            "version": "determinized-search-v14",
+            "version": SEARCH_VERSION,
             "continuation": "strategic",
             "policy_seed": "baseline-v1",
             "budget": {
@@ -204,7 +205,7 @@ def _component(
                 "max_steps": 200,
                 "override_z": 1.0,
             },
-            "nonce": "contextual-continuation-v12-frozen",
+            "nonce": "contextual-continuation-v13-frozen",
             "phases": ["BLIND_SELECT", "PACK", "SHOP"],
             "strategy_options": False,
             "include_reorders": False,
@@ -221,7 +222,7 @@ def _component(
             },
         },
         "contextual_teacher_preregistration": {
-            "protocol_id": "contextual-continuation-development-v4",
+            "protocol_id": "contextual-continuation-development-v5",
             "sha256": preregistration_digest,
             "immutable_batches": True,
             "batch_id": f"batch-{index:02d}",
@@ -322,7 +323,7 @@ def test_merge_cli_preserves_all_disjoint_groups_and_component_hashes(
     assert len(merged["merged_components"]) == 6
     assert (
         merged["contextual_teacher_preregistration"]["protocol_id"]
-        == "contextual-continuation-development-v4"
+        == "contextual-continuation-development-v5"
     )
     assert "results" not in merged
     assert "1975" not in json.dumps(merged)

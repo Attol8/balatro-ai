@@ -4929,3 +4929,54 @@ seed 39 at 71/71 pre-skip roots including sixteen Ox roots. Its eight later
 roots remained correctly unavailable after the policy actually skipped. These
 counts certify candidate root availability, not authoritative differential
 lockstep and not improved game score.
+
+### Contextual continuation v13 implementation freeze (2026-09-06)
+
+Fresh post-Ox/Pillar diagnostics separate coverage and throughput from the
+remaining score problem. Development seed 2507 searched 77/77 eligible roots,
+changed eight decisions, executed 51,061 rollout steps at 191.55 steps/second,
+and died to The Wall in Ante 6 with Pair as its main hand. Seed 2432 searched
+54/54 roots, changed five decisions, executed 35,973 steps at 197.26
+steps/second, and died to The Fish in Ante 5 with Two Pair. Neither run had an
+unavailable or rejected search decision. Together with the retained cohorts,
+where 88/96 route-terminal losses and 35/37 recent control losses ended on Pair
+or Two Pair, this says the immediate ceiling is continuation quality rather
+than root reconstruction or simulator throughput.
+
+The next increment therefore reactivates the existing dense paired-utility
+lane rather than adding hand-written route rules or another model family.
+Historical contextual v9 had 17,004 rows from 300 complete groups and 84.02%
+action-sensitive decisions, but it cannot be reused after the public shop-card
+and round-state contract changes. Its roughly 331 MB dataset also exposed a
+practical defect in the old trainer: it tensorized the entire split at once,
+which would require tens of gigabytes at current entity/action limits.
+
+The v13 trainer now accumulates an exactly globally normalized, utility-only
+objective over fixed 16-decision chunks and takes one optimizer step per epoch.
+The target is only candidate-minus-baseline `search_utility`, with Smooth L1
+regression and signed ordering; selected-action and five endpoint heads have
+zero weight and cannot support a continuation certificate. Calibration and
+holdout inference use the same bounded chunk size. A regression compares the
+chunked and monolithic losses and every parameter gradient.
+
+Training arguments, objective, loss vector, and chunk size are frozen in the
+contextual preregistration, carried through the merged report and model
+provenance, and authenticated again at certificate issuance and loading. The
+stale merger dependency on determinized-search-v14 is removed; the new data
+lane binds determinized-search-v19 and contextual protocol v5. Teacher schema
+12 remains unchanged to preserve already frozen route-terminal evidence; the
+new source/public semantics are separated by the search and contextual
+protocol revisions.
+
+The first learned continuation remains rollout-only and falls back on two
+unsupported strata: any route-conditioned root, because dense ordinary data
+contains no routes, and any post-play state where Pillar is live or publicly
+reachable, because the relational context does not yet identify permanent
+cards played this ante. Each phase requested by a certificate must independently
+have at least ten recommendation-bearing holdout groups, zero recommendation
+errors and false ties, non-positive regret, and positive paired utility gain.
+
+Ruff and `git diff --check` pass. The focused continuation/protocol suite passes
+81 tests and the complete suite passes 1,244 tests. No contextual data has been
+collected yet: implementation must be committed first, followed by a separate
+preregistration-only commit, before reserved seeds 1975--2274 can be opened.

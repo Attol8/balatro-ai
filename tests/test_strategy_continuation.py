@@ -1,18 +1,28 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from types import SimpleNamespace
 
 import pytest
 
 torch = pytest.importorskip("torch")
 
-from balatro_ai_v2.actions import action_to_data, iter_legal_actions  # noqa: E402
+from balatro_ai_v2.actions import (  # noqa: E402
+    HandSlot,
+    PlayCards,
+    action_to_data,
+    iter_legal_actions,
+)
 from balatro_ai_v2.balatrobot.adapter import to_public_observation  # noqa: E402
 from balatro_ai_v2.strategy_continuation import (  # noqa: E402
     CertifiedUtilityContinuationPolicy,
     RolloutContinuationCertificate,
+    _pillar_history_matters,
 )
+from balatro_ai_v2.policy import PublicHistoryStep  # noqa: E402
+from balatro_ai_v2.public_state import PublicBlind  # noqa: E402
+from balatro_ai_v2.strategy_engine import RunRoute  # noqa: E402
 from balatro_ai_v2.strategy_model import (  # noqa: E402
     STRATEGY_MODEL_SCHEMA_DIGEST,
     StrategyCalibration,
@@ -124,6 +134,49 @@ def test_certified_continuation_is_invariant_to_supplied_action_order() -> None:
     reverse = policy.choose_action(observation, lambda: iter(reversed(legal)), ())
 
     assert forward == reverse
+
+
+def test_certified_continuation_does_not_extrapolate_to_routed_roots() -> None:
+    observation = to_public_observation(state("SHOP"))
+    legal = tuple(iter_legal_actions(observation))
+    policy = CertifiedUtilityContinuationPolicy(
+        _FirstControl(),
+        _UtilityModel(),
+        _certificate(),  # type: ignore[arg-type]
+    )
+
+    selected = policy.choose_action_for_strategy(
+        observation,
+        lambda: iter(legal),
+        (),
+        None,
+        RunRoute.VICTORY,
+    )
+
+    assert selected == legal[0]
+
+
+def test_pillar_reachable_after_a_play_is_outside_model_support() -> None:
+    observation = to_public_observation(state("SHOP"))
+    pillar = PublicBlind(
+        kind="BOSS",
+        status="NOT_SELECTED",
+        name="The Pillar",
+        effect="Previously played cards this Ante are debuffed",
+        score=1_000,
+        disabled=False,
+    )
+    observation = replace(observation, blinds=(*observation.blinds[:-1], pillar))
+    history = (
+        PublicHistoryStep(
+            observation,
+            PlayCards((HandSlot(0),)),
+            observation,
+        ),
+    )
+
+    assert _pillar_history_matters(observation, history)
+    assert not _pillar_history_matters(observation, ())
 
 
 def test_certificate_rejects_insufficient_independent_runs() -> None:

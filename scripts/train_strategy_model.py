@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import hashlib
 import json
 import math
@@ -18,11 +19,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import torch
 
 from balatro_ai_v2.strategy_learning import (
+    PAIRED_UTILITY_ONLY_LOSS_WEIGHTS,
+    PAIRED_UTILITY_ONLY_OBJECTIVE,
     StrategyLossWeights,
     evaluate_strategy_model,
     fit_strategy_calibration,
     split_teacher_records,
     strategy_training_loss,
+    strategy_utility_training_loss,
 )
 from balatro_ai_v2.strategy_model import (
     STRATEGY_MODEL_SCHEMA_DIGEST,
@@ -49,6 +53,10 @@ def main() -> None:
     )
     if not args.diagnostic:
         _validate_dense_collection_coverage(collection, records)
+    loss_weights, objective = _training_objective(args.training_objective)
+    training_contract = _training_contract(args, loss_weights, objective)
+    if not args.diagnostic:
+        _validate_preregistered_training(collection, training_contract)
     teacher_config_digest = collection["strategy_teacher_dataset"][
         "teacher_config_digest"
     ]
@@ -77,15 +85,34 @@ def main() -> None:
         lr=args.learning_rate,
         weight_decay=args.weight_decay,
     )
-    loss_weights = StrategyLossWeights()
     losses: list[dict[str, float]] = []
     for _ in range(args.epochs):
         model.train()
-        loss, metrics = strategy_training_loss(model, split.train, weights=loss_weights)
-        if not torch.isfinite(loss):
-            raise RuntimeError("strategy training loss became non-finite")
         optimizer.zero_grad(set_to_none=True)
-        loss.backward()
+        if args.training_objective == "paired-utility-only":
+            metrics = {
+                "paired_utility_loss": 0.0,
+                "ordering_loss": 0.0,
+                "loss": 0.0,
+            }
+            for offset in range(0, len(split.train), args.chunk_size):
+                loss, chunk_metrics = strategy_utility_training_loss(
+                    model,
+                    split.train[offset : offset + args.chunk_size],
+                    normalization_records=split.train,
+                )
+                if not torch.isfinite(loss):
+                    raise RuntimeError("strategy training loss became non-finite")
+                loss.backward()
+                for name in metrics:
+                    metrics[name] += chunk_metrics[name]
+        else:
+            loss, metrics = strategy_training_loss(
+                model, split.train, weights=loss_weights
+            )
+            if not torch.isfinite(loss):
+                raise RuntimeError("strategy training loss became non-finite")
+            loss.backward()
         gradient_norm = torch.nn.utils.clip_grad_norm_(
             model.parameters(), args.max_gradient_norm
         )
@@ -123,12 +150,8 @@ def main() -> None:
             "torch_version": str(torch.__version__),
             "source_digest": collection["manifest"]["source_digest"],
             "loss_weights": asdict(loss_weights),
-            "objective": {
-                "name": "paired_baseline_relative_search_utility_v1",
-                "regression": "smooth_l1",
-                "ordering": "signed_softplus;exact_ties=squared_delta",
-                "weighting": "run_then_decision_then_alternative_equal",
-            },
+            "objective": objective,
+            "chunk_size": args.chunk_size,
         },
         "calibration": {
             "parameters": asdict(calibration),
@@ -561,6 +584,7 @@ def _validate_args(args: argparse.Namespace) -> None:
         "feedforward_size",
         "max_entities",
         "max_actions",
+        "chunk_size",
     )
     if any(getattr(args, name) < 1 for name in integer_names):
         raise SystemExit("training counts and model dimensions must be positive")
@@ -581,6 +605,72 @@ def _validate_args(args: argparse.Namespace) -> None:
         args.holdout_groups,
     ) != (182, 59, 59):
         raise SystemExit("non-diagnostic split is frozen at 182/59/59 groups")
+
+
+def _training_objective(
+    name: str,
+) -> tuple[StrategyLossWeights, dict[str, object]]:
+    if name == "paired-utility-only":
+        return (
+            PAIRED_UTILITY_ONLY_LOSS_WEIGHTS,
+            copy.deepcopy(PAIRED_UTILITY_ONLY_OBJECTIVE),
+        )
+    if name == "multitask":
+        return StrategyLossWeights(), {
+            "name": "paired_search_utility_with_auxiliary_endpoints_v1",
+            "regression": "smooth_l1",
+            "ordering": "signed_softplus;exact_ties=squared_delta",
+            "weighting": "run_then_decision_then_alternative_equal",
+            "trained_outputs": [
+                "policy_logits",
+                "current_blind",
+                "next_boss",
+                "ante8",
+                "endless_ante",
+                "log_score",
+            ],
+        }
+    raise ValueError(f"unknown strategy training objective {name!r}")
+
+
+def _training_contract(
+    args: argparse.Namespace,
+    loss_weights: StrategyLossWeights,
+    objective: dict[str, object],
+) -> dict[str, object]:
+    return {
+        "objective": objective,
+        "loss_weights": asdict(loss_weights),
+        "split_nonce": args.split_nonce,
+        "train_groups": args.train_groups,
+        "calibration_groups": args.calibration_groups,
+        "holdout_groups": args.holdout_groups,
+        "epochs": args.epochs,
+        "training_seed": args.training_seed,
+        "hidden_size": args.hidden_size,
+        "attention_heads": args.attention_heads,
+        "attention_layers": args.attention_layers,
+        "feedforward_size": args.feedforward_size,
+        "max_entities": args.max_entities,
+        "max_actions": args.max_actions,
+        "learning_rate": args.learning_rate,
+        "weight_decay": args.weight_decay,
+        "max_gradient_norm": args.max_gradient_norm,
+        "chunk_size": args.chunk_size,
+        "device": args.device,
+    }
+
+
+def _validate_preregistered_training(
+    collection: dict[str, object], actual: dict[str, object]
+) -> None:
+    binding = collection.get("contextual_teacher_preregistration")
+    if (
+        not isinstance(binding, dict)
+        or binding.get("immutable_batches") is not True
+        or binding.get("training") != actual
+    ):
+        raise SystemExit("training arguments disagree with contextual preregistration")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -605,6 +695,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--weight-decay", type=float, default=1e-4)
     parser.add_argument("--max-gradient-norm", type=float, default=1.0)
     parser.add_argument("--device", default="cpu")
+    parser.add_argument(
+        "--training-objective",
+        choices=("multitask", "paired-utility-only"),
+        default="multitask",
+    )
+    parser.add_argument("--chunk-size", type=int, default=16)
     parser.add_argument("--diagnostic", action="store_true")
     return parser
 

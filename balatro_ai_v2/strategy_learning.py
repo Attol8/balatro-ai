@@ -70,6 +70,33 @@ class StrategyLossWeights:
             )
 
 
+PAIRED_UTILITY_ONLY_OBJECTIVE = {
+    "name": "paired_baseline_relative_search_utility_only_v1",
+    "regression": "smooth_l1",
+    "ordering": "signed_softplus;exact_ties=squared_delta",
+    "weighting": "run_then_decision_then_alternative_equal",
+    "trained_outputs": ["policy_logits"],
+    "excluded_outputs": [
+        "selected_action",
+        "current_blind",
+        "next_boss",
+        "ante8",
+        "endless_ante",
+        "log_score",
+    ],
+}
+PAIRED_UTILITY_ONLY_LOSS_WEIGHTS = StrategyLossWeights(
+    policy=0.0,
+    paired_utility=1.0,
+    ordering=0.25,
+    current_blind=0.0,
+    next_boss=0.0,
+    ante8=0.0,
+    endless_ante=0.0,
+    log_score=0.0,
+)
+
+
 def split_teacher_records(
     records: Sequence[StrategyTeacherRecord],
     *,
@@ -222,6 +249,63 @@ def strategy_training_loss(
     return total, metrics
 
 
+def strategy_utility_training_loss(
+    model: RelationalStrategyPolicyValue,
+    records: Sequence[StrategyTeacherRecord],
+    *,
+    normalization_records: Sequence[StrategyTeacherRecord] | None = None,
+) -> tuple[Tensor, dict[str, float]]:
+    """Compute an exactly globally-normalized utility-only loss chunk.
+
+    ``normalization_records`` is the complete split.  Supplying it makes each
+    returned loss an additive part of the monolithic full-split objective, so
+    callers can accumulate gradients over bounded chunks before one optimizer
+    step without changing run/decision/alternative weighting.
+    """
+
+    if not records:
+        raise ValueError("strategy training chunk is empty")
+    normalization_records = (
+        records if normalization_records is None else normalization_records
+    )
+    normalization_groups = Counter(
+        record.run_group for record in normalization_records
+    )
+    if any(
+        record.run_group not in normalization_groups for record in records
+    ):
+        raise ValueError("strategy training chunk is outside its normalization split")
+    tensorizer = PublicStrategyTensorizer(model.config)
+    batch = tensorizer.tensorize(
+        observations=tuple(record.observation for record in records),
+        legal_actions=tuple(
+            tuple(candidate.action for candidate in record.candidates)
+            for record in records
+        ),
+        action_intents=tuple(
+            tuple(candidate.intent for candidate in record.candidates)
+            for record in records
+        ),
+        contexts=tuple(record.context for record in records),
+        action_routes=tuple(
+            tuple(candidate.route for candidate in record.candidates)
+            for record in records
+        ),
+    )
+    output = model(batch)
+    paired, ordering = _paired_utility_losses(
+        output.policy_logits,
+        records,
+        normalization_records=normalization_records,
+    )
+    total = paired + PAIRED_UTILITY_ONLY_LOSS_WEIGHTS.ordering * ordering
+    return total, {
+        "paired_utility_loss": float(paired.detach()),
+        "ordering_loss": float(ordering.detach()),
+        "loss": float(total.detach()),
+    }
+
+
 def fit_strategy_calibration(
     model: RelationalStrategyPolicyValue,
     records: Sequence[StrategyTeacherRecord],
@@ -291,39 +375,21 @@ def evaluate_strategy_model(
         raise ValueError("strategy evaluation split is empty")
     predictions = _predict(model, records)
     policy_rows = predictions["policy"]
-    row_weights = _run_equal_numeric_weights(records)
-    agreements = 0.0
-    recommendations = 0
-    recommendation_errors = 0
-    false_tie_overrides = 0
-    recommended_utility_gain = 0.0
-    recommendation_regret = 0.0
-    recommendation_weight = 0.0
-    recommendation_groups: set[str] = set()
-    for logits, record, row_weight in zip(
-        policy_rows, records, row_weights, strict=True
-    ):
-        top = max(range(len(logits)), key=logits.__getitem__)
-        agreements += row_weight * int(top == record.selected_index)
-        margin = logits[top] - logits[record.baseline_index]
-        if (
-            top != record.baseline_index
-            and margin > model.calibration.policy_override_margin
-        ):
-            recommendations += 1
-            recommendation_groups.add(record.run_group)
-            baseline_target = _paired_target(record, record.baseline_index)
-            top_target = _paired_target(record, top)
-            selected_target = _paired_target(record, record.selected_index)
-            gain = top_target - baseline_target
-            regret = max(0.0, selected_target - top_target)
-            recommendation_errors += int(
-                top != record.selected_index or gain <= 0.0 or regret > 1e-9
-            )
-            false_tie_overrides += int(abs(gain) <= 1e-12)
-            recommended_utility_gain += row_weight * gain
-            recommendation_regret += row_weight * regret
-            recommendation_weight += row_weight
+    policy_metrics = _policy_metrics(
+        policy_rows, records, model.calibration.policy_override_margin
+    )
+    phase_policy = {}
+    for phase in sorted({record.observation.phase.value for record in records}):
+        indexes = [
+            index
+            for index, record in enumerate(records)
+            if record.observation.phase.value == phase
+        ]
+        phase_policy[phase] = _policy_metrics(
+            [policy_rows[index] for index in indexes],
+            [records[index] for index in indexes],
+            model.calibration.policy_override_margin,
+        )
 
     flattened = {
         name: _flatten_head(predictions[name], records, name)
@@ -339,24 +405,8 @@ def evaluate_strategy_model(
         "records": len(records),
         "groups": len({record.run_group for record in records}),
         "weighting": "inverse_eligible_targets_per_run_and_head",
-        "policy": {
-            "agreement": agreements / sum(row_weights),
-            "recommendations": recommendations,
-            "recommendation_groups": len(recommendation_groups),
-            "recommendation_errors": recommendation_errors,
-            "false_tie_overrides": false_tie_overrides,
-            "mean_recommended_utility_gain": (
-                recommended_utility_gain / recommendation_weight
-                if recommendation_weight
-                else 0.0
-            ),
-            "mean_recommendation_regret": (
-                recommendation_regret / recommendation_weight
-                if recommendation_weight
-                else 0.0
-            ),
-            "override_margin": model.calibration.policy_override_margin,
-        },
+        "policy": policy_metrics,
+        "phase_policy": phase_policy,
         "current_blind": _binary_metrics(*flattened["current_blind"]),
         "next_boss": _binary_metrics(*flattened["next_boss"]),
         "ante8": _binary_metrics(*flattened["ante8"]),
@@ -374,44 +424,122 @@ def evaluate_strategy_model(
     return metrics
 
 
+def _policy_metrics(
+    policy_rows: Sequence[Sequence[float]],
+    records: Sequence[StrategyTeacherRecord],
+    override_margin: float,
+) -> dict[str, object]:
+    row_weights = _run_equal_numeric_weights(records)
+    agreements = 0.0
+    recommendations = 0
+    recommendation_errors = 0
+    false_tie_overrides = 0
+    recommended_utility_gain = 0.0
+    recommendation_regret = 0.0
+    recommendation_weight = 0.0
+    recommendation_groups: set[str] = set()
+    for logits, record, row_weight in zip(
+        policy_rows, records, row_weights, strict=True
+    ):
+        top = max(range(len(logits)), key=logits.__getitem__)
+        agreements += row_weight * int(top == record.selected_index)
+        margin = logits[top] - logits[record.baseline_index]
+        if (
+            top != record.baseline_index
+            and margin > override_margin
+        ):
+            recommendations += 1
+            recommendation_groups.add(record.run_group)
+            baseline_target = _paired_target(record, record.baseline_index)
+            top_target = _paired_target(record, top)
+            selected_target = _paired_target(record, record.selected_index)
+            gain = top_target - baseline_target
+            regret = max(0.0, selected_target - top_target)
+            recommendation_errors += int(
+                top != record.selected_index or gain <= 0.0 or regret > 1e-9
+            )
+            false_tie_overrides += int(abs(gain) <= 1e-12)
+            recommended_utility_gain += row_weight * gain
+            recommendation_regret += row_weight * regret
+            recommendation_weight += row_weight
+
+    return {
+        "agreement": agreements / sum(row_weights),
+        "recommendations": recommendations,
+        "recommendation_groups": len(recommendation_groups),
+        "recommendation_errors": recommendation_errors,
+        "false_tie_overrides": false_tie_overrides,
+        "mean_recommended_utility_gain": (
+            recommended_utility_gain / recommendation_weight
+            if recommendation_weight
+            else 0.0
+        ),
+        "mean_recommendation_regret": (
+            recommendation_regret / recommendation_weight
+            if recommendation_weight
+            else 0.0
+        ),
+        "override_margin": override_margin,
+    }
+
+
 def _predict(
     model: RelationalStrategyPolicyValue,
     records: Sequence[StrategyTeacherRecord],
+    *,
+    chunk_size: int = 16,
 ) -> dict[str, list]:
+    if chunk_size < 1:
+        raise ValueError("strategy prediction chunk size must be positive")
     tensorizer = PublicStrategyTensorizer(model.config)
-    batch = tensorizer.tensorize(
-        observations=tuple(record.observation for record in records),
-        legal_actions=tuple(
-            tuple(candidate.action for candidate in record.candidates)
-            for record in records
-        ),
-        action_intents=tuple(
-            tuple(candidate.intent for candidate in record.candidates)
-            for record in records
-        ),
-        contexts=tuple(record.context for record in records),
-        action_routes=tuple(
-            tuple(candidate.route for candidate in record.candidates)
-            for record in records
-        ),
-    )
+    predictions = {
+        "policy": [],
+        "current_blind": [],
+        "next_boss": [],
+        "ante8": [],
+        "endless_ante": [],
+        "log_score": [],
+    }
     model.eval()
     with torch.no_grad():
-        output = model(batch)
-    return {
-        "policy": [
-            output.policy_logits[index, : len(record.candidates)]
-            .detach()
-            .cpu()
-            .tolist()
-            for index, record in enumerate(records)
-        ],
-        "current_blind": _unpadded(output.current_blind_survival, records),
-        "next_boss": _unpadded(output.next_boss_survival, records),
-        "ante8": _unpadded(output.ante8_win, records),
-        "endless_ante": _unpadded(output.endless_ante, records),
-        "log_score": _unpadded(output.log_score, records),
-    }
+        for offset in range(0, len(records), chunk_size):
+            chunk = records[offset : offset + chunk_size]
+            batch = tensorizer.tensorize(
+                observations=tuple(record.observation for record in chunk),
+                legal_actions=tuple(
+                    tuple(candidate.action for candidate in record.candidates)
+                    for record in chunk
+                ),
+                action_intents=tuple(
+                    tuple(candidate.intent for candidate in record.candidates)
+                    for record in chunk
+                ),
+                contexts=tuple(record.context for record in chunk),
+                action_routes=tuple(
+                    tuple(candidate.route for candidate in record.candidates)
+                    for record in chunk
+                ),
+            )
+            output = model(batch)
+            predictions["policy"].extend(
+                output.policy_logits[index, : len(record.candidates)]
+                .detach()
+                .cpu()
+                .tolist()
+                for index, record in enumerate(chunk)
+            )
+            predictions["current_blind"].extend(
+                _unpadded(output.current_blind_survival, chunk)
+            )
+            predictions["next_boss"].extend(
+                _unpadded(output.next_boss_survival, chunk)
+            )
+            predictions["ante8"].extend(_unpadded(output.ante8_win, chunk))
+            predictions["endless_ante"].extend(
+                _unpadded(output.endless_ante, chunk)
+            )
+            predictions["log_score"].extend(_unpadded(output.log_score, chunk))
+    return predictions
 
 
 def _selected_targets(record: StrategyTeacherRecord) -> tuple[float, float]:
@@ -467,10 +595,17 @@ def _paired_target(record: StrategyTeacherRecord, candidate_index: int) -> float
 def _paired_utility_losses(
     logits: Tensor,
     records: Sequence[StrategyTeacherRecord],
+    *,
+    normalization_records: Sequence[StrategyTeacherRecord] | None = None,
 ) -> tuple[Tensor, Tensor]:
     """Run/decision/alternative-equal paired utility and ordering losses."""
 
-    decisions_per_run = Counter(record.run_group for record in records)
+    normalization_records = (
+        records if normalization_records is None else normalization_records
+    )
+    decisions_per_run = Counter(
+        record.run_group for record in normalization_records
+    )
     losses: list[Tensor] = []
     ordering: list[Tensor] = []
     weights: list[float] = []
@@ -498,9 +633,16 @@ def _paired_utility_losses(
         zero = logits.sum() * 0.0
         return zero, zero
     weight_tensor = logits.new_tensor(weights)
+    denominator = sum(
+        1.0 / decisions_per_run[record.run_group]
+        for record in normalization_records
+        if len(record.candidates) > 1
+    )
+    if denominator <= 0.0:
+        raise ValueError("paired utility normalization is empty")
     return (
-        torch.stack(losses).mul(weight_tensor).sum() / weight_tensor.sum(),
-        torch.stack(ordering).mul(weight_tensor).sum() / weight_tensor.sum(),
+        torch.stack(losses).mul(weight_tensor).sum() / denominator,
+        torch.stack(ordering).mul(weight_tensor).sum() / denominator,
     )
 
 
@@ -776,10 +918,13 @@ def _sigmoid(value: float) -> float:
 
 
 __all__ = [
+    "PAIRED_UTILITY_ONLY_LOSS_WEIGHTS",
+    "PAIRED_UTILITY_ONLY_OBJECTIVE",
     "StrategyDatasetSplit",
     "StrategyLossWeights",
     "evaluate_strategy_model",
     "fit_strategy_calibration",
     "split_teacher_records",
     "strategy_training_loss",
+    "strategy_utility_training_loss",
 ]

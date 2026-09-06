@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from copy import deepcopy
 from types import SimpleNamespace
 
 import torch
@@ -14,6 +15,7 @@ from balatro_ai_v2.strategy_learning import (
     fit_strategy_calibration,
     split_teacher_records,
     strategy_training_loss,
+    strategy_utility_training_loss,
 )
 from balatro_ai_v2.strategy_model import (
     RelationalStrategyPolicyValue,
@@ -186,6 +188,37 @@ def test_paired_utility_target_changes_relative_action_loss() -> None:
     )
 
 
+def test_streamed_utility_loss_and_gradients_match_monolithic() -> None:
+    records = tuple(
+        replace(_record(group), decision_index=decision)
+        for group in range(3)
+        for decision in range(group + 1)
+    )
+    monolithic = _model()
+    streamed = deepcopy(monolithic)
+
+    monolithic_loss, _ = strategy_utility_training_loss(monolithic, records)
+    monolithic_loss.backward()
+    streamed_loss = torch.zeros(())
+    for offset in range(0, len(records), 2):
+        loss, _ = strategy_utility_training_loss(
+            streamed,
+            records[offset : offset + 2],
+            normalization_records=records,
+        )
+        streamed_loss = streamed_loss + loss.detach()
+        loss.backward()
+
+    assert torch.allclose(streamed_loss, monolithic_loss.detach(), atol=1e-6)
+    for left, right in zip(
+        monolithic.parameters(), streamed.parameters(), strict=True
+    ):
+        if left.grad is None or right.grad is None:
+            assert left.grad is right.grad
+        else:
+            assert torch.allclose(left.grad, right.grad, atol=1e-6, rtol=1e-5)
+
+
 def test_calibration_freezes_safe_margin_and_reports_every_head() -> None:
     records = (_record(0), _record(1, selected=0), _record(2, endless=True))
     model = _model()
@@ -205,12 +238,14 @@ def test_calibration_freezes_safe_margin_and_reports_every_head() -> None:
     }
     assert set(holdout_metrics) >= {
         "policy",
+        "phase_policy",
         "current_blind",
         "next_boss",
         "ante8",
         "endless_ante",
         "log_score",
     }
+    assert set(holdout_metrics["phase_policy"]) == {"SHOP"}
     assert holdout_metrics["policy"]["recommendation_errors"] == 0
 
 

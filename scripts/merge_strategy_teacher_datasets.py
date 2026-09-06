@@ -14,6 +14,7 @@ import subprocess
 import sys
 import tempfile
 from collections import Counter
+from dataclasses import asdict
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -23,6 +24,11 @@ from balatro_ai_v2.actions import (
     ReorderHand,
     ReorderJokers,
     iter_legal_actions,
+)
+from balatro_ai_v2.determinized_search import SEARCH_VERSION
+from balatro_ai_v2.strategy_learning import (
+    PAIRED_UTILITY_ONLY_LOSS_WEIGHTS,
+    PAIRED_UTILITY_ONLY_OBJECTIVE,
 )
 from balatro_ai_v2.strategy_model import (
     PublicStrategyTensorizer,
@@ -47,9 +53,9 @@ _EXPECTED_BUDGET = {
     "override_z": 1.0,
 }
 _REORDER_ACTIONS = (ReorderHand, ReorderJokers, ReorderConsumables)
-_PROTOCOL_ID = "contextual-continuation-development-v4"
-_NONCE = "contextual-continuation-v12-frozen"
-_SEARCH_VERSION = "determinized-search-v14"
+_PROTOCOL_ID = "contextual-continuation-development-v5"
+_NONCE = "contextual-continuation-v13-frozen"
+_SEARCH_VERSION = SEARCH_VERSION
 _EXPECTED_SEARCH = {
     **_EXPECTED_BUDGET,
     "max_decisions": 1200,
@@ -63,6 +69,8 @@ _EXPECTED_SEARCH = {
     "dense_teacher": True,
 }
 _EXPECTED_TRAINING = {
+    "objective": PAIRED_UTILITY_ONLY_OBJECTIVE,
+    "loss_weights": asdict(PAIRED_UTILITY_ONLY_LOSS_WEIGHTS),
     "split_nonce": "strategy-split-v3-predeclared",
     "train_groups": 182,
     "calibration_groups": 59,
@@ -78,6 +86,7 @@ _EXPECTED_TRAINING = {
     "learning_rate": 0.0003,
     "weight_decay": 0.0001,
     "max_gradient_norm": 1.0,
+    "chunk_size": 16,
     "device": "cpu",
 }
 _EXPECTED_COVERAGE_GATE = {
@@ -392,7 +401,7 @@ def _validate_source_freeze(
         ).stdout.splitlines()
     except (OSError, subprocess.CalledProcessError) as exc:
         raise SystemExit("cannot verify teacher implementation ancestry") from exc
-    if set(changed) != {"experiments/contextual-continuation-v12-preregistration.json"}:
+    if set(changed) != {"experiments/contextual-continuation-v13-preregistration.json"}:
         raise SystemExit("teacher collection revision changed implementation source")
 
 
@@ -403,7 +412,7 @@ def _load_preregistration(
     repository_root: Path,
 ) -> tuple[dict[str, object], str, bytes]:
     expected_path = (
-        repository_root / "experiments/contextual-continuation-v12-preregistration.json"
+        repository_root / "experiments/contextual-continuation-v13-preregistration.json"
     ).resolve()
     if path.resolve() != expected_path:
         raise SystemExit("contextual preregistration path is not frozen")
@@ -420,11 +429,11 @@ def _load_preregistration(
             "seed_start": seed_start,
             "seeds": _BATCH_SIZE,
             "teacher_jsonl": (
-                "runs/experiments/contextual-continuation-v12/"
+                "runs/experiments/contextual-continuation-v13/"
                 f"batch-{index:02d}/teacher.jsonl"
             ),
             "report_json": (
-                "runs/experiments/contextual-continuation-v12/"
+                "runs/experiments/contextual-continuation-v13/"
                 f"batch-{index:02d}/report.json"
             ),
         }
@@ -446,7 +455,7 @@ def _load_preregistration(
         or not isinstance(origin, dict)
         or origin.get("algorithm") != "hmac-sha256-truncated-128"
         or origin.get("key_path")
-        != "runs/secrets/contextual-continuation-v12-origin.key"
+        != "runs/secrets/contextual-continuation-v13-origin.key"
     ):
         raise SystemExit("contextual preregistration changed the frozen protocol")
     for field, length in (
@@ -744,6 +753,7 @@ def _merged_report(components, records, output_jsonl: Path) -> dict[str, object]
         "protocol_id": _PROTOCOL_ID,
         "sha256": components[0][2]["contextual_teacher_preregistration"]["sha256"],
         "immutable_batches": True,
+        "training": copy.deepcopy(_EXPECTED_TRAINING),
         "batch_ids": sorted(
             component["contextual_teacher_preregistration"]["batch_id"]
             for _, _, component, _, _ in components

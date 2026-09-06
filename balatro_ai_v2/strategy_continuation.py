@@ -8,6 +8,7 @@ import math
 import re
 from copy import deepcopy
 from dataclasses import dataclass
+from dataclasses import asdict
 from pathlib import Path
 
 import torch
@@ -22,6 +23,10 @@ from balatro_ai_v2.actions import (
 from balatro_ai_v2.policy import ActionSource, PublicHistoryStep, PublicPolicy
 from balatro_ai_v2.public_state import Phase, PublicObservation
 from balatro_ai_v2.strategy_engine import RunRoute, derive_engine_state
+from balatro_ai_v2.strategy_learning import (
+    PAIRED_UTILITY_ONLY_LOSS_WEIGHTS,
+    PAIRED_UTILITY_ONLY_OBJECTIVE,
+)
 from balatro_ai_v2.strategy_context import derive_public_strategy_context
 from balatro_ai_v2.strategy_model import (
     STRATEGY_MODEL_SCHEMA_DIGEST,
@@ -198,6 +203,8 @@ class CertifiedUtilityContinuationPolicy:
             )
         if observation.phase.value not in self.certificate.support_phases:
             return baseline
+        if route is not None or _pillar_history_matters(observation, history):
+            return baseline
         try:
             if baseline not in supplied:
                 raise ValueError("control action is absent from supplied legal actions")
@@ -361,8 +368,11 @@ def _verify_training_evidence(
         dataset = report["dataset"]
         split = report["split"]
         policy = report["holdout_metrics"]["policy"]
+        phase_policy = report["holdout_metrics"]["phase_policy"]
         strata = report["holdout_metrics"]["strata"]
         gate = report["calibration_gate"]
+        objective = report["objective"]
+        loss_weights = report["loss_weights"]
     except (OSError, json.JSONDecodeError, KeyError, TypeError) as exc:
         raise ValueError("continuation training evidence is invalid") from exc
     if (
@@ -381,6 +391,10 @@ def _verify_training_evidence(
         or model.provenance.get("dataset_sha256") != dataset.get("sha256")
         or model.provenance.get("collection_report_sha256")
         != dataset.get("collection_report_sha256")
+        or objective != PAIRED_UTILITY_ONLY_OBJECTIVE
+        or loss_weights != asdict(PAIRED_UTILITY_ONLY_LOSS_WEIGHTS)
+        or model.provenance.get("trainer", {}).get("objective") != objective
+        or model.provenance.get("trainer", {}).get("loss_weights") != loss_weights
         or not isinstance(gate, dict)
         or gate.get("offline_gate_passed") is not True
         or gate.get("authorizes_action_influence") is not False
@@ -395,12 +409,63 @@ def _verify_training_evidence(
         or float(policy.get("mean_recommendation_regret", 1.0)) > 0.0
         or float(policy.get("mean_recommended_utility_gain", 0.0)) <= 0.0
         or not isinstance(strata, dict)
+        or not isinstance(phase_policy, dict)
         or any(
             phase not in {str(key).split(":", 1)[0] for key in strata}
+            or not _phase_support_passed(phase_policy.get(phase))
             for phase in certificate.support_phases
         )
     ):
         raise ValueError("continuation training evidence failed authentication")
+
+
+def _phase_support_passed(value: object) -> bool:
+    return bool(
+        isinstance(value, dict)
+        and int(value.get("recommendation_groups", 0)) >= 10
+        and int(value.get("recommendation_errors", -1)) == 0
+        and int(value.get("false_tie_overrides", -1)) == 0
+        and float(value.get("mean_recommendation_regret", 1.0)) <= 0.0
+        and float(value.get("mean_recommended_utility_gain", 0.0)) > 0.0
+    )
+
+
+def _pillar_history_matters(
+    observation: PublicObservation,
+    history: tuple[PublicHistoryStep, ...],
+) -> bool:
+    """Conservatively reject states needing per-card Pillar memory.
+
+    The first contextual model does not encode played-this-ante markers.  Keep
+    it inert once a card has been played in an ante where Pillar is current or
+    can still be selected through a public tag or reroll route.
+    """
+
+    from balatro_ai_v2.actions import PlayCards
+
+    if not any(
+        isinstance(step.action, PlayCards) and step.before.ante == observation.ante
+        for step in history
+    ):
+        return False
+    live_pillar = any(
+        blind.name == "The Pillar" and blind.status != "DEFEATED"
+        for blind in observation.blinds
+    )
+    boss_tag = any(
+        blind.status != "DEFEATED" and blind.tag_name == "Boss Tag"
+        for blind in observation.blinds
+    )
+    reroll_vouchers = {"v_directors_cut", "v_retcon"}
+    can_reroll = bool(reroll_vouchers.intersection(observation.used_vouchers))
+    offered_reroll = any(
+        item.key in reroll_vouchers for item in observation.vouchers
+    ) or any(
+        step.before.ante == observation.ante
+        and any(item.key in reroll_vouchers for item in step.before.vouchers)
+        for step in history
+    )
+    return live_pillar or boss_tag or can_reroll or offered_reroll
 
 
 __all__ = [

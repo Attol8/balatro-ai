@@ -144,6 +144,10 @@ def test_training_cli_builds_reloadable_shadow_artifact(tmp_path, monkeypatch) -
             "--max-actions",
             "32",
             "--diagnostic",
+            "--training-objective",
+            "paired-utility-only",
+            "--chunk-size",
+            "2",
         ],
     )
 
@@ -160,6 +164,9 @@ def test_training_cli_builds_reloadable_shadow_artifact(tmp_path, monkeypatch) -
         == hashlib.sha256(model_path.read_bytes()).hexdigest()
     )
     assert report["dataset"]["sha256"] == dataset_digest
+    assert report["objective"]["trained_outputs"] == ["policy_logits"]
+    assert report["loss_weights"]["current_blind"] == 0.0
+    assert model.provenance["trainer"]["chunk_size"] == 2
 
 
 def test_training_cli_has_no_game_seed_or_private_state_arguments() -> None:
@@ -211,6 +218,35 @@ def test_policy_gate_rejects_vacuous_zero_coverage() -> None:
     assert not gate["positive_recommendation_coverage"]
     assert not gate["safe_policy_recommendations"]
     assert not gate["offline_gate_passed"]
+
+
+def test_non_diagnostic_training_requires_exact_preregistered_contract() -> None:
+    script = _load_script()
+    args = script.build_parser().parse_args(
+        [
+            "--input-jsonl",
+            "teacher.jsonl",
+            "--collection-report",
+            "collection.json",
+            "--output-model",
+            "model.pt",
+            "--training-objective",
+            "paired-utility-only",
+        ]
+    )
+    weights, objective = script._training_objective(args.training_objective)
+    contract = script._training_contract(args, weights, objective)
+    collection = {
+        "contextual_teacher_preregistration": {
+            "immutable_batches": True,
+            "training": contract,
+        }
+    }
+
+    script._validate_preregistered_training(collection, contract)
+    changed = {**contract, "epochs": 31}
+    with pytest.raises(SystemExit, match="disagree"):
+        script._validate_preregistered_training(collection, changed)
 
 
 def test_dense_training_gate_recomputes_coverage_from_records() -> None:

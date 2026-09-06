@@ -2073,8 +2073,17 @@ def _validate_trained_provenance(provenance: dict[str, object]) -> None:
         "loss_weights",
         "objective",
     }
-    if not isinstance(trainer, dict) or set(trainer) != trainer_fields:
+    if not isinstance(trainer, dict) or frozenset(trainer) not in {
+        frozenset(trainer_fields),
+        frozenset((*trainer_fields, "chunk_size")),
+    }:
         raise ValueError("trained provenance trainer fields are invalid")
+    if "chunk_size" in trainer and (
+        isinstance(trainer["chunk_size"], bool)
+        or not isinstance(trainer["chunk_size"], int)
+        or trainer["chunk_size"] < 1
+    ):
+        raise ValueError("trained provenance chunk size is invalid")
     if (
         isinstance(trainer["training_seed"], bool)
         or not isinstance(trainer["training_seed"], int)
@@ -2113,12 +2122,46 @@ def _validate_trained_provenance(provenance: dict[str, object]) -> None:
         "log_score",
     }:
         raise ValueError("trained provenance loss weights are invalid")
-    if trainer["objective"] != {
+    legacy_objective = {
         "name": "paired_baseline_relative_search_utility_v1",
         "regression": "smooth_l1",
         "ordering": "signed_softplus;exact_ties=squared_delta",
         "weighting": "run_then_decision_then_alternative_equal",
-    }:
+    }
+    utility_only_objective = {
+        "name": "paired_baseline_relative_search_utility_only_v1",
+        "regression": "smooth_l1",
+        "ordering": "signed_softplus;exact_ties=squared_delta",
+        "weighting": "run_then_decision_then_alternative_equal",
+        "trained_outputs": ["policy_logits"],
+        "excluded_outputs": [
+            "selected_action",
+            "current_blind",
+            "next_boss",
+            "ante8",
+            "endless_ante",
+            "log_score",
+        ],
+    }
+    multitask_objective = {
+        "name": "paired_search_utility_with_auxiliary_endpoints_v1",
+        "regression": "smooth_l1",
+        "ordering": "signed_softplus;exact_ties=squared_delta",
+        "weighting": "run_then_decision_then_alternative_equal",
+        "trained_outputs": [
+            "policy_logits",
+            "current_blind",
+            "next_boss",
+            "ante8",
+            "endless_ante",
+            "log_score",
+        ],
+    }
+    if trainer["objective"] not in (
+        legacy_objective,
+        utility_only_objective,
+        multitask_objective,
+    ):
         raise ValueError("trained provenance objective is invalid")
 
     calibration = provenance["calibration"]
@@ -2246,7 +2289,7 @@ def _validate_metric_bundle(bundle: dict[str, object], *, calibration: bool) -> 
     if calibration:
         fields.add("error_radii")
     if (
-        set(bundle) != fields
+        set(bundle) not in (fields, fields | {"phase_policy"})
         or bundle["weighting"] != "inverse_eligible_targets_per_run_and_head"
     ):
         raise ValueError("trained provenance metric bundle is invalid")
@@ -2255,6 +2298,14 @@ def _validate_metric_bundle(bundle: dict[str, object], *, calibration: bool) -> 
     ):
         raise ValueError("trained provenance metric counts are invalid")
     _validate_policy_metrics(bundle["policy"])
+    phase_policy = bundle.get("phase_policy")
+    if phase_policy is not None:
+        if not isinstance(phase_policy, dict) or not phase_policy:
+            raise ValueError("trained provenance phase policy is invalid")
+        for phase, value in phase_policy.items():
+            if phase not in {"BLIND_SELECT", "SHOP", "PACK"}:
+                raise ValueError("trained provenance phase policy is invalid")
+            _validate_policy_metrics(value)
     for name in ("current_blind", "next_boss", "ante8"):
         _validate_head_metrics(bundle[name], ("count", "brier", "log_loss"))
     for name in ("endless_ante", "log_score"):

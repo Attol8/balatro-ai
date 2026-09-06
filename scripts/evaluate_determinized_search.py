@@ -68,6 +68,10 @@ from balatro_ai_v2.strategy_diagnostics import (
     summarize_strategy_results,
 )
 from balatro_ai_v2.strategy_engine import RunRoute
+from balatro_ai_v2.strategy_learning import (
+    PAIRED_UTILITY_ONLY_LOSS_WEIGHTS,
+    PAIRED_UTILITY_ONLY_OBJECTIVE,
+)
 from balatro_ai_v2.strategy_continuation import CertifiedUtilityContinuationPolicy
 from balatro_ai_v2.strategy_model import (
     PublicStrategyTensorizer,
@@ -114,11 +118,11 @@ _CONTEXTUAL_BATCHES = tuple(
         "seed_start": seed_start,
         "seeds": 50,
         "teacher_jsonl": (
-            "runs/experiments/contextual-continuation-v12/"
+            "runs/experiments/contextual-continuation-v13/"
             f"batch-{index + 1:02d}/teacher.jsonl"
         ),
         "report_json": (
-            "runs/experiments/contextual-continuation-v12/"
+            "runs/experiments/contextual-continuation-v13/"
             f"batch-{index + 1:02d}/report.json"
         ),
     }
@@ -132,12 +136,33 @@ _CONTEXTUAL_SEARCH = {
     "max_decisions": 1200,
     "ante_cap": 12,
     "workers": 6,
-    "nonce": "contextual-continuation-v12-frozen",
+    "nonce": "contextual-continuation-v13-frozen",
     "continuation": "strategic",
     "policy_seed": "baseline-v1",
     "strategy_options": False,
     "include_reorders": False,
     "dense_teacher": True,
+}
+_CONTEXTUAL_TRAINING = {
+    "objective": PAIRED_UTILITY_ONLY_OBJECTIVE,
+    "loss_weights": asdict(PAIRED_UTILITY_ONLY_LOSS_WEIGHTS),
+    "split_nonce": "strategy-split-v3-predeclared",
+    "train_groups": 182,
+    "calibration_groups": 59,
+    "holdout_groups": 59,
+    "epochs": 30,
+    "training_seed": 20260904,
+    "hidden_size": 64,
+    "attention_heads": 4,
+    "attention_layers": 2,
+    "feedforward_size": 128,
+    "max_entities": 256,
+    "max_actions": 512,
+    "learning_rate": 0.0003,
+    "weight_decay": 0.0001,
+    "max_gradient_norm": 1.0,
+    "chunk_size": 16,
+    "device": "cpu",
 }
 _CONTEXTUAL_FIRST_100_GATE = {
     "minimum_action_sensitive_fraction": 0.4,
@@ -847,7 +872,7 @@ def _validate_contextual_preregistration(
     if not isinstance(spec, dict):
         raise SystemExit("contextual preregistration root must be an object")
     if (
-        spec.get("protocol_id") != "contextual-continuation-development-v4"
+        spec.get("protocol_id") != "contextual-continuation-development-v5"
         or spec.get("status") != "reserved"
         or spec.get("immutable_batches") is not True
     ):
@@ -877,6 +902,7 @@ def _validate_contextual_preregistration(
     if (
         spec.get("search") != _CONTEXTUAL_SEARCH
         or expected_search != _CONTEXTUAL_SEARCH
+        or spec.get("training") != _CONTEXTUAL_TRAINING
         or spec.get("first_100_kill_gate") != _CONTEXTUAL_FIRST_100_GATE
     ):
         raise SystemExit("contextual preregistration search budget mismatch")
@@ -885,7 +911,7 @@ def _validate_contextual_preregistration(
         not isinstance(origin, dict)
         or origin.get("algorithm") != "hmac-sha256-truncated-128"
         or origin.get("key_path")
-        != "runs/secrets/contextual-continuation-v12-origin.key"
+        != "runs/secrets/contextual-continuation-v13-origin.key"
         or not isinstance(origin.get("key_sha256"), str)
         or len(origin["key_sha256"]) != 64
         or args.origin_key_file is None
@@ -955,6 +981,7 @@ def _validate_contextual_preregistration(
         "expected_source_digest": spec.get("expected_source_digest"),
         "candidate_runtime": spec.get("candidate_runtime"),
         "backend": spec.get("backend"),
+        "training": spec.get("training"),
         "origin_key_sha256": origin["key_sha256"],
     }
 
@@ -1197,7 +1224,7 @@ def _verify_contextual_freeze(
         ).stdout.splitlines()
     except (OSError, subprocess.CalledProcessError) as exc:
         raise SystemExit("cannot verify contextual implementation ancestry") from exc
-    if set(changed) != {"experiments/contextual-continuation-v12-preregistration.json"}:
+    if set(changed) != {"experiments/contextual-continuation-v13-preregistration.json"}:
         raise SystemExit(
             "contextual preregistration commit changed implementation source"
         )
