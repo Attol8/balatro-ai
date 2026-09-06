@@ -4696,3 +4696,31 @@ proposal; forcing `LeaveShop` would delete legal roots, change teacher targets,
 and be a new weaker protocol. The v1 outcome remains rejected because its gate
 was frozen, but no root cap will be implemented. A fresh v2 experiment may
 test the unchanged reroll hypothesis under the actual search contract.
+
+### Exact PACK target-validation optimization (2026-09-06)
+
+The retained 186-action seed-2439 PACK fixture exposed a duplicate public
+legality check: `iter_public_targets` already admits only usable target tuples,
+then PACK action generation sent each tuple through the same consumable
+validator again. Commit `9264443` removes only that second call. It retains the
+phase and item branches, complete target enumeration, action order, and the
+ordinary standalone `is_legal` contract. Regressions pin the old ordered output
+on the 186-action Moon/Star/Fool fixture and on full-capacity, hidden-card, and
+untargeted offers; every emitted action remains legal. The full suite passes
+1,125 tests.
+
+The ordered fixture digest remains
+`11d47a40179c6440a9458388951e95368ade723615c9125735da12f2c8cafc78`.
+Over 1,000 loaded calls, median complete enumeration improved from 820.7 to
+537.3 microseconds and median `PublicStrategicPolicy` choice from 1,208.6 to
+913.4 microseconds. The exact matched seed-2439 replay ran the base and candidate
+simultaneously while the six-worker late-shop control was active, so absolute
+times reflect a saturated machine. Both executed 108,852 rollout steps and
+produced exact normalized results (SHA-256
+`f41cdf03c952e43f1eb0e9556d96ea6c1bf860325404add4b0299960c32f5603`) plus ten
+exact sorted teacher rows after replacing lineage/config identity (SHA-256
+`58ce985605c88b62c5844b7333bdedfa63ccf575b67b77bc837f332cde008d33`). The
+186-root terminal PACK anchor fell from 183.85 to 182.03 seconds, total wall
+time from 809.58 to 809.11 seconds, and overall throughput from 135.16 to 135.29
+steps/second. The microbenchmark establishes the local gain; the small loaded
+end-to-end delta is not extrapolated beyond this diagnostic.

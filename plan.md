@@ -1574,6 +1574,18 @@ Retain only if the full suite passes and a matched seed-2439 replay has exact
 normalized results and teacher records with a measurable speed improvement.
 Otherwise restore the duplicate check.
 
+Pack-validation optimization result: commit `9264443` passes 1,125 tests. The
+retained 186-action fixture has the same ordered action digest before and after.
+Across 1,000 loaded repetitions, median complete enumeration fell from 820.7
+to 537.3 microseconds and median strategic choice from 1,208.6 to 913.4
+microseconds. A simultaneous matched seed-2439 replay executed the same 108,852
+rollout steps; normalized results and all ten sorted teacher rows are exact.
+Under the deliberately saturated eight-worker load, the 186-root PACK anchor
+fell from 183.85 to 182.03 seconds, total wall time from 809.58 to 809.11
+seconds, and throughput rose from 135.16 to 135.29 steps/second. Retain the
+small exact change; do not extrapolate the loaded wall-time delta to an
+uncontended run.
+
 Strength replan: throughput is no longer the immediate score ceiling. Across
 the descriptive frozen v9/v10 trajectories, 340 of 365 losses (93.2%) end on
 Pair or Two Pair; 192 of 243 losses with a full Joker row have no xMult, while
