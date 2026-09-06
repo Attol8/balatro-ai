@@ -2450,6 +2450,10 @@ def _apply_balatrobot_card_values(value: dict[str, Any], card: object) -> None:
         if isinstance(item, int | float) and not isinstance(item, bool) and item != 0:
             serialized[key] = item
     center_key = getattr(card, "center_key", None)
+    if center_key in {"j_ceremonial", "j_trousers"}:
+        current_mult = ability.get("mult")
+        if isinstance(current_mult, int | float) and not isinstance(current_mult, bool):
+            serialized["mult"] = current_mult
     if center_key == "j_caino":
         caino_xmult = ability.get("caino_xmult")
         if isinstance(caino_xmult, int | float) and not isinstance(caino_xmult, bool):

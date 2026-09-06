@@ -2094,6 +2094,25 @@ Its score is not comparable to earlier runs because the v13 observation digest
 intentionally changes policy-owned particle streams; only the complete
 coverage result is retained.
 
+Zero-runtime follow-up design: close the two fresh-owned gaps found by the
+all-Joker constructor audit without adding another public field. Ceremonial
+Dagger and Spare Trousers both use the existing typed `current_mult`, but the
+generic authority and candidate serializers suppress a legitimate zero.
+Export `mult` explicitly and only for those two keyed Jokers, including zero;
+leave accumulated values unchanged, preserve old trace decoding, and continue
+to reject an actually absent owned runtime. Prove zero and progressed bridge
+values plus fresh public-root round trips, reapply the pinned authority patch,
+run the complete suite, and commit separately before attempting skip-tag
+history.
+
+Zero-runtime result: BalatroBot and the Jackdaw bridge now emit the existing
+typed `current_mult` for Ceremonial Dagger and Spare Trousers even when its
+visible value is zero. Progressed values are unchanged, no protocol field was
+added, and owned observations that truly omit the field remain fail closed.
+Zero and progressed candidate fixtures round-trip through fresh public roots,
+the updated readiness patch applies to the clean pinned base, focused tests
+pass 93/93, and the complete suite passes 1,231/1,231.
+
 Strength replan: throughput is no longer the immediate score ceiling. Across
 the descriptive frozen v9/v10 trajectories, 340 of 365 losses (93.2%) end on
 Pair or Two Pair; 116 of 243 losses with a full Joker row have zero xMult roles

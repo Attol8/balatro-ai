@@ -4880,3 +4880,12 @@ That terminal score is diagnostic only and is not compared with earlier v12
 runs: adding fields changes the public digest and therefore the policy-owned
 particle stream even where the added values are null. The retained conclusion
 is complete supported-phase coverage, not a strength claim.
+
+The same constructor audit found two narrower omissions in the existing
+`current_mult` contract. Vanilla shows zero on fresh Ceremonial Dagger and
+Spare Trousers, but generic ability serialization suppressed it. Both
+BalatroBot and Jackdaw now emit the keyed value including zero; nonzero scaling
+and every other Joker remain on the prior path. Candidate fixtures prove zero
+and progressed public-root round trips, the readiness patch still applies to
+the clean pinned base, and the full suite passes 1,231/1,231. This closes a
+fallback hole without a protocol revision or particle-stream change.

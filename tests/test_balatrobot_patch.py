@@ -48,5 +48,8 @@ def test_authority_patch_exports_only_typed_visible_stateful_joker_values() -> N
     ):
         assert source in gamestate
         assert public in gamestate
+    assert 'card.config.center_key == "j_ceremonial"' in gamestate
+    assert 'card.config.center_key == "j_trousers"' in gamestate
+    assert "ab.mult = card.ability.mult" in gamestate
     assert "ab.h_size" not in gamestate
     assert "for k, v in pairs(card.ability)" not in gamestate

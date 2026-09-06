@@ -818,10 +818,14 @@ index 5d9d29f..966575e 100644
    end
 
    -- Rental (boolean from ability)
-@@ -388,6 +389,36 @@ local function extract_card_value(card)
+@@ -388,6 +389,40 @@ local function extract_card_value(card)
      if card.ability.driver_tally then ab.driver_tally = card.ability.driver_tally end
      -- Loyalty Card: remaining hands until trigger
      if card.ability.loyalty_remaining ~= nil then ab.loyalty_remaining = card.ability.loyalty_remaining end
++    -- These scaling Jokers legitimately display zero before their first gain.
++    if card.config and (card.config.center_key == "j_ceremonial" or card.config.center_key == "j_trousers") then
++      if card.ability.mult ~= nil then ab.mult = card.ability.mult end
++    end
 +    -- To Do List's current target is runtime state, not the prototype's
 +    -- initial `extra.poker_hand`. It is visible in the normal card tooltip.
 +    if card.ability.to_do_poker_hand then ab.poker_hand = card.ability.to_do_poker_hand end
@@ -855,7 +859,7 @@ index 5d9d29f..966575e 100644
      -- Only include if non-empty
      if next(ab) ~= nil then
        value.ability = ab
-@@ -397,6 +428,52 @@ local function extract_card_value(card)
+@@ -397,6 +432,52 @@ local function extract_card_value(card)
    return value
  end
 
@@ -989,7 +993,7 @@ index 5d9d29f..966575e 100644
    -- Chips is stored in G.GAME not G.GAME.current_round
    if G.GAME.chips then
      round.chips = G.GAME.chips
-@@ -724,6 +822,7 @@ function gamestate.get_blinds_info()
+@@ -724,6 +826,7 @@ function gamestate.get_blinds_info()
      small = {
        type = "SMALL",
        status = "UPCOMING",
@@ -997,7 +1001,7 @@ index 5d9d29f..966575e 100644
        name = "",
        effect = "",
        score = 0,
-@@ -733,6 +832,7 @@ function gamestate.get_blinds_info()
+@@ -733,6 +836,7 @@ function gamestate.get_blinds_info()
      big = {
        type = "BIG",
        status = "UPCOMING",
@@ -1005,7 +1009,7 @@ index 5d9d29f..966575e 100644
        name = "",
        effect = "",
        score = 0,
-@@ -742,6 +842,7 @@ function gamestate.get_blinds_info()
+@@ -742,6 +846,7 @@ function gamestate.get_blinds_info()
      boss = {
        type = "BOSS",
        status = "UPCOMING",
@@ -1013,7 +1017,7 @@ index 5d9d29f..966575e 100644
        name = "",
        effect = "",
        score = 0,
-@@ -835,6 +936,14 @@ function gamestate.get_blinds_info()
+@@ -835,6 +940,14 @@ function gamestate.get_blinds_info()
 
    -- Boss blind has no tags (tag_name and tag_effect remain empty strings)
 
@@ -1028,7 +1032,7 @@ index 5d9d29f..966575e 100644
    return blinds
  end
 
-@@ -864,12 +973,18 @@ function gamestate.get_gamestate()
+@@ -864,12 +977,18 @@ function gamestate.get_gamestate()
      state_data.ante_num = (G.GAME.round_resets and G.GAME.round_resets.ante) or 0
      state_data.money = G.GAME.dollars or 0
      state_data.won = G.GAME.won
@@ -1047,7 +1051,7 @@ index 5d9d29f..966575e 100644
 
      -- Stake (optional)
      if G.GAME.stake then
-@@ -897,6 +1012,12 @@ function gamestate.get_gamestate()
+@@ -897,6 +1016,12 @@ function gamestate.get_gamestate()
      -- Poker hands
      if G.GAME.hands then
        state_data.hands = extract_hand_info(G.GAME.hands)
@@ -1060,7 +1064,7 @@ index 5d9d29f..966575e 100644
      end
 
      -- Round info
-@@ -907,7 +1028,7 @@ function gamestate.get_gamestate()
+@@ -907,7 +1032,7 @@ function gamestate.get_gamestate()
    end
 
    -- Always available areas
@@ -1069,7 +1073,7 @@ index 5d9d29f..966575e 100644
    state_data.consumables = extract_area(G.consumeables) -- Note: typo in game code
 
    -- Cards remaining in deck
-@@ -915,6 +1036,11 @@ function gamestate.get_gamestate()
+@@ -915,6 +1040,11 @@ function gamestate.get_gamestate()
      state_data.cards = extract_area(G.deck)
    end
 

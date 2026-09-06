@@ -554,6 +554,36 @@ def test_remaining_stateful_jokers_round_trip_from_public_runtime() -> None:
         root.close()
 
 
+def test_zero_and_progressed_scaling_mult_jokers_round_trip() -> None:
+    pytest.importorskip("jackdaw")
+    from jackdaw.engine.card_factory import create_joker
+
+    source = JackdawBackend()
+    source.reset(RunSpec("RED", "WHITE", "7"))
+    state = source._backend._gs
+    ceremonial = create_joker("j_ceremonial")
+    ceremonial.ability["mult"] = 0
+    trousers = create_joker("j_trousers")
+    trousers.ability["mult"] = 6
+    state["jokers"] = [ceremonial, trousers]
+    for joker in state["jokers"]:
+        joker.add_to_deck(state)
+    source.observe()
+    observation = source.current_public
+    source.close()
+    assert observation is not None
+    assert [joker.runtime.current_mult for joker in observation.jokers] == [0, 6]
+
+    root = construct_public_root(observation, (), "scaling-zero-runtime", 0)
+    try:
+        assert root.current_public == observation
+        assert [
+            joker.ability["mult"] for joker in root._backend._gs["jokers"]
+        ] == [0, 6]
+    finally:
+        root.close()
+
+
 def test_same_public_particle_is_deterministic_and_other_particles_are_hidden_twins() -> None:
     observation, history = next(iter(_blind_select_states("7", limit=1)))
     roots = [

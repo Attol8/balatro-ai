@@ -880,6 +880,20 @@ def test_card_ability_normalization_matches_balatrobot_extractor() -> None:
     }
 
 
+@pytest.mark.parametrize("key", ("j_ceremonial", "j_trousers"))
+@pytest.mark.parametrize("current_mult", (0, 12))
+def test_scaling_mult_normalization_preserves_legitimate_zero(
+    key: str,
+    current_mult: int,
+) -> None:
+    value = {"effect": ""}
+    card = SimpleNamespace(center_key=key, ability={"mult": current_mult})
+
+    jackdaw._apply_balatrobot_card_values(value, card)
+
+    assert value["ability"] == {"mult": current_mult}
+
+
 def test_card_value_normalization_drops_null_optional_fields() -> None:
     value = {"effect": "", "rank": None, "suit": None, "rarity": None}
     card = SimpleNamespace(ability={"x_mult": 1})
