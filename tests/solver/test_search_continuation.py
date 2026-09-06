@@ -33,3 +33,13 @@ def test_two_antes_requires_ante_horizon(monkeypatch, tmp_path):
         main()
     assert error.value.code == 2
     assert not (tmp_path / 'report.json').exists()
+
+
+def test_explicit_roots_require_ante_horizon(monkeypatch, tmp_path):
+    monkeypatch.setattr('sys.argv', ['shadow_blind', '--trace', 'unused',
+                                    '--decision', '0', '--root-actions', 'unused.json',
+                                    '--output', str(tmp_path / 'report.json')])
+    with pytest.raises(SystemExit) as error:
+        main()
+    assert error.value.code == 2
+    assert not (tmp_path / 'report.json').exists()

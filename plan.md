@@ -479,3 +479,41 @@ continuation-hash metadata; their continuation options were identical.
 
 Verification: 875 tests passed with optional candidate installed. The live policy
 is unchanged; the best measured real baseline remains 3/20.
+
+## Independent intervention check
+
+Freeze D2 decision137 comparison to selling Scholar versus recorded pack1.
+Use a new public randomness nonce, 16 paired particles, V6 continuation through
+two antes. Explicit validated root subsets avoid irrelevant action computation.
+Retain all rejects/censors and report paired wins/losses rather than selecting
+the best sampled action. This is development evidence, not held-out real wins.
+Only a replicated advantage warrants an authoritative intervention test; an
+inconclusive result is not permission to hard-code a seed-specific sale rule.
+
+Fresh particles completed: sale9/16 versus purchase5/16, seven sale-only and three
+purchase-only successes. Direction replicated, but evidence is small. Proceed to
+one explicitly labelled real-game development intervention, matching only the
+exact public observation digest. The policy never sees the seed. It otherwise
+uses unchanged V6; report whether the intervention actually fired. This diagnostic
+is not registered as a general live policy and cannot establish generalization.
+
+### Authoritative intervention outcome: rejected
+
+`runs/intervention-live-001/`: intervention matched and first action difference
+was exactly decision137. The real run lost to The Eye at ante6, scoring37,860 /
+40,000, with peak hand16,896. The recorded V6 control reached ante8. Selling
+Scholar was followed by buying the same Celestial pack, then an extra reroll and
+purchase; subsequent policy trajectory changed. This was not an isolated removal
+effect. Reject the intervention for promotion or distillation. One realized loss
+does not establish a simulator bug (the candidate also predicted losses), but it
+does refute treating the small modeled advantage as a demonstrated improvement.
+
+Added an explicitly diagnostic public-digest, one-shot intervention harness;
+it does not expose seeds to policy decisions or register a new general policy.
+The harness refuses non-menu games and non-all-unlocked profiles. Existing V6
+is untouched. Tests:883 passed. The owned game and launcher were stopped after
+the completed run; no training or model API calls occurred.
+
+Next work should evaluate multi-action build changes and check candidate
+transition fidelity on these newly divergent real states, not distil isolated
+action labels from a handful of rollout successes. Real wins remain the metric.

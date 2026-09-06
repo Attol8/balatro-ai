@@ -11,7 +11,7 @@ from typing import Protocol
 
 from .actions import (
     BuyMode, BuyShopCard, DiscardCards, LeaveShop, PlayCards, PublicAction,
-    ReorderHand, ReorderJokers, SelectBlind, action_to_data, is_legal,
+    ReorderConsumables, ReorderHand, ReorderJokers, SelectBlind, action_to_data, is_legal,
     iter_legal_actions,
 )
 from .policy import PublicHistoryStep, PublicPolicy
@@ -143,6 +143,7 @@ def compare_ante(
     max_steps: int = 200,
     antes: int = 1,
     nonce: str = "public-ante-v1",
+    roots: tuple[PublicAction, ...] | None = None,
 ) -> BlindComparison:
     """Compare non-reorder shop roots through one or two antes, capped at eight.
 
@@ -155,8 +156,25 @@ def compare_ante(
         raise ValueError("ante rollout budgets must be bounded positive integers")
     if observation.phase != Phase.SHOP:
         return BlindComparison(observation.digest(), (), (), "outside ante shop slice")
-    roots = tuple(a for a in iter_legal_actions(observation)
-                  if not isinstance(a, (ReorderHand, ReorderJokers)))
+    if roots is None:
+        roots = tuple(a for a in iter_legal_actions(observation)
+                      if not isinstance(a, (ReorderHand, ReorderJokers)))
+    else:
+        if type(roots) is not tuple or not roots:
+            raise ValueError("ante rollout roots must be a nonempty tuple")
+        canonical_roots: list[dict[str, object]] = []
+        for root in roots:
+            if isinstance(root, (ReorderConsumables, ReorderHand, ReorderJokers)):
+                raise ValueError("ante rollout roots must not reorder")
+            try:
+                canonical = action_to_data(root)
+            except Exception as exc:
+                raise ValueError("ante rollout roots must be legal public actions") from exc
+            if any(canonical == existing for existing in canonical_roots):
+                raise ValueError("ante rollout roots must not contain duplicates")
+            if not is_legal(observation, root):
+                raise ValueError("ante rollout roots must be legal for the observation")
+            canonical_roots.append(canonical)
     rows = []
     for root in roots:
         row = []

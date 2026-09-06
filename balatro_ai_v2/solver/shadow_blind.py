@@ -70,10 +70,15 @@ def main():
     parser.add_argument("--antes", type=int, choices=(1, 2), default=1)
     parser.add_argument("--continuation", choices=("strategic", "search-v6"), default="strategic")
     parser.add_argument("--max-steps", type=int)
+    parser.add_argument("--nonce", default=None)
+    parser.add_argument("--root-actions", type=Path,
+                        help="JSON array of explicit legal ante-root actions")
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     if args.horizon != "ante" and args.antes != 1:
         parser.error("--antes requires --horizon ante")
+    if args.root_actions is not None and args.horizon != "ante":
+        parser.error("--root-actions requires --horizon ante")
     if args.output.exists():
         parser.error("output already exists; choose a new evidence path")
     from .baselines import PublicStrategicPolicy
@@ -82,6 +87,13 @@ def main():
 
     runtime = verify_jackdaw_runtime()
     observation, history = load_decision(args.trace, args.decision)
+    roots = None
+    if args.root_actions is not None:
+        data = json.loads(args.root_actions.read_text())
+        if not isinstance(data, list):
+            parser.error("root actions must be a JSON array")
+        roots = tuple(action_from_data(a) for a in data)
+    nonce = args.nonce or ("public-ante-v1" if args.horizon == "ante" else "public-next-blind-v1")
     compare = compare_next_blind
     if args.horizon == "ante":
         from .blind_rollout import compare_ante
@@ -100,13 +112,15 @@ def main():
         continuation_factory=(SearchContinuation if args.continuation == "search-v6"
                               else PublicStrategicPolicy), samples=args.samples,
         max_steps=max_steps,
-        **({"antes": args.antes} if args.horizon == "ante" else {}),
+        nonce=nonce,
+        **({"antes": args.antes, "roots": roots} if args.horizon == "ante" else {}),
     )
     report = {
         "schema_version": 1, "evidence_kind": "shadow_candidate_not_authority",
         "decision": args.decision, "samples": args.samples,
         "max_steps": max_steps, "horizon": args.horizon, "runtime": runtime,
         "antes": args.antes, "continuation": args.continuation,
+        "nonce": nonce, "root_selection": "explicit" if roots is not None else "all",
         "continuation_source_sha256": continuation_hash,
         "solver_sha256": solver_hash,
         "comparison": asdict(comparison),

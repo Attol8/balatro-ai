@@ -4,7 +4,8 @@ from types import SimpleNamespace
 import pytest
 
 from balatro_ai_v2.solver.actions import (
-    LeaveShop, ReorderHand, ReorderJokers, action_to_data, iter_legal_actions,
+    LeaveShop, ReorderHand, ReorderJokers, SelectBlind, action_to_data,
+    iter_legal_actions,
 )
 from balatro_ai_v2.solver.adapter import to_public_observation
 from balatro_ai_v2.solver.blind_rollout import compare_ante
@@ -82,6 +83,38 @@ def test_all_legal_nonreorder_roots_fresh_particles_and_actual_history():
         assert history[1].action == expected[index // 2]
         assert history[1].after == policy.calls[0][0]
     assert all(c.closed for c in candidates)
+
+
+def test_explicit_roots_preserve_order_and_only_construct_selected_candidates():
+    obs = observation()
+    expected = tuple(a for a in iter_legal_actions(obs)
+                     if not isinstance(a, (ReorderHand, ReorderJokers)))
+    roots = (expected[-1], expected[0])
+    calls = []
+
+    def root(obs, history, nonce, index):
+        calls.append(index)
+        return Candidate(obs)
+
+    result = compare_ante(obs, (), root_factory=root, continuation_factory=Continue,
+                          samples=2, roots=roots)
+    assert result.actions == tuple(action_to_data(a) for a in roots)
+    assert calls == [0, 1, 0, 1]
+
+
+@pytest.mark.parametrize("roots", [(), (SelectBlind(),),
+                                    (ReorderHand(()),), (LeaveShop(), LeaveShop())])
+def test_invalid_explicit_roots_fail_before_constructing_candidates(roots):
+    calls = []
+
+    def root(*args):
+        calls.append(args)
+        return Candidate(args[0])
+
+    with pytest.raises(ValueError):
+        compare_ante(observation(), (), root_factory=root, continuation_factory=Continue,
+                     roots=roots)
+    assert calls == []
 
 
 @pytest.mark.parametrize("mode,status", [("lost", "lost"), ("reject", "rejected"),
