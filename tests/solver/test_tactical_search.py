@@ -70,6 +70,25 @@ def test_green_opt_in_enables_samples_but_default_still_falls_back():
     assert choose_tactical(other, play(0), model_green_joker=True).reason == "discard changes joker state: preserve baseline"
 
 
+def test_green_growth_guard_preserves_early_play_but_keeps_final_search():
+    obs = observation(["H_A", "H_K", "H_9", "H_6", "C_2", "D_3", "S_4", "C_7"],
+                      ["H_2", "H_3", "H_4", "H_5", "H_7", "H_8", "H_T", "H_J"], target=10000)
+    obs = replace(obs, jokers=(PublicItem("j_green_joker", "Green", "JOKER",
+                                        runtime=PublicJokerRuntime(current_mult=1)),))
+    args = dict(samples=4, model_green_joker=True, preserve_green_plays=True)
+    early = choose_tactical(obs, play(0), **args)
+    assert early.action == play(0) and early.samples == 0
+    assert choose_tactical(obs, play(0), samples=4, model_green_joker=True).samples == 4
+    final = replace(obs, round=replace(obs.round, hands_left=1))
+    assert choose_tactical(final, play(0), **args).samples == 4
+    assert choose_tactical(obs, discard(0), **args).samples == 4
+    clearing = observation(["H_A", "H_K", "H_9", "H_6", "H_2", "D_3", "S_4", "C_7"],
+                           ["C_2"], target=100)
+    clearing = replace(clearing, jokers=obs.jokers)
+    choice = choose_tactical(clearing, play(0), **args)
+    assert choice.action != play(0) and "clear" in choice.reason
+
+
 def test_debuffed_green_is_not_decremented():
     obs = observation(["H_A", "C_3"], ["H_4"])
     green = PublicItem("j_green_joker", "Green Joker", "JOKER", debuffed=True,

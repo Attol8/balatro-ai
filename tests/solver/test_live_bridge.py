@@ -101,10 +101,12 @@ def test_v3_narrows_priority_without_changing_v2():
     assert make_policy('search-v3').shop_search.evaluate_blueprint_placement
 
 
-def test_v4_adds_only_static_debuff_search_to_v3():
+def test_v4_adds_static_debuff_search_and_green_growth_guard():
     assert make_policy('search-v4').model_static_debuffs
     assert not make_policy('search-v3').model_static_debuffs
     assert not make_policy('search-v4').shop_search.prioritize_all_jokers
+    assert make_policy('search-v4').preserve_green_plays
+    assert not make_policy('search-v3').preserve_green_plays
 
 
 def test_hidden_variant_is_isolated_and_uses_recorded_observation(monkeypatch):

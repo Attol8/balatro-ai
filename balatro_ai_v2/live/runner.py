@@ -45,7 +45,7 @@ SEARCH_VARIANTS = {
         "model_green_joker": True, "project_next_boss": True,
         "optimize_order": True, "model_hidden_jokers": True,
         "evaluate_blueprint_placement": True, "prioritize_all_jokers": False,
-        "model_static_debuffs": True,
+        "model_static_debuffs": True, "preserve_green_plays": True,
     },
 }
 POLICY_NAMES = ("baseline", "strategic", *SEARCH_VARIANTS)

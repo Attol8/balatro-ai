@@ -175,4 +175,20 @@ narrow 120 hypotheses to six; on the final hand it lowers modeled clear chance
 from 70% to 40% without changing the chosen cards. Such a posterior is not yet
 implemented; do not treat the unconditioned belief as a calibrated probability.
 
+V3 completed 2/20 wins (D0000001 and D0000005), with no errors/truncations.
+The remaining performance is inadequate. Next evaluate `search-v4`:
+
+- Enable six static-debuff bosses after 72/72 recorded public refill transitions
+  matched exact card multisets, including 63 drawn debuffed cards.
+- Correct the terminal objective: with one hand left, deterministic modeled loss
+  and legal modeled discards remaining, do not quit because samples found no outs.
+- Preserve baseline early plays with Green Joker: one-next-hand sampling does not
+  value its accumulated growth. D6 previously discarded instead of playing 192;
+  repeated-hand growth would project 192+240+288 against the remaining 644.
+  This is an explicit conservative fallback, not a full-blind rollout model.
+
+The Green guard and static support are opt-in to V4; the terminal correction is
+a scorer-objective repair in the new source revision. V3's running artifact was
+unchanged. Full suite: 687 tests pass.
+
 The milestone remains incomplete until live performance supports reliable wins.

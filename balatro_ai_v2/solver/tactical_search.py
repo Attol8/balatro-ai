@@ -62,6 +62,7 @@ def choose_tactical(
     observation: PublicObservation, baseline: PublicAction, *, samples: int = 8,
     model_green_joker: bool = False,
     model_static_debuffs: bool = False,
+    preserve_green_plays: bool = False,
 ) -> TacticalChoice:
     """Prefer a clear now, or a materially better sampled discard/refill."""
     if isinstance(samples, bool) or not isinstance(samples, int) or not 1 <= samples <= 64:
@@ -98,6 +99,12 @@ def choose_tactical(
         return TacticalChoice(baseline, baseline_score, baseline_score, 0, reason)
     if score >= target:
         return TacticalChoice(play, score, baseline_score, 0, "estimated clear now" if stochastic else "clear blind now")
+    if (model_green_joker and preserve_green_plays and isinstance(baseline, PlayCards)
+            and observation.round.hands_left > 1
+            and any(j.key == "j_green_joker" and not j.debuffed for j in observation.jokers)):
+        # Next-play sampling does not value cumulative blind scoring or the
+        # Mult retained/gained by playing. Keep that strategic growth decision.
+        return unchanged("preserve strategic Green Joker play before final hand")
     if observation.round.discards_left <= 0 or observation.draw_count <= 0:
         return TacticalChoice(play, score, baseline_score, 0, "best immediate legal play")
     unsupported = _DISCARD_STATE_JOKERS - {"j_green_joker"} if model_green_joker else _DISCARD_STATE_JOKERS

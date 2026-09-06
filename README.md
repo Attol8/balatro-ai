@@ -55,6 +55,9 @@ Experimental variants keep that search control unchanged:
 - `search-placement`: values Blueprint in available positions and executes the
   required purchase/reorder plan before discretionary spending.
 - `search-v2`: combines Green, boss, ordering, hidden-inventory, and placement changes.
+- `search-v3`: restricts purchase priority to Blueprint; its development batch won
+  2/20 runs, versus 1/20 for V2 and the initial search control.
+- `search-v4`: adds static-debuff refill search and preserves early Green Joker plays.
 
 Each variant is an ablation, not an established improvement. Draw estimates use
 eight shared samples; shop estimates use six synthetic hands and approximate
