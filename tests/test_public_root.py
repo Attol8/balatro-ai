@@ -259,6 +259,29 @@ def test_public_roots_reconstruct_publicly_derivable_pool_lifecycle() -> None:
     assert checked == 16
 
 
+@pytest.mark.parametrize(
+    ("seed", "key"),
+    (("4", "j_green_joker"), ("27", "j_flash"), ("46", "j_stencil")),
+)
+def test_publicly_derivable_runtime_jokers_round_trip(
+    seed: str,
+    key: str,
+) -> None:
+    observation, history = next(
+        (observation, history)
+        for observation, history in _organic_states(seed, Phase.SHOP, limit=15)
+        if any(
+            isinstance(joker, PublicItem) and joker.key == key
+            for joker in (*observation.jokers, *observation.shop)
+        )
+    )
+    root = construct_public_root(observation, history, f"runtime-{key}", 0)
+    try:
+        assert root.current_public == observation
+    finally:
+        root.close()
+
+
 def test_same_public_particle_is_deterministic_and_other_particles_are_hidden_twins() -> None:
     observation, history = next(iter(_blind_select_states("7", limit=1)))
     roots = [

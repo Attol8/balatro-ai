@@ -106,6 +106,13 @@ _MISSING_PUBLIC_RUNTIME = frozenset(
     {"j_caino", "j_castle", "j_invisible", "j_mail", "j_turtle_bean", "j_yorick"}
 )
 _UNSUPPORTED_BLIND_STATE = frozenset({"The Ox", "The Pillar"})
+_PUBLIC_DERIVED_RUNTIME_FIELDS = {
+    "j_flash": "current_mult",
+    "j_green_joker": "current_mult",
+    "j_red_card": "current_mult",
+    "j_ride_the_bus": "current_mult",
+    "j_stencil": "current_x_mult",
+}
 
 
 def public_root_seed(
@@ -703,7 +710,11 @@ def _apply_joker_runtime(
         "j_todo_list",
         "j_idol",
     }
-    if required and runtime is None:
+    if (
+        required
+        and runtime is None
+        and key not in _PUBLIC_DERIVED_RUNTIME_FIELDS
+    ):
         raise DeterminizationUnavailable(f"owned Joker {key!r} has no public runtime")
     if runtime is None:
         return
@@ -1100,9 +1111,21 @@ def _decision_difference(
 
 def _without_presentation(value: object) -> object:
     if isinstance(value, dict):
+        normalized = value
+        runtime_field = _PUBLIC_DERIVED_RUNTIME_FIELDS.get(value.get("key"))
+        runtime = value.get("runtime")
+        if runtime_field is not None and isinstance(runtime, dict):
+            normalized = dict(value)
+            normalized_runtime = dict(runtime)
+            normalized_runtime[runtime_field] = None
+            normalized["runtime"] = (
+                None
+                if all(item is None for item in normalized_runtime.values())
+                else normalized_runtime
+            )
         return {
             key: _without_presentation(item)
-            for key, item in value.items()
+            for key, item in normalized.items()
             if key not in _PRESENTATION_FIELDS
         }
     if isinstance(value, list):

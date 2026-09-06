@@ -1974,6 +1974,33 @@ roots, and one each for Stencil, Green Joker, and Castle. This remains a
 development diagnostic, not strength evidence; the next coverage slice is to
 canonicalize public-derivable default/dynamic Joker runtime before PACK support.
 
+Public-runtime design: canonicalize only values a normal player can derive
+without tooltip prose or simulator state. Fresh or still-zero Flash Card,
+Green Joker, Ride the Bus, and Red Card have a known public zero counter when
+their serialized ability omits that field; Joker Stencil's xMult is exactly
+the visible Joker capacity minus occupied non-Stencil slots. The first attempt
+filled these in the shared adapter, but the full suite correctly rejected that
+wire mutation because retained real traces store the previous canonical public
+state. Keep the frozen public wire unchanged. Instead, admit only those named
+defaults in the fresh constructor and normalize their mathematically derived
+field solely during the constructor's internal round-trip check. Preserve
+fail-closed behavior for unknown or malformed nonzero runtime and for
+target-bearing mechanics such as Castle until their typed visible target
+enters the contract. Verify retained expert import, organic candidate roots,
+and another live diagnostic before starting PACK reconstruction.
+
+Public-runtime result: the compatibility-preserving constructor admits the
+named zero/default fields and Stencil's visible-layout value without changing
+the policy wire. Retained organic expert import passes, organic Green Joker,
+Flash Card, and Stencil roots round-trip, and the complete suite passes at
+1,213 tests. The repeated accelerated live diagnostic completed 47 of 51
+public-root searches, changed ten actions, rejected zero rollout branches, and
+died in Ante 4 after 128 decisions. The only fallbacks were three PACK states
+and one Castle state. A discarded adapter-level variant reached Ante 6 on the
+same reused seed but invalidated stored authority public states; that result is
+not a candidate and must not be used for selection. Continue with the frozen
+wire, add Castle's typed public target, then reconstruct vanilla PACK roots.
+
 Strength replan: throughput is no longer the immediate score ceiling. Across
 the descriptive frozen v9/v10 trajectories, 340 of 365 losses (93.2%) end on
 Pair or Two Pair; 116 of 243 losses with a full Joker row have zero xMult roles
