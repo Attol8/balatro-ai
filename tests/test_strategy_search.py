@@ -1002,6 +1002,65 @@ def test_v16_overlay_preserves_exact_ordinary_search_without_specialist(
     assert control.last_decision.specialist_roots == 0
 
 
+def test_search_preserves_legal_roots_after_baseline_shop_action_cap(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[object] = []
+
+    class Sample:
+        def close(self) -> None:
+            pass
+
+    class Frozen:
+        def clone(self):
+            return SimpleNamespace(close=lambda: None)
+
+    monkeypatch.setattr(search_module, "sample_candidate", lambda *args: Sample())
+    monkeypatch.setattr(search_module, "freeze_backend", lambda sample: Frozen())
+    monkeypatch.setattr(
+        search_module, "build_strategy_candidates", lambda *args, **kwargs: ()
+    )
+    monkeypatch.setattr(
+        search_module, "_teacher_config_digest", lambda policy: "1" * 64
+    )
+
+    def rollout(self, clone, observation, history, action, **kwargs):
+        del self, clone, observation, history, kwargs
+        calls.append(action)
+        value = 2.0 if isinstance(action, RerollShop) else 1.0
+        return RolloutOutcome(
+            value=value,
+            steps=1,
+            rejected=False,
+            goal_utility=_utility(clear=1, progress=value, ante=1),
+        )
+
+    monkeypatch.setattr(DeterminizedSearchPolicy, "_rollout", rollout)
+    observation = to_public_observation(state("SHOP", money=10))
+    legal = tuple(iter_legal_actions(observation))
+    history = tuple(
+        PublicHistoryStep(observation, RerollShop(), observation) for _ in range(6)
+    )
+    continuation = PublicStrategicPolicy(max_shop_actions=6)
+    baseline = continuation.choose_action(
+        observation, lambda: iter(legal), history
+    )
+    policy = DeterminizedSearchPolicy(
+        backend=None,  # type: ignore[arg-type]
+        continuation=continuation,
+        budget=RolloutBudget(samples=1, horizon_antes=1, override_z=0),
+        enable_strategy_options=True,
+    )
+
+    selected = policy.choose_action(observation, lambda: iter(legal), history)
+
+    assert isinstance(baseline, LeaveShop)
+    assert isinstance(selected, RerollShop)
+    assert tuple(calls) == legal
+    assert policy.last_decision is not None
+    assert policy.last_decision.ordinary_roots == len(legal)
+
+
 def test_single_ordinary_root_without_specialist_does_not_sample(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
