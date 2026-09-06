@@ -73,7 +73,7 @@ from balatro_ai_v2.strategy_teacher import (
 )
 
 
-SEARCH_VERSION = "determinized-search-v19"
+SEARCH_VERSION = "determinized-search-v20"
 _REORDER_TYPES = (ReorderHand, ReorderJokers, ReorderConsumables)
 _DENSE_TEACHER_MAX_ROOTS = 512
 STRATEGY_SPECIALIST_MAX_ROOTS = 128
@@ -802,7 +802,9 @@ class DeterminizedSearchPolicy:
         count = len(frozen_samples)
         means = {index: sum(values[index]) / count for index in range(len(roots))}
         baseline_index = roots.index(baseline)
-        selected_index = _select_root(values, baseline_index, self.budget.override_z)
+        selected_index = select_paired_root(
+            values, baseline_index, self.budget.override_z
+        )
         selected = roots[selected_index]
         if self.collect_dense_teacher and rejected == 0:
             engine = derive_engine_state(observation)
@@ -1119,7 +1121,7 @@ class DeterminizedSearchPolicy:
             self.active_route = None
             return baseline
 
-        ordinary_index = _select_root(
+        ordinary_index = select_paired_root(
             scalar_values[:ordinary_count],
             baseline_index=baseline_index,
             override_z=self.budget.override_z,
@@ -1263,7 +1265,7 @@ class DeterminizedSearchPolicy:
             else None
         )
         challenger_indexes = (ordinary_index, *range(ordinary_count, len(roots)))
-        challenger_selected = _select_root(
+        challenger_selected = select_paired_root(
             [scalar_values[index] for index in challenger_indexes],
             baseline_index=0,
             override_z=self.budget.override_z,
@@ -2442,7 +2444,7 @@ class DeterminizedSearchPolicy:
         self.decisions.append(decision)
 
 
-def _select_root(
+def select_paired_root(
     values: Sequence[Sequence[float]],
     baseline_index: int,
     override_z: float,
@@ -2458,7 +2460,6 @@ def _select_root(
     """
 
     baseline_values = values[baseline_index]
-    count = len(baseline_values)
     best_index = baseline_index
     best_mean = None
     for index, root_values in enumerate(values):
@@ -2466,17 +2467,11 @@ def _select_root(
             continue
         if admissible is not None and not admissible[index]:
             continue
-        deltas = [
-            root - base for root, base in zip(root_values, baseline_values, strict=True)
-        ]
-        mean = sum(deltas) / count
+        mean, lower = _paired_delta_evidence(
+            root_values, baseline_values, override_z
+        )
         if mean <= 0:
             continue
-        if count > 1:
-            variance = sum((delta - mean) ** 2 for delta in deltas) / (count - 1)
-            lower = mean - override_z * (variance**0.5) / (count**0.5)
-        else:
-            lower = mean
         if lower <= 0:
             continue
         if best_mean is None or mean > best_mean:
@@ -2502,7 +2497,7 @@ def _paired_delta_evidence(
     if len(deltas) == 1:
         return mean, mean
     variance = sum((delta - mean) ** 2 for delta in deltas) / (len(deltas) - 1)
-    lower = mean - override_z * math.sqrt(variance / len(deltas))
+    lower = mean - override_z * math.sqrt(variance) / math.sqrt(len(deltas))
     return mean, lower
 
 

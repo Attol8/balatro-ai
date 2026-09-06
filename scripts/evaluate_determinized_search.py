@@ -51,6 +51,7 @@ from balatro_ai_v2.determinized_search import (
     SearchTimingCollector,
     SuccessTeacherBudget,
     SuccessTerminalActionBudget,
+    select_paired_root,
 )
 from balatro_ai_v2.evaluation_protocol import (
     SEED_PROVENANCES,
@@ -118,15 +119,15 @@ _CONTEXTUAL_BATCHES = tuple(
         "seed_start": seed_start,
         "seeds": 50,
         "teacher_jsonl": (
-            "runs/experiments/contextual-continuation-v13/"
+            "runs/experiments/contextual-continuation-v14/"
             f"batch-{index + 1:02d}/teacher.jsonl"
         ),
         "report_json": (
-            "runs/experiments/contextual-continuation-v13/"
+            "runs/experiments/contextual-continuation-v14/"
             f"batch-{index + 1:02d}/report.json"
         ),
     }
-    for index, seed_start in enumerate(range(1975, 2275, 50))
+    for index, seed_start in enumerate(range(2602, 2902, 50))
 )
 _CONTEXTUAL_SEARCH = {
     "samples": 6,
@@ -136,7 +137,7 @@ _CONTEXTUAL_SEARCH = {
     "max_decisions": 1200,
     "ante_cap": 12,
     "workers": 6,
-    "nonce": "contextual-continuation-v13-frozen",
+    "nonce": "contextual-continuation-v14-frozen",
     "continuation": "strategic",
     "policy_seed": "baseline-v1",
     "strategy_options": False,
@@ -849,11 +850,11 @@ def _validate_contextual_preregistration(
     *,
     repository_root: Path,
 ) -> dict[str, object] | None:
-    retired = range(1075, 1975)
-    reserved = range(1975, 2275)
+    retired = range(1075, 2275)
+    reserved = range(2602, 2902)
     requested = range(args.seed_start, args.seed_start + args.seeds)
     if requested.start < retired.stop and retired.start < requested.stop:
-        raise SystemExit("contextual v9/v10 seeds 1075-1674 are retired")
+        raise SystemExit("contextual v9-v13 seeds 1075-2274 are retired")
     overlaps_reserved = (
         requested.start < reserved.stop and reserved.start < requested.stop
     )
@@ -861,7 +862,7 @@ def _validate_contextual_preregistration(
     if path is None:
         if overlaps_reserved:
             raise SystemExit(
-                "seeds 1975-2274 require --contextual-preregistration-json"
+                "seeds 2602-2901 require --contextual-preregistration-json"
             )
         return None
     try:
@@ -872,7 +873,7 @@ def _validate_contextual_preregistration(
     if not isinstance(spec, dict):
         raise SystemExit("contextual preregistration root must be an object")
     if (
-        spec.get("protocol_id") != "contextual-continuation-development-v5"
+        spec.get("protocol_id") != "contextual-continuation-development-v6"
         or spec.get("status") != "reserved"
         or spec.get("immutable_batches") is not True
     ):
@@ -911,7 +912,7 @@ def _validate_contextual_preregistration(
         not isinstance(origin, dict)
         or origin.get("algorithm") != "hmac-sha256-truncated-128"
         or origin.get("key_path")
-        != "runs/secrets/contextual-continuation-v13-origin.key"
+        != "runs/secrets/contextual-continuation-v14-origin.key"
         or not isinstance(origin.get("key_sha256"), str)
         or len(origin["key_sha256"]) != 64
         or args.origin_key_file is None
@@ -1143,26 +1144,14 @@ def _validate_first_100_component_records(
 
 
 def _contextual_selected_index(record: StrategyTeacherRecord) -> int:
-    baseline_values = tuple(
-        sample.search_utility
-        for sample in record.candidates[record.baseline_index].samples
+    return select_paired_root(
+        tuple(
+            tuple(sample.search_utility for sample in candidate.samples)
+            for candidate in record.candidates
+        ),
+        record.baseline_index,
+        float(_CONTEXTUAL_SEARCH["override_z"]),
     )
-    best_index = record.baseline_index
-    best_mean: float | None = None
-    for index, candidate in enumerate(record.candidates):
-        if index == record.baseline_index:
-            continue
-        deltas = tuple(
-            sample.search_utility - baseline
-            for sample, baseline in zip(candidate.samples, baseline_values, strict=True)
-        )
-        mean = sum(deltas) / len(deltas)
-        variance = sum((delta - mean) ** 2 for delta in deltas) / (len(deltas) - 1)
-        lower = mean - math.sqrt(variance / len(deltas))
-        if mean > 0.0 and lower > 0.0 and (best_mean is None or mean > best_mean):
-            best_index = index
-            best_mean = mean
-    return best_index
 
 
 def _verify_contextual_freeze(
@@ -1224,7 +1213,7 @@ def _verify_contextual_freeze(
         ).stdout.splitlines()
     except (OSError, subprocess.CalledProcessError) as exc:
         raise SystemExit("cannot verify contextual implementation ancestry") from exc
-    if set(changed) != {"experiments/contextual-continuation-v13-preregistration.json"}:
+    if set(changed) != {"experiments/contextual-continuation-v14-preregistration.json"}:
         raise SystemExit(
             "contextual preregistration commit changed implementation source"
         )

@@ -4999,3 +4999,42 @@ training group, calibration admitted zero holdout overrides; the diagnostic is
 a pipeline proof, not promotion evidence. Dataset and artifact SHA-256 are
 `d3792cf8200aaf7556e3e1fe5874607388f93a6392d4db841c4d7da013e5e6d7`
 and `2c122effa380898eba34c98c1ab5ae2f59d6cb79750cf75fd5f269c6535d854a`.
+
+### Contextual continuation v13 retirement (2026-09-06)
+
+The first two immutable v13 batches opened development seeds 1975--2074 and
+completed 100/100 runs. They produced 6,190 dense records and 58,611 complete
+six-sample roots with zero rejected, censored, unavailable, failed, incomplete,
+or terminal-error work. Action sensitivity was 5,373/6,190 (86.80%), and 15
+opaque groups contained an observed victory target. Retrospectively, those
+results clear every frozen first-100 data and coverage threshold.
+
+The frozen first-100 validator nevertheless rejected 112 records: 71 in batch
+01 and 41 in batch 02. Collection computes the one-standard-error lower bound
+as `mean - z * sqrt(variance) / sqrt(count)`, while both independently written
+offline validators computed `mean - z * sqrt(variance / count)`. On the
+observed six-sample shape with one positive delta and five exact zeros, the
+collector expression rounds to exactly zero and retains the baseline; the old
+validator expression rounds to a tiny positive number and selects the
+challenger. This is a frozen-validator defect, not corrupt rollout data, but it
+cannot be waived after outcomes are visible. The v13 preregistration remains
+immutable, all of 1975--2274 is retired, and no v13 row may train or certify a
+model.
+
+Search selection, its diagnostic confidence evidence, the first-100 gate, and
+the merger now share one canonical paired-selector implementation with a
+regression for the observed boundary. The search identity advances from v19 to
+v20. The replacement contextual protocol is v14/development-v6 on fresh
+development seeds 2602--2901; seed 2601 remains a reused diagnostic. Its six
+50-run batches begin at 2602, 2652, 2702, 2752, 2802, and 2852. A separate
+preregistration-only commit is still required before any replacement seed is
+opened.
+
+The retired data still provide direction without tuning the replacement
+protocol: BLIND_SELECT changed only 2/1,137 decisions, while SHOP changed
+667/4,269 (15.62%) and PACK changed 148/784 (18.88%). PACK is the compute tail
+with p99 227 and maximum 430 roots, versus SHOP p99 14. The 100 runs consumed
+5.83 million rollout steps at 124.4 steps/second. Continue with utility-only
+continuation learning if the fresh v14 first-100 gate reproduces the signal;
+after promotion evidence, optimize exact PACK transformation reuse without
+dropping or reordering roots. Do not spend model capacity on blind selection.

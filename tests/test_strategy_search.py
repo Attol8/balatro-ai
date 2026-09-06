@@ -26,11 +26,13 @@ from balatro_ai_v2.determinized_search import (
     SuccessTeacherBudget,
     SuccessTerminalActionBudget,
     _dense_teacher_indexes,
+    _paired_delta_evidence,
     _public_best_hand_score,
     _required_positive_discordances,
     _select_goal_root,
     _teacher_target,
     _terminal_action_relation,
+    select_paired_root,
 )
 from balatro_ai_v2.public_state import PublicItem
 from balatro_ai_v2.policy import NoPublicProgressAction, PublicHistoryStep
@@ -64,6 +66,37 @@ def test_victory_selector_never_trades_a_win_for_endless_score() -> None:
     )
 
     assert _select_goal_root(values, 0, RunGoal.VICTORY, 0) == 0
+
+
+def test_paired_selector_keeps_baseline_at_exact_one_se_boundary() -> None:
+    boundary_delta = 0.051200000000000134
+    mean, lower = _paired_delta_evidence(
+        (boundary_delta, 0.0, 0.0, 0.0, 0.0, 0.0),
+        (0.0, 0.0, 0.0, 0.0, 0.0, 0.0),
+        1.0,
+    )
+
+    assert mean > 0.0
+    assert lower == 0.0
+    assert select_paired_root(
+        (
+            (0.0, 0.0, 0.0, 0.0, 0.0, 0.0),
+            (boundary_delta, 0.0, 0.0, 0.0, 0.0, 0.0),
+        ),
+        baseline_index=0,
+        override_z=1.0,
+    ) == 0
+
+
+def test_paired_selector_respects_significance_order_and_admissibility() -> None:
+    baseline = (0.0,) * 6
+    first = (0.06, 0.01, 0.01, 0.01, 0.01, 0.01)
+    tied = first
+
+    assert select_paired_root((baseline, first, tied), 0, 1.0) == 1
+    assert select_paired_root(
+        (baseline, first, tied), 0, 1.0, admissible=(True, False, True)
+    ) == 2
 
 
 def test_endless_selector_uses_ante_then_log_score() -> None:

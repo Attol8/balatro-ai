@@ -2535,7 +2535,39 @@ bound above zero, with the strategic layer held fixed.
 
 Search quality is bounded by the continuation. Improve it from search.
 
-### Active slice: paired-utility continuation v13
+### Active slice: paired-utility continuation v14
+
+#### Recovery: retire v13 and freeze a canonical v14 selector
+
+The first two v13 batches exposed a validator defect at an exact one-standard-
+error boundary: collection evaluates `sqrt(variance) / sqrt(count)`, while the
+two offline validators independently evaluate `sqrt(variance / count)`.  Those
+expressions are algebraically equal but not bitwise equal, and observed roots
+change selection at zero by floating-point rounding.  This invalidates the
+frozen first-100 validation implementation, not the collected rollout records.
+Do not waive the gate, edit the v13 preregistration, or train on any v13 batch.
+
+- Preserve the v13 preregistration and its first two immutable batches as retired
+  diagnostic evidence.  Treat the entire reserved v13 range, 1975--2274, as
+  opened and ineligible for reuse.
+- Move paired override selection into one canonical pure helper in
+  `determinized_search.py`.  Collection, the first-100 gate, and the dataset
+  merger must invoke that same helper rather than reproduce its arithmetic.
+- Add a regression with the observed boundary-shaped deltas and prove that the
+  collector and both validators retain the baseline.  Keep strict failure for
+  malformed, incomplete, censored, or reordered roots.
+- Bump the search/protocol identity because the frozen evidence validator is
+  part of the artifact contract.  Update all exact contract tests and run the
+  focused suite, Ruff, the complete suite, and `git diff --check`.
+- Commit the repaired implementation and lab attribution before reserving any
+  replacement data.  Then create a separate v14 preregistration-only commit on
+  fresh development seeds 2602--2901, six 50-run batches beginning at 2602,
+  2652, 2702, 2752, 2802, and 2852.  Seed 2601 remains a reused diagnostic;
+  the replacement range does not overlap any prior diagnostic, tuning, gate,
+  authority, or reserved panel.
+- Re-run two immutable 50-run batches and the unchanged first-100 kill gate.
+  Only after that gate passes may collection, merge, utility-only training, and
+  the paired behavioral screen resume.
 
 The protocol-v14 coverage census and fresh seed-2507/2432 diagnostics make the
 next bottleneck concrete: every eligible strategic root is searchable and
@@ -2555,13 +2587,13 @@ search budget or hand-written route rules before improving that continuation.
   Accumulate globally normalized chunk gradients and take one optimizer step per
   epoch, exactly preserving the existing full-batch run/decision/alternative
   weighting.  Freeze the chunk size with every other training argument.
-- Repair the contextual-v13 merger's stale search-version freeze and include
-  the utility-only training objective in its preregistered training contract.
-- Commit and fully test these implementation changes before creating the
-  contextual-v13 preregistration.  The preregistration is a separate commit and
+- Keep the contextual merger bound to the current search version and the
+  utility-only training objective in its preregistered training contract.
+- Commit and fully test the canonical-selector repair before creating the
+  contextual-v14 preregistration.  The preregistration is a separate commit and
   is the only tracked change permitted after the implementation revision.
 - Collect the first two immutable 50-run batches on development seeds
-  1975--2074, then apply the frozen first-100 kill gate.  Continue through all
+  2602--2701, then apply the frozen first-100 kill gate.  Continue through all
   six batches only if collection is complete, rejection/censor free, and meets
   its sensitivity and victory-coverage requirements.
 - Merge the 300 complete run groups, train with the frozen 182/59/59 split,

@@ -25,7 +25,7 @@ from balatro_ai_v2.actions import (
     ReorderJokers,
     iter_legal_actions,
 )
-from balatro_ai_v2.determinized_search import SEARCH_VERSION
+from balatro_ai_v2.determinized_search import SEARCH_VERSION, select_paired_root
 from balatro_ai_v2.strategy_learning import (
     PAIRED_UTILITY_ONLY_LOSS_WEIGHTS,
     PAIRED_UTILITY_ONLY_OBJECTIVE,
@@ -43,9 +43,9 @@ from balatro_ai_v2.strategy_teacher import (
 )
 
 
-_BATCH_STARTS = tuple(range(1975, 2275, 50))
+_BATCH_STARTS = tuple(range(2602, 2902, 50))
 _BATCH_SIZE = 50
-_EXPECTED_SEEDS = set(range(1975, 2275))
+_EXPECTED_SEEDS = set(range(2602, 2902))
 _EXPECTED_BUDGET = {
     "samples": 6,
     "horizon_antes": 1,
@@ -53,8 +53,8 @@ _EXPECTED_BUDGET = {
     "override_z": 1.0,
 }
 _REORDER_ACTIONS = (ReorderHand, ReorderJokers, ReorderConsumables)
-_PROTOCOL_ID = "contextual-continuation-development-v5"
-_NONCE = "contextual-continuation-v13-frozen"
+_PROTOCOL_ID = "contextual-continuation-development-v6"
+_NONCE = "contextual-continuation-v14-frozen"
 _SEARCH_VERSION = SEARCH_VERSION
 _EXPECTED_SEARCH = {
     **_EXPECTED_BUDGET,
@@ -401,7 +401,7 @@ def _validate_source_freeze(
         ).stdout.splitlines()
     except (OSError, subprocess.CalledProcessError) as exc:
         raise SystemExit("cannot verify teacher implementation ancestry") from exc
-    if set(changed) != {"experiments/contextual-continuation-v13-preregistration.json"}:
+    if set(changed) != {"experiments/contextual-continuation-v14-preregistration.json"}:
         raise SystemExit("teacher collection revision changed implementation source")
 
 
@@ -412,7 +412,7 @@ def _load_preregistration(
     repository_root: Path,
 ) -> tuple[dict[str, object], str, bytes]:
     expected_path = (
-        repository_root / "experiments/contextual-continuation-v13-preregistration.json"
+        repository_root / "experiments/contextual-continuation-v14-preregistration.json"
     ).resolve()
     if path.resolve() != expected_path:
         raise SystemExit("contextual preregistration path is not frozen")
@@ -429,11 +429,11 @@ def _load_preregistration(
             "seed_start": seed_start,
             "seeds": _BATCH_SIZE,
             "teacher_jsonl": (
-                "runs/experiments/contextual-continuation-v13/"
+                "runs/experiments/contextual-continuation-v14/"
                 f"batch-{index:02d}/teacher.jsonl"
             ),
             "report_json": (
-                "runs/experiments/contextual-continuation-v13/"
+                "runs/experiments/contextual-continuation-v14/"
                 f"batch-{index:02d}/report.json"
             ),
         }
@@ -455,7 +455,7 @@ def _load_preregistration(
         or not isinstance(origin, dict)
         or origin.get("algorithm") != "hmac-sha256-truncated-128"
         or origin.get("key_path")
-        != "runs/secrets/contextual-continuation-v13-origin.key"
+        != "runs/secrets/contextual-continuation-v14-origin.key"
     ):
         raise SystemExit("contextual preregistration changed the frozen protocol")
     for field, length in (
@@ -574,28 +574,14 @@ def _validate_component_records(
 
 
 def _recompute_selected(record: StrategyTeacherRecord) -> int:
-    baseline_values = tuple(
-        sample.search_utility
-        for sample in record.candidates[record.baseline_index].samples
+    return select_paired_root(
+        tuple(
+            tuple(sample.search_utility for sample in candidate.samples)
+            for candidate in record.candidates
+        ),
+        record.baseline_index,
+        float(_EXPECTED_BUDGET["override_z"]),
     )
-    best_index = record.baseline_index
-    best_mean: float | None = None
-    for index, candidate in enumerate(record.candidates):
-        if index == record.baseline_index:
-            continue
-        deltas = tuple(
-            sample.search_utility - baseline
-            for sample, baseline in zip(candidate.samples, baseline_values, strict=True)
-        )
-        mean = sum(deltas) / len(deltas)
-        if mean <= 0.0:
-            continue
-        variance = sum((delta - mean) ** 2 for delta in deltas) / (len(deltas) - 1)
-        lower = mean - math.sqrt(variance / len(deltas))
-        if lower > 0.0 and (best_mean is None or mean > best_mean):
-            best_index = index
-            best_mean = mean
-    return best_index
 
 
 def _tensorization_preflight(
