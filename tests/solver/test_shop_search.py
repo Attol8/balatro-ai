@@ -264,3 +264,65 @@ def test_planet_and_joker_compete_on_same_capacity_utility():
     obs = shop(offers=(planet(), item('j_joker', 3)))
     choice = ShopSearch(samples=1, max_rerolls=0, evaluate_planets=True).choose(obs, LeaveShop())
     assert choice.action == BuyShopCard(ShopSlot(1))
+
+
+def before_boss(name, **kwargs):
+    obs = shop(**kwargs)
+    return replace(obs, blinds=tuple(replace(b, status='UPCOMING' if b.kind == 'BOSS' else 'DEFEATED',
+                                           name=name if b.kind == 'BOSS' else b.name)
+                                    for b in obs.blinds))
+
+
+def test_needle_projection_uses_one_hand_and_activates_acrobat():
+    obs = before_boss('The Needle', offers=(item('j_acrobat', 4),))
+    choice = ShopSearch(samples=1, max_rerolls=0, project_next_boss=True).choose(obs, LeaveShop())
+    assert choice.action == BuyShopCard(ShopSlot(0))
+    d = choice.diagnostics
+    assert d['projected_hand_budget'] == d['survival_capacity_multiplier'] == 1
+    assert d['candidate_capacity'] == d['candidate_first_hand'] == 3 * d['current_first_hand']
+    assert d['candidate_repeat_hand'] == d['candidate_first_hand']
+
+
+def test_needle_does_not_value_impossible_card_sharp_repeats():
+    obs = before_boss('The Needle', offers=(item('j_card_sharp', 4),))
+    choice = ShopSearch(samples=1, max_rerolls=0, project_next_boss=True).choose(obs, LeaveShop())
+    assert isinstance(choice.action, LeaveShop)
+    assert choice.diagnostics['current_capacity'] == choice.diagnostics['current_first_hand']
+
+
+def test_flint_projection_halves_only_base_before_joker_effects():
+    obs = before_boss('The Flint', jokers=(item('j_joker'),))
+    original = obs.canonical_json()
+    choice = ShopSearch(samples=1, max_rerolls=0, project_next_boss=True).choose(obs, LeaveShop())
+    # High Card base chips 5 -> 3, Ace +11, base mult1 + Joker4.
+    assert choice.diagnostics['current_first_hand'] == 70
+    assert obs.canonical_json() == original
+
+
+def test_only_immediate_upcoming_blind_is_projected():
+    obs = shop()
+    obs = replace(obs, blinds=tuple(replace(b, name='The Needle' if b.kind == 'BOSS' else b.name)
+                                   for b in obs.blinds))
+    choice = ShopSearch(samples=1, max_rerolls=0, project_next_boss=True).choose(obs, LeaveShop())
+    assert choice.diagnostics['boss_projection'] == 'projected Big Blind'
+    assert choice.diagnostics['projected_hand_budget'] == 4
+
+
+def test_disabled_default_preserves_control_and_ignores_old_boss():
+    obs = before_boss('The Flint', offers=(item('j_joker'),))
+    assert ShopSearch(samples=1).choose(obs, LeaveShop()) == ShopSearch(samples=1, project_next_boss=False).choose(obs, LeaveShop())
+    old = replace(obs.blinds[-1], status='CURRENT', disabled=True)
+    next_small = replace(obs.blinds[0], status='UPCOMING')
+    obs = replace(obs, blinds=(old, next_small))
+    choice = ShopSearch(samples=1, max_rerolls=0, project_next_boss=True).choose(obs, LeaveShop())
+    assert choice.diagnostics['boss_projection'] == 'projected Small Blind'
+    assert choice.diagnostics['current_first_hand'] == 16
+
+
+def test_unsupported_boss_or_activation_retains_control_with_reason():
+    for name, owned in [('The Head', ()), ('The Needle', (item('j_burglar'),)), ('The Flint', (item('j_chicot'),))]:
+        obs = before_boss(name, jokers=owned, offers=(item('j_joker'),))
+        control = ShopSearch(samples=1, max_rerolls=0).choose(obs, LeaveShop())
+        projected = ShopSearch(samples=1, max_rerolls=0, project_next_boss=True).choose(obs, LeaveShop())
+        assert projected.action == (control.action if control else LeaveShop())
+        assert projected.diagnostics['boss_projection'].startswith('control fallback:')

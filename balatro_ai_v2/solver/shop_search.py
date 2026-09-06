@@ -19,7 +19,7 @@ from balatro_ai_v2.solver.joker_catalog import get_joker_profile
 from balatro_ai_v2.solver.build_strategy import planet_hand
 from balatro_ai_v2.solver.policy import PublicHistoryStep
 from balatro_ai_v2.solver.public_scoring import _HAND_LEVEL_GAINS, _prepare_score_context, _score_play_prepared
-from balatro_ai_v2.solver.public_state import DeckCardCount, Phase, PublicItem, PublicJokerRuntime, PublicObservation
+from balatro_ai_v2.solver.public_state import DeckCardCount, Phase, PublicBlind, PublicItem, PublicJokerRuntime, PublicObservation
 
 
 @dataclass(frozen=True, slots=True)
@@ -36,7 +36,7 @@ def _hand_size_delta(item: PublicItem) -> int | None:
 
 
 class ShopSearch:
-    def __init__(self, samples: int = 6, max_rerolls: int = 2, evaluate_planets: bool = False):
+    def __init__(self, samples: int = 6, max_rerolls: int = 2, evaluate_planets: bool = False, project_next_boss: bool = False):
         if not 1 <= samples <= 12 or not 0 <= max_rerolls <= 5:
             raise ValueError('shop search budgets must be bounded')
         self.samples = samples
@@ -44,6 +44,9 @@ class ShopSearch:
         if not isinstance(evaluate_planets, bool):
             raise ValueError('evaluate_planets must be boolean')
         self.evaluate_planets = evaluate_planets
+        if not isinstance(project_next_boss, bool):
+            raise ValueError('project_next_boss must be boolean')
+        self.project_next_boss = project_next_boss
         self._pending: tuple[int, PublicItem] | None = None
 
     def choose(self, observation: PublicObservation, baseline_action: PublicAction,
@@ -68,20 +71,37 @@ class ShopSearch:
         if not observation.full_deck or not 1 <= observation.hand_limit <= 12 or any(not isinstance(j, PublicItem) for j in observation.jokers):
             return None
         hands = self._hands(observation)
-        current_first, current_repeat, current_final = self._capacity_components(observation, hands)
-        current = .5 * current_first + .35 * current_repeat + .15 * current_final
+        projected_blind, projection_reason = self._next_blind_projection(observation)
+        needle = projected_blind is not None and projected_blind.name == 'The Needle'
+
+        def components(candidate):
+            if projected_blind is None:
+                return self._capacity_components(candidate, hands)
+            return self._capacity_components(candidate, hands, projected_blind)
+
+        def aggregate(first, repeated, final):
+            return first if needle else .5 * first + .35 * repeated + .15 * final
+
+        current_first, current_repeat, current_final = components(observation)
+        current = aggregate(current_first, current_repeat, current_final)
         upcoming = [b.score for b in sorted(observation.blinds, key=lambda b: {'SMALL': 0, 'BIG': 1, 'BOSS': 2}.get(b.kind, 3))
                     if b.status in {'SELECT', 'UPCOMING'}]
         target = float(upcoming[0] if upcoming else max((b.score for b in observation.blinds), default=300) * 1.5)
         # Optimistic continuation bonuses must not lock up survival cash when
         # ordinary first-hand capacity is below the next blind's pace.
-        weak = min(current_first, current) * 3 < target
+        weak = min(current_first, current) * (1 if needle else 3) < target
         reserve = 2 if weak else min(25, 8 + 3 * max(0, observation.ante - 1))
         diagnostics = {'current_capacity': current, 'next_blind_target': target,
                        'reserve': reserve, 'samples': self.samples,
                        'current_first_hand': current_first, 'current_repeat_hand': current_repeat,
                        'current_final_hand': current_final,
                        'continuation_assumption': '50% first / 35% same-family repeat / 15% final; no intervening discards; Green Joker +1 per prior play'}
+        if self.project_next_boss:
+            diagnostics.update(boss_projection=projection_reason,
+                               projected_hand_budget=1 if needle else 4,
+                               survival_capacity_multiplier=1 if needle else 3)
+            if needle:
+                diagnostics['continuation_assumption'] = 'Needle: first and only hand; no continuation bonus'
         best = None
         for i, offer in enumerate(observation.shop):
             if not isinstance(offer, PublicItem) or offer.kind != 'JOKER' or offer.buy_cost is None:
@@ -121,8 +141,8 @@ class ShopSearch:
                                     hand_limit=candidate_hand_limit,
                                     jokers=before_buy.jokers + (offer,),
                                     joker_limit=before_buy.joker_limit + int(offer.edition == 'NEGATIVE'))
-                first, repeated, final = self._capacity_components(candidate, hands)
-                capacity = .5 * first + .35 * repeated + .15 * final
+                first, repeated, final = components(candidate)
+                capacity = aggregate(first, repeated, final)
                 gain = log1p(capacity) - log1p(current)
                 # Small explicit future utility; unknown/non-scoring cards
                 # cannot win merely through rarity or a generic tier score.
@@ -170,8 +190,8 @@ class ShopSearch:
                                                              chips=stat.chips + chip_gain,
                                                              mult=stat.mult + mult_gain)
                                                      if stat.name == family else stat for stat in observation.hand_stats))
-                first, repeated, final = self._capacity_components(candidate, hands)
-                capacity = .5 * first + .35 * repeated + .15 * final
+                first, repeated, final = components(candidate)
+                capacity = aggregate(first, repeated, final)
                 utility = log1p(capacity) - log1p(current) - offer.buy_cost * (0.004 if weak else 0.008)
                 evaluated += 1
                 best_planet_gain = max(best_planet_gain if best_planet_gain is not None else utility, utility)
@@ -203,9 +223,30 @@ class ShopSearch:
             return ShopChoice(LeaveShop(), 'Stop after the bounded shop reroll budget.', diagnostics)
         if planet_screen:
             return ShopChoice(baseline_action, 'Preserve baseline after scoring available planets.', diagnostics)
+        if self.project_next_boss:
+            return ShopChoice(baseline_action, 'Preserve baseline after checking the next-blind projection.', diagnostics)
         # Respect an existing conservative fallback instead of suppressing
         # strategy purchases that the immediate scorer cannot value.
         return None
+
+    def _next_blind_projection(self, observation: PublicObservation) -> tuple[PublicBlind | None, str]:
+        if not self.project_next_boss:
+            return None, 'disabled'
+        upcoming = sorted((b for b in observation.blinds if b.status in {'SELECT', 'UPCOMING'}),
+                          key=lambda b: {'SMALL': 0, 'BIG': 1, 'BOSS': 2}.get(b.kind, 3))
+        if not upcoming:
+            return None, 'control fallback: no public next blind'
+        blind = upcoming[0]
+        if blind.kind == 'BOSS':
+            if blind.name not in {'The Needle', 'The Flint'}:
+                return None, f'control fallback: unsupported {blind.name}'
+            interactions = [j.key for j in (*observation.jokers, *observation.shop)
+                            if isinstance(j, PublicItem) and j.key in {'j_chicot', 'j_burglar'}]
+            if interactions:
+                return None, 'control fallback: activation interaction ' + ','.join(sorted(set(interactions)))
+        elif blind.kind not in {'SMALL', 'BIG'}:
+            return None, f'control fallback: unsupported blind kind {blind.kind}'
+        return replace(blind, status='CURRENT', disabled=False), f'projected {blind.name}'
 
     def _hands(self, observation: PublicObservation) -> tuple[tuple, ...]:
         deck = [entry.card for entry in observation.full_deck for _ in range(entry.count)]
@@ -216,7 +257,7 @@ class ShopSearch:
         return tuple(tuple(rng.sample(deck, size)) for _ in range(self.samples))
 
     @staticmethod
-    def _capacity_components(observation: PublicObservation, hands: tuple[tuple, ...]) -> tuple[float, float, float]:
+    def _capacity_components(observation: PublicObservation, hands: tuple[tuple, ...], projected_blind: PublicBlind | None = None) -> tuple[float, float, float]:
         results = []
         for stream in hands:
             hand = stream[:observation.hand_limit]
@@ -226,8 +267,9 @@ class ShopSearch:
             synthetic = replace(observation, phase=Phase.SELECTING_HAND, hand=hand,
                                 remaining_deck=remaining_deck, draw_count=sum(entry.count for entry in remaining_deck),
                                 required_hand_slots=(), selection_limit=min(5, len(hand)),
-                                blinds=tuple(replace(b, status='UPCOMING', disabled=False) for b in observation.blinds),
-                                round=replace(observation.round, chips=0, hands_left=4, hands_played=0,
+                                blinds=((projected_blind,) if projected_blind is not None else
+                                        tuple(replace(b, status='UPCOMING', disabled=False) for b in observation.blinds)),
+                                round=replace(observation.round, chips=0, hands_left=1 if projected_blind is not None and projected_blind.name == 'The Needle' else 4, hands_played=0,
                                               discards_left=3, discards_used=0),
                                 hand_stats=tuple(replace(h, played_this_round=0) for h in observation.hand_stats))
             best = 0.0
@@ -244,6 +286,9 @@ class ShopSearch:
                         continue
                     if float(score) > best:
                         best, best_selection, best_family = float(score), selection, family
+            if projected_blind is not None and projected_blind.name == 'The Needle':
+                results.append((best, best, best))
+                continue
             continuation = []
             for prior_plays in (1, 3):
                 # A transparent counterfactual: repeat the first best family

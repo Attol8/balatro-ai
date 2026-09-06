@@ -69,6 +69,15 @@ def test_green_variant_is_isolated_from_planet_and_control():
     assert RunConfig(policy='search-green').policy == 'search-green'
 
 
+def test_boss_variant_is_isolated_from_other_changes():
+    assert make_policy('search').shop_search.project_next_boss is False
+    candidate = make_policy('search-boss')
+    assert candidate.shop_search.project_next_boss is True
+    assert candidate.shop_search.evaluate_planets is False
+    assert candidate.model_green_joker is False
+    assert RunConfig(policy='search-boss').policy == 'search-boss'
+
+
 def test_planet_variant_projects_typed_state_and_replays(tmp_path):
     initial = state('SELECTING_HAND', seed='TEST')
     final = state('GAME_OVER', seed='TEST')

@@ -78,10 +78,11 @@ class SearchPolicy(StrategicPolicy):
     """Numerical shop comparisons and sampled public draw lookahead."""
 
     def __init__(self, tactical_samples: int = 8, shop_samples: int = 6, evaluate_planets: bool = False,
-                 model_green_joker: bool = False) -> None:
+                 model_green_joker: bool = False, project_next_boss: bool = False) -> None:
         super().__init__()
         from balatro_ai_v2.solver.shop_search import ShopSearch
-        self.shop_search = ShopSearch(samples=shop_samples, evaluate_planets=evaluate_planets)
+        self.shop_search = ShopSearch(samples=shop_samples, evaluate_planets=evaluate_planets,
+                                      project_next_boss=project_next_boss)
         self.tactical_samples = tactical_samples
         self.model_green_joker = model_green_joker
 

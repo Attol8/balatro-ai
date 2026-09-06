@@ -23,6 +23,13 @@ from balatro_ai_v2.live.outcome import normalize_outcome
 from balatro_ai_v2.live.policy import BaselinePolicy, Decision
 
 SCHEMA_VERSION = 1
+SEARCH_VARIANTS = {
+    "search": {},
+    "search-planets": {"evaluate_planets": True},
+    "search-green": {"model_green_joker": True},
+    "search-boss": {"project_next_boss": True},
+}
+POLICY_NAMES = ("baseline", "strategic", *SEARCH_VARIANTS)
 DECISION_STATES = {
     "BLIND_SELECT", "SELECTING_HAND", "ROUND_EVAL", "SHOP",
     "SMODS_BOOSTER_OPENED", "TAROT_PACK", "PLANET_PACK", "SPECTRAL_PACK",
@@ -57,7 +64,7 @@ class RunConfig:
             raise ValueError("decision, poll, and ante limits must be positive")
         if self.poll_interval < 0 or self.split not in {"dev", "heldout"}:
             raise ValueError("invalid poll interval or seed split")
-        if self.policy not in {"baseline", "strategic", "search", "search-planets", "search-green"}:
+        if self.policy not in POLICY_NAMES:
             raise ValueError(f"unknown policy: {self.policy}")
 
 
@@ -89,9 +96,9 @@ def make_policy(name: str) -> Policy:
     if name == "strategic":
         from balatro_ai_v2.live.strategic import StrategicPolicy
         return StrategicPolicy()
-    if name in {"search", "search-planets", "search-green"}:
+    if name in SEARCH_VARIANTS:
         from balatro_ai_v2.live.strategic import SearchPolicy
-        return SearchPolicy(evaluate_planets=name == "search-planets", model_green_joker=name == "search-green")
+        return SearchPolicy(**SEARCH_VARIANTS[name])
     raise ValueError(f"unknown policy: {name}")
 
 
@@ -146,7 +153,7 @@ def run_episode(
 
     def observe(raw: dict) -> dict:
         raw = normalize_outcome(raw, previously_won=result["won"])
-        if config.policy in {"strategic", "search", "search-planets", "search-green"}:
+        if config.policy == "strategic" or config.policy in SEARCH_VARIANTS:
             from balatro_ai_v2.live.strategic import project_strategic_observation
             public = project_strategic_observation(raw)
         else:
