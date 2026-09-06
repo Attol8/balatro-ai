@@ -1,4 +1,4 @@
-"""Offline CLI for public-only next-blind comparisons on a recorded decision.
+"""Offline CLI for public-only shop rollouts on a recorded decision.
 
 Run with Python 3.12 and the pinned candidate extra. This module has no live
 transport dependency and cannot apply its hypothetical actions to Balatro.
@@ -49,7 +49,8 @@ def main():
     parser.add_argument("--trace", type=Path, required=True)
     parser.add_argument("--decision", type=int, required=True)
     parser.add_argument("--samples", type=int, default=8)
-    parser.add_argument("--max-steps", type=int, default=64)
+    parser.add_argument("--horizon", choices=("next-blind", "ante"), default="next-blind")
+    parser.add_argument("--max-steps", type=int)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     if args.output.exists():
@@ -60,15 +61,20 @@ def main():
 
     runtime = verify_jackdaw_runtime()
     observation, history = load_decision(args.trace, args.decision)
-    comparison = compare_next_blind(
+    compare = compare_next_blind
+    if args.horizon == "ante":
+        from .blind_rollout import compare_ante
+        compare = compare_ante
+    max_steps = args.max_steps if args.max_steps is not None else (200 if args.horizon == "ante" else 64)
+    comparison = compare(
         observation, history, root_factory=construct_public_root,
         continuation_factory=PublicStrategicPolicy, samples=args.samples,
-        max_steps=args.max_steps,
+        max_steps=max_steps,
     )
     report = {
         "schema_version": 1, "evidence_kind": "shadow_candidate_not_authority",
         "decision": args.decision, "samples": args.samples,
-        "max_steps": args.max_steps, "runtime": runtime,
+        "max_steps": max_steps, "horizon": args.horizon, "runtime": runtime,
         "solver_sha256": hashlib.sha256(b"".join(
             p.name.encode() + b"\0" + p.read_bytes()
             for p in sorted(Path(__file__).parent.glob("*.py")))).hexdigest(),

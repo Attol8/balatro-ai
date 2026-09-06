@@ -70,6 +70,8 @@ Experimental variants keep that search control unchanged:
   immediate blind. A visible supported boss deficit permits up to four rerolls
   per shop and six across the ante, with complete public history and purchase
   cash protected. It stress-tests the current build, not future growth or decay.
+  Its first revision won 1/20 and incorrectly blocked unrelated/free baseline
+  rerolls. That scope bug is corrected; the correction needs separate evaluation.
 
 Each variant is an ablation, not an established improvement. Draw estimates use
 eight shared samples; shop estimates use six synthetic hands and approximate
@@ -153,6 +155,14 @@ consumable actions are excluded. Step limits and unsupported simulations remain
 explicitly inconclusive, never counted as losses or silently dropped from rates.
 These are model comparisons, not win-rate evidence or calibrated probabilities.
 Python 3.11 live play remains independent of this optional dependency.
+
+`--horizon ante` instead compares all legal non-reorder shop actions and lets the
+public strategic continuation play through subsequent phases until the current
+ante clears or the run loses (default limit 200 actions per branch). This includes
+generated shops/packs and bosses, a broader experimental simulator scope with
+only partial authoritative transition coverage. Errors and censored branches
+invalidate aggregate clear rates; they are never silently scored as losses.
+Neither shadow mode controls the real game.
 
 See [plan.md](plan.md) for the design and next experiments.
 

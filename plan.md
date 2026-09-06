@@ -347,3 +347,45 @@ This is a changed decision at a recorded state, not a counterfactual win.
 The full candidate-enabled suite passes 838 tests, including independent tests
 of the new objective, Water counters, budget/history bookkeeping, immediate-
 capacity guard, inherited reroll cash protection, and unchanged flag-off behavior.
+
+V7 is running from clean revision `c3af3f2` in `runs/search-v7-001/`.
+Public reconstruction coverage was audited across all first shops per ante in
+V6: 118/123 roots succeed, median 85ms and p95 250ms; the five failures are
+historical skips in D2/D5/D6 late antes. No other constructor failures occurred.
+
+### Multi-blind public rollout outcome experiment
+
+The frozen older search completed a D3 late-shop probe with 10 actions, eight
+particles and 995 accepted transitions in 8.5s. It selected Emperor over reroll,
+but its reported objective is partial scoring progress, not demonstrated boss
+survival. Do not use that result as win evidence or import the whole framework.
+
+Extend the existing shadow evaluator with an opt-in current-ante horizon. Allow
+all legal non-reorder shop roots and ordinary public strategic continuation,
+including later shops/packs, until the ante boss clears or the run loses. Bound
+steps and particles; unfinished/error branches must stay separate from losses.
+Use fresh public-root construction and fresh continuation per action/particle.
+Report per-action modeled boss-clear rates only when every branch completed;
+retain detailed statuses and score/target data. The original one-blind shadow
+slice and every registered live policy remain unchanged. This broader candidate
+scope is experimental and has only partial authoritative transition coverage.
+
+V7 scope bug found during its running batch: the new inherited-reroll cash floor
+also applied when boss readiness was unavailable and even when the reroll cost
+was zero. D1d38 blocked an unrelated $5 reroll; D2d31 blocked a free Chaos reroll
+that the control used before acquiring Spare Trousers. Re-plan: confine the new
+cash restriction to charged preparation rerolls for a modeled boss deficit, and
+allow free preparation rerolls within the same actual-action caps. Preserve the
+first V7 artifact as confounded evidence; evaluate the correction separately.
+
+The first V7 batch completed 1/20 wins, no execution failures. Its source remains
+frozen at `c3af3f2`; correcting a specific scope bug does not explain every loss.
+The corrected implementation preserves unrelated baseline rerolls and free
+preparation rerolls while retaining charged preparation cash protection and
+actual-action caps. All 858 tests pass (789 plus 69 optional skips on the host).
+
+The broader offline evaluator completed all 80 D3 late-shop branches: buying
+Emperor cleared the boss in one of eight particles; every other action cleared
+zero. This is a weak candidate signal, not a reliable intervention. Detailed
+outcomes are retained in `runs/shadow-ante-001/d3-154.json`; no live policy uses
+these rollout results yet.

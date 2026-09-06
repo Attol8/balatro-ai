@@ -133,6 +133,97 @@ def compare_next_blind(
                            tuple(rows))
 
 
+def compare_ante(
+    observation: PublicObservation,
+    history: tuple[PublicHistoryStep, ...],
+    *,
+    root_factory: RootFactory,
+    continuation_factory: Callable[[], PublicPolicy],
+    samples: int = 8,
+    max_steps: int = 200,
+    nonce: str = "public-ante-v1",
+) -> BlindComparison:
+    """Compare every non-hand/joker-reorder shop root through this ante.
+
+    Every branch is freshly reconstructed from the same public particle inputs.
+    Continuations control every subsequent phase; failures never become losses.
+    """
+    if (type(samples) is not int or not 1 <= samples <= 64
+            or type(max_steps) is not int or not 1 <= max_steps <= 512):
+        raise ValueError("ante rollout budgets must be bounded positive integers")
+    if observation.phase != Phase.SHOP:
+        return BlindComparison(observation.digest(), (), (), "outside ante shop slice")
+    roots = tuple(a for a in iter_legal_actions(observation)
+                  if not isinstance(a, (ReorderHand, ReorderJokers)))
+    rows = []
+    for root in roots:
+        row = []
+        for index in range(samples):
+            candidate = None
+            result = BlindOutcome("rejected", 0, observation.round.chips,
+                                  _current_target(observation, 0), "uninitialized")
+            try:
+                candidate = root_factory(observation, history, nonce, index)
+                continuation = continuation_factory()
+                if candidate.current_public is None:
+                    result = BlindOutcome("rejected", 0, result.chips, result.target,
+                                          "missing_root_public")
+                else:
+                    result = _run_ante(candidate, observation, history, root,
+                                       continuation, max_steps)
+            except Exception as exc:
+                result = BlindOutcome("rejected", result.steps, result.chips, result.target,
+                                      f"root_exception:{type(exc).__name__}:{exc}")
+            finally:
+                if candidate is not None:
+                    try:
+                        candidate.close()
+                    except Exception as exc:
+                        result = BlindOutcome("rejected", result.steps, result.chips,
+                                              result.target, f"close_exception:{type(exc).__name__}:{exc}")
+            row.append(result)
+        rows.append(tuple(row))
+    return BlindComparison(observation.digest(), tuple(action_to_data(a) for a in roots),
+                           tuple(rows))
+
+
+def _current_target(observation, previous):
+    return next((b.score for b in observation.blinds if b.status == "CURRENT"), previous)
+
+
+def _run_ante(candidate, observation, history, root, continuation, max_steps):
+    current = observation
+    trajectory = list(history)
+    action = root
+    target = _current_target(current, 0)
+    steps = 0
+    try:
+        for step in range(1, max_steps + 1):
+            if not is_legal(current, action):
+                return BlindOutcome("rejected", steps, current.round.chips, target,
+                                    "illegal_continuation")
+            steps = step
+            result = candidate.step(action)
+            after = candidate.current_public
+            if result.status != "accepted" or result.after is None or after is None:
+                return BlindOutcome("rejected", steps, current.round.chips, target,
+                                    f"step_{result.status}:missing_public_or_rejected")
+            trajectory.append(PublicHistoryStep(current, action, after))
+            current = after
+            target = _current_target(current, target)
+            if current.antes_cleared > observation.antes_cleared:
+                return BlindOutcome("cleared", steps, current.round.chips, target)
+            if current.terminal:
+                return BlindOutcome("lost", steps, current.round.chips, target)
+            if steps < max_steps:
+                action = continuation.choose_action(
+                    current, lambda: iter_legal_actions(current), tuple(trajectory))
+        return BlindOutcome("censored", steps, current.round.chips, target, "max_steps")
+    except Exception as exc:
+        return BlindOutcome("rejected", steps, current.round.chips, target,
+                            f"rollout_exception:{type(exc).__name__}:{exc}")
+
+
 def _run_blind(candidate, observation, history, root, continuation,
                blind_kind, target, max_steps):
     current = observation
