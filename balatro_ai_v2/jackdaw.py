@@ -537,6 +537,7 @@ class JackdawBackend:
         if method == "next_round":
             self._stale_shop_areas = _empty_shop_areas(raw_before)
         standard_pack_card = self._selected_standard_pack_card(method, params)
+        pack_cryptid_snapshot = self._pack_cryptid_copy_snapshot(method, params)
         shop_playing_card = self._selected_shop_playing_card(method, params)
         voucher_effect = self._selected_voucher_effect(method, params)
         boss_disabling_sale = self._selected_boss_disabling_sale(method, params)
@@ -577,6 +578,10 @@ class JackdawBackend:
             raw_after = self._handle("gamestate", {})
         if standard_pack_card is not None and self._place_standard_pack_card(
             standard_pack_card
+        ):
+            raw_after = self._handle("gamestate", {})
+        if pack_cryptid_snapshot is not None and self._place_pack_cryptid_copies(
+            pack_cryptid_snapshot
         ):
             raw_after = self._handle("gamestate", {})
         if shop_playing_card is not None and self._sync_shop_playing_card_count(
@@ -1372,6 +1377,71 @@ class JackdawBackend:
         ability = getattr(card, "ability", None)
         card_set = ability.get("set") if isinstance(ability, Mapping) else None
         return card if card_set in {"Default", "Enhanced"} else None
+
+    def _pack_cryptid_copy_snapshot(
+        self,
+        method: str,
+        params: Mapping[str, Any],
+    ) -> tuple[frozenset[int], int] | None:
+        """Capture permanent identities before a Cryptid is used from a pack."""
+
+        if method != "pack":
+            return None
+        index = params.get("card")
+        if not isinstance(index, int) or isinstance(index, bool):
+            return None
+        game_state = getattr(self._backend, "_gs", None)
+        if not isinstance(game_state, Mapping):
+            raise RuntimeError("Jackdaw backend does not expose its active game state")
+        pack_cards = game_state.get("pack_cards")
+        if not isinstance(pack_cards, list) or not 0 <= index < len(pack_cards):
+            return None
+        cryptid = pack_cards[index]
+        if getattr(cryptid, "center_key", None) != "c_cryptid":
+            return None
+        ability = getattr(cryptid, "ability", None)
+        copy_count = ability.get("extra") if isinstance(ability, Mapping) else None
+        if (
+            not isinstance(copy_count, int)
+            or isinstance(copy_count, bool)
+            or copy_count < 1
+        ):
+            raise RuntimeError("Jackdaw Cryptid copy count is unavailable")
+        identities: set[int] = set()
+        for area_name in ("deck", "hand", "discard_pile", "play"):
+            cards = game_state.get(area_name, [])
+            if not isinstance(cards, list):
+                raise RuntimeError(f"Jackdaw {area_name} state is unavailable")
+            identities.update(id(card) for card in cards)
+        return frozenset(identities), copy_count
+
+    def _place_pack_cryptid_copies(
+        self,
+        snapshot: tuple[frozenset[int], int],
+    ) -> bool:
+        """Mirror pack-close hand-to-deck order for fresh Cryptid copies."""
+
+        previous, expected_copies = snapshot
+        game_state = getattr(self._backend, "_gs", None)
+        if not isinstance(game_state, dict):
+            raise RuntimeError("Jackdaw backend does not expose its active game state")
+        deck = game_state.get("deck")
+        if not isinstance(deck, list):
+            raise RuntimeError("Jackdaw deck state is unavailable after Cryptid")
+        copies = [card for card in deck if id(card) not in previous]
+        if len(copies) != expected_copies:
+            raise RuntimeError("Jackdaw did not create the expected Cryptid copies")
+        deck[:] = [card for card in deck if id(card) in previous]
+        deck[:0] = reversed(copies)
+
+        identities: set[int] = set()
+        for area_name in ("deck", "hand", "discard_pile", "play"):
+            cards = game_state.get(area_name, [])
+            if not isinstance(cards, list):
+                raise RuntimeError(f"Jackdaw {area_name} state is unavailable")
+            identities.update(id(card) for card in cards)
+        game_state["playing_cards_count"] = len(identities)
+        return True
 
     def _selected_shop_playing_card(
         self, method: str, params: Mapping[str, Any]

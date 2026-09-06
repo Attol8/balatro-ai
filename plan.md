@@ -1693,8 +1693,19 @@ Turtle Bean is present; on immediate GAME_OVER restore that limit while
 retaining the ability decay. Do not generalize to unobserved terminal Joker
 callbacks. Add a terminal-loss regression and continue full-trace replay.
 
-Attempt 3 passed seeds 2501--2515 in exact lockstep and stopped at seed 2516
-after 41 exact transitions. The next cash-out offers Lucky Cat in Balatro but
+Attempt 3 passed seeds 2501--2505 in exact lockstep and stopped at seed 2506
+after 37 exact transitions. A Spectral-pack Cryptid then creates two copies of
+the selected Diamond Two. Vanilla creates them in hand and, as the pack closes,
+emplaces the newest copy first at the deck front; pinned Jackdaw creates fresh
+objects but appends them at the deck tail. Preserve exact observable deck order:
+capture the unique permanent-card identities before only a pack Cryptid use,
+require exactly its declared number of fresh copies afterward, move those
+copies to the deck front newest-first, and synchronize the permanent-card
+count. Pin the postcondition and replay all 49 seed-2506 transitions. Do not
+change held Cryptid behavior or treat hidden deck order as unordered.
+
+The continuation then passed seeds 2507--2515 and stopped at seed 2516 after
+41 exact transitions. The next cash-out offers Lucky Cat in Balatro but
 Arrowhead in Jackdaw. The earlier Arcana choice created two Lucky cards and
 both candidates expose them identically; however, pinned Jackdaw's private
 `deck_enhancements` pool-filter cache remains absent, so its enhancement-gated

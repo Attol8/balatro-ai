@@ -951,6 +951,36 @@ def test_candidate_refreshes_enhancement_gated_joker_pool_state() -> None:
     assert game_state["deck_enhancements"] == set()
 
 
+def test_candidate_places_pack_cryptid_copies_at_deck_front_newest_first() -> None:
+    original = SimpleNamespace(center_key="c_base")
+    other = SimpleNamespace(center_key="c_base")
+    first_copy = SimpleNamespace(center_key="c_base")
+    second_copy = SimpleNamespace(center_key="c_base")
+    backend = object.__new__(jackdaw.JackdawBackend)
+    backend._backend = SimpleNamespace(
+        _gs={
+            "deck": [original, other, first_copy, second_copy],
+            "hand": [],
+            "discard_pile": [],
+            "play": [],
+            "playing_cards_count": 2,
+        }
+    )
+
+    changed = backend._place_pack_cryptid_copies(
+        (frozenset({id(original), id(other)}), 2)
+    )
+
+    assert changed is True
+    assert backend._backend._gs["deck"] == [
+        second_copy,
+        first_copy,
+        original,
+        other,
+    ]
+    assert backend._backend._gs["playing_cards_count"] == 4
+
+
 def test_card_modifier_normalization_preserves_explicit_empty_effect(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
