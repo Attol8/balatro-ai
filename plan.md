@@ -157,4 +157,22 @@ The combined run is frozen at clean revision
 planet evidence is retained in `runs/search-planets-001/`; it is not included
 in the combined policy.
 
+V2 completed 1/20 wins, no execution failures: D0000005 won, while the previous
+winning D0000001 lost. All 178 decisions in the new win replay exactly. Broad
+discretionary-purchase priority caused early divergences: Mail-In Rebate displaced
+a pack for a roughly 10% modeled scoring gain, and Bloodstone displaced an early
+pack for roughly 15%. These are observed divergences, not isolated proof of cause.
+
+`search-v3` now isolates narrower priority: before packs/vouchers/non-Joker buys,
+only Blueprint gets the special placement-aware comparison. Ordinary shop upgrade
+comparisons remain unchanged. V3 preserves all 204 actions of the original winning
+trace in offline replay. Its live 20-seed batch is running from clean revision
+`bb2c77a` in `runs/search-v3-001/`; 673 tests pass.
+
+The Amber belief model was checked against all five actual control-seed D5 plays:
+every score matches a consistent permutation. Conditioning on public scores would
+narrow 120 hypotheses to six; on the final hand it lowers modeled clear chance
+from 70% to 40% without changing the chosen cards. Such a posterior is not yet
+implemented; do not treat the unconditioned belief as a calibrated probability.
+
 The milestone remains incomplete until live performance supports reliable wins.
