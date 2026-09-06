@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
+import secrets
 import subprocess
 import sys
 import time
@@ -13,6 +15,10 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from balatro_ai_v2.backend import RunSpec
+from balatro_ai_v2.candidate_trace_replay import (
+    CandidateTraceReplayError,
+    CandidateTraceReplayPolicy,
+)
 from balatro_ai_v2.baselines import PUBLIC_BASELINE_NAMES, build_public_baseline
 from balatro_ai_v2.balatrobot.backend import BalatroBotBackend
 from balatro_ai_v2.balatrobot.client import BalatroBotClient, BalatroBotError
@@ -33,9 +39,28 @@ from balatro_ai_v2.policy_wire import POLICY_ACTION_CONTRACT
 def main() -> None:
     args = build_parser().parse_args()
     root = Path(__file__).resolve().parents[1]
+    replay_policy: CandidateTraceReplayPolicy | None = None
+    if args.replay_trace is not None:
+        if args.policy != "smoke":
+            raise SystemExit("--replay-trace cannot be combined with a baseline policy")
+        if args.trace_jsonl is None:
+            raise SystemExit("--replay-trace requires --trace-jsonl")
+        if args.seed is None:
+            raise SystemExit("--replay-trace requires the launcher-only --seed")
+        if not args.launch_server or args.fast_server:
+            raise SystemExit(
+                "candidate replay requires a fresh --launch-server with --no-fast-server"
+            )
+        try:
+            replay_policy = CandidateTraceReplayPolicy.from_path(args.replay_trace)
+        except CandidateTraceReplayError as exc:
+            raise SystemExit(f"invalid candidate replay trace: {exc}") from exc
+        if args.deck != replay_policy.deck or args.stake != replay_policy.stake:
+            raise SystemExit("candidate replay deck/stake disagree with the source trace")
     client = BalatroBotClient(host=args.host, port=args.port, timeout=args.timeout)
     process: subprocess.Popen[bytes] | None = None
     policy_process: PolicyProcess | None = None
+    staged_trace: Path | None = None
     try:
         if args.launch_server:
             command = build_launch_command(
@@ -87,7 +112,22 @@ def main() -> None:
             game_version=game_version,
             runtime_version=runtime_version,
         )
-        if args.policy == "smoke":
+        if replay_policy is not None:
+            policy = replay_policy
+            source_policy_digest = hashlib.sha256(
+                replay_policy.source_policy_name.encode("utf-8")
+            ).hexdigest()
+            policy_name = (
+                "CandidateTraceReplayPolicy["
+                f"candidate_sha256={replay_policy.source_digest};"
+                f"source_policy_sha256={source_policy_digest}]"
+            )
+            inference_budget = (
+                f"policy_action_contract={POLICY_ACTION_CONTRACT};"
+                f"candidate_trace_sha256={replay_policy.source_digest};"
+                f"actions={len(replay_policy.steps)};exact_public_replay"
+            )
+        elif args.policy == "smoke":
             policy = NoBuySmokePolicy()
             policy_name = "NoBuySmokePolicy"
             inference_budget = "none"
@@ -104,7 +144,21 @@ def main() -> None:
                 f"policy_action_contract={POLICY_ACTION_CONTRACT};"
                 f"policy_timeout_seconds={args.policy_timeout}"
             )
-        spec = RunSpec(deck=args.deck, stake=args.stake, seed=args.seed)
+        spec = (
+            RunSpec(replay_policy.deck, replay_policy.stake, args.seed)
+            if replay_policy is not None
+            else RunSpec(deck=args.deck, stake=args.stake, seed=args.seed)
+        )
+        max_decisions = (
+            replay_policy.max_decisions
+            if replay_policy is not None
+            else args.max_decisions
+        )
+        max_antes_cleared = (
+            replay_policy.max_antes_cleared
+            if replay_policy is not None
+            else 20
+        )
         trace = None
         if args.trace_jsonl is not None:
             manifest = build_manifest(
@@ -113,7 +167,7 @@ def main() -> None:
                 policy_name=policy_name,
                 backend=backend.metadata,
                 run=spec,
-                max_decisions=args.max_decisions,
+                max_decisions=max_decisions,
                 max_settle_polls=args.max_settle_polls,
                 launch_fast=args.fast_server,
                 launch_headless=args.headless_server,
@@ -121,13 +175,30 @@ def main() -> None:
                 inference_budget=inference_budget,
                 mods=tuple(args.mod),
             )
-            trace = AuthorityTraceWriter(args.trace_jsonl, manifest)
+            trace_path = args.trace_jsonl
+            if replay_policy is not None:
+                staged_trace = trace_path.with_name(
+                    f".{trace_path.name}.{secrets.token_hex(8)}.staged"
+                )
+                trace_path = staged_trace
+            trace = AuthorityTraceWriter(trace_path, manifest)
         result = AuthorityRunner(
             backend=backend,
             policy=policy,
-            max_decisions=args.max_decisions,
+            max_decisions=max_decisions,
+            max_antes_cleared=max_antes_cleared,
             trace=trace,
         ).run(spec)
+        if replay_policy is not None:
+            replay_policy.assert_complete(result.final_observation)
+            assert staged_trace is not None and args.trace_jsonl is not None
+            if args.trace_jsonl.exists():
+                raise CandidateTraceReplayError(
+                    f"refusing to overwrite existing output: {args.trace_jsonl}"
+                )
+            os.link(staged_trace, args.trace_jsonl)
+            staged_trace.unlink()
+            staged_trace = None
         print(
             json.dumps(
                 {
@@ -143,13 +214,15 @@ def main() -> None:
         )
         if not result.complete:
             raise SystemExit(2)
-    except BalatroBotError as exc:
+    except (BalatroBotError, CandidateTraceReplayError) as exc:
         raise SystemExit(f"BalatroBot authority failed: {exc}") from exc
     finally:
         if policy_process is not None:
             policy_process.close()
         if process is not None:
             stop_balatrobot_server(process)
+        if staged_trace is not None:
+            staged_trace.unlink(missing_ok=True)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -169,6 +242,14 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--settle-poll-delay", type=float, default=0.02)
     parser.add_argument("--timeout", type=float, default=30.0)
     parser.add_argument("--trace-jsonl", type=Path)
+    parser.add_argument(
+        "--replay-trace",
+        type=Path,
+        help=(
+            "Replay one complete non-authoritative search trace against a fresh "
+            "non-fast Balatro authority, failing on any public divergence."
+        ),
+    )
     parser.add_argument("--balatrobot-version", default=os.environ.get("BALATROBOT_VERSION"))
     parser.add_argument("--game-version", default=os.environ.get("BALATRO_GAME_VERSION"))
     parser.add_argument("--runtime-version", default=os.environ.get("BALATRO_RUNTIME_VERSION"))

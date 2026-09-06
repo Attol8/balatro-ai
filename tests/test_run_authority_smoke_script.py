@@ -3,6 +3,8 @@ from __future__ import annotations
 import importlib.util
 from pathlib import Path
 
+import pytest
+
 
 def _load_script():
     path = Path(__file__).resolve().parents[1] / "scripts" / "run_authority_smoke.py"
@@ -63,3 +65,76 @@ def test_smoke_cli_accepts_isolated_public_baseline() -> None:
 
     assert args.policy == "strategic"
     assert args.policy_timeout == 8
+
+
+def test_smoke_cli_exposes_candidate_trace_replay() -> None:
+    args = _load_script().build_parser().parse_args(
+        [
+            "--replay-trace",
+            "candidate.jsonl",
+            "--trace-jsonl",
+            "authority.jsonl",
+            "--seed",
+            "2491",
+            "--launch-server",
+            "--no-fast-server",
+        ]
+    )
+
+    assert args.replay_trace == Path("candidate.jsonl")
+    assert args.trace_jsonl == Path("authority.jsonl")
+    assert args.launch_server
+    assert not args.fast_server
+
+
+@pytest.mark.parametrize(
+    ("arguments", "message"),
+    [
+        (["--replay-trace", "candidate.jsonl"], "requires --trace-jsonl"),
+        (
+            [
+                "--replay-trace",
+                "candidate.jsonl",
+                "--trace-jsonl",
+                "authority.jsonl",
+            ],
+            "launcher-only --seed",
+        ),
+        (
+            [
+                "--replay-trace",
+                "candidate.jsonl",
+                "--trace-jsonl",
+                "authority.jsonl",
+                "--seed",
+                "2491",
+            ],
+            "fresh --launch-server",
+        ),
+        (
+            [
+                "--replay-trace",
+                "candidate.jsonl",
+                "--trace-jsonl",
+                "authority.jsonl",
+                "--seed",
+                "2491",
+                "--launch-server",
+                "--no-fast-server",
+                "--policy",
+                "strategic",
+            ],
+            "cannot be combined",
+        ),
+    ],
+)
+def test_candidate_trace_replay_rejects_unsafe_cli_before_io(
+    monkeypatch: pytest.MonkeyPatch,
+    arguments: list[str],
+    message: str,
+) -> None:
+    script = _load_script()
+    monkeypatch.setattr(script.sys, "argv", ["run_authority_smoke.py", *arguments])
+
+    with pytest.raises(SystemExit, match=message):
+        script.main()

@@ -1794,6 +1794,51 @@ all five pack sale-to-choice pairs and tensorizes all 68 decisions. This closes
 the admission mechanism's organic gate only; the deterministic coverage policy
 is explicitly excluded from quality training cohorts.
 
+Strong-search authoritative trajectory bridge (active): the admitted corpus is
+not yet useful for learning. It contains one losing coverage-policy run, while
+the strongest measured controller is the retained determinized search. Do not
+adapt the existing five-head strategy learner or invent counterfactual labels
+from factual demonstrations. First make a strong search trajectory reproducible
+through real Balatro and admit only the new authoritative trace.
+
+1. Add optional per-run seed-free public tracing to the candidate search
+   evaluator. Candidate traces remain explicitly non-authoritative and
+   inadmissible; they contain only exact, hash-chained public observations,
+   actions, outcomes, and safe provenance. Bind deck/stake, source, action
+   contract, policy identity, and search budget, but never the seed, command,
+   private candidate state, RPC payloads, or raw/canonical authority frames.
+2. Add one strict replay policy for a single candidate trace. At construction it
+   verifies the hash chain, current transcript/action contract, complete terminal
+   run, exact transition continuity, and canonical public/action payloads. At
+   every live decision it requires exact equality with the recorded public
+   `before`, exact history position, and one unique match in the live legal
+   action set. Any divergence, extra call, incomplete source, or unconsumed
+   transition fails closed.
+3. Give the seed separately to the authority launcher, never to the replay
+   policy, and run that public transcript through a fresh non-fast BalatroBot
+   process. Capture a new authority trace with the replay-controller and
+   candidate-trace digest in the policy identity. The candidate trace may select
+   development seeds but never counts as authority evidence. The resulting live
+   trace must finish with zero rejection and its public transitions must replay
+   exactly in pinned Jackdaw before strict import.
+4. Start with current search on the action-rich historical winner seed 2491.
+   If the frozen current controller no longer wins, preserve the complete result
+   and try the remaining predeclared historical strong seeds 2473, 2477, 2324,
+   2330, 2351, and 2378 in that order. Do not hindsight-filter individual
+   decisions or call this cohort human/pro data.
+5. No behavior model may affect actions from this increment. A later dedicated
+   behavior-only learner may use complete, controller-qualified authority
+   cohorts with whole-run train/calibration/holdout splits, demonstrated-action
+   cross entropy, equal run/phase/decision weighting, and no truncation above
+   the model's candidate bound. Its artifact must be non-executable
+   initialization data until separately certified.
+
+Gate: focused codec/replay tamper tests, complete suite, one complete current
+candidate trace, exact live public replay with every source action consumed,
+zero authority rejection, zero Jackdaw lockstep mismatch, and strict expert
+import with every supported decision tensorized. This proves a data path, not a
+superhuman model or a benchmark win.
+
 Strength replan: throughput is no longer the immediate score ceiling. Across
 the descriptive frozen v9/v10 trajectories, 340 of 365 losses (93.2%) end on
 Pair or Two Pair; 116 of 243 losses with a full Joker row have zero xMult roles

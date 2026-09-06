@@ -81,6 +81,16 @@ def test_search_evaluator_keeps_strategy_mode_disabled_by_default() -> None:
     assert args.seed_start == 901
 
 
+def test_search_evaluator_exposes_non_authoritative_candidate_trace_directory() -> None:
+    args = (
+        _load_script()
+        .build_parser()
+        .parse_args(["--trace-dir", "runs/experiments/candidate-traces"])
+    )
+
+    assert args.trace_dir == Path("runs/experiments/candidate-traces")
+
+
 def test_search_evaluator_exposes_terminal_action_protocol() -> None:
     args = (
         _load_script()

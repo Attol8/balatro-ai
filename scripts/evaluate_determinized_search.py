@@ -38,6 +38,10 @@ from balatro_ai_v2.actions import (
 from balatro_ai_v2.balatrobot.runner import AuthorityRunner
 from balatro_ai_v2.balatrobot.tracing import build_manifest, source_snapshot
 from balatro_ai_v2.baselines import build_public_baseline
+from balatro_ai_v2.candidate_trace_replay import (
+    CandidateTraceWriter,
+    build_candidate_trace_manifest,
+)
 from balatro_ai_v2.determinized_search import (
     SEARCH_VERSION,
     STRATEGY_SPECIALIST_MAX_ROOTS,
@@ -236,13 +240,37 @@ def _run_seed(seed_number: int) -> dict[str, object]:
     policy.reset_run()
     if isinstance(shadow, ShadowStrategyPolicy):
         shadow.reset_run()
+    spec = RunSpec(str(args_dict["deck"]), str(args_dict["stake"]), str(seed_number))
+    trace = None
+    trace_dir = str(args_dict["trace_dir"])
+    if trace_dir:
+        trace_index = seed_number - int(args_dict["seed_start"])
+        trace = CandidateTraceWriter(
+            Path(trace_dir) / f"run-{trace_index:04d}.jsonl",
+            build_candidate_trace_manifest(
+                repository_root=Path(str(args_dict["repository_root"])),
+                policy_name=str(args_dict["policy_name"]),
+                backend=backend.metadata,
+                deck=spec.deck,
+                stake=spec.stake,
+                max_decisions=int(args_dict["max_decisions"]),
+                max_antes_cleared=int(args_dict["ante_cap"]),
+                inference_budget=str(args_dict["inference_budget"]),
+                model_digest=(
+                    str(args_dict["model_digest"])
+                    if args_dict["model_digest"] is not None
+                    else None
+                ),
+            ),
+        )
     started = time.perf_counter()
     result = AuthorityRunner(
         backend,
         runner_policy,  # type: ignore[arg-type]
         max_decisions=int(args_dict["max_decisions"]),
         max_antes_cleared=int(args_dict["ante_cap"]),
-    ).run(RunSpec(str(args_dict["deck"]), str(args_dict["stake"]), str(seed_number)))
+        trace=trace,
+    ).run(spec)
     print(
         f"seed {seed_number}: antes_cleared={result.antes_cleared} won={result.won} "
         f"decisions={result.decisions} searched={policy.counters.searched} "
@@ -1270,6 +1298,13 @@ def main() -> None:
     for output_path in (args.report_json, args.teacher_jsonl):
         if output_path is not None and output_path.exists():
             raise SystemExit(f"refusing to overwrite existing output: {output_path}")
+    if args.trace_dir is not None:
+        if args.trace_dir.exists() and not args.trace_dir.is_dir():
+            raise SystemExit(f"candidate trace path is not a directory: {args.trace_dir}")
+        for index in range(args.seeds):
+            target = args.trace_dir / f"run-{index:04d}.jsonl"
+            if target.exists():
+                raise SystemExit(f"refusing to overwrite existing output: {target}")
     shadow_digest: str | None = None
     shadow_artifact_status: dict[str, object] = {}
     if args.strategy_shadow_model is not None:
@@ -1405,6 +1440,11 @@ def main() -> None:
         f"{budget.canonical()};{strategy_mode};{shadow_mode};"
         f"{continuation_mode}]:parent-v1"
     )
+    inference_budget = (
+        f"policy_action_contract={POLICY_ACTION_CONTRACT};"
+        f"determinized_rollouts;{budget.canonical()};{strategy_mode};{shadow_mode};"
+        f"workers={args.workers};ante_cap={args.ante_cap}"
+    )
     worker_args = {
         "tuning_json": tuning.canonical_json(),
         "continuation": args.continuation,
@@ -1454,8 +1494,16 @@ def main() -> None:
         "success_terminal_max_roots": args.success_terminal_max_roots,
         "success_terminal_family_alpha": args.success_terminal_family_alpha,
         "profile_search_timing": args.profile_search_timing,
+        "seed_start": args.seed_start,
+        "trace_dir": str(args.trace_dir.resolve()) if args.trace_dir else "",
+        "repository_root": str(root),
+        "policy_name": policy_name,
+        "inference_budget": inference_budget,
+        "model_digest": shadow_digest,
     }
     seeds = list(range(args.seed_start, args.seed_start + args.seeds))
+    if args.trace_dir is not None:
+        args.trace_dir.mkdir(parents=True, exist_ok=True)
     started = time.perf_counter()
     try:
         candidate_runtime = verify_jackdaw_runtime()
@@ -1473,11 +1521,7 @@ def main() -> None:
             launch_headless=False,
             profile_mode="all_unlocked",
             model_path=args.strategy_shadow_model,
-            inference_budget=(
-                f"policy_action_contract={POLICY_ACTION_CONTRACT};"
-                f"determinized_rollouts;{budget.canonical()};{strategy_mode};{shadow_mode};"
-                f"workers={args.workers};ante_cap={args.ante_cap}"
-            ),
+            inference_budget=inference_budget,
         )
         _verify_terminal_freeze(
             terminal_preregistration,
@@ -1560,11 +1604,7 @@ def main() -> None:
             launch_headless=False,
             profile_mode="all_unlocked",
             model_path=args.strategy_shadow_model,
-            inference_budget=(
-                f"policy_action_contract={POLICY_ACTION_CONTRACT};"
-                f"determinized_rollouts;{budget.canonical()};{strategy_mode};{shadow_mode};"
-                f"workers={args.workers};ante_cap={args.ante_cap}"
-            ),
+            inference_budget=inference_budget,
         )
         _verify_terminal_freeze(
             terminal_preregistration,
@@ -2739,6 +2779,14 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--workers", type=int, default=1)
     parser.add_argument("--tuning-json", default=StrategyTuning().canonical_json())
     parser.add_argument("--record-decisions", action="store_true")
+    parser.add_argument(
+        "--trace-dir",
+        type=Path,
+        help=(
+            "Write one seed-free public candidate transcript per run; "
+            "these traces are action transcripts and never authority evidence."
+        ),
+    )
     parser.add_argument("--profile-search-timing", action="store_true")
     parser.add_argument("--strategy-shadow-model", type=Path)
     parser.add_argument("--strategy-continuation-model", type=Path)
