@@ -10,6 +10,7 @@ import secrets
 import subprocess
 import sys
 import time
+from dataclasses import asdict
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -153,6 +154,7 @@ def main() -> None:
                     if args.search_strategy_options
                     else ()
                 ),
+                *(("--decision-log", str(args.search_decision_log)) if args.search_decision_log else ()),
             )
             policy_process = PolicyProcess(
                 "public-search",
@@ -254,6 +256,12 @@ def main() -> None:
                     "round": result.round_no,
                     "decisions": result.decisions,
                     "terminal_reason": result.terminal_reason,
+                    "terminal_error": result.terminal_error,
+                    "policy_diagnostics": (
+                        asdict(policy_process.run_diagnostic_counters)
+                        if policy_process is not None
+                        else None
+                    ),
                 },
                 sort_keys=True,
             )
@@ -296,6 +304,7 @@ def build_parser() -> argparse.ArgumentParser:
         action=argparse.BooleanOptionalAction,
         default=True,
     )
+    parser.add_argument("--search-decision-log", type=Path)
     parser.add_argument("--max-decisions", type=int, default=800)
     parser.add_argument("--max-settle-polls", type=int, default=40)
     parser.add_argument("--settle-poll-delay", type=float, default=0.02)

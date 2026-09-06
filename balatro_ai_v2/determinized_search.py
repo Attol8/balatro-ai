@@ -2757,7 +2757,18 @@ def _teacher_config_digest(policy: DeterminizedSearchPolicy) -> str:
             f"{type(rollout_continuation).__qualname__}"
         ),
         "rollout_continuation_config": rollout_continuation_config,
-        "backend": asdict(policy.backend.metadata),
+        "backend": (
+            asdict(policy.backend.metadata)
+            if policy.backend is not None
+            else {
+                "public_root_factory": (
+                    f"{policy.root_factory.__module__}."
+                    f"{policy.root_factory.__qualname__}"
+                    if policy.root_factory is not None
+                    else None
+                )
+            }
+        ),
     }
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
     return hashlib.sha256(encoded).hexdigest()

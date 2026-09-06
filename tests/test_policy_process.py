@@ -134,6 +134,12 @@ for line in sys.stdin:
                 "changed": False,
                 "incomplete_reason": None,
             },
+            "public_root": {
+                "attempted": False,
+                "completed": False,
+                "changed": False,
+                "incomplete_reason": None,
+            },
         },
     }
     print(json.dumps(response), flush=True)
@@ -175,6 +181,12 @@ for line in sys.stdin:
                 "incomplete_reason": "decision_horizon",
             },
             "preboss": {
+                "attempted": False,
+                "completed": False,
+                "changed": False,
+                "incomplete_reason": None,
+            },
+            "public_root": {
                 "attempted": False,
                 "completed": False,
                 "changed": False,

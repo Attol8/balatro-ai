@@ -27,7 +27,7 @@ def _request() -> PolicyRequest:
 
 
 def test_policy_wire_versions_structured_shop_card_legality() -> None:
-    assert POLICY_PROTOCOL_VERSION == 10
+    assert POLICY_PROTOCOL_VERSION == 11
     assert POLICY_ACTION_CONTRACT == "public_legality_pack_inventory_sale_v10"
 
 
@@ -63,6 +63,11 @@ def test_policy_response_diagnostics_are_typed_and_bounded() -> None:
             incomplete_reason="transition_budget",
         ),
         preboss=SearchDecisionDiagnostics(attempted=True, completed=True, changed=True),
+        public_root=SearchDecisionDiagnostics(
+            attempted=True,
+            completed=False,
+            incomplete_reason="determinization_unavailable",
+        ),
     )
 
     decoded = decode_response(
@@ -131,6 +136,12 @@ def test_policy_response_rejects_unknown_action_data() -> None:
                 "incomplete_reason": None,
             },
             "preboss": {
+                "attempted": False,
+                "completed": False,
+                "changed": False,
+                "incomplete_reason": None,
+            },
+            "public_root": {
                 "attempted": False,
                 "completed": False,
                 "changed": False,

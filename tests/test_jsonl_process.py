@@ -10,7 +10,11 @@ from types import SimpleNamespace
 import pytest
 
 import balatro_ai_v2.jsonl_process as jsonl_process
-from balatro_ai_v2.jsonl_process import JsonlChildProcess, minimal_child_environment
+from balatro_ai_v2.jsonl_process import (
+    JsonlChildProcess,
+    JsonlProcessError,
+    minimal_child_environment,
+)
 
 
 @pytest.mark.skipif(os.name != "posix", reason="process-group cleanup is POSIX-specific")
@@ -59,6 +63,23 @@ def test_process_group_signal_falls_back_when_killpg_is_forbidden(
     jsonl_process._signal_process_group(process, signal.SIGTERM)
 
     assert calls == ["terminate"]
+
+
+def test_crashed_worker_reports_bounded_stderr(tmp_path: Path) -> None:
+    program = "import sys; sys.stdin.buffer.readline(); print('root detail', file=sys.stderr); raise SystemExit(2)"
+    transport = JsonlChildProcess(
+        (sys.executable, "-c", program),
+        cwd=tmp_path,
+        environment=minimal_child_environment((Path(__file__).resolve().parents[1],)),
+        timeout_seconds=1,
+        max_request_bytes=1_000,
+        max_response_bytes=1_000,
+    )
+    try:
+        with pytest.raises(JsonlProcessError, match="root detail"):
+            transport.exchange(b"{}\n")
+    finally:
+        transport.close()
 
 
 def _pid_exists(pid: int) -> bool:

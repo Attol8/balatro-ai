@@ -1925,6 +1925,55 @@ control. The complete suite passes at 1,204 tests. This certifies only the
 constructor and online execution path; real-Balatro strength and authority
 behavior remain to be measured on fresh launches.
 
+First live pilot result and SHOP replan: a fresh non-fast real-Balatro run on
+development seed 2601 completed all 90 accepted decisions without a policy or
+authority error and died in Ante 3, exactly matching the separately launched
+strategic control's terminal shape. An accelerated diagnostic repeat reports
+37 attempted strategic searches: all nine `BLIND_SELECT` roots completed, none
+changed the control action, and 28 SHOP/PACK decisions fell back as designed.
+This is architecture progress, not score progress. Widen the constructor next
+to ordinary `SHOP` boundaries with an empty hand and complete public deck:
+rebuild the visible shop cards (including Magic Trick playing cards), voucher
+and booster offers, exact costs/stickers/editions/runtime, shop capacities, and
+the last defeated blind boundary. Reuse the same history, deck, owned-item,
+voucher, hidden-order, and exact round-trip gates. Reject stateful offers whose
+needed target is missing, retained skip tags, and all packs. Organic later-Ante
+shop roots must round-trip and accept every public sale/buy/reroll/leave root in
+isolated clones before another live diagnostic. Then use the typed public-root
+diagnostics to measure completed, changed, rejected, and unavailable decisions.
+
+SHOP constructor audit replan: the first expanded fast diagnostic reached Ante
+4 and changed actions, but that apparent movement is invalid until three
+public-derived lifecycle defects are repaired. The constructor wrote the
+permanent-card count under Jackdaw's singular compatibility key while Standard
+pack placement requires the plural key; it inferred the just-defeated blind as
+the next blind instead of selecting the first public UPCOMING boundary; and it
+stored the displayed reroll price as the durable base without separating
+current-shop paid increases and remaining free rerolls. It also omitted the
+run-wide visible center history used for duplicate exclusion and the
+first-shop-Buffoon latch. Repair these at the constructor boundary, not in
+search: derive the next blind and reroll decomposition from the contiguous
+public trajectory, reconstruct all publicly observed center keys and the
+once-per-run shop latch, and keep missing/ambiguous history fail closed. Add
+multi-step regressions for Standard-pack selection, leaving each shop into the
+correct blind, and reroll state beyond the current shop. Re-run the same live
+diagnostic only after every supported SHOP rollout has zero rejected branches;
+do not interpret any score from the invalid roots.
+
+SHOP constructor audit result: all identified lifecycle defects are repaired.
+Organic multi-step tests now select the correct next blind after every shop,
+pick a Standard-pack playing card without rejecting, preserve the durable $5
+reroll base across paid increases, consume Chaos's free reroll before returning
+to the base price, and match Jackdaw's public-derived boss-use, active-center,
+first-shop-Buffoon, and Gros-Michel pool state. The complete suite passes at
+1,210 tests. Repeating the same accelerated development seed and policy nonce
+completed 32 of 49 attempted public-root searches with zero rejected rollout
+branches, changed seven SHOP actions, and died in Ante 4 after 109 decisions.
+The 17 fail-closed decisions were 12 absent Flash Card runtime values, two PACK
+roots, and one each for Stencil, Green Joker, and Castle. This remains a
+development diagnostic, not strength evidence; the next coverage slice is to
+canonicalize public-derivable default/dynamic Joker runtime before PACK support.
+
 Strength replan: throughput is no longer the immediate score ceiling. Across
 the descriptive frozen v9/v10 trajectories, 340 of 365 losses (93.2%) end on
 Pair or Two Pair; 116 of 243 losses with a full Joker row have zero xMult roles

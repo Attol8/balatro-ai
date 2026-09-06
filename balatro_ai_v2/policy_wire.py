@@ -17,7 +17,7 @@ from balatro_ai_v2.public_codec import public_observation_from_data, public_obse
 from balatro_ai_v2.public_state import PublicObservation
 
 
-POLICY_PROTOCOL_VERSION: Final = 10
+POLICY_PROTOCOL_VERSION: Final = 11
 POLICY_ACTION_CONTRACT: Final = "public_legality_pack_inventory_sale_v10"
 MAX_PUBLIC_HISTORY: Final = 2048
 MAX_REQUEST_BYTES: Final = 1_000_000
@@ -30,10 +30,12 @@ INCOMPLETE_REASON_CODES: Final = frozenset(
         "baseline_semantic_absent",
         "chance_outcome_budget",
         "decision_horizon",
+        "determinization_unavailable",
         "draw_distribution_budget",
         "future_baseline_outside_action_space",
         "proposal_preflight",
         "raw_action_budget",
+        "rejected_rollout",
         "score_budget",
         "scoring_contract",
         "semantic_action_budget",
@@ -92,6 +94,7 @@ class PolicyDiagnostics:
 
     exact_blind: SearchDecisionDiagnostics = field(default_factory=SearchDecisionDiagnostics)
     preboss: SearchDecisionDiagnostics = field(default_factory=SearchDecisionDiagnostics)
+    public_root: SearchDecisionDiagnostics = field(default_factory=SearchDecisionDiagnostics)
 
 
 @dataclass(frozen=True, slots=True)
@@ -186,6 +189,7 @@ def _diagnostics_to_data(value: PolicyDiagnostics) -> dict[str, object]:
     return {
         "exact_blind": _search_diagnostics_to_data(value.exact_blind),
         "preboss": _search_diagnostics_to_data(value.preboss),
+        "public_root": _search_diagnostics_to_data(value.public_root),
     }
 
 
@@ -201,11 +205,12 @@ def _search_diagnostics_to_data(value: SearchDecisionDiagnostics) -> dict[str, o
 def _diagnostics_from_data(value: object) -> PolicyDiagnostics:
     if not isinstance(value, dict) or not all(isinstance(key, str) for key in value):
         raise PolicyWireError("policy diagnostics must be an object with string keys")
-    expected = {"exact_blind", "preboss"}
+    expected = {"exact_blind", "preboss", "public_root"}
     require_fields(value, expected, "policy diagnostics")
     return PolicyDiagnostics(
         exact_blind=_search_diagnostics_from_data(value["exact_blind"], "exact_blind"),
         preboss=_search_diagnostics_from_data(value["preboss"], "preboss"),
+        public_root=_search_diagnostics_from_data(value["public_root"], "public_root"),
     )
 
 

@@ -15,6 +15,9 @@ class JsonlProcessError(RuntimeError):
     pass
 
 
+_MAX_WORKER_ERROR_BYTES = 4_096
+
+
 class JsonlChildProcess:
     def __init__(
         self,
@@ -36,7 +39,7 @@ class JsonlChildProcess:
             tuple(command),
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
             bufsize=0,
             cwd=cwd,
             env=dict(environment),
@@ -81,7 +84,7 @@ class JsonlChildProcess:
             except subprocess.TimeoutExpired:
                 _signal_process_group(process, signal.SIGKILL)
                 process.wait(timeout=1.0)
-        for pipe in (process.stdin, process.stdout):
+        for pipe in (process.stdin, process.stdout, process.stderr):
             if pipe is not None:
                 pipe.close()
 
@@ -116,7 +119,9 @@ class JsonlChildProcess:
                     raise JsonlProcessError("worker timed out")
                 chunk = os.read(descriptor, min(4096, self.max_response_bytes + 1 - len(buffer)))
                 if not chunk:
-                    raise JsonlProcessError("worker exited before responding")
+                    detail = self._worker_error_detail()
+                    suffix = f": {detail}" if detail else ""
+                    raise JsonlProcessError(f"worker exited before responding{suffix}")
                 buffer.extend(chunk)
                 newline = buffer.find(b"\n")
                 if newline >= 0:
@@ -125,6 +130,18 @@ class JsonlChildProcess:
                     return bytes(buffer)
                 if len(buffer) > self.max_response_bytes:
                     raise JsonlProcessError("worker response exceeded the frame limit")
+
+    def _worker_error_detail(self) -> str:
+        stderr = self._process.stderr
+        if stderr is None:
+            return ""
+        try:
+            os.set_blocking(stderr.fileno(), False)
+            payload = os.read(stderr.fileno(), _MAX_WORKER_ERROR_BYTES)
+        except (BlockingIOError, OSError):
+            return ""
+        text = payload.decode("utf-8", errors="replace").strip()
+        return " ".join(text.split())
 
 
 def minimal_child_environment(python_paths: Sequence[Path]) -> dict[str, str]:

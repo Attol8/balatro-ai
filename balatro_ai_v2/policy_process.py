@@ -59,11 +59,13 @@ class SearchDiagnosticCounters:
 class PolicyDiagnosticCounters:
     exact_blind: SearchDiagnosticCounters = SearchDiagnosticCounters()
     preboss: SearchDiagnosticCounters = SearchDiagnosticCounters()
+    public_root: SearchDiagnosticCounters = SearchDiagnosticCounters()
 
     def add(self, diagnostics: PolicyDiagnostics) -> PolicyDiagnosticCounters:
         return PolicyDiagnosticCounters(
             exact_blind=self.exact_blind.add(diagnostics.exact_blind),
             preboss=self.preboss.add(diagnostics.preboss),
+            public_root=self.public_root.add(diagnostics.public_root),
         )
 
 

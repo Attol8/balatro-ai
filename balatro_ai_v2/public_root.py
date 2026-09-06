@@ -29,6 +29,8 @@ from balatro_ai_v2.public_state import (
     PublicItem,
     PublicJokerRuntime,
     PublicObservation,
+    PublicShopPlayingCard,
+    VisiblePlayingCard,
 )
 
 
@@ -143,14 +145,14 @@ def construct_public_root(
     nonce: str,
     index: int,
 ) -> JackdawBackend:
-    """Build and verify a fresh ``BLIND_SELECT`` rollout root.
+    """Build and verify a fresh strategic rollout root.
 
     The returned backend owns a complete private state, but every private value
     was initialized or sampled here from the policy seed.  No private authority
     state is copied into it.
     """
 
-    _require_blind_select(observation, history)
+    _require_supported_root(observation, history)
     seed = public_root_seed(observation, history, nonce, index)
     backend = JackdawBackend(lightweight=True)
     try:
@@ -165,7 +167,8 @@ def construct_public_root(
         )
         game_state["orbital_choices"] = {}
         _set_most_played_hand(game_state, backend._poker_hand_iteration_order)
-        backend._initialize_orbital_choices()
+        if observation.phase == Phase.BLIND_SELECT:
+            backend._initialize_orbital_choices()
         backend._stale_shop_areas = None
         backend._round_targets_rolled = False
         backend._pending_ante_setup = None
@@ -191,11 +194,11 @@ def construct_public_root(
         raise
 
 
-def _require_blind_select(
+def _require_supported_root(
     observation: PublicObservation,
     history: Sequence[PublicHistoryStep],
 ) -> None:
-    if observation.phase != Phase.BLIND_SELECT:
+    if observation.phase not in {Phase.BLIND_SELECT, Phase.SHOP}:
         raise DeterminizationUnavailable(
             f"phase {observation.phase.value} has no fresh public constructor"
         )
@@ -204,8 +207,15 @@ def _require_blind_select(
         raise DeterminizationUnavailable("BLIND_SELECT root unexpectedly has a hand")
     if observation.required_hand_slots:
         raise DeterminizationUnavailable("BLIND_SELECT root has required hand slots")
-    if observation.shop or observation.vouchers or observation.packs or observation.opened_pack:
+    if observation.phase == Phase.BLIND_SELECT and (
+        observation.shop
+        or observation.vouchers
+        or observation.packs
+        or observation.opened_pack
+    ):
         raise DeterminizationUnavailable("BLIND_SELECT root exposes a transient card area")
+    if observation.phase == Phase.SHOP and observation.opened_pack:
+        raise DeterminizationUnavailable("SHOP root exposes an opened pack")
     if observation.pack_kind is not None or observation.pack_choices_remaining:
         raise DeterminizationUnavailable("BLIND_SELECT root exposes pack metadata")
     if observation.draw_count != observation.deck_size:
@@ -223,8 +233,10 @@ def _require_blind_select(
             "historical skip-tag state is not yet reconstructible"
         )
     selecting = [blind for blind in observation.blinds if blind.status == "SELECT"]
-    if len(selecting) != 1:
+    if observation.phase == Phase.BLIND_SELECT and len(selecting) != 1:
         raise DeterminizationUnavailable("BLIND_SELECT requires exactly one selectable blind")
+    if observation.phase == Phase.SHOP and selecting:
+        raise DeterminizationUnavailable("SHOP root unexpectedly has a selectable blind")
     for blind in observation.blinds:
         if blind.kind not in {"SMALL", "BIG", "BOSS"}:
             raise DeterminizationUnavailable(f"unknown blind kind {blind.kind!r}")
@@ -275,7 +287,11 @@ def _rebuild_state(
     if observation.deck not in DECK_FROM_BOT or observation.stake not in STAKE_FROM_BOT:
         raise DeterminizationUnavailable("unknown deck or stake")
 
-    game_state["phase"] = GamePhase.BLIND_SELECT
+    game_state["phase"] = (
+        GamePhase.BLIND_SELECT
+        if observation.phase == Phase.BLIND_SELECT
+        else GamePhase.SHOP
+    )
     game_state["selected_back_key"] = DECK_FROM_BOT[observation.deck]
     game_state["stake"] = STAKE_FROM_BOT[observation.stake]
     game_state["rng"] = PseudoRandom(seed)
@@ -303,7 +319,6 @@ def _rebuild_state(
     round_resets["blind_ante"] = observation.ante
     round_resets["hands"] = observation.round.hands_left
     round_resets["discards"] = observation.round.discards_left
-    round_resets["reroll_cost"] = observation.round.reroll_cost
     round_resets["temp_reroll_cost"] = None
     round_resets["temp_handsize"] = None
     round_resets["boss_rerolled"] = observation.round.boss_rerolled
@@ -332,7 +347,10 @@ def _rebuild_state(
                     f"unknown public tag {public_blind.tag_name!r}"
                 )
             tags[title] = tag_key
-    assert selected_kind is not None
+    if observation.phase == Phase.SHOP:
+        selected_kind = _next_shop_blind_kind(states)
+    if selected_kind is None:
+        raise DeterminizationUnavailable("public root has no next blind boundary")
     round_resets["blind_choices"] = choices
     round_resets["blind_states"] = states
     round_resets["blind_tags"] = tags
@@ -358,6 +376,7 @@ def _rebuild_state(
     _rebuild_hand_levels(game_state, observation)
     game_state["deck"] = _rebuild_deck(observation, seed)
     game_state["playing_card_count"] = observation.deck_size
+    game_state["playing_cards_count"] = observation.deck_size
     game_state["starting_deck_size"] = _starting_deck_size(observation, history)
 
     # Start with deck-defined vouchers already applied by initialize_run, then
@@ -380,7 +399,6 @@ def _rebuild_state(
     round_resets["blind_ante"] = observation.ante
     round_resets["hands"] = observation.round.hands_left
     round_resets["discards"] = observation.round.discards_left
-    round_resets["reroll_cost"] = observation.round.reroll_cost
     current_round["reroll_cost"] = observation.round.reroll_cost
 
     jokers = [_rebuild_joker(item, current_round) for item in observation.jokers]
@@ -388,13 +406,45 @@ def _rebuild_state(
     game_state["consumables"] = [
         _rebuild_consumable(item) for item in observation.consumables
     ]
+    for card in [*game_state["jokers"], *game_state["consumables"]]:
+        card.add_to_deck(game_state)
+    # Passive application reconstructs hidden durable mechanics, while these
+    # visible values remain authoritative at the exact decision boundary.
+    game_state["hand_size"] = observation.hand_limit
+    game_state["joker_slots"] = observation.joker_limit
+    game_state["consumable_slots"] = observation.consumable_limit
+    round_resets["hands"] = observation.round.hands_left
+    round_resets["discards"] = observation.round.discards_left
+    current_round["hands_left"] = observation.round.hands_left
+    current_round["discards_left"] = observation.round.discards_left
+    _restore_shop_reroll_state(game_state, observation, history)
+
+    _rebuild_shop(game_state, observation)
     _assign_public_root_sort_ids(game_state)
-    game_state["used_jokers"] = {card.center_key: True for card in jokers}
+    game_state["used_jokers"] = {
+        key: True for key in _active_center_keys(observation)
+    }
     game_state["has_showman"] = any(card.center_key == "j_ring_master" for card in jokers)
+    game_state["first_shop_buffoon"] = observation.phase == Phase.SHOP or any(
+        step.before.phase == Phase.SHOP or step.after.phase == Phase.SHOP
+        for step in history
+    )
+    game_state["pool_flags"] = (
+        {"gros_michel_extinct": True}
+        if _gros_michel_went_extinct(history)
+        else {}
+    )
 
     hand_plays = sum(stat.played for stat in observation.hand_stats)
     game_state["hands_played"] = hand_plays
     game_state["round_scores"] = _public_round_scores(history)
+    shop_purchases, joker_purchases = (
+        _current_shop_purchases(history)
+        if observation.phase == Phase.SHOP
+        else (0, 0)
+    )
+    game_state["cards_purchased"] = shop_purchases
+    current_round["jokers_purchased"] = joker_purchases
     game_state["skips"] = 0
     game_state["bosses_used"] = _public_bosses_used(observation, history, BLINDS)
 
@@ -408,6 +458,72 @@ def _rebuild_state(
             int(game_state.get("modifiers", {}).get("scaling", 1)),
             float(game_state.get("starting_params", {}).get("ante_scaling", 1.0)),
         )
+
+
+def _next_shop_blind_kind(states: Mapping[str, str]) -> str:
+    pattern = tuple(states.get(kind) for kind in ("Small", "Big", "Boss"))
+    next_by_pattern = {
+        ("Upcoming", "Upcoming", "Upcoming"): "Small",
+        ("Defeated", "Upcoming", "Upcoming"): "Big",
+        ("Defeated", "Defeated", "Upcoming"): "Boss",
+    }
+    try:
+        return next_by_pattern[pattern]
+    except KeyError as exc:
+        raise DeterminizationUnavailable(
+            f"SHOP blind progression is not reconstructible: {pattern!r}"
+        ) from exc
+
+
+def _restore_shop_reroll_state(
+    game_state: dict[str, Any],
+    observation: PublicObservation,
+    history: Sequence[PublicHistoryStep],
+) -> None:
+    if observation.phase != Phase.SHOP:
+        game_state["current_round"]["reroll_cost"] = observation.round.reroll_cost
+        return
+
+    from balatro_ai_v2.actions import RerollShop
+    from jackdaw.engine.shop import calculate_reroll_cost
+
+    entrance, steps = _current_shop_visit(history)
+    free_rerolls = _visible_joker_count(entrance, "j_chaos")
+    paid_rerolls = 0
+    for step in steps:
+        if isinstance(step.action, RerollShop):
+            if step.before.round.reroll_cost == 0:
+                free_rerolls = max(0, free_rerolls - 1)
+            else:
+                paid_rerolls += 1
+        free_rerolls = max(
+            0,
+            free_rerolls
+            + _visible_joker_count(step.after, "j_chaos")
+            - _visible_joker_count(step.before, "j_chaos"),
+        )
+    if _visible_joker_count(observation, "j_chaos") != _visible_joker_count(
+        steps[-1].after if steps else entrance,
+        "j_chaos",
+    ):
+        raise DeterminizationUnavailable("SHOP Joker history does not reach the root")
+
+    current_round = game_state["current_round"]
+    current_round["free_rerolls"] = free_rerolls
+    current_round["reroll_cost_increase"] = paid_rerolls
+    rebuilt_cost = calculate_reroll_cost(game_state)
+    if rebuilt_cost != observation.round.reroll_cost:
+        raise DeterminizationUnavailable(
+            "SHOP reroll state does not match the public price: "
+            f"candidate={rebuilt_cost}, public={observation.round.reroll_cost}"
+        )
+
+
+def _visible_joker_count(observation: PublicObservation, key: str) -> int:
+    return sum(
+        isinstance(joker, PublicItem) and joker.key == key
+        for joker in observation.jokers
+    )
 
 
 def _rebuild_hand_levels(game_state: dict[str, Any], observation: PublicObservation) -> None:
@@ -507,7 +623,14 @@ def _assign_public_root_sort_ids(game_state: dict[str, Any]) -> None:
     import jackdaw.engine.card as card_module
 
     next_id = 0
-    for area_name in ("deck", "jokers", "consumables"):
+    for area_name in (
+        "deck",
+        "jokers",
+        "consumables",
+        "shop_cards",
+        "shop_vouchers",
+        "shop_boosters",
+    ):
         area = game_state.get(area_name)
         if not isinstance(area, list):
             raise DeterminizationUnavailable(f"fresh {area_name} area is invalid")
@@ -648,7 +771,153 @@ def _rebuild_consumable(item: PublicItem) -> Any:
     if item.runtime is not None or item.eternal or item.perishable_rounds is not None or item.rental:
         raise DeterminizationUnavailable("owned consumable has unsupported modifiers")
     card = create_consumable(item.key)
+    edition_key = _EDITION_KEYS.get(item.edition)
+    if item.edition not in _EDITION_KEYS:
+        raise DeterminizationUnavailable("unsupported consumable edition")
+    if edition_key is not None:
+        card.set_edition({edition_key: True})
     card.debuff = item.debuffed
+    _set_costs(card, item)
+    return card
+
+
+def _rebuild_shop(game_state: dict[str, Any], observation: PublicObservation) -> None:
+    if observation.phase != Phase.SHOP:
+        game_state["shop_cards"] = []
+        game_state["shop_vouchers"] = []
+        game_state["shop_boosters"] = []
+        return
+
+    current_round = game_state["current_round"]
+    chooser = random.Random(
+        int(
+            hashlib.sha256(
+                f"{game_state['seed']}|shop-stone-base".encode()
+            ).hexdigest(),
+            16,
+        )
+    )
+    game_state["shop_cards"] = [
+        _rebuild_shop_offer(offer, current_round, chooser)
+        for offer in observation.shop
+    ]
+    game_state["shop_vouchers"] = [
+        _rebuild_voucher(item) for item in observation.vouchers
+    ]
+    game_state["shop_boosters"] = [
+        _rebuild_booster(item) for item in observation.packs
+    ]
+    game_state["shop_voucher_limit"] = max(1, len(game_state["shop_vouchers"]))
+    shop = game_state.setdefault("shop", {})
+    if not isinstance(shop, dict):
+        raise DeterminizationUnavailable("fresh shop capacity state is invalid")
+    shop["joker_max"] = max(int(shop.get("joker_max", 2)), len(observation.shop))
+    current_round["voucher"] = (
+        game_state["shop_vouchers"][0].center_key
+        if game_state["shop_vouchers"]
+        else None
+    )
+    game_state["shop_return_phase"] = "shop"
+
+
+def _rebuild_shop_offer(
+    offer: PublicItem | PublicShopPlayingCard,
+    current_round: dict[str, Any],
+    chooser: random.Random,
+) -> Any:
+    if isinstance(offer, PublicShopPlayingCard):
+        card = _rebuild_visible_playing_card(offer.card, chooser)
+        card.cost = offer.buy_cost
+        return card
+    if offer.kind == "JOKER":
+        return _rebuild_joker(offer, current_round)
+    if offer.kind in {"TAROT", "PLANET", "SPECTRAL"}:
+        return _rebuild_consumable(offer)
+    raise DeterminizationUnavailable(f"unsupported shop offer kind {offer.kind!r}")
+
+
+def _rebuild_visible_playing_card(
+    public: VisiblePlayingCard,
+    chooser: random.Random,
+) -> Any:
+    from jackdaw.engine.card_factory import RANK_LETTER, SUIT_LETTER, create_playing_card
+
+    enhancement = _ENHANCEMENT_KEYS.get(public.enhancement)
+    edition_key = _EDITION_KEYS.get(public.edition)
+    seal = _SEAL_KEYS.get(public.seal)
+    if (
+        enhancement is None
+        or public.edition not in _EDITION_KEYS
+        or public.seal not in _SEAL_KEYS
+        or (
+            public.enhancement != "STONE"
+            and (public.rank not in RANK_LETTER or public.suit not in SUIT_LETTER)
+        )
+    ):
+        raise DeterminizationUnavailable("unsupported shop playing-card identity")
+    card = create_playing_card(
+        (
+            SUIT_LETTER[chooser.choice(tuple(SUIT_LETTER))]
+            if public.enhancement == "STONE"
+            else SUIT_LETTER[public.suit]
+        ),
+        (
+            RANK_LETTER[chooser.choice(tuple(RANK_LETTER))]
+            if public.enhancement == "STONE"
+            else RANK_LETTER[public.rank]
+        ),
+        enhancement,
+        {edition_key: True} if edition_key else None,
+        seal,
+    )
+    card.ability["perma_bonus"] = public.permanent_bonus
+    card.debuff = public.debuffed
+    return card
+
+
+def _rebuild_voucher(item: PublicItem) -> Any:
+    from jackdaw.engine.card_factory import create_voucher
+    from jackdaw.engine.data.prototypes import VOUCHERS
+
+    if item.kind != "VOUCHER" or item.key not in VOUCHERS:
+        raise DeterminizationUnavailable(f"unknown shop voucher {item.key!r}")
+    if (
+        item.runtime is not None
+        or item.edition is not None
+        or item.eternal
+        or item.perishable_rounds is not None
+        or item.rental
+        or item.debuffed
+    ):
+        raise DeterminizationUnavailable("shop voucher has unsupported modifiers")
+    card = create_voucher(item.key)
+    _set_costs(card, item)
+    return card
+
+
+def _rebuild_booster(item: PublicItem) -> Any:
+    from jackdaw.engine.card import Card
+    from jackdaw.engine.data.prototypes import BOOSTERS
+    from balatro_ai_v2.canonical import semantic_card_key
+
+    matching_keys = [
+        key
+        for key in BOOSTERS
+        if semantic_card_key("BOOSTER", key) == item.key
+    ]
+    if item.kind != "BOOSTER" or not matching_keys:
+        raise DeterminizationUnavailable(f"unknown shop booster {item.key!r}")
+    if (
+        item.runtime is not None
+        or item.edition is not None
+        or item.eternal
+        or item.perishable_rounds is not None
+        or item.rental
+        or item.debuffed
+    ):
+        raise DeterminizationUnavailable("shop booster has unsupported modifiers")
+    card = Card()
+    card.set_ability(sorted(matching_keys)[0])
     _set_costs(card, item)
     return card
 
@@ -705,25 +974,117 @@ def _public_round_scores(
     }
 
 
+def _current_shop_purchases(
+    history: Sequence[PublicHistoryStep],
+) -> tuple[int, int]:
+    from balatro_ai_v2.actions import BuyPack, BuyShopCard, BuyVoucher
+
+    purchases = jokers = 0
+    _, steps = _current_shop_visit(history)
+    for step in steps:
+        if isinstance(step.action, BuyShopCard):
+            purchases += 1
+            index = step.action.card.value
+            if 0 <= index < len(step.before.shop):
+                offer = step.before.shop[index]
+                jokers += int(isinstance(offer, PublicItem) and offer.kind == "JOKER")
+        elif isinstance(step.action, (BuyPack, BuyVoucher)):
+            purchases += 1
+    return purchases, jokers
+
+
+def _current_shop_visit(
+    history: Sequence[PublicHistoryStep],
+) -> tuple[PublicObservation, tuple[PublicHistoryStep, ...]]:
+    visit_phases = {Phase.SHOP, Phase.PACK}
+    boundary = next(
+        (
+            index
+            for index in range(len(history) - 1, -1, -1)
+            if history[index].after.phase == Phase.SHOP
+            and history[index].before.phase not in visit_phases
+        ),
+        None,
+    )
+    if boundary is None:
+        raise DeterminizationUnavailable("SHOP history has no public entrance boundary")
+    steps = tuple(history[boundary + 1 :])
+    if any(
+        step.before.phase not in visit_phases or step.after.phase not in visit_phases
+        for step in steps
+    ):
+        raise DeterminizationUnavailable("SHOP visit history crosses another phase")
+    return history[boundary].after, steps
+
+
+def _active_center_keys(observation: PublicObservation) -> frozenset[str]:
+    keys: set[str] = set()
+    for item in [
+        *observation.jokers,
+        *observation.consumables,
+        *observation.shop,
+        *observation.opened_pack,
+    ]:
+        if isinstance(item, PublicItem):
+            keys.add(item.key)
+        elif isinstance(item, PublicShopPlayingCard):
+            keys.add(_ENHANCEMENT_KEYS[item.card.enhancement])
+        elif isinstance(item, VisiblePlayingCard):
+            keys.add(_ENHANCEMENT_KEYS[item.enhancement])
+    return frozenset(keys)
+
+
+def _gros_michel_went_extinct(
+    history: Sequence[PublicHistoryStep],
+) -> bool:
+    from balatro_ai_v2.actions import PlayCards
+
+    return any(
+        isinstance(step.action, PlayCards)
+        and _visible_joker_count(step.after, "j_gros_michel")
+        < _visible_joker_count(step.before, "j_gros_michel")
+        for step in history
+    )
+
+
 def _public_bosses_used(
     observation: PublicObservation,
     history: Sequence[PublicHistoryStep],
     blind_prototypes: Mapping[str, Any],
 ) -> dict[str, int]:
+    from balatro_ai_v2.actions import RerollBoss
+
     by_name = {prototype.name: key for key, prototype in blind_prototypes.items()}
     used = {key: 0 for key, prototype in blind_prototypes.items() if prototype.boss is not None}
-    seen: set[tuple[int, str]] = set()
-    for public in [*(step.before for step in history), observation]:
+
+    def record(public: PublicObservation) -> None:
         boss = next((blind for blind in public.blinds if blind.kind == "BOSS"), None)
         if boss is None:
-            continue
+            raise DeterminizationUnavailable("public state has no boss blind")
         key = by_name.get(boss.name)
         if key is None:
             raise DeterminizationUnavailable(f"unknown historical boss {boss.name!r}")
-        marker = (public.antes_cleared, key)
-        if marker not in seen:
-            seen.add(marker)
-            used[key] = used.get(key, 0) + 1
+        used[key] = used.get(key, 0) + 1
+
+    initial = history[0].before if history else observation
+    record(initial)
+    for step in history:
+        before_boss = next(
+            blind for blind in step.before.blinds if blind.kind == "BOSS"
+        )
+        after_boss = next(
+            blind for blind in step.after.blinds if blind.kind == "BOSS"
+        )
+        new_assignment = (
+            isinstance(step.action, RerollBoss)
+            or before_boss.name != after_boss.name
+            or (
+                before_boss.status == "DEFEATED"
+                and after_boss.status == "UPCOMING"
+            )
+        )
+        if new_assignment:
+            record(step.after)
     return used
 
 
