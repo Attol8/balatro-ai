@@ -1562,6 +1562,18 @@ change. Together, the two exact slices reduce the original 456.24-second
 baseline to 318.35 seconds (30.23%) without changing a root, action, endpoint,
 label, or outcome.
 
+Pack-validation optimization design: targeted consumable roots in PACK are
+currently checked once by `iter_public_targets`, then checked a second time by
+`is_legal` before emission. Remove only that duplicate validation; retain the
+phase/item branches, complete target enumeration, canonical action order, and
+the ordinary `is_legal` contract for callers. Pin the old ordered action output
+against the candidate across targeted and untargeted pack items, full-capacity
+and hidden-card cases, and assert every emitted action remains legal. Measure
+the retained 185-pick combinatorial fixture without changing search selection.
+Retain only if the full suite passes and a matched seed-2439 replay has exact
+normalized results and teacher records with a measurable speed improvement.
+Otherwise restore the duplicate check.
+
 Strength replan: throughput is no longer the immediate score ceiling. Across
 the descriptive frozen v9/v10 trajectories, 340 of 365 losses (93.2%) end on
 Pair or Two Pair; 192 of 243 losses with a full Joker row have no xMult, while

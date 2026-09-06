@@ -24,6 +24,7 @@ from balatro_ai_v2.actions import (
     SelectBlind,
     SellJoker,
     ShopSlot,
+    SkipPack,
     ConsumableSlot,
     UseConsumable,
     action_from_data,
@@ -37,6 +38,8 @@ from balatro_ai_v2.balatrobot.adapter import (
     action_to_rpc,
     to_public_observation,
 )
+from balatro_ai_v2.consumable_rules import iter_public_targets
+from balatro_ai_v2.public_state import PublicObservation, VisiblePlayingCard
 from state_factory import item_card, playing_card, state
 
 
@@ -301,6 +304,100 @@ def test_negative_joker_can_enter_a_full_area_from_shop_or_pack() -> None:
 
     assert is_legal(shop, BuyShopCard(ShopSlot(0)))
     assert is_legal(pack, ChoosePackCard(OpenedPackSlot(0)))
+
+
+def _legacy_pack_actions(observation: PublicObservation) -> tuple[object, ...]:
+    actions: list[object] = [SkipPack()]
+    for index, item in enumerate(observation.opened_pack):
+        if isinstance(item, VisiblePlayingCard) or item.kind.upper() == "JOKER":
+            action = ChoosePackCard(OpenedPackSlot(index))
+            if is_legal(observation, action):
+                actions.append(action)
+            continue
+        for target_indexes in iter_public_targets(observation, item, from_pack=True):
+            action = ChoosePackCard(
+                OpenedPackSlot(index),
+                tuple(HandSlot(target) for target in target_indexes),
+            )
+            if is_legal(observation, action):
+                actions.append(action)
+    return tuple(actions)
+
+
+def test_pack_generation_preserves_legacy_order_and_legality() -> None:
+    raw = state("TAROT_PACK")
+    raw["hand"] = {
+        "cards": [
+            playing_card(f"{suit}_{rank}", card_id=100 + index)
+            for index, (suit, rank) in enumerate(
+                zip("SHDCSHDC", "AKQJT987", strict=True)
+            )
+        ],
+        "count": 8,
+        "highlighted_limit": 5,
+        "limit": 8,
+    }
+    raw["pack"] = {
+        "cards": [
+            item_card("c_moon", card_id=200, kind="TAROT"),
+            item_card("c_star", card_id=201, kind="TAROT"),
+            item_card("c_fool", card_id=202, kind="TAROT"),
+        ],
+        "count": 3,
+        "highlighted_limit": 1,
+        "limit": 3,
+    }
+    raw["last_tarot_planet"] = "c_mercury"
+    observation = to_public_observation(raw)
+
+    actions = tuple(iter_legal_actions(observation))
+
+    assert len(actions) == 186
+    assert tuple(action_to_data(action) for action in actions) == tuple(
+        action_to_data(action) for action in _legacy_pack_actions(observation)
+    )
+    assert all(is_legal(observation, action) for action in actions)
+
+
+def test_pack_generation_preserves_capacity_and_hidden_target_filters() -> None:
+    raw = state("SPECTRAL_PACK")
+    raw["hand"] = {
+        "cards": [
+            playing_card("S_A", card_id=100),
+            playing_card("H_K", card_id=101, hidden=True),
+            playing_card("D_Q", card_id=102, modifier=["FOIL"]),
+        ],
+        "count": 3,
+        "highlighted_limit": 5,
+        "limit": 8,
+    }
+    raw["consumables"] = {
+        "cards": [
+            item_card("c_mercury", card_id=300, kind="PLANET"),
+            item_card("c_venus", card_id=301, kind="PLANET"),
+        ],
+        "count": 2,
+        "highlighted_limit": 1,
+        "limit": 2,
+    }
+    raw["pack"] = {
+        "cards": [
+            item_card("c_aura", card_id=200, kind="SPECTRAL"),
+            item_card("c_emperor", card_id=201, kind="TAROT"),
+            playing_card("C_J", card_id=202),
+        ],
+        "count": 3,
+        "highlighted_limit": 1,
+        "limit": 3,
+    }
+    observation = to_public_observation(raw)
+
+    actions = tuple(iter_legal_actions(observation))
+
+    assert tuple(action_to_data(action) for action in actions) == tuple(
+        action_to_data(action) for action in _legacy_pack_actions(observation)
+    )
+    assert all(is_legal(observation, action) for action in actions)
 
 
 def test_debuffed_credit_card_does_not_extend_purchase_floor() -> None:

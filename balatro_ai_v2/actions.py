@@ -292,12 +292,10 @@ def iter_legal_actions(observation: PublicObservation) -> Iterator[PublicAction]
                     yield action
             else:
                 for target_indexes in iter_public_targets(observation, item, from_pack=True):
-                    action = ChoosePackCard(
+                    yield ChoosePackCard(
                         OpenedPackSlot(index),
                         tuple(HandSlot(target) for target in target_indexes),
                     )
-                    if is_legal(observation, action):
-                        yield action
 
     if phase in _SELL_USE_PHASES:
         for index, item in enumerate(observation.jokers):
