@@ -12,6 +12,36 @@ from solver_state_factory import state
 from balatro_ai_v2.solver.public_state import PublicJokerRuntime
 
 
+@pytest.mark.parametrize("boss", ["The Club", "The Pillar", "The Goad", "The Head", "The Window", "The Plant"])
+def test_static_debuff_bosses_are_opt_in_only(boss):
+    obs = observation(["H_A", "C_3", "S_7"], ["H_4", "C_5", "D_6"], boss=boss, target=10000)
+    baseline = play(0)
+    assert choose_tactical(obs, baseline).reason == "unsupported blind transition: preserve baseline"
+    choice = choose_tactical(obs, baseline, samples=2, model_static_debuffs=True)
+    assert choice.samples == 2 and is_legal(obs, choice.action)
+
+
+def test_static_boss_refill_preserves_drawn_debuff_and_score():
+    obs = observation(["H_A", "C_3"], ["C_K"], boss="The Club", target=10000)
+    drawn = VisiblePlayingCard("K", "C", debuffed=True)
+    obs = replace(obs, remaining_deck=(DeckCardCount(drawn, 1),))
+    original = obs.canonical_json()
+    after = _after_discard(obs, discard(1), (drawn,))
+    assert after.hand[1] == drawn and after.hand[1].debuffed
+    assert score_play(after, play(1).cards)[0] == 5
+    assert obs.canonical_json() == original
+
+
+def test_static_opt_in_keeps_hidden_forced_and_unknown_boss_guards():
+    obs = observation(["H_A", "C_3", "S_7"], ["H_4"], boss="The Pillar")
+    hidden = replace(obs, hand=(HiddenHandCard(), *obs.hand[1:]))
+    assert choose_tactical(hidden, discard(0), model_static_debuffs=True).reason == "hidden state: preserve baseline"
+    forced = observation(["H_A", "C_3", "S_7"], ["H_4"], boss="Cerulean Bell")
+    assert choose_tactical(forced, play(0), model_static_debuffs=True).reason == "forced selection: preserve boss recovery"
+    unknown = observation(["H_A", "C_3", "S_7"], ["H_4"], boss="The Hook")
+    assert choose_tactical(unknown, play(0), model_static_debuffs=True).reason == "unsupported blind transition: preserve baseline"
+
+
 @pytest.mark.parametrize("mult,expected", [(5, 4), (1, 0), (0, 0)])
 def test_opt_in_green_discard_penalty_once_and_immutable(mult, expected):
     obs = observation(["H_A", "C_3", "S_7"], ["H_4", "C_5"], target=10000)
@@ -183,6 +213,35 @@ def test_no_discard_when_refill_is_worse():
     choice = choose_tactical(obs, discard(4), samples=2)
     assert isinstance(choice.action, PlayCards)
     assert choice.reason == "sampled refill does not justify discard"
+
+
+def test_losing_final_hand_discards_even_when_samples_find_no_improvement():
+    obs = observation(["H_A", "C_A", "S_K", "D_K", "C_9"], ["S_2"], target=5000)
+    obs = replace(obs, round=replace(obs.round, hands_left=1))
+    choice = choose_tactical(obs, play(0, 1, 2, 3), samples=2)
+    assert isinstance(choice.action, DiscardCards) and is_legal(obs, choice.action)
+    assert choice.expected_score < 5000
+    assert "unsampled outs may remain" in choice.reason
+    assert "not a guarantee" in choice.reason
+
+
+def test_stochastic_losing_estimate_does_not_force_a_discard():
+    obs = observation(["H_A", "C_A", "S_K", "D_K", "C_9"], ["S_2"], target=5000)
+    obs = replace(obs, round=replace(obs.round, hands_left=1),
+                  jokers=(PublicItem("j_misprint", "Misprint", "JOKER"),))
+    choice = choose_tactical(obs, play(0, 1, 2, 3), samples=2)
+    assert isinstance(choice.action, PlayCards)
+    assert choice.reason == "sampled refill does not justify discard"
+
+
+@pytest.mark.parametrize("resource", ["discards", "draws"])
+def test_losing_final_hand_without_discard_resources_still_plays(resource):
+    obs = observation(["H_A", "C_A"], [] if resource == "draws" else ["S_2"],
+                      target=5000, discards=0 if resource == "discards" else 3)
+    obs = replace(obs, round=replace(obs.round, hands_left=1))
+    choice = choose_tactical(obs, play(0, 1))
+    assert isinstance(choice.action, PlayCards)
+    assert choice.reason == "best immediate legal play"
 
 
 @pytest.mark.parametrize("samples", [0, -1, True, 65, 1.5])

@@ -80,7 +80,8 @@ class SearchPolicy(StrategicPolicy):
     def __init__(self, tactical_samples: int = 8, shop_samples: int = 6, evaluate_planets: bool = False,
                  model_green_joker: bool = False, project_next_boss: bool = False,
                  optimize_order: bool = False, model_hidden_jokers: bool = False,
-                 evaluate_blueprint_placement: bool = False, prioritize_all_jokers: bool = True) -> None:
+                 evaluate_blueprint_placement: bool = False, prioritize_all_jokers: bool = True,
+                 model_static_debuffs: bool = False) -> None:
         super().__init__()
         from balatro_ai_v2.solver.shop_search import ShopSearch
         self.shop_search = ShopSearch(samples=shop_samples, evaluate_planets=evaluate_planets,
@@ -91,6 +92,7 @@ class SearchPolicy(StrategicPolicy):
         self.model_green_joker = model_green_joker
         self.optimize_order = optimize_order
         self.model_hidden_jokers = model_hidden_jokers
+        self.model_static_debuffs = model_static_debuffs
 
     def select(self, observation):
         from balatro_ai_v2.solver.public_state import Phase
@@ -114,7 +116,8 @@ class SearchPolicy(StrategicPolicy):
                 return choice.action, choice.reason, choice.diagnostics
         elif isinstance(action, (PlayCards, DiscardCards)):
             tactical = choose_tactical(observation, action, samples=self.tactical_samples,
-                                       model_green_joker=self.model_green_joker)
+                                       model_green_joker=self.model_green_joker,
+                                       model_static_debuffs=self.model_static_debuffs)
             if self.optimize_order and isinstance(tactical.action, PlayCards) and self._reorder_budget_available():
                 from balatro_ai_v2.solver.ordering_search import improve_play_order
                 ordering = improve_play_order(observation, tactical.action)

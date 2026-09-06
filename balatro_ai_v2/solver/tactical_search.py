@@ -37,6 +37,12 @@ _SUPPORTED_BLINDS = frozenset({
     "Small Blind", "Big Blind", "The Psychic", "The Eye", "The Mouth",
     "The Flint", "The Wall", "The Needle", "The Water", "Violet Vessel",
 })
+# Installed Blind:set_blind debuffs all playing cards. In a saved public-trace
+# audit, all 72 discard transitions across these six bosses preserved the exact
+# remaining-card multiset, including debuff flags. This covers refill only.
+_STATIC_DEBUFF_BLINDS = frozenset({
+    "The Club", "The Pillar", "The Goad", "The Head", "The Window", "The Plant",
+})
 _DISCARD_STATE_JOKERS = frozenset({
     "j_burnt", "j_trading", "j_castle", "j_yorick", "j_mail", "j_faceless",
     "j_hit_the_road", "j_green_joker", "j_ramen",
@@ -55,6 +61,7 @@ class TacticalChoice:
 def choose_tactical(
     observation: PublicObservation, baseline: PublicAction, *, samples: int = 8,
     model_green_joker: bool = False,
+    model_static_debuffs: bool = False,
 ) -> TacticalChoice:
     """Prefer a clear now, or a materially better sampled discard/refill."""
     if isinstance(samples, bool) or not isinstance(samples, int) or not 1 <= samples <= 64:
@@ -76,7 +83,8 @@ def choose_tactical(
     if len(observation.hand) > 10:
         return unchanged("hand exceeds bounded lookahead budget")
     blind = next((blind for blind in observation.blinds if blind.status == "CURRENT"), None)
-    if blind is None or (not blind.disabled and blind.name not in _SUPPORTED_BLINDS):
+    supported_blinds = _SUPPORTED_BLINDS | _STATIC_DEBUFF_BLINDS if model_static_debuffs else _SUPPORTED_BLINDS
+    if blind is None or (not blind.disabled and blind.name not in supported_blinds):
         return unchanged("unsupported blind transition: preserve baseline")
     best = _best_play(observation, preferred=baseline if isinstance(baseline, PlayCards) else None)
     if best is None:
@@ -142,6 +150,12 @@ def choose_tactical(
     winner = max(scored, key=lambda row: ((row[1], row[0]) if last_hand else (row[0], row[1]), -len(row[3].cards),
                                          tuple(-slot.value for slot in row[3].cards)))
     utility, clear_probability, expected, discard = winner
+    if last_hand and score < target and not stochastic and clear_probability == 0:
+        # Playing ends the run under this deterministic model. Zero sampled
+        # clears does not rule out unsampled outs or another useful refill.
+        return TacticalChoice(discard, expected, baseline_score, samples,
+                              "avoid modeled losing final play; unsampled outs may remain; "
+                              "modeled draw-clear fraction 0.000, not a guarantee")
     # A discard consumes a run resource. On the last hand a modest gain is
     # worthwhile; earlier, require a larger improvement before spending it.
     threshold = max(5.0, score * (0.05 if last_hand else 0.15))
