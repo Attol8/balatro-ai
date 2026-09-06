@@ -93,6 +93,12 @@ class SearchPolicy(StrategicPolicy):
         from balatro_ai_v2.solver.tactical_search import choose_tactical
         action, reason, diagnostics = super().select(observation)
         observation = _with_history_derived_joker_runtime(observation, tuple(self.history))
+        if (self.optimize_order and observation.phase == Phase.SELECTING_HAND
+                and isinstance(action, (ReorderHand, ReorderJokers))
+                and not self._reorder_budget_available()):
+            # Include inherited reorders in the same bound. Tactical selection
+            # below replaces this legal seed play with its best supported play.
+            action = next(a for a in iter_legal_actions(observation) if isinstance(a, PlayCards))
         if observation.phase == Phase.SHOP:
             choice = self.shop_search.choose(observation, action, tuple(self.history))
             if choice is not None:

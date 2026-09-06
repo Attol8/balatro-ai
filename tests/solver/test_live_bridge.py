@@ -92,6 +92,21 @@ def test_order_variant_has_a_bounded_reassessment_budget():
     assert policy._reorder_budget_available()
 
 
+def test_order_budget_also_blocks_inherited_reorders(monkeypatch):
+    from balatro_ai_v2.solver.actions import HandSlot, PlayCards, ReorderHand
+    from balatro_ai_v2.solver.adapter import to_public_observation
+    from balatro_ai_v2.solver.tactical_search import TacticalChoice
+    import balatro_ai_v2.solver.tactical_search as tactical
+    policy = make_policy('search-order')
+    swap = ReorderHand((HandSlot(1), HandSlot(0)))
+    policy.history = [SimpleNamespace(action=swap)] * 8
+    monkeypatch.setattr(StrategicPolicy, 'select', lambda *args: (swap, 'inherited', {}))
+    monkeypatch.setattr('balatro_ai_v2.live.strategic._with_history_derived_joker_runtime', lambda o, h: o)
+    monkeypatch.setattr(tactical, 'choose_tactical', lambda o, a, **kw: TacticalChoice(a, 0, 0, 0, 'bounded'))
+    action, _, _ = policy.select(to_public_observation(state('SELECTING_HAND')))
+    assert isinstance(action, PlayCards)
+
+
 def test_planet_variant_projects_typed_state_and_replays(tmp_path):
     initial = state('SELECTING_HAND', seed='TEST')
     final = state('GAME_OVER', seed='TEST')
