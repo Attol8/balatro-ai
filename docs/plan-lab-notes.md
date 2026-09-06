@@ -4980,3 +4980,22 @@ Ruff and `git diff --check` pass. The focused continuation/protocol suite passes
 81 tests and the complete suite passes 1,244 tests. No contextual data has been
 collected yet: implementation must be committed first, followed by a separate
 preregistration-only commit, before reserved seeds 1975--2274 can be opened.
+
+Commit `3f9de01` froze that implementation. A post-commit end-to-end diagnostic
+on reusable development seeds 201--203 completed all three runs and all 243
+searched decisions with zero rejected or unavailable rollouts. The dataset has
+2,269 complete legal roots, exactly six paired samples per root, no subsets or
+censored samples, all three strategic phases, 208/243 action-sensitive rows
+(85.60%), two groups with observed victory targets, one actual win, and 27
+post-win rows. Aggregate search executed 236,554 rollout steps at 118.69
+steps/second; the winning seed reached Ante 10 and accounts for the 22-minute
+long tail. This confirms both useful late-state coverage and the need for the
+precommitted first-100 gate before paying for all 300 runs.
+
+A diagnostic 1/1/1 whole-run split then trained the utility-only model for one
+epoch with 16-decision chunks, calibrated it, emitted per-phase holdout metrics,
+saved it, and reloaded the strict artifact in six seconds. As expected from one
+training group, calibration admitted zero holdout overrides; the diagnostic is
+a pipeline proof, not promotion evidence. Dataset and artifact SHA-256 are
+`d3792cf8200aaf7556e3e1fe5874607388f93a6392d4db841c4d7da013e5e6d7`
+and `2c122effa380898eba34c98c1ab5ae2f59d6cb79750cf75fd5f269c6535d854a`.
