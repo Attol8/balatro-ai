@@ -389,3 +389,50 @@ Emperor cleared the boss in one of eight particles; every other action cleared
 zero. This is a weak candidate signal, not a reliable intervention. Detailed
 outcomes are retained in `runs/shadow-ante-001/d3-154.json`; no live policy uses
 these rollout results yet.
+
+## Low-token teacher pilot (user-approved)
+
+Keep the real game stopped. Build compact public-only shop packets with explicit
+legal action IDs; use one fresh low-cost agent call for three cases, without
+conversation history, run seeds, future observations or known outcomes. Select
+the first ante3 SHOP in each of the first three V6 development traces by a fixed
+rule. Record the actual policy action separately, hidden from the teacher.
+
+Validate returned case/action IDs and bounded explanations. Store proposals as
+unverified, not correct labels. Compare teacher, alternative and recorded actions
+using identical public-derived candidate particles through the current ante.
+Any simulator rejection/censoring invalidates a comparison. This tiny diagnostic
+pilot does not establish stronger play; no training or live promotion follows
+without a larger independent outcome test.
+
+### Pilot result
+
+Completed one fresh `gpt-5.6-luna` low-effort teacher call, three public packets
+(14,113 bytes combined), with no paid API client or real-game restart. All three
+responses passed case/action validation and remain unverified proposals. Raw
+packets, proposals, coordinator provenance and candidate reports are retained in
+`runs/teacher-pilot-001/` (local ignored artifacts).
+
+Fixed cases: V6 D0 decision37, D1 decision33, D2 decision53. Eight identical
+public-derived particles per legal non-reorder action; all 272 branches completed
+without rejection/censoring. Current-ante clear counts:
+
+| Case | Teacher | Recorded choice | Teacher alternative |
+|---|---|---|---|
+| D0 | Venus use: 7/8 | Voucher: 6/8 | Death store: 7/8 |
+| D1 | Juggler: 8/8 | Same Juggler: 8/8 | Earth use: 8/8 |
+| D2 | Seed Money: 8/8 | Leave: 8/8 | Spectral pack: 8/8 |
+
+D0 has one teacher-only clear and no recorded-only clears; a different pack
+action achieved 8/8. Every D1 action achieved 8/8. This pilot establishes only
+that the cheap-teacher plumbing works, not teacher superiority. A short horizon
+cannot meaningfully value longer-term economy in these mostly easy positions.
+The continuation was the frozen PublicStrategicPolicy, not the best live search
+policy; candidate transitions have only partial authoritative coverage. Do not
+turn these explanations into training truth or pool the correlated branches as
+independent games. Next experiment should use a predeclared harder development
+slice and a longer strategic outcome horizon before any distillation decision.
+
+Verification: 866 tests passed with the pinned optional candidate installed.
+No live policy changed, no training launched, and the real-game server stayed
+stopped. Best completed real-game baseline remains 3/20, not superhuman.
