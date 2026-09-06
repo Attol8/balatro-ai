@@ -37,15 +37,27 @@ def test_placement_valuation_and_purchase_reorder_are_opt_in():
 
 
 @pytest.mark.parametrize('baseline', [BuyPack(PackOfferSlot(0)), BuyVoucher(VoucherSlot(0)), BuyShopCard(ShopSlot(1))])
-def test_blueprint_candidate_precedes_discretionary_purchase_only_when_enabled(baseline):
+@pytest.mark.parametrize('broad', [False, True])
+def test_blueprint_candidate_precedes_discretionary_purchase_only_when_enabled(baseline, broad):
     obs = blueprint_shop()
     planet = PublicItem('c_mercury', 'Mercury', 'PLANET', buy_cost=3)
     obs = replace(obs, shop=obs.shop + (planet,))
     assert ShopSearch(samples=1).choose(obs, baseline) is None
-    choice = ShopSearch(samples=1, evaluate_blueprint_placement=True).choose(obs, baseline)
+    choice = ShopSearch(samples=1, evaluate_blueprint_placement=True, prioritize_all_jokers=broad).choose(obs, baseline)
     assert choice.action == BuyShopCard(ShopSlot(0))
     empty = replace(obs, shop=(planet, planet))
     assert ShopSearch(samples=1, evaluate_blueprint_placement=True).choose(empty, baseline) is None
+
+
+@pytest.mark.parametrize('baseline', [BuyPack(PackOfferSlot(0)), BuyVoucher(VoucherSlot(0)), BuyShopCard(ShopSlot(1))])
+def test_narrow_priority_keeps_ordinary_upgrades_from_preempting_purchases(baseline):
+    planet = PublicItem('c_mercury', 'Mercury', 'PLANET', buy_cost=3)
+    obs = shop(money=50, offers=(item('j_joker', 2), planet), jokers=())
+    broad = ShopSearch(samples=1, evaluate_blueprint_placement=True)
+    narrow = ShopSearch(samples=1, evaluate_blueprint_placement=True, prioritize_all_jokers=False)
+    assert broad.choose(obs, baseline).action == BuyShopCard(ShopSlot(0))
+    assert narrow.choose(obs, baseline) is None
+    assert narrow.choose(obs, LeaveShop()).action == BuyShopCard(ShopSlot(0))
 
 
 def test_sale_buy_reorder_sequence_checks_inventory_and_legality():

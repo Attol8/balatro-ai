@@ -44,7 +44,7 @@ def _owned_fingerprints(jokers: tuple) -> tuple:
 
 class ShopSearch:
     def __init__(self, samples: int = 6, max_rerolls: int = 2, evaluate_planets: bool = False, project_next_boss: bool = False,
-                 evaluate_blueprint_placement: bool = False):
+                 evaluate_blueprint_placement: bool = False, prioritize_all_jokers: bool = True):
         if not 1 <= samples <= 12 or not 0 <= max_rerolls <= 5:
             raise ValueError('shop search budgets must be bounded')
         self.samples = samples
@@ -59,6 +59,9 @@ class ShopSearch:
         if not isinstance(evaluate_blueprint_placement, bool):
             raise ValueError('evaluate_blueprint_placement must be boolean')
         self.evaluate_blueprint_placement = evaluate_blueprint_placement
+        if not isinstance(prioritize_all_jokers, bool):
+            raise ValueError('prioritize_all_jokers must be boolean')
+        self.prioritize_all_jokers = prioritize_all_jokers
         self._blueprint_purchase = None
         self._blueprint_order = None
 
@@ -151,6 +154,8 @@ class ShopSearch:
         best = None
         for i, offer in enumerate(observation.shop):
             if not isinstance(offer, PublicItem) or offer.kind != 'JOKER' or offer.buy_cost is None:
+                continue
+            if priority_screen and not self.prioritize_all_jokers and offer.key != 'j_blueprint':
                 continue
             try:
                 profile = get_joker_profile(offer.key)

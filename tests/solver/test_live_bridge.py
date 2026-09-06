@@ -95,6 +95,12 @@ def test_v2_combines_fixes_without_unmeasured_planet_change():
     assert not policy.shop_search.evaluate_planets
 
 
+def test_v3_narrows_priority_without_changing_v2():
+    assert make_policy('search-v2').shop_search.prioritize_all_jokers
+    assert not make_policy('search-v3').shop_search.prioritize_all_jokers
+    assert make_policy('search-v3').shop_search.evaluate_blueprint_placement
+
+
 def test_hidden_variant_is_isolated_and_uses_recorded_observation(monkeypatch):
     from balatro_ai_v2.solver.adapter import to_public_observation
     from balatro_ai_v2.solver.actions import PlayCards, HandSlot

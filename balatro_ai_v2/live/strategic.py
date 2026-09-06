@@ -80,12 +80,13 @@ class SearchPolicy(StrategicPolicy):
     def __init__(self, tactical_samples: int = 8, shop_samples: int = 6, evaluate_planets: bool = False,
                  model_green_joker: bool = False, project_next_boss: bool = False,
                  optimize_order: bool = False, model_hidden_jokers: bool = False,
-                 evaluate_blueprint_placement: bool = False) -> None:
+                 evaluate_blueprint_placement: bool = False, prioritize_all_jokers: bool = True) -> None:
         super().__init__()
         from balatro_ai_v2.solver.shop_search import ShopSearch
         self.shop_search = ShopSearch(samples=shop_samples, evaluate_planets=evaluate_planets,
                                       project_next_boss=project_next_boss,
-                                      evaluate_blueprint_placement=evaluate_blueprint_placement)
+                                      evaluate_blueprint_placement=evaluate_blueprint_placement,
+                                      prioritize_all_jokers=prioritize_all_jokers)
         self.tactical_samples = tactical_samples
         self.model_green_joker = model_green_joker
         self.optimize_order = optimize_order
