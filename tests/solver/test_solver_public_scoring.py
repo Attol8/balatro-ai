@@ -17,6 +17,20 @@ from balatro_ai_v2.solver.public_state import (
 )
 
 
+def test_wee_does_not_grow_from_a_debuffed_two():
+    observation = to_public_observation(state("SELECTING_HAND"))
+    observation = replace(
+        observation,
+        hand=(VisiblePlayingCard("2", "S"), VisiblePlayingCard("2", "H", debuffed=True)),
+        hand_stats=(HandStat("Pair", 1, 10, 2, 0, 0),),
+        jokers=(PublicItem(key="j_wee", kind="JOKER", label="Wee Joker",
+                           runtime=PublicJokerRuntime(current_chips=32)),),
+    )
+    score, family = score_play(observation, (HandSlot(0), HandSlot(1)))
+    assert family == "Pair"
+    assert score == 104  # (10 base + 2 active card + 32 prior Wee + 8 growth) * 2
+
+
 def test_exact_score_is_unavailable_for_amber_joker_order() -> None:
     raw = state("SELECTING_HAND")
     raw["blinds"]["small"]["status"] = "DEFEATED"

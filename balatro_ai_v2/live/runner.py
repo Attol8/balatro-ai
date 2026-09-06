@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from balatro_ai_v2.live.observation import active_blind, numeric, public_observation
+from balatro_ai_v2.live.outcome import normalize_outcome
 from balatro_ai_v2.live.policy import BaselinePolicy, Decision
 
 SCHEMA_VERSION = 1
@@ -132,6 +133,7 @@ def run_episode(
     trace.write("episode", schema_version=SCHEMA_VERSION, seed=seed, config=asdict(config))
 
     def observe(raw: dict) -> dict:
+        raw = normalize_outcome(raw, previously_won=result["won"])
         if config.policy in {"strategic", "search"}:
             from balatro_ai_v2.live.strategic import project_strategic_observation
             public = project_strategic_observation(raw)

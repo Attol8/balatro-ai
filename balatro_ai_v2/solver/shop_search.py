@@ -6,6 +6,7 @@ they are a purchasing heuristic, not predictions of the next actual draw.
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
+from collections import Counter
 from itertools import combinations
 from math import log1p
 from random import Random
@@ -17,7 +18,7 @@ from balatro_ai_v2.solver.actions import (
 from balatro_ai_v2.solver.joker_catalog import get_joker_profile
 from balatro_ai_v2.solver.policy import PublicHistoryStep
 from balatro_ai_v2.solver.public_scoring import _prepare_score_context, _score_play_prepared
-from balatro_ai_v2.solver.public_state import Phase, PublicItem, PublicJokerRuntime, PublicObservation
+from balatro_ai_v2.solver.public_state import DeckCardCount, Phase, PublicItem, PublicJokerRuntime, PublicObservation
 
 
 @dataclass(frozen=True, slots=True)
@@ -25,6 +26,12 @@ class ShopChoice:
     action: PublicAction
     reason: str
     diagnostics: dict[str, float | int | str]
+
+
+def _hand_size_delta(item: PublicItem) -> int | None:
+    if item.key == 'j_turtle_bean':
+        return item.runtime.current_hand_size_bonus if item.runtime is not None else None
+    return {'j_stuntman': -2, 'j_juggler': 1, 'j_merry_andy': -1}.get(item.key, 0)
 
 
 class ShopSearch:
@@ -40,8 +47,6 @@ class ShopSearch:
         if observation.phase != Phase.SHOP:
             self._pending = None
             return None
-        if not isinstance(baseline_action, (LeaveShop, BuyShopCard, RerollShop, SellJoker)):
-            return None
         if self._pending is not None:
             round_no, desired = self._pending
             self._pending = None
@@ -50,11 +55,13 @@ class ShopSearch:
                     action = BuyShopCard(ShopSlot(i))
                     if offer == desired and is_legal(observation, action):
                         return ShopChoice(action, 'Complete the revalidated joker upgrade.', {'planned_purchase': 1})
+        if not isinstance(baseline_action, (LeaveShop, BuyShopCard, RerollShop, SellJoker)):
+            return None
         if isinstance(baseline_action, BuyShopCard):
             offer = observation.shop[baseline_action.card.value]
             if not isinstance(offer, PublicItem) or offer.kind != 'JOKER':
                 return None
-        if not observation.full_deck or any(not isinstance(j, PublicItem) for j in observation.jokers):
+        if not observation.full_deck or not 1 <= observation.hand_limit <= 12 or any(not isinstance(j, PublicItem) for j in observation.jokers):
             return None
         hands = self._hands(observation)
         current_first, current_repeat, current_final = self._capacity_components(observation, hands)
@@ -62,7 +69,9 @@ class ShopSearch:
         upcoming = [b.score for b in sorted(observation.blinds, key=lambda b: {'SMALL': 0, 'BIG': 1, 'BOSS': 2}.get(b.kind, 3))
                     if b.status in {'SELECT', 'UPCOMING'}]
         target = float(upcoming[0] if upcoming else max((b.score for b in observation.blinds), default=300) * 1.5)
-        weak = current * 3 < target
+        # Optimistic continuation bonuses must not lock up survival cash when
+        # ordinary first-hand capacity is below the next blind's pace.
+        weak = min(current_first, current) * 3 < target
         reserve = 2 if weak else min(25, 8 + 3 * max(0, observation.ante - 1))
         diagnostics = {'current_capacity': current, 'next_blind_target': target,
                        'reserve': reserve, 'samples': self.samples,
@@ -77,6 +86,9 @@ class ShopSearch:
                 profile = get_joker_profile(offer.key)
             except KeyError:
                 continue
+            offered_size_delta = _hand_size_delta(offer)
+            if offered_size_delta is None:
+                continue
             buy = BuyShopCard(ShopSlot(i))
             options = [(None, observation)] if is_legal(observation, buy) else []
             # Only consider removing an owned card when capacity is full. A
@@ -86,7 +98,11 @@ class ShopSearch:
                     sale = SellJoker(JokerSlot(old_i))
                     if old.eternal or old.edition == 'NEGATIVE' or not is_legal(observation, sale):
                         continue
+                    removed_size_delta = _hand_size_delta(old)
+                    if removed_size_delta is None:
+                        continue
                     after_sale = replace(observation, money=observation.money + (old.sell_cost or 0),
+                                         hand_limit=observation.hand_limit - removed_size_delta,
                                          jokers=observation.jokers[:old_i] + observation.jokers[old_i + 1:])
                     if is_legal(after_sale, buy):
                         options.append((sale, after_sale))
@@ -94,7 +110,11 @@ class ShopSearch:
                 cash_left = before_buy.money - offer.buy_cost
                 if cash_left < reserve and offer.buy_cost > 0:
                     continue
+                candidate_hand_limit = before_buy.hand_limit + offered_size_delta
+                if not 1 <= candidate_hand_limit <= 12:
+                    continue
                 candidate = replace(before_buy, money=cash_left,
+                                    hand_limit=candidate_hand_limit,
                                     jokers=before_buy.jokers + (offer,),
                                     joker_limit=before_buy.joker_limit + int(offer.edition == 'NEGATIVE'))
                 first, repeated, final = self._capacity_components(candidate, hands)
@@ -146,14 +166,19 @@ class ShopSearch:
         # Fixed nonce intentionally independent of game seed, private order,
         # candidate identity, and offered loadout: common random numbers.
         rng = Random(730241)
-        size = min(observation.hand_limit, len(deck), 12)
+        size = min(len(deck), 12)
         return tuple(tuple(rng.sample(deck, size)) for _ in range(self.samples))
 
     @staticmethod
     def _capacity_components(observation: PublicObservation, hands: tuple[tuple, ...]) -> tuple[float, float, float]:
         results = []
-        for hand in hands:
+        for stream in hands:
+            hand = stream[:observation.hand_limit]
+            remaining = Counter({entry.card: entry.count for entry in observation.full_deck})
+            remaining.subtract(hand)
+            remaining_deck = tuple(DeckCardCount(card, count) for card, count in remaining.items() if count > 0)
             synthetic = replace(observation, phase=Phase.SELECTING_HAND, hand=hand,
+                                remaining_deck=remaining_deck, draw_count=sum(entry.count for entry in remaining_deck),
                                 required_hand_slots=(), selection_limit=min(5, len(hand)),
                                 blinds=tuple(replace(b, status='UPCOMING', disabled=False) for b in observation.blinds),
                                 round=replace(observation.round, chips=0, hands_left=4, hands_played=0,

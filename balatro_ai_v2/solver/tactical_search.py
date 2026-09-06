@@ -28,6 +28,11 @@ from balatro_ai_v2.solver.public_state import (
 
 _NONCE = "public-discard-lookahead-v1"
 _RANK = {rank: index for index, rank in enumerate("23456789TJQKA", 2)}
+_SUIT = {suit: index for index, suit in enumerate("SHCD")}
+_ORDER_SENSITIVE_JOKERS = frozenset({
+    "j_photograph", "j_hanging_chad", "j_raised_fist", "j_baron", "j_shoot_the_moon",
+    "j_bloodstone", "j_ancient", "j_triboulet", "j_blueprint", "j_brainstorm",
+})
 _SUPPORTED_BLINDS = frozenset({
     "Small Blind", "Big Blind", "The Psychic", "The Eye", "The Mouth",
     "The Flint", "The Wall", "The Needle", "The Water", "Violet Vessel",
@@ -78,10 +83,12 @@ def choose_tactical(
     play, score, hand_name = best
     target = max(0, blind.score - observation.round.chips)
     baseline_score = _action_score(observation, baseline) if isinstance(baseline, PlayCards) else score
+    stochastic = _stochastic_scoring(observation)
     if isinstance(baseline, PlayCards) and baseline_score >= target and _is_scoring_family_eligible(observation, baseline):
-        return TacticalChoice(baseline, baseline_score, baseline_score, 0, "preserve strategic clearing play")
+        reason = "preserve strategic estimated clear" if stochastic else "preserve strategic clearing play"
+        return TacticalChoice(baseline, baseline_score, baseline_score, 0, reason)
     if score >= target:
-        return TacticalChoice(play, score, baseline_score, 0, "clear blind now")
+        return TacticalChoice(play, score, baseline_score, 0, "estimated clear now" if stochastic else "clear blind now")
     if observation.round.discards_left <= 0 or observation.draw_count <= 0:
         return TacticalChoice(play, score, baseline_score, 0, "best immediate legal play")
     if any(joker.key in _DISCARD_STATE_JOKERS and not joker.debuffed for joker in observation.jokers):
@@ -90,6 +97,11 @@ def choose_tactical(
         return unchanged("discard generates consumables: preserve baseline")
     if sum(entry.count for entry in observation.remaining_deck) != observation.draw_count:
         return unchanged("incomplete public draw belief")
+    sort_mode = _observed_sort(observation.hand)
+    if any(entry.card.rank not in _RANK or entry.card.suit not in _SUIT for entry in observation.remaining_deck):
+        sort_mode = None
+    if _order_sensitive(observation) and (sort_mode is None or _ambiguous_card_ties(observation)):
+        return unchanged("unknown refill ordering affects score: preserve baseline")
 
     candidates = _discard_candidates(observation, baseline, play, hand_name)
     if not candidates:
@@ -107,7 +119,7 @@ def choose_tactical(
     for discard in candidates:
         outcomes = []
         for drawn in shared_draws:
-            after = _after_discard(observation, discard, drawn)
+            after = _after_discard(observation, discard, drawn, sort_mode=sort_mode)
             if after not in cache:
                 next_play = _best_play(after)
                 cache[after] = next_play[1] if next_play is not None else 0.0
@@ -117,15 +129,17 @@ def choose_tactical(
         utility = sum(min(target, value) for value in outcomes) / samples
         clear_probability = sum(value >= target for value in outcomes) / samples
         scored.append((utility, clear_probability, sum(outcomes) / samples, discard))
-    winner = max(scored, key=lambda row: (row[0], row[1], -len(row[3].cards),
+    last_hand = observation.round.hands_left == 1
+    winner = max(scored, key=lambda row: ((row[1], row[0]) if last_hand else (row[0], row[1]), -len(row[3].cards),
                                          tuple(-slot.value for slot in row[3].cards)))
     utility, clear_probability, expected, discard = winner
     # A discard consumes a run resource. On the last hand a modest gain is
     # worthwhile; earlier, require a larger improvement before spending it.
-    threshold = max(5.0, score * (0.05 if observation.round.hands_left == 1 else 0.15))
-    if utility > min(target, score) + threshold:
+    threshold = max(5.0, score * (0.05 if last_hand else 0.15))
+    if (last_hand and score < target and clear_probability > 0) or utility > min(target, score) + threshold:
+        ordering = f"inferred {sort_mode} refill order" if sort_mode else "refill order does not affect modeled scoring"
         return TacticalChoice(discard, expected, baseline_score, samples,
-                              f"sampled refill improves next play; clear probability {clear_probability:.3f}")
+                              f"sampled next-play estimate; modeled draw-clear fraction {clear_probability:.3f}; {ordering}")
     return TacticalChoice(play, score, baseline_score, samples, "sampled refill does not justify discard")
 
 
@@ -233,14 +247,59 @@ def _discard_candidates(observation: PublicObservation, baseline: PublicAction,
 
 
 def _after_discard(observation: PublicObservation, discard: DiscardCards,
-                   shared_draw: tuple[VisiblePlayingCard, ...]) -> PublicObservation:
+                   shared_draw: tuple[VisiblePlayingCard, ...], *, sort_mode: str | None = None) -> PublicObservation:
     selected = {slot.value for slot in discard.cards}
     kept = tuple(card for index, card in enumerate(observation.hand) if index not in selected)
     draw = shared_draw[:max(0, observation.hand_limit - len(kept))]
     remaining = Counter({entry.card: entry.count for entry in canonical_remaining_deck(observation.remaining_deck)})
     remaining.subtract(draw)
     deck = tuple(DeckCardCount(card, count) for card, count in remaining.items() if count > 0)
-    return replace(observation, hand=kept + draw, draw_count=observation.draw_count - len(draw),
+    hand = _sort_hand(kept + draw, sort_mode) if sort_mode else kept + draw
+    return replace(observation, hand=hand, draw_count=observation.draw_count - len(draw),
                    remaining_deck=deck, round=replace(observation.round,
                        discards_left=observation.round.discards_left - 1,
                        discards_used=observation.round.discards_used + 1))
+
+
+def _sort_hand(hand: tuple[VisiblePlayingCard, ...], mode: str) -> tuple[VisiblePlayingCard, ...]:
+    def key(card: VisiblePlayingCard) -> tuple[int, int]:
+        rank, suit = _RANK[card.rank], _SUIT[card.suit]
+        return (-rank, suit) if mode.startswith("rank") else (suit, -rank)
+    return tuple(sorted(hand, key=key, reverse=mode.endswith("ascending")))
+
+
+def _observed_sort(hand: tuple[VisiblePlayingCard, ...]) -> str | None:
+    # Neither the sort mode nor private tie-break values are exported. Only
+    # infer a mode when exactly one ordinary sort explains the public hand.
+    if any(card.rank not in _RANK or card.suit not in _SUIT for card in hand):
+        return None
+    matches = [mode for mode in ("rank descending", "rank ascending", "suit descending", "suit ascending")
+               if _sort_hand(hand, mode) == hand]
+    return matches[0] if len(matches) == 1 else None
+
+
+def _order_sensitive(observation: PublicObservation) -> bool:
+    if any(joker.key in _ORDER_SENSITIVE_JOKERS and not joker.debuffed for joker in observation.jokers):
+        return True
+    return any(card.enhancement in {"GLASS", "STEEL"} or card.edition == "POLYCHROME"
+               for card in (*observation.hand, *(entry.card for entry in observation.remaining_deck)))
+
+
+def _ambiguous_card_ties(observation: PublicObservation) -> bool:
+    seen: dict[tuple[str, str], VisiblePlayingCard] = {}
+    for card in (*observation.hand, *(entry.card for entry in observation.remaining_deck)):
+        # Equal rank/suit cards with different scoring properties can be
+        # ordered by private vanilla tie-breaks. Presentation text is irrelevant.
+        canonical = replace(card, effect_text="")
+        key = (card.rank, card.suit)
+        if key in seen and seen[key] != canonical:
+            return True
+        seen[key] = canonical
+    return False
+
+
+def _stochastic_scoring(observation: PublicObservation) -> bool:
+    return any(joker.key in {"j_misprint", "j_bloodstone", "j_space"} and not joker.debuffed
+               for joker in observation.jokers) or any(
+        card.enhancement == "LUCKY" and not card.debuffed for card in observation.hand
+    )

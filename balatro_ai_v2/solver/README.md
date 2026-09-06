@@ -8,6 +8,11 @@ Use `adapter.to_public_observation(raw)` to cross the privileged/public boundary
 
 Historical candidate panels in the source repository are not measurements of this imported artifact. Verify new real-game results independently.
 
+Local changes after import: `public_scoring.py` excludes debuffed Twos from Wee
+Joker growth, correcting a 104-point overprediction found in the live development
+panel. `shop_search.py` and `tactical_search.py` are new local search layers; their
+estimates are not claims of full-game simulation or exact stochastic outcomes.
+
 Original source SHA-256 digests (before namespace transformations):
 
 | Imported destination | Frozen source | SHA-256 |

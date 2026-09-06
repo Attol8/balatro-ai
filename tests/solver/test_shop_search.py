@@ -1,6 +1,6 @@
 from dataclasses import replace
 
-from balatro_ai_v2.solver.actions import BuyShopCard, LeaveShop, RerollShop, SellJoker, ShopSlot, UseConsumable, ConsumableSlot, is_legal
+from balatro_ai_v2.solver.actions import BuyPack, BuyVoucher, PackOfferSlot, VoucherSlot, BuyShopCard, LeaveShop, RerollShop, SellJoker, ShopSlot, UseConsumable, ConsumableSlot, is_legal
 from balatro_ai_v2.solver.adapter import to_public_observation
 from balatro_ai_v2.solver.policy import PublicHistoryStep
 from balatro_ai_v2.solver.public_state import DeckCardCount, Phase, PublicItem, VisiblePlayingCard
@@ -132,3 +132,82 @@ def test_acrobat_valued_only_in_final_hand_component():
     diagnostic = choice.diagnostics
     assert diagnostic['candidate_first_hand'] == diagnostic['candidate_repeat_hand']
     assert diagnostic['candidate_final_hand'] == 3 * diagnostic['candidate_first_hand']
+
+
+def test_pending_upgrade_precedes_spending_on_packs_or_vouchers():
+    for alternative in (BuyPack(PackOfferSlot(0)), BuyVoucher(VoucherSlot(0))):
+        planner = ShopSearch(samples=1)
+        obs = shop(money=20, offers=(item('j_cavendish', 8),), jokers=(item('j_juggler'),), limit=1)
+        assert isinstance(planner.choose(obs, LeaveShop()).action, SellJoker)
+        after_sale = replace(obs, jokers=(), money=22)
+        choice = planner.choose(after_sale, alternative)
+        assert choice.action == BuyShopCard(ShopSlot(0))
+        assert is_legal(after_sale, choice.action)
+
+
+def test_pending_upgrade_still_requires_exact_affordable_offer():
+    planner = ShopSearch(samples=1)
+    obs = shop(money=20, offers=(item('j_cavendish', 8),), jokers=(item('j_juggler'),), limit=1)
+    assert isinstance(planner.choose(obs, LeaveShop()).action, SellJoker)
+    after_sale = replace(obs, jokers=(), money=1)
+    assert planner.choose(after_sale, BuyPack(PackOfferSlot(0))) is None
+
+
+def test_late_weak_build_buys_stuntman_instead_of_hoarding_25():
+    obs = shop(money=26, offers=(item('j_stuntman', 7),))
+    obs = replace(obs, ante=7, blinds=tuple(replace(b, score=70000) for b in obs.blinds))
+    choice = ShopSearch(samples=1).choose(obs, LeaveShop())
+    assert choice.action == BuyShopCard(ShopSlot(0))
+    assert choice.diagnostics['reserve'] == 2
+
+
+def test_blue_joker_uses_full_deck_minus_synthetic_hand():
+    obs = shop(jokers=(item('j_blue_joker'),))
+    obs = replace(obs, hand_limit=1, remaining_deck=(), draw_count=0)
+    ace = next(entry.card for entry in obs.full_deck if entry.card.rank == 'A')
+    first, _, _ = ShopSearch._capacity_components(obs, ((ace,),))
+    # High Card 5 + Ace 11 + two undrawn cards * Blue Joker 2.
+    assert first == 20
+    assert obs.draw_count == 0
+
+
+def test_stuntman_purchase_reduces_candidate_hand_size(monkeypatch):
+    planner = ShopSearch(samples=1)
+    original = planner._capacity_components
+    inspected = []
+    def capture(obs, hands):
+        inspected.append((tuple(j.key for j in obs.jokers), obs.hand_limit))
+        return original(obs, hands)
+    monkeypatch.setattr(planner, '_capacity_components', capture)
+    obs = shop(offers=(item('j_stuntman', 7),))
+    planner.choose(obs, LeaveShop())
+    assert ((), 3) in inspected
+    assert (('j_stuntman',), 1) in inspected
+
+
+def test_selling_juggler_removes_its_hand_size_bonus(monkeypatch):
+    planner = ShopSearch(samples=1)
+    original = planner._capacity_components
+    inspected = []
+    def capture(obs, hands):
+        inspected.append((tuple(j.key for j in obs.jokers), obs.hand_limit))
+        return original(obs, hands)
+    monkeypatch.setattr(planner, '_capacity_components', capture)
+    obs = shop(offers=(item('j_cavendish'),), jokers=(item('j_juggler'),), limit=1)
+    planner.choose(obs, LeaveShop())
+    assert (('j_cavendish',), 2) in inspected
+
+
+def test_shared_sample_stream_is_independent_of_loadout_hand_size():
+    obs = shop()
+    deck = tuple(DeckCardCount(VisiblePlayingCard(rank=r, suit='S'), 1)
+                 for r in ('A', 'K', 'Q', 'J', 'T', '9', '8', '7', '6', '5', '4', '3', '2'))
+    obs = replace(obs, full_deck=deck, remaining_deck=deck, draw_count=13, deck_size=13, hand_limit=8)
+    planner = ShopSearch(samples=2)
+    assert planner._hands(obs) == planner._hands(replace(obs, hand_limit=9))
+    assert all(len(stream) == 12 for stream in planner._hands(obs))
+
+
+def test_unknown_turtle_bean_hand_size_is_not_projected():
+    obs = shop(offers=(item('j_turtle_bean', 1),))
+    assert ShopSearch(samples=1, max_rerolls=0).choose(obs, LeaveShop()) is None

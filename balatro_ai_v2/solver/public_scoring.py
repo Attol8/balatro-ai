@@ -596,7 +596,8 @@ def _joker_main_effect(
             runtime_chips += 4
         elif key == "j_wee":
             runtime_chips += 8 * sum(
-                card.rank == "2" for card in _scoring_cards(cards, hand_name)
+                card.rank == "2" and not card.debuffed
+                for card in _scoring_cards(cards, hand_name)
             )
         chips += runtime_chips
     if runtime is not None and runtime.current_x_mult is not None:

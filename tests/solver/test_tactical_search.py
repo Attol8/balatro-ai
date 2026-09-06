@@ -7,7 +7,7 @@ from balatro_ai_v2.solver.actions import DiscardCards, HandSlot, PlayCards, Reor
 from balatro_ai_v2.solver.adapter import to_public_observation
 from balatro_ai_v2.solver.public_scoring import score_play
 from balatro_ai_v2.solver.public_state import DeckCardCount, HandStat, HiddenHandCard, HiddenJokerSlot, PublicBlind, PublicItem, VisiblePlayingCard
-from balatro_ai_v2.solver.tactical_search import choose_tactical
+from balatro_ai_v2.solver.tactical_search import _after_discard, _observed_sort, choose_tactical
 from solver_state_factory import state
 
 
@@ -137,3 +137,54 @@ def test_invalid_sample_budget_is_rejected(samples):
     obs = observation(["H_A", "C_3"], ["S_2"])
     with pytest.raises(ValueError, match="samples"):
         choose_tactical(obs, play(0), samples=samples)
+
+
+def test_last_hand_discards_for_a_certain_one_chip_winning_improvement():
+    obs = observation(["S_K", "H_9", "C_7", "D_5", "S_2"], ["H_A"], target=100)
+    obs = replace(obs, round=replace(obs.round, hands_left=1),
+                  hand_stats=tuple(replace(stat, chips=89) if stat.name == "High Card" else stat
+                                   for stat in obs.hand_stats))
+    assert score_play(obs, play(0).cards)[0] == 99
+    choice = choose_tactical(obs, play(0), samples=4)
+    assert isinstance(choice.action, DiscardCards)
+    assert choice.expected_score == 100
+    assert "modeled draw-clear fraction 1.000" in choice.reason
+
+
+def test_refill_reproduces_unambiguous_observed_rank_order():
+    obs = observation(["H_A", "C_K", "S_2"], ["D_Q"])
+    mode = _observed_sort(obs.hand)
+    assert mode == "rank descending"
+    after = _after_discard(obs, discard(1), (VisiblePlayingCard("Q", "D"),), sort_mode=mode)
+    assert [card.rank for card in after.hand] == ["A", "Q", "2"]
+
+
+def test_refill_reproduces_unambiguous_observed_suit_order():
+    obs = observation(["S_2", "H_A", "C_K"], ["D_Q"])
+    mode = _observed_sort(obs.hand)
+    assert mode == "suit descending"
+    after = _after_discard(obs, discard(1), (VisiblePlayingCard("Q", "D"),), sort_mode=mode)
+    assert [card.suit for card in after.hand] == ["S", "C", "D"]
+
+
+def test_unknown_order_preserves_baseline_for_order_sensitive_jokers():
+    obs = observation(["H_2", "S_A", "C_3", "D_K"], ["H_Q"], target=5000)
+    obs = replace(obs, jokers=(PublicItem("j_hanging_chad", "Hanging Chad", "JOKER"),))
+    assert _observed_sort(obs.hand) is None
+    choice = choose_tactical(obs, discard(0))
+    assert choice.action == discard(0)
+    assert "unknown refill ordering" in choice.reason
+
+
+@pytest.mark.parametrize("joker", ["j_misprint", "j_bloodstone"])
+def test_random_scoring_clear_is_labeled_estimated(joker):
+    obs = observation(["H_A", "C_3", "S_7"], ["H_4"], target=1)
+    obs = replace(obs, jokers=(PublicItem(joker, joker, "JOKER"),))
+    choice = choose_tactical(obs, play(0))
+    assert "estimated clear" in choice.reason
+
+
+def test_lucky_card_clear_is_labeled_estimated():
+    obs = observation(["H_A", "C_3", "S_7"], ["H_4"], target=1)
+    obs = replace(obs, hand=(replace(obs.hand[0], enhancement="LUCKY"), *obs.hand[1:]))
+    assert "estimated clear" in choose_tactical(obs, play(0)).reason

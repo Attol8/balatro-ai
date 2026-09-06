@@ -39,3 +39,17 @@ def test_live_trace_replays_strategic_history(tmp_path):
     replayed = replay(path)
     assert replayed["matching"] == replayed["decisions"] == 1
     assert replayed["complete_trace"]
+
+
+def test_strategic_final_boss_loss_does_not_violate_typed_win_invariant(tmp_path):
+    initial = state("SELECTING_HAND", seed="TEST")
+    initial["ante_num"] = 8
+    final = state("GAME_OVER", seed="TEST")
+    final.update(ante_num=8, won=True)
+
+    class Client:
+        def rpc(self, method, params=None):
+            return deepcopy(initial if method == "start" else final)
+
+    result = run_episode(Client(), StrategicPolicy(), "TEST", tmp_path / "run.jsonl", RunConfig(policy="strategic"))
+    assert result["status"] == "lost" and result["won"] is False

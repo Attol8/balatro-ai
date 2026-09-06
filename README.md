@@ -66,7 +66,10 @@ Use `--seed-offset` to select a different section of a generated series. Explici
 seeds, you are responsible for keeping development and held-out sets disjoint.
 Compare policies on the same seeds, game/mod versions, and unlock profile.
 
-By default, episodes stop when the game's victory flag is set. Use `--endless`
+By default, episodes stop on a confirmed victory: the game's flag must be set
+and the displayed ante must have advanced past 8. The installed game can set its
+flag even on a final-boss loss; traces preserve that as `reported_won` while
+`won` records confirmed success. Use `--endless`
 to continue until game over, entering ante 17 (adjust with `--max-ante`), or the
 decision limit. Ante-eight victory remains recorded even after an endless loss.
 Errors and truncations are separate from game losses. The headline attempted-run

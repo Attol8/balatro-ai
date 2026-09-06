@@ -63,12 +63,24 @@ def test_episode_records_true_loss_and_observed_score_without_private_informatio
 
 def test_victory_stops_before_endless_even_when_phase_is_not_game_over(tmp_path):
     client = ScriptedClient([
-        ("start", snapshot(ante=8)), ("play", snapshot("ROUND_EVAL", chips=120000, won=True, ante=8)),
+        ("start", snapshot(ante=8)), ("play", snapshot("ROUND_EVAL", chips=120000, won=True, ante=9)),
     ])
     result = run_episode(client, PlayPolicy(), "TEST", tmp_path / "run.jsonl", RunConfig())
     assert result["status"] == "won"
     assert result["reason"] == "ante_8_cleared"
     assert len(client.calls) == 2
+
+
+def test_final_boss_loss_with_premature_native_win_flag_is_a_loss(tmp_path):
+    path = tmp_path / "run.jsonl"
+    client = ScriptedClient([
+        ("start", snapshot(ante=8)),
+        ("play", snapshot("GAME_OVER", chips=79040, won=True, ante=8)),
+    ])
+    result = run_episode(client, PlayPolicy(), "TEST", path, RunConfig())
+    assert result["status"] == "lost" and result["won"] is False
+    after = next(e["observation"] for e in records(path) if e["event"] == "transition")
+    assert after["reported_won"] is True and after["won"] is False
 
 
 def test_endless_death_keeps_ante_eight_victory(tmp_path):
