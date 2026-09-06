@@ -69,7 +69,7 @@ SEARCH_VARIANTS = {
         "project_static_bosses": True, "boss_readiness": True,
     },
 }
-POLICY_NAMES = ("baseline", "strategic", *SEARCH_VARIANTS)
+POLICY_NAMES = ("baseline", "strategic", "build-first", *SEARCH_VARIANTS)
 DECISION_STATES = {
     "BLIND_SELECT", "SELECTING_HAND", "ROUND_EVAL", "SHOP",
     "SMODS_BOOSTER_OPENED", "TAROT_PACK", "PLANET_PACK", "SPECTRAL_PACK",
@@ -131,6 +131,9 @@ def action_record(decision: Decision) -> dict:
 
 
 def make_policy(name: str) -> Policy:
+    if name == "build-first":
+        from balatro_ai_v2.live.build_first import BuildFirstPolicy
+        return BuildFirstPolicy()
     if name == "baseline":
         return BaselinePolicy()
     if name == "strategic":
@@ -193,7 +196,7 @@ def run_episode(
 
     def observe(raw: dict) -> dict:
         raw = normalize_outcome(raw, previously_won=result["won"])
-        if config.policy == "strategic" or config.policy in SEARCH_VARIANTS:
+        if config.policy in {"strategic", "build-first"} or config.policy in SEARCH_VARIANTS:
             from balatro_ai_v2.live.strategic import project_strategic_observation
             public = project_strategic_observation(raw)
         else:

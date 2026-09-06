@@ -528,3 +528,11 @@ scoring; do not construct another simulator/framework. Runtime stays local with
 no model API. Basic correctness tests remain, but evaluate the integrated policy
 on a complete fixed development panel instead of one experiment per small rule.
 This is the next implementation, not a measured improvement yet.
+
+Implementation contract: shared BuildIntent and conditional Joker/planet value;
+new BuildFirstPolicy owns shop replacement plans, pack and consumable selection,
+and safe growth-preserving plays. Numerical shop capacity supplies a survival
+floor, not the whole objective. Revalidate pending purchases and preserve V6 as
+control. First version retains conservative fallback for unsupported effects and
+does not claim complete advanced-engine support. Freeze before the full20-run
+development batch; evaluate the integrated policy without per-Joker ablations.
