@@ -17,6 +17,23 @@ from .policy import PublicHistoryStep
 from .public_codec import public_observation_from_data
 
 
+class SearchContinuation:
+    """Public-policy adapter for the frozen V6 options; never calls live RPC."""
+
+    def __init__(self):
+        from balatro_ai_v2.live.strategic import SearchPolicy
+        self.policy = SearchPolicy(
+            model_green_joker=True, project_next_boss=True, optimize_order=True,
+            model_hidden_jokers=True, evaluate_blueprint_placement=True,
+            prioritize_all_jokers=False, model_static_debuffs=True,
+            preserve_green_plays=True, project_static_bosses=True,
+        )
+
+    def choose_action(self, observation, legal_actions, history):
+        self.policy.history = list(history)
+        return self.policy.select(observation)[0]
+
+
 def load_decision(path: Path, index: int):
     """Decode only typed public states/actions; metadata and raw fields ignored."""
     history = []
@@ -50,9 +67,13 @@ def main():
     parser.add_argument("--decision", type=int, required=True)
     parser.add_argument("--samples", type=int, default=8)
     parser.add_argument("--horizon", choices=("next-blind", "ante"), default="next-blind")
+    parser.add_argument("--antes", type=int, choices=(1, 2), default=1)
+    parser.add_argument("--continuation", choices=("strategic", "search-v6"), default="strategic")
     parser.add_argument("--max-steps", type=int)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
+    if args.horizon != "ante" and args.antes != 1:
+        parser.error("--antes requires --horizon ante")
     if args.output.exists():
         parser.error("output already exists; choose a new evidence path")
     from .baselines import PublicStrategicPolicy
@@ -65,19 +86,29 @@ def main():
     if args.horizon == "ante":
         from .blind_rollout import compare_ante
         compare = compare_ante
-    max_steps = args.max_steps if args.max_steps is not None else (200 if args.horizon == "ante" else 64)
+    default_steps = (512 if args.antes == 2 else 200) if args.horizon == "ante" else 64
+    max_steps = args.max_steps if args.max_steps is not None else default_steps
+    solver_hash = hashlib.sha256(b"".join(
+        p.name.encode() + b"\0" + p.read_bytes()
+        for p in sorted(Path(__file__).parent.glob("*.py")))).hexdigest()
+    continuation_hash = (
+        hashlib.sha256((Path(__file__).parent.parent / "live" / "strategic.py").read_bytes()).hexdigest()
+        if args.continuation == "search-v6" else None
+    )
     comparison = compare(
         observation, history, root_factory=construct_public_root,
-        continuation_factory=PublicStrategicPolicy, samples=args.samples,
+        continuation_factory=(SearchContinuation if args.continuation == "search-v6"
+                              else PublicStrategicPolicy), samples=args.samples,
         max_steps=max_steps,
+        **({"antes": args.antes} if args.horizon == "ante" else {}),
     )
     report = {
         "schema_version": 1, "evidence_kind": "shadow_candidate_not_authority",
         "decision": args.decision, "samples": args.samples,
         "max_steps": max_steps, "horizon": args.horizon, "runtime": runtime,
-        "solver_sha256": hashlib.sha256(b"".join(
-            p.name.encode() + b"\0" + p.read_bytes()
-            for p in sorted(Path(__file__).parent.glob("*.py")))).hexdigest(),
+        "antes": args.antes, "continuation": args.continuation,
+        "continuation_source_sha256": continuation_hash,
+        "solver_sha256": solver_hash,
         "comparison": asdict(comparison),
         "complete": comparison.complete, "clear_rates": comparison.clear_rates,
     }

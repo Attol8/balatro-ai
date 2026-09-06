@@ -141,15 +141,17 @@ def compare_ante(
     continuation_factory: Callable[[], PublicPolicy],
     samples: int = 8,
     max_steps: int = 200,
+    antes: int = 1,
     nonce: str = "public-ante-v1",
 ) -> BlindComparison:
-    """Compare every non-hand/joker-reorder shop root through this ante.
+    """Compare non-reorder shop roots through one or two antes, capped at eight.
 
     Every branch is freshly reconstructed from the same public particle inputs.
     Continuations control every subsequent phase; failures never become losses.
     """
     if (type(samples) is not int or not 1 <= samples <= 64
-            or type(max_steps) is not int or not 1 <= max_steps <= 512):
+            or type(max_steps) is not int or not 1 <= max_steps <= 512
+            or type(antes) is not int or not 1 <= antes <= 2):
         raise ValueError("ante rollout budgets must be bounded positive integers")
     if observation.phase != Phase.SHOP:
         return BlindComparison(observation.digest(), (), (), "outside ante shop slice")
@@ -170,7 +172,7 @@ def compare_ante(
                                           "missing_root_public")
                 else:
                     result = _run_ante(candidate, observation, history, root,
-                                       continuation, max_steps)
+                                       continuation, max_steps, antes)
             except Exception as exc:
                 result = BlindOutcome("rejected", result.steps, result.chips, result.target,
                                       f"root_exception:{type(exc).__name__}:{exc}")
@@ -191,11 +193,12 @@ def _current_target(observation, previous):
     return next((b.score for b in observation.blinds if b.status == "CURRENT"), previous)
 
 
-def _run_ante(candidate, observation, history, root, continuation, max_steps):
+def _run_ante(candidate, observation, history, root, continuation, max_steps, antes):
     current = observation
     trajectory = list(history)
     action = root
     target = _current_target(current, 0)
+    target_ante = min(8, observation.antes_cleared + antes)
     steps = 0
     try:
         for step in range(1, max_steps + 1):
@@ -211,7 +214,7 @@ def _run_ante(candidate, observation, history, root, continuation, max_steps):
             trajectory.append(PublicHistoryStep(current, action, after))
             current = after
             target = _current_target(current, target)
-            if current.antes_cleared > observation.antes_cleared:
+            if current.antes_cleared >= target_ante:
                 return BlindOutcome("cleared", steps, current.round.chips, target)
             if current.terminal:
                 return BlindOutcome("lost", steps, current.round.chips, target)

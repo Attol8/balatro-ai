@@ -141,3 +141,45 @@ def test_illegal_policy_action_rejected_and_target_tracks_current_blind():
                           continuation_factory=Illegal, samples=1)
     assert all(o.status == "rejected" and o.target == 1234
                for row in result.outcomes for o in row)
+
+
+def test_two_ante_rollout_continues_after_first_ante():
+    class TwoAnteCandidate(Candidate):
+        def step(self, action):
+            self.steps += 1
+            if self.steps % 2 == 0:
+                self.current_public = replace(
+                    self.current_public,
+                    antes_cleared=self.current_public.antes_cleared + 1,
+                )
+            return SimpleNamespace(status="accepted", after=True)
+
+    result = compare_ante(observation(), (), root_factory=lambda o, *_: TwoAnteCandidate(o),
+                          continuation_factory=Continue, samples=1, antes=2)
+    assert all(o.status == "cleared" and o.steps == 4
+               for row in result.outcomes for o in row)
+
+
+def test_two_ante_rollout_caps_at_ante_eight():
+    obs = replace(observation(), antes_cleared=7)
+
+    class OneAnteCandidate(Candidate):
+        def step(self, action):
+            self.steps += 1
+            self.current_public = replace(
+                self.current_public,
+                antes_cleared=self.current_public.antes_cleared + 1,
+            )
+            return SimpleNamespace(status="accepted", after=True)
+
+    result = compare_ante(obs, (), root_factory=lambda o, *_: OneAnteCandidate(o),
+                          continuation_factory=Continue, samples=1, antes=2)
+    assert all(o.status == "cleared" and o.steps == 1
+               for row in result.outcomes for o in row)
+
+
+@pytest.mark.parametrize("antes", [True, False, 0, 3, 1.5])
+def test_antes_bounds_are_strict(antes):
+    with pytest.raises(ValueError):
+        compare_ante(observation(), (), root_factory=None, continuation_factory=None,
+                     antes=antes)

@@ -436,3 +436,46 @@ slice and a longer strategic outcome horizon before any distillation decision.
 Verification: 866 tests passed with the pinned optional candidate installed.
 No live policy changed, no training launched, and the real-game server stayed
 stopped. Best completed real-game baseline remains 3/20, not superhuman.
+
+## Two-ante outcome experiment
+
+Extend the existing public-only evaluator with an explicit one/two-ante budget,
+capped at the ante8 win condition. Preserve default behavior and rejection /
+censoring semantics. Add an opt-in frozen V6 search continuation so comparisons
+can use our strongest measured strategy rather than only the weaker baseline.
+No live action selection changes in this step. First test the first ante6 shop
+in V6 D0..D2 where available, using small paired particle budgets; record missing
+cases instead of selecting by favorable outcomes. Bound rollouts at 512 steps.
+Compare existing strategic continuation first to establish runtime and coverage;
+then test search continuation on the same public case. Longer-term simulation
+is still candidate evidence, not proof of real wins. Revisit runtime and model
+coverage before promoting this into live shop selection.
+
+### Two-ante results
+
+The fixed selection yielded D1 decision100 and D2 decision137; D0 never reached
+ante6 and was recorded as missing, not replaced. Local artifacts are in
+`runs/two-ante-001/`. All 140 action/particle branches completed without rejection
+or censoring. No API calls or real-game restart occurred.
+
+- Strategic continuation, four particles: D1 only selling Ramen cleared (1/4);
+  D2 pack0, selling Scholar, and selling Jolly cleared 1/4 each. Other actions 0/4.
+- V6 continuation, D1 two particles: every action 0/2, matching the first two
+  strategic particles. This is not a four-particle comparison.
+- V6 continuation, D2 four particles: selling Scholar cleared 3/4, pack0 2/4,
+  recorded pack1 1/4. Selling Jolly cleared 0/4, reversing its apparent promise
+  under the weaker continuation. Strong continuation therefore matters to action
+  ranking. These are sparse candidate outcomes, not real win-rate estimates.
+
+No live promotion. The concrete next intervention to independently validate is
+D2 selling Scholar versus recorded pack1, with fresh synthetic particles and
+then authoritative public-only live evaluation if the advantage survives.
+Do not distil a general rule to sell Scholar from this state-specific result.
+All-action strong rollouts are too expensive for indiscriminate live use; retain
+a bounded candidate shortlist before increasing samples. CLI now records the
+continuation and its source hash, snapshots hashes before evaluation, and defaults
+two-ante runs to 512 steps. Initial experiment artifacts predate the added
+continuation-hash metadata; their continuation options were identical.
+
+Verification: 875 tests passed with optional candidate installed. The live policy
+is unchanged; the best measured real baseline remains 3/20.
