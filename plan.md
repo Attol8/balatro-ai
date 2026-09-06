@@ -1649,6 +1649,25 @@ authority rejection and zero Jackdaw observed-state mismatch across every
 completed trace. The installed endpoint and readiness patch are bound by
 SHA-256 `6cc921acb0f3778bf6d5fda461c0a419fe39c23aa44390481840253f763aee69`.
 
+The preregistered scan passed seed 2501 for 58/58 transitions with three
+organic pack sales, then stopped on seed 2502 after 35 exact transitions. The
+first mismatch is a hand-order tie after The Sun changed an original Diamond
+to Hearts and Ouija later changed every rank to Five. Vanilla `Card:set_base`
+preserves `base.suit_nominal_original` across both transformations; Jackdaw's
+`Card.set_base` reconstructs it from the current suit, so two otherwise equal
+Hearts reverse order on the next sorted draw. Repair this at the candidate
+wrapper boundary by temporarily preserving the existing original-suit nominal
+inside every non-initial `set_base` call. Do not normalize or ignore card order.
+Pin a constructed Sun-then-Ouija ordering regression and replay the complete
+seed-2502 authority trace before resuming the untouched 2501-2520 gate under a
+new exact output directory; the original stopped attempt remains evidence.
+The corrected ordering exposes one adjacent candidate defect when that same
+Ouija hand plays Five of a Kind: Jackdaw records the secret hand internally
+but leaves its `visible` flag false, so the bridge publishes a stale zero-play
+default. Vanilla reveals a secret hand on its first play. Patch the candidate's
+`HandLevels.record_play` only for this visibility transition and pin both the
+internal flag and public serializer output before continuing replay.
+
 Strength replan: throughput is no longer the immediate score ceiling. Across
 the descriptive frozen v9/v10 trajectories, 340 of 365 losses (93.2%) end on
 Pair or Two Pair; 116 of 243 losses with a full Joker row have zero xMult roles

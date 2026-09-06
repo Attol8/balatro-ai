@@ -737,6 +737,8 @@ class JackdawBackend:
             self._poker_hand_order_compatibility(),
             self._shop_sticker_stake_compatibility(),
             self._standard_pack_cost_compatibility(),
+            self._original_suit_nominal_compatibility(),
+            self._secret_hand_visibility_compatibility(),
             self._crimson_heart_order_compatibility(method),
         ):
             with self._credit_compatibility(method, params) as used_credit:
@@ -1114,6 +1116,52 @@ class JackdawBackend:
                 yield
             finally:
                 packs._gen_standard = original_generate
+
+    @contextmanager
+    def _original_suit_nominal_compatibility(self) -> Iterator[None]:
+        """Preserve vanilla's original-suit hand-sort tiebreaker."""
+
+        from jackdaw.engine.card import Card
+
+        original_set_base = Card.set_base
+
+        def vanilla_set_base(
+            card: Any,
+            card_key: str,
+            suit: str,
+            value: str,
+        ) -> None:
+            base = getattr(card, "base", None)
+            original_suit = getattr(base, "suit_nominal_original", None)
+            original_set_base(card, card_key, suit, value)
+            if original_suit is not None:
+                card.base.suit_nominal_original = original_suit
+
+        with _JACKDAW_PATCH_LOCK:
+            Card.set_base = vanilla_set_base
+            try:
+                yield
+            finally:
+                Card.set_base = original_set_base
+
+    @contextmanager
+    def _secret_hand_visibility_compatibility(self) -> Iterator[None]:
+        """Reveal a secret poker hand when vanilla first records its play."""
+
+        from jackdaw.engine.hand_levels import HandLevels
+
+        original_record_play = HandLevels.record_play
+
+        def vanilla_record_play(hand_levels: Any, hand_type: Any) -> None:
+            original_record_play(hand_levels, hand_type)
+            hand_levels.get_state(hand_type).visible = True
+
+        with _JACKDAW_PATCH_LOCK:
+            HandLevels.record_play = vanilla_record_play
+            try:
+                yield
+            finally:
+                HandLevels.record_play = original_record_play
 
     def _observation(self, raw: dict[str, Any]) -> AuthorityObservation:
         # Both adapters must pass independently.  The public conversion catches

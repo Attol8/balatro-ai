@@ -1101,6 +1101,55 @@ def test_candidate_pack_inventory_sales_preserve_pack_and_fire_campfire() -> Non
         backend.close()
 
 
+def test_candidate_preserves_original_suit_tiebreaker_across_sun_and_ouija() -> (
+    None
+):
+    pytest.importorskip("jackdaw")
+    from jackdaw.engine.card_factory import create_playing_card
+    from jackdaw.engine.data.enums import Rank, Suit
+    from jackdaw.engine.game import _sort_hand_desc
+
+    changed_diamond = create_playing_card(Suit.DIAMONDS, Rank.FOUR)
+    original_heart = create_playing_card(Suit.HEARTS, Rank.JACK)
+    assert changed_diamond.base is not None
+    assert original_heart.base is not None
+    diamond_original = changed_diamond.base.suit_nominal_original
+    heart_original = original_heart.base.suit_nominal_original
+    backend = jackdaw.JackdawBackend()
+
+    with backend._original_suit_nominal_compatibility():
+        changed_diamond.change_suit("Hearts")
+        changed_diamond.change_rank("5")
+        original_heart.change_rank("5")
+
+    hand = [changed_diamond, original_heart]
+    _sort_hand_desc(hand)
+
+    assert changed_diamond.base is not None
+    assert original_heart.base is not None
+    assert changed_diamond.base.suit_nominal_original == diamond_original
+    assert original_heart.base.suit_nominal_original == heart_original
+    assert hand == [original_heart, changed_diamond]
+
+
+def test_candidate_reveals_secret_hand_on_first_play() -> None:
+    pytest.importorskip("jackdaw")
+    from jackdaw.bridge.serializer import serialize_hands
+    from jackdaw.engine.data.hands import HandType
+    from jackdaw.engine.hand_levels import HandLevels
+
+    hand_levels = HandLevels()
+    backend = jackdaw.JackdawBackend()
+
+    with backend._secret_hand_visibility_compatibility():
+        hand_levels.record_play(HandType.FIVE_OF_A_KIND)
+
+    state = hand_levels.get_state(HandType.FIVE_OF_A_KIND)
+    assert state.visible is True
+    assert state.played == 1
+    assert serialize_hands(hand_levels)["Five of a Kind"]["played"] == 1
+
+
 def test_candidate_buy_and_use_rejection_does_not_mutate_state() -> None:
     pytest.importorskip("jackdaw")
     from jackdaw.engine.actions import GamePhase
