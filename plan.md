@@ -118,8 +118,11 @@ Policy fingerprints and profile metadata belong in every experiment manifest.
 
 ### Next decisions
 
-1. Finish the frozen search control on development seeds D0000000–D0000019.
-2. Separately evaluate opt-in planet purchases with the same seeds and engine
+1. Completed frozen search control on development seeds D0000000–D0000019:
+   1 win / 19 losses, no errors or truncations; peak-hand median 20,083.5,
+   maximum 175,500. The 95% Wilson win-rate interval is approximately 0.9–23.6%.
+   This is not reliable performance.
+2. Now separately evaluate opt-in planet purchases with the same seeds and engine
    profile; preserve the control policy. Inspect trajectories, not just averages.
 3. Address the largest evidenced remaining failure with one isolated change.
 4. Freeze a materially stronger policy before opening held-out H seeds. Report
@@ -128,7 +131,15 @@ Policy fingerprints and profile metadata belong in every experiment manifest.
 The stable control has now confirmed a win on development seed D0000001:
 Ante 9 / ROUND_EVAL, final boss score 131,820 and peak hand score 165,600.
 All 204 recorded decisions replay identically. The fixed execution boundary
-preserved Smiley Face after the required Verdant Leaf sale. The batch is ongoing;
-a selected successful seed does not establish a win rate.
+preserved Smiley Face after the required Verdant Leaf sale. Control provenance:
+revision `4f6bc968f370c7581ba80d4af9d906a3545a56d7`, clean at launch,
+Python source SHA-256 `29c40390b9a7b2214d09b42a8a6396e246d1b58d4e13562a7310a7fa41315021`.
+Full local evidence is in `runs/search-stable-001/`.
+
+Isolated, default-off follow-ups also cover Green Joker discard updates,
+Needle/Flint shop projections, and adjacent hand/joker order improvements. A
+bounded history-based hidden-joker belief model is being developed for Amber
+Acorn; it must not infer the actual hidden permutation. Shop purchase placement
+is under review because appending Blueprint undervalues its available copies.
 
 The milestone remains incomplete until live performance supports reliable wins.

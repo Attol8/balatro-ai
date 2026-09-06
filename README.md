@@ -38,8 +38,9 @@ Historical results do not establish the playing strength of this imported artifa
 new runs measure it directly.
 
 `--policy search` adds bounded public draw lookahead and scoring-based joker
-purchases/replacements. It has a confirmed real Ante-8 clear on development seed
-`D0000001`, but does **not** yet establish reliable wins. The completed imported
+purchases/replacements. Its first settled control won **1/20 development runs**,
+including a confirmed real Ante-8 clear on `D0000001`; this is **not reliable**.
+The completed imported
 strategic comparison lost all 20 development runs. See [the evolving evidence and
 experiment plan](plan.md); development results are not held-out performance.
 
@@ -47,6 +48,8 @@ Experimental variants keep that search control unchanged:
 
 - `search-planets`: also compares immediate planet upgrades against shop offers.
 - `search-green`: models Green Joker's discard penalty during draw lookahead.
+- `search-boss`: projects Needle and Flint into shop scoring estimates.
+- `search-order`: checks adjacent hand/joker ordering before a non-clearing play.
 
 Each variant is an ablation, not an established improvement. Draw estimates use
 eight shared samples; shop estimates use six synthetic hands and approximate
