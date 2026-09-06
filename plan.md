@@ -1716,6 +1716,18 @@ Pin base/enhanced/deduplicated and removal cases, then replay the complete
 seed-2516 authority trace before resuming untouched seeds 2517--2520. Do not
 special-case Lucky Cat, alter RNG, or normalize the differing shop offer.
 
+Pack-sale organic result: pass the frozen seeds 2501--2520 gate after repairing
+the candidate defects exposed by the immutable authority traces. All 20 runs
+replay in observed lockstep for 1,009/1,009 accepted transitions with zero
+authority rejection. Sixty-six inventory sales occur while a vanilla pack is
+open (41 Jokers and 25 consumables); every one preserves the pack state, offer,
+and remaining choice count. The compact evidence summary and exact trace-set
+digest are committed at
+`runs/evidence/pack-inventory-sale-organic-v1-summary.json`; raw hash-chained
+traces remain in the three named local evidence directories because they total
+roughly 100 MB. The capability is now authority-certified and may enter public
+strategic options and expert trajectory capture.
+
 Strength replan: throughput is no longer the immediate score ceiling. Across
 the descriptive frozen v9/v10 trajectories, 340 of 365 losses (93.2%) end on
 Pair or Two Pair; 116 of 243 losses with a full Joker row have zero xMult roles
