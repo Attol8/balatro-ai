@@ -79,19 +79,27 @@ class SearchPolicy(StrategicPolicy):
 
     def __init__(self, tactical_samples: int = 8, shop_samples: int = 6, evaluate_planets: bool = False,
                  model_green_joker: bool = False, project_next_boss: bool = False,
-                 optimize_order: bool = False) -> None:
+                 optimize_order: bool = False, model_hidden_jokers: bool = False,
+                 evaluate_blueprint_placement: bool = False) -> None:
         super().__init__()
         from balatro_ai_v2.solver.shop_search import ShopSearch
         self.shop_search = ShopSearch(samples=shop_samples, evaluate_planets=evaluate_planets,
-                                      project_next_boss=project_next_boss)
+                                      project_next_boss=project_next_boss,
+                                      evaluate_blueprint_placement=evaluate_blueprint_placement)
         self.tactical_samples = tactical_samples
         self.model_green_joker = model_green_joker
         self.optimize_order = optimize_order
+        self.model_hidden_jokers = model_hidden_jokers
 
     def select(self, observation):
         from balatro_ai_v2.solver.public_state import Phase
         from balatro_ai_v2.solver.tactical_search import choose_tactical
         action, reason, diagnostics = super().select(observation)
+        if self.model_hidden_jokers:
+            from balatro_ai_v2.solver.hidden_joker_search import choose_hidden_play
+            hidden = choose_hidden_play(observation, action, tuple(self.history))
+            if hidden is not None:
+                return hidden.action, hidden.reason, hidden.diagnostics
         observation = _with_history_derived_joker_runtime(observation, tuple(self.history))
         if (self.optimize_order and observation.phase == Phase.SELECTING_HAND
                 and isinstance(action, (ReorderHand, ReorderJokers))

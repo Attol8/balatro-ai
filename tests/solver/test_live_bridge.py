@@ -79,6 +79,33 @@ def test_boss_variant_is_isolated_from_other_changes():
     assert RunConfig(policy='search-boss').policy == 'search-boss'
 
 
+def test_placement_variant_is_isolated():
+    policy = make_policy('search-placement')
+    assert policy.shop_search.evaluate_blueprint_placement
+    assert not make_policy('search').shop_search.evaluate_blueprint_placement
+    assert not policy.shop_search.project_next_boss
+    assert not policy.shop_search.evaluate_planets
+    assert not policy.model_green_joker and not policy.model_hidden_jokers
+
+
+def test_hidden_variant_is_isolated_and_uses_recorded_observation(monkeypatch):
+    from balatro_ai_v2.solver.adapter import to_public_observation
+    from balatro_ai_v2.solver.actions import PlayCards, HandSlot
+    from balatro_ai_v2.solver.hidden_joker_search import HiddenPlayChoice
+    import balatro_ai_v2.solver.hidden_joker_search as hidden
+    policy = make_policy('search-hidden')
+    assert policy.model_hidden_jokers and not make_policy('search').model_hidden_jokers
+    assert not policy.optimize_order and not policy.model_green_joker
+    observation = to_public_observation(state('SELECTING_HAND'))
+    action = PlayCards((HandSlot(0),))
+    monkeypatch.setattr(StrategicPolicy, 'select', lambda *args: (action, 'baseline', {}))
+    def choose(obs, baseline, history):
+        assert obs is observation
+        return HiddenPlayChoice(action, 'belief', {'permutations': 1})
+    monkeypatch.setattr(hidden, 'choose_hidden_play', choose)
+    assert policy.select(observation) == (action, 'belief', {'permutations': 1})
+
+
 def test_order_variant_has_a_bounded_reassessment_budget():
     from balatro_ai_v2.solver.actions import HandSlot, PlayCards, ReorderHand
     policy = make_policy('search-order')

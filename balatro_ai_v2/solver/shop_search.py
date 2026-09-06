@@ -13,7 +13,7 @@ from random import Random
 
 from balatro_ai_v2.solver.actions import (
     BuyMode, BuyShopCard, HandSlot, JokerSlot, LeaveShop, PublicAction, RerollShop,
-    SellJoker, ShopSlot, is_legal,
+    SellJoker, ShopSlot, BuyPack, BuyVoucher, ReorderJokers, is_legal,
 )
 from balatro_ai_v2.solver.joker_catalog import get_joker_profile
 from balatro_ai_v2.solver.build_strategy import planet_hand
@@ -35,8 +35,16 @@ def _hand_size_delta(item: PublicItem) -> int | None:
     return {'j_stuntman': -2, 'j_juggler': 1, 'j_merry_andy': -1}.get(item.key, 0)
 
 
+def _owned_fingerprints(jokers: tuple) -> tuple:
+    # Owned costs and runtime can change on purchase. Preserve occurrence order;
+    # never infer which identical-key Joker moved from an unordered multiset.
+    return tuple((j.key, j.edition, j.eternal, j.perishable_rounds, j.rental)
+                 if isinstance(j, PublicItem) else None for j in jokers)
+
+
 class ShopSearch:
-    def __init__(self, samples: int = 6, max_rerolls: int = 2, evaluate_planets: bool = False, project_next_boss: bool = False):
+    def __init__(self, samples: int = 6, max_rerolls: int = 2, evaluate_planets: bool = False, project_next_boss: bool = False,
+                 evaluate_blueprint_placement: bool = False):
         if not 1 <= samples <= 12 or not 0 <= max_rerolls <= 5:
             raise ValueError('shop search budgets must be bounded')
         self.samples = samples
@@ -48,11 +56,43 @@ class ShopSearch:
             raise ValueError('project_next_boss must be boolean')
         self.project_next_boss = project_next_boss
         self._pending: tuple[int, PublicItem] | None = None
+        if not isinstance(evaluate_blueprint_placement, bool):
+            raise ValueError('evaluate_blueprint_placement must be boolean')
+        self.evaluate_blueprint_placement = evaluate_blueprint_placement
+        self._blueprint_purchase = None
+        self._blueprint_order = None
 
     def choose(self, observation: PublicObservation, baseline_action: PublicAction,
                history: tuple[PublicHistoryStep, ...] = ()) -> ShopChoice | None:
         if observation.phase != Phase.SHOP:
             self._pending = None
+            self._blueprint_purchase = None
+            self._blueprint_order = None
+            return None
+        if self._blueprint_order is not None:
+            round_no, expected, index, destination, budget = self._blueprint_order
+            self._blueprint_order = None
+            if round_no != observation.round_no or _owned_fingerprints(observation.jokers) != expected:
+                return None
+            if index > destination and budget > 0:
+                order = list(range(len(expected)))
+                order[index - 1], order[index] = order[index], order[index - 1]
+                action = ReorderJokers(tuple(JokerSlot(i) for i in order))
+                if not is_legal(observation, action):
+                    return None
+                self._blueprint_order = (round_no, tuple(expected[i] for i in order), index - 1, destination, budget - 1)
+                return ShopChoice(action, 'Move purchased Blueprint to its evaluated position.',
+                                  {'blueprint_destination': destination, 'placement_swaps_remaining': budget - 1})
+        if self._blueprint_purchase is not None:
+            round_no, expected, desired, destination = self._blueprint_purchase
+            self._blueprint_purchase = None
+            if round_no != observation.round_no or _owned_fingerprints(observation.jokers) != expected:
+                return None
+            for i, offer in enumerate(observation.shop):
+                action = BuyShopCard(ShopSlot(i))
+                if offer == desired and is_legal(observation, action):
+                    self._arm_blueprint_order(observation, offer, destination)
+                    return ShopChoice(action, 'Complete the revalidated Blueprint upgrade.', {'planned_purchase': 1})
             return None
         if self._pending is not None:
             round_no, desired = self._pending
@@ -62,12 +102,18 @@ class ShopSearch:
                     action = BuyShopCard(ShopSlot(i))
                     if offer == desired and is_legal(observation, action):
                         return ShopChoice(action, 'Complete the revalidated joker upgrade.', {'planned_purchase': 1})
-        if not isinstance(baseline_action, (LeaveShop, BuyShopCard, RerollShop, SellJoker)):
+        permitted = (LeaveShop, BuyShopCard, RerollShop, SellJoker)
+        if self.evaluate_blueprint_placement:
+            permitted += (BuyPack, BuyVoucher)
+        if not isinstance(baseline_action, permitted):
             return None
+        priority_screen = self.evaluate_blueprint_placement and isinstance(baseline_action, (BuyPack, BuyVoucher))
         if isinstance(baseline_action, BuyShopCard):
             offer = observation.shop[baseline_action.card.value]
             if not isinstance(offer, PublicItem) or offer.kind != 'JOKER':
-                return None
+                if not self.evaluate_blueprint_placement:
+                    return None
+                priority_screen = True
         if not observation.full_deck or not 1 <= observation.hand_limit <= 12 or any(not isinstance(j, PublicItem) for j in observation.jokers):
             return None
         hands = self._hands(observation)
@@ -142,6 +188,15 @@ class ShopSearch:
                                     jokers=before_buy.jokers + (offer,),
                                     joker_limit=before_buy.joker_limit + int(offer.edition == 'NEGATIVE'))
                 first, repeated, final = components(candidate)
+                destination = None
+                if self.evaluate_blueprint_placement and offer.key == 'j_blueprint':
+                    destination = len(before_buy.jokers)
+                    for position in range(len(before_buy.jokers)):
+                        placed = replace(candidate, jokers=before_buy.jokers[:position] + (offer,) + before_buy.jokers[position:])
+                        alternate = components(placed)
+                        if aggregate(*alternate) > aggregate(first, repeated, final):
+                            first, repeated, final = alternate
+                            destination = position
                 capacity = aggregate(first, repeated, final)
                 gain = log1p(capacity) - log1p(current)
                 # Small explicit future utility; unknown/non-scoring cards
@@ -161,7 +216,7 @@ class ShopSearch:
                 cash_penalty = (offer.buy_cost - ((observation.jokers[sale.joker.value].sell_cost or 0) if sale else 0)) * (0.004 if weak else 0.008)
                 utility = gain + future - opportunity - cash_penalty
                 if utility > 0.025 and (best is None or utility > best[0]):
-                    best = (utility, sale or buy, offer, capacity, first, repeated, final)
+                    best = (utility, sale or buy, offer, capacity, first, repeated, final, destination)
         planet_screen = self.evaluate_planets and isinstance(baseline_action, (LeaveShop, RerollShop))
         if planet_screen:
             evaluated = 0
@@ -197,20 +252,29 @@ class ShopSearch:
                 best_planet_gain = max(best_planet_gain if best_planet_gain is not None else utility, utility)
                 reasons.append(f'{offer.key}: utility {utility:.6f}')
                 if utility > 0.025 and (best is None or utility > best[0]):
-                    best = (utility, buy, offer, capacity, first, repeated, final)
+                    best = (utility, buy, offer, capacity, first, repeated, final, None)
             diagnostics.update(planet_candidates_evaluated=evaluated,
                                planet_screen='; '.join(reasons) or 'no planet offers')
             if best_planet_gain is not None:
                 diagnostics['best_planet_utility'] = best_planet_gain
         if best is not None:
-            utility, action, offer, capacity, first, repeated, final = best
-            if isinstance(action, SellJoker):
+            utility, action, offer, capacity, first, repeated, final, destination = best
+            if destination is not None:
+                diagnostics['blueprint_destination'] = destination
+                if isinstance(action, SellJoker):
+                    after_sale = observation.jokers[:action.joker.value] + observation.jokers[action.joker.value + 1:]
+                    self._blueprint_purchase = (observation.round_no, _owned_fingerprints(after_sale), offer, destination)
+                else:
+                    self._arm_blueprint_order(observation, offer, destination)
+            elif isinstance(action, SellJoker):
                 self._pending = (observation.round_no, offer)
             return ShopChoice(action, f'Improve sampled scoring capacity with {offer.label or offer.key}.',
                               {**diagnostics, 'candidate_capacity': capacity, 'utility_gain': utility,
                                'candidate_first_hand': first, 'candidate_repeat_hand': repeated,
                                'candidate_final_hand': final,
                                ('desired_planet' if offer.kind == 'PLANET' else 'desired_joker'): offer.key})
+        if priority_screen:
+            return None
         rerolls = sum(isinstance(step.action, RerollShop) for step in history
                       if step.before.round_no == observation.round_no)
         # Cost growth also bounds rerolls when callers provide no history.
@@ -228,6 +292,11 @@ class ShopSearch:
         # Respect an existing conservative fallback instead of suppressing
         # strategy purchases that the immediate scorer cannot value.
         return None
+
+    def _arm_blueprint_order(self, observation: PublicObservation, offer: PublicItem, destination: int) -> None:
+        index = len(observation.jokers)
+        self._blueprint_order = (observation.round_no, _owned_fingerprints(observation.jokers + (offer,)),
+                                 index, destination, index)
 
     def _next_blind_projection(self, observation: PublicObservation) -> tuple[PublicBlind | None, str]:
         if not self.project_next_boss:
