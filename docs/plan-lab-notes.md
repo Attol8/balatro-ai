@@ -5127,3 +5127,32 @@ searched the same 110 strategic decisions. All 103,238 rollout steps completed
 with zero rejected or unavailable rollouts and no failure reasons, at 133.52
 steps/second. The replay is repair evidence only: seed 2970 and its output remain
 ineligible for v16 training, gates, or promotion.
+
+### Contextual continuation v16 interrupted (2026-09-06)
+
+Implementation commit `b5309c3` passed 1,266 tests, repository-wide Ruff, and
+`git diff --check`. It froze search v22 and Jackdaw adapter v10 with source
+digest `d4b4ee7392ef542d7b3f4c8c3687948a0e9f5edece77a48fdc58a0e4a262f14a`.
+Preregistration-only commit `d68df6d` reserved development-v8 seeds 3202--3501;
+the preregistration SHA-256 is
+`cfb7a8f697d610485bcb92d8e35ab71b49856397d7daa26d7e273efcf702f643`
+and its ignored 32-byte origin-key commitment is
+`80d7cf9e56a4c9388e52f9bd0d39277231b4498cd713dcbf2a7c00c10cc8fb3f`.
+
+Batch 01 was stopped on user request after 48/50 worker completion lines and
+before the staged bundle's atomic rename. Seeds 3248 and 3249 were still
+running. The evaluator exited 130; no v16 report, teacher dataset, or partial
+output directory exists, and no evaluator process remains. The observed 48-run
+operator log—not an authenticated artifact—had mean 4.83 antes cleared,
+13/48 at Ante 6 or later, 7/48 at Ante 8 or later, five wins, and maximum Ante
+10. It covered 7,098 actions, 3,122 searched strategic decisions, and 453 search
+changes (14.51% of searched decisions). No rejection, overflow, unavailable
+search, or runtime error appeared in the printed completion lines, but those
+absence claims are not a substitute for a finalized report.
+
+The interruption invalidates the immutable batch. No v16 number counts toward
+training, the first-100 gate, or promotion, and the full reserved range
+3202--3501 is retired rather than restarted after partial outcomes were seen.
+When collection resumes, first encode that retirement in the evaluator and
+move the unchanged contract to a separately preregistered v17 range. This
+retirement is operational, not evidence of a new simulator or policy defect.

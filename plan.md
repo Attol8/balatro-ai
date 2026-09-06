@@ -2535,7 +2535,31 @@ bound above zero, with the strategic layer held fixed.
 
 Search quality is bounded by the continuation. Improve it from search.
 
-### Active slice: paired-utility continuation v16
+### Paused slice: paired-utility continuation v16
+
+#### Interruption: retire v16 after the requested stop
+
+V16 batch 1 was stopped on request after 48 of 50 worker results had printed
+and before atomic publication. No report or teacher artifact exists. The
+partial operator log averaged 4.83 antes cleared, with 13/48 reaching Ante 6,
+7/48 reaching Ante 8 or later, five wins, and a maximum of Ante 10. These are
+diagnostic status numbers only, not authenticated evidence and not a passed
+first-100 gate.
+
+- Keep both implementation commit `b5309c3` and preregistration commit
+  `d68df6d`. Do not rewrite the frozen v16 preregistration or manufacture a
+  partial artifact after the interruption.
+- Treat the full v16 reservation 3202--3501 as opened and ineligible for reuse,
+  following the same no-restart rule used for prior interrupted immutable
+  panels. Batches 2--6 were never started, but their reservation is still
+  retired with the protocol.
+- Before collection resumes, hard-block the v16 range in the evaluator, move
+  the identical search/training contract to contextual v17 on a new
+  collision-free development range, update exact contract tests, verify, and
+  commit the replacement preregistration separately. No new simulator or
+  policy defect was observed in the partial v16 run.
+- The first-100 gate remains unmet. Do not merge, train, certify, or make a
+  score claim from v16.
 
 #### Recovery: retire v15 after an organic Cerulean rollout rejection
 
