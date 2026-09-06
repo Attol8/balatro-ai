@@ -313,8 +313,13 @@ def iter_legal_actions(observation: PublicObservation) -> Iterator[PublicAction]
                     ConsumableSlot(index),
                     tuple(HandSlot(target) for target in target_indexes),
                 )
-                if is_legal(observation, use):
-                    yield use
+                if target_indexes and phase != Phase.SELECTING_HAND:
+                    continue
+                if target_indexes and not set(observation.required_hand_slots).issubset(
+                    target_indexes
+                ):
+                    continue
+                yield use
 
     if phase in _REORDER_PHASES:
         if _reorder_phase_legal(observation, "hand") and len(observation.hand) > 1:

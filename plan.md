@@ -1586,6 +1586,33 @@ seconds, and throughput rose from 135.16 to 135.29 steps/second. Retain the
 small exact change; do not extrapolate the loaded wall-time delta to an
 uncontended run.
 
+Held-consumable validation design: mirror the PACK cleanup at the smaller
+held-consumable boundary. `iter_public_targets(..., from_pack=False)` already
+admits only publicly usable target tuples, after which action generation
+repeats that same consumable-rule validation through `is_legal`. Emit the
+constructed `UseConsumable` directly only after preserving its two additional
+action-level gates: nonempty targets are admitted only during SELECTING_HAND,
+and every `required_hand_slot` must be present in the target tuple. The
+enclosing phase and index loops remain unchanged. Pin the exact
+ordered legacy action sequence and assert every generated action is legal
+across SHOP and SELECTING_HAND, targeted and untargeted consumables, Cerulean
+Bell forced slots, hidden Aura targets, and capacity boundaries. Benchmark a
+fixed eight-card Moon/Star fixture with action count/digest and loaded
+enumeration/policy-choice medians. Retain only with a green full suite, exact
+ordered output, and a measurable local reduction; do not claim a full-run gain
+without matched phase timing.
+
+Held-consumable validation result: the candidate passes all 1,130 tests and
+matches the legacy generator's exact ordered 630-action digest on the loaded
+eight-card Moon/Star fixture. Across 300 repetitions under the same concurrent
+panel load, median complete enumeration fell from 1,715.9 to 1,409.4
+microseconds (17.9%) and median policy choice from 2,101.5 to 1,799.6
+microseconds (14.4%); p95 moved in the same direction. SHOP/SELECTING_HAND,
+hidden Aura target, no-target Planet/Fool, forced Cerulean-slot, and unknown-key
+regressions all preserve legacy output, independently legal actions, and
+fail-closed behavior. Retain the exact local cleanup, but do not claim a
+full-run improvement without a matched replay.
+
 Strength replan: throughput is no longer the immediate score ceiling. Across
 the descriptive frozen v9/v10 trajectories, 340 of 365 losses (93.2%) end on
 Pair or Two Pair; 192 of 243 losses with a full Joker row have no xMult, while

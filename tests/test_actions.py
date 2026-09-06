@@ -400,6 +400,111 @@ def test_pack_generation_preserves_capacity_and_hidden_target_filters() -> None:
     assert all(is_legal(observation, action) for action in actions)
 
 
+def _legacy_held_consumable_actions(
+    observation: PublicObservation,
+) -> tuple[UseConsumable, ...]:
+    actions: list[UseConsumable] = []
+    for index, item in enumerate(observation.consumables):
+        for target_indexes in iter_public_targets(
+            observation, item, from_pack=False
+        ):
+            action = UseConsumable(
+                ConsumableSlot(index),
+                tuple(HandSlot(target) for target in target_indexes),
+            )
+            if is_legal(observation, action):
+                actions.append(action)
+    return tuple(actions)
+
+
+@pytest.mark.parametrize("phase", ["SHOP", "SELECTING_HAND"])
+def test_held_consumable_generation_preserves_legacy_order_and_legality(
+    phase: str,
+) -> None:
+    raw = state(phase)
+    raw["hand"] = {
+        "cards": [
+            playing_card("S_A", card_id=100),
+            playing_card("H_K", card_id=101, hidden=True),
+            playing_card("D_Q", card_id=102, modifier=["FOIL"]),
+            playing_card("C_J", card_id=103),
+        ],
+        "count": 4,
+        "highlighted_limit": 5,
+        "limit": 8,
+    }
+    raw["consumables"] = {
+        "cards": [
+            item_card("c_moon", card_id=200, kind="TAROT"),
+            item_card("c_aura", card_id=201, kind="SPECTRAL"),
+            item_card("c_mercury", card_id=202, kind="PLANET"),
+            item_card("c_fool", card_id=203, kind="TAROT"),
+        ],
+        "count": 4,
+        "highlighted_limit": 1,
+        "limit": 4,
+    }
+    raw["last_tarot_planet"] = "c_mercury"
+    observation = to_public_observation(raw)
+
+    generated = tuple(
+        action
+        for action in iter_legal_actions(observation)
+        if isinstance(action, UseConsumable)
+    )
+
+    assert tuple(action_to_data(action) for action in generated) == tuple(
+        action_to_data(action)
+        for action in _legacy_held_consumable_actions(observation)
+    )
+    assert all(is_legal(observation, action) for action in generated)
+    if phase == "SHOP":
+        assert {action.consumable.value for action in generated} == {2, 3}
+        assert all(not action.targets for action in generated)
+    else:
+        assert {action.consumable.value for action in generated} == {0, 1, 2, 3}
+
+
+def test_held_consumable_generation_preserves_forced_slot_filter() -> None:
+    raw = _cerulean_state()
+    raw["hand"]["cards"][1]["state"] = {
+        "highlight": True,
+        "forced_selection": True,
+    }
+    raw["consumables"]["cards"] = [
+        item_card("c_death", card_id=200, kind="TAROT")
+    ]
+    raw["consumables"]["count"] = 1
+    observation = to_public_observation(raw)
+
+    generated = tuple(
+        action
+        for action in iter_legal_actions(observation)
+        if isinstance(action, UseConsumable)
+    )
+
+    assert generated == _legacy_held_consumable_actions(observation)
+    assert generated
+    assert all(HandSlot(1) in action.targets for action in generated)
+    assert all(is_legal(observation, action) for action in generated)
+
+
+@pytest.mark.parametrize("phase", ["SHOP", "SELECTING_HAND"])
+def test_unknown_held_consumable_still_fails_closed(phase: str) -> None:
+    raw = state(phase)
+    raw["consumables"]["cards"] = [
+        item_card("c_modded_consumable", card_id=200, kind="TAROT")
+    ]
+    raw["consumables"]["count"] = 1
+    observation = to_public_observation(raw)
+
+    assert not any(
+        isinstance(action, UseConsumable)
+        for action in iter_legal_actions(observation)
+    )
+    assert _legacy_held_consumable_actions(observation) == ()
+
+
 def test_debuffed_credit_card_does_not_extend_purchase_floor() -> None:
     active_raw = state("SHOP", money=0)
     active_raw["jokers"]["cards"] = [

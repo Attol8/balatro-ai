@@ -4724,3 +4724,27 @@ exact sorted teacher rows after replacing lineage/config identity (SHA-256
 time from 809.58 to 809.11 seconds, and overall throughput from 135.16 to 135.29
 steps/second. The microbenchmark establishes the local gain; the small loaded
 end-to-end delta is not extrapolated beyond this diagnostic.
+
+### Exact held-consumable target-validation optimization (2026-09-06)
+
+The same duplicate validation existed for held consumables. Action generation
+called `iter_public_targets(..., from_pack=False)`, which already applies the
+audited public consumable rule, then reconstructed `UseConsumable` and repeated
+that rule through `is_legal`. The direct emission keeps the two action-level
+conditions that do not live in the target iterator: nonempty targets are legal
+only in SELECTING_HAND, and every visibly forced hand slot must be included.
+The enclosing phase and consumable-index boundaries are unchanged.
+
+The full suite passes 1,130 tests. Exact-reference regressions cover SHOP and
+SELECTING_HAND, targeted Moon and Aura, no-target Planet and Fool, a hidden
+Aura target, full capacity, Cerulean Bell's forced slot, and unknown keys in
+both phases; every candidate action is also independently accepted by
+`is_legal`, while unknowns fail closed. On a fixed eight-card
+Moon/Star fixture, the legacy and candidate generators emit the same ordered
+630-action SHA-256 digest
+`5320e73456a7d563405546cd8f89729121fd9567ff398f25aab90e3e62619abc`.
+Across 300 loaded repetitions, enumeration p50/p95 moved from
+1,715.9/4,834.2 to 1,409.4/3,847.5 microseconds, and policy-choice p50/p95 from
+2,101.5/5,883.3 to 1,799.6/4,811.7 microseconds. This is local evidence only;
+no end-to-end speed claim is made while the six-worker capability panel is
+running concurrently.
