@@ -1948,6 +1948,7 @@ class JackdawBackend:
         def vanilla_populate_shop(populate_state: dict[str, Any]) -> None:
             self._apply_pending_ante_setup(populate_state)
             original_populate_shop(populate_state)
+            _mirror_duplicate_booster_emplacement(populate_state)
             populate_state["shop_voucher_limit"] = max(
                 1,
                 len(populate_state.get("shop_vouchers", [])),
@@ -1962,6 +1963,21 @@ class JackdawBackend:
             finally:
                 round_lifecycle.reset_round_targets = original_reset
                 game._populate_shop = original_populate_shop
+
+
+def _mirror_duplicate_booster_emplacement(game_state: dict[str, Any]) -> None:
+    """Mirror vanilla CardArea order for two physically identical boosters."""
+
+    boosters = game_state.get("shop_boosters")
+    if not isinstance(boosters, list) or len(boosters) != 2:
+        return
+    first, second = boosters
+    if (
+        getattr(first, "center_key", None) == getattr(second, "center_key", None)
+        and getattr(first, "center_key", None) is not None
+        and getattr(first, "cost", None) == getattr(second, "cost", None)
+    ):
+        boosters.reverse()
 
 
 def _normalize_jackdaw_bridge(

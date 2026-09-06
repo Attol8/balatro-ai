@@ -1551,6 +1551,20 @@ def test_candidate_seed_two_ante_pack_and_voucher_regression() -> None:
     assert grabber["used_vouchers"] == {"v_grabber": ""}
 
 
+def test_duplicate_shop_boosters_mirror_vanilla_physical_order() -> None:
+    first = SimpleNamespace(center_key="p_celestial_normal", cost=4)
+    second = SimpleNamespace(center_key="p_celestial_normal", cost=4)
+    different = SimpleNamespace(center_key="p_arcana_normal", cost=4)
+
+    duplicate_state = {"shop_boosters": [first, second]}
+    jackdaw._mirror_duplicate_booster_emplacement(duplicate_state)
+    assert duplicate_state["shop_boosters"] == [second, first]
+
+    distinct_state = {"shop_boosters": [first, different]}
+    jackdaw._mirror_duplicate_booster_emplacement(distinct_state)
+    assert distinct_state["shop_boosters"] == [first, different]
+
+
 def test_troubadour_hand_reset_waits_for_blind_selection() -> None:
     pytest.importorskip("jackdaw")
     backend = jackdaw.JackdawBackend()

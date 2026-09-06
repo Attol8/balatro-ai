@@ -1780,6 +1780,13 @@ a coherent hand that is either at its visible limit or has no drawable cards
 left. Keep ordinary/non-targeted packs unchanged. Pin partial-to-full and
 deck-exhausted cases, then recapture the exact seed from a clean non-fast build
 and require complete candidate lockstep before treating it as fidelity proof.
+The corrected recapture advances to a duplicate-pack emplacement difference:
+vanilla reverses the two physical cards when both generated booster slots are
+the same pack, while Jackdaw retains creation order. Mirror that underlying
+two-card emplacement only when center key and cost are identical, before the
+shop is observed, so subsequent slot actions remove the same physical card.
+Do not normalize IDs in output or reorder distinct offers. Require an exact
+full-trace replay, including the later purchase of slot zero.
 
 Strength replan: throughput is no longer the immediate score ceiling. Across
 the descriptive frozen v9/v10 trajectories, 340 of 365 losses (93.2%) end on
