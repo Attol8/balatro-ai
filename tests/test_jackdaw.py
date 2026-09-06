@@ -190,6 +190,36 @@ def test_candidate_deck_composition_matches_sparse_authority_wire_shape() -> Non
     ]
 
 
+def test_candidate_deck_composition_uses_authority_pipe_key_order() -> None:
+    pytest.importorskip("jackdaw")
+    from jackdaw.engine.card_factory import create_playing_card
+    from jackdaw.engine.data.enums import Rank, Suit
+
+    plain = create_playing_card(Suit.DIAMONDS, Rank.FOUR)
+    wild = create_playing_card(
+        Suit.DIAMONDS,
+        Rank.FOUR,
+        enhancement="m_wild",
+        seal="Purple",
+    )
+
+    composition = jackdaw._jackdaw_deck_composition(
+        {"deck": [plain, wild], "hand": [], "discard_pile": [], "play": []}
+    )
+
+    assert composition == [
+        {
+            "rank": "4",
+            "suit": "D",
+            "enhancement": "WILD",
+            "seal": "PURPLE",
+            "permanent_bonus": 0,
+            "count": 1,
+        },
+        {"rank": "4", "suit": "D", "permanent_bonus": 0, "count": 1},
+    ]
+
+
 def test_candidate_pack_capacity_survives_selections_and_resets() -> None:
     backend = object.__new__(jackdaw.JackdawBackend)
     backend._active_pack_cards = None
@@ -866,6 +896,36 @@ def test_stencil_display_xmult_tracks_visible_joker_slots(
     assert pack_stencil.ability["x_mult"] == 1
 
 
+def test_drivers_license_display_tally_tracks_permanent_enhancements() -> None:
+    base = object()
+    plain = SimpleNamespace(base=base, center_key="c_base")
+    enhanced = SimpleNamespace(base=base, center_key="m_bonus")
+    driver = SimpleNamespace(center_key="j_drivers_license", ability={})
+    shop_driver = SimpleNamespace(center_key="j_drivers_license", ability={})
+    pack_driver = SimpleNamespace(center_key="j_drivers_license", ability={})
+    game_state = {
+        "deck": [plain, enhanced],
+        "hand": [],
+        "discard_pile": [],
+        "play": [enhanced],
+        "jokers": [driver],
+        "shop_cards": [shop_driver],
+        "pack_cards": [pack_driver],
+    }
+
+    jackdaw._refresh_drivers_license_tally(game_state)
+
+    assert driver.ability["driver_tally"] == 1
+    assert shop_driver.ability["driver_tally"] == 1
+    assert pack_driver.ability["driver_tally"] == 1
+
+    game_state["deck"] = [plain]
+    game_state["play"] = []
+    jackdaw._refresh_drivers_license_tally(game_state)
+
+    assert driver.ability["driver_tally"] == 0
+
+
 def test_card_modifier_normalization_preserves_explicit_empty_effect(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1148,6 +1208,28 @@ def test_candidate_reveals_secret_hand_on_first_play() -> None:
     assert state.visible is True
     assert state.played == 1
     assert serialize_hands(hand_levels)["Five of a Kind"]["played"] == 1
+
+
+def test_candidate_defers_nonexpiring_turtle_bean_decay_at_terminal_snapshot() -> (
+    None
+):
+    turtle = SimpleNamespace(
+        center_key="j_turtle_bean",
+        ability={"extra": {"h_size": 5, "h_mod": 1}},
+    )
+    backend = object.__new__(jackdaw.JackdawBackend)
+    backend._backend = SimpleNamespace(
+        _gs={"hand_size": 13, "jokers": [turtle]}
+    )
+
+    snapshot = backend._terminal_turtle_bean_snapshot("play")
+    backend._backend._gs["hand_size"] = 12
+    turtle.ability["extra"]["h_size"] = 4
+    backend._restore_terminal_turtle_bean(snapshot)
+
+    assert backend._backend._gs["hand_size"] == 13
+    assert turtle.ability["extra"] == {"h_size": 4, "h_mod": 1}
+    assert backend._terminal_turtle_bean_snapshot("gamestate") is None
 
 
 def test_candidate_buy_and_use_rejection_does_not_mutate_state() -> None:

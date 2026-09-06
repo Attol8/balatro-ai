@@ -1667,6 +1667,31 @@ but leaves its `visible` flag false, so the bridge publishes a stale zero-play
 default. Vanilla reveals a secret hand on its first play. Patch the candidate's
 `HandLevels.record_play` only for this visibility transition and pin both the
 internal flag and public serializer output before continuing replay.
+Attempt 2 then passed seeds 2501-2502 and stopped at seed 2503 transition 3:
+the authority's newly offered Driver's License visibly reports an enhanced-card
+tally of zero, while Jackdaw leaves that runtime field absent until scoring.
+This is another `Card:update` parity gap, analogous to the existing
+Swashbuckler and Stencil refreshes. Derive the tally from the unique permanent
+playing cards across deck, hand, discard, and play; refresh owned, shop, and
+pack Driver's Licenses before projection; and test zero plus an enhanced card.
+Do not fill unrelated missing ability fields.
+After that repair seed 2503 reaches its first Standard-pack pick. The selected
+Wild Diamond Four is present with the correct modifier, but Jackdaw orders it
+after the otherwise identical plain card in `deck_composition`. Balatro sorts
+the serialized pipe-delimited key, where `W` precedes the next `|`; the bridge
+sorts a tuple, where empty string precedes `WILD`. Sort by the exact authority
+key and pin same-rank/suit plain-versus-modified ordering rather than treating
+the public list as unordered.
+Seed 2503 then replays through 48 transitions and differs only on the terminal
+loss snapshot: Balatro still exposes Turtle Bean's pre-decay hand limit 13,
+while Jackdaw synchronously applies the queued end-of-round decay and emits 12.
+This is the same authority timing boundary already proven for terminal Rental
+charges. The next exact diff shows that vanilla has already decremented the
+Joker's visible `h_size` from five to four but has not yet applied the queued
+CardArea size event. Capture only the hand limit when a live non-expiring
+Turtle Bean is present; on immediate GAME_OVER restore that limit while
+retaining the ability decay. Do not generalize to unobserved terminal Joker
+callbacks. Add a terminal-loss regression and continue full-trace replay.
 
 Strength replan: throughput is no longer the immediate score ceiling. Across
 the descriptive frozen v9/v10 trajectories, 340 of 365 losses (93.2%) end on

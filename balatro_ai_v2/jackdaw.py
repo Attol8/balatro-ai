@@ -337,6 +337,38 @@ def _refresh_stencil_x_mult(game_state: Mapping[str, Any]) -> None:
             ability["x_mult"] = runtime_x_mult
 
 
+def _refresh_drivers_license_tally(game_state: Mapping[str, Any]) -> None:
+    """Mirror ``Card:update`` for the visible enhanced-card tally."""
+
+    seen: set[int] = set()
+    enhanced_count = 0
+    for area_name in ("deck", "hand", "discard_pile", "play"):
+        cards = game_state.get(area_name, [])
+        if not isinstance(cards, list):
+            raise RuntimeError(f"Jackdaw {area_name} state is unavailable")
+        for card in cards:
+            identity = id(card)
+            if identity in seen:
+                continue
+            seen.add(identity)
+            if getattr(card, "base", None) is not None and getattr(
+                card, "center_key", ""
+            ) not in {"", "c_base"}:
+                enhanced_count += 1
+
+    for area_name in ("jokers", "shop_cards", "pack_cards"):
+        cards = game_state.get(area_name, [])
+        if not isinstance(cards, list):
+            raise RuntimeError(f"Jackdaw {area_name} state is unavailable")
+        for card in cards:
+            if getattr(card, "center_key", None) != "j_drivers_license":
+                continue
+            ability = getattr(card, "ability", None)
+            if not isinstance(ability, dict):
+                raise RuntimeError("Jackdaw Driver's License state is unavailable")
+            ability["driver_tally"] = enhanced_count
+
+
 def _clear_completed_cerulean_forced_selections(
     game_state: Mapping[str, Any],
 ) -> None:
@@ -733,6 +765,7 @@ class JackdawBackend:
         self._lightweight_normalized = None
 
     def _handle(self, method: str, params: dict[str, Any]) -> dict[str, Any]:
+        terminal_turtle_snapshot = self._terminal_turtle_bean_snapshot(method)
         with (
             self._poker_hand_order_compatibility(),
             self._shop_sticker_stake_compatibility(),
@@ -745,6 +778,7 @@ class JackdawBackend:
                 raw = self._backend.handle(method, params)
                 if method == "play" and raw.get("state") == "GAME_OVER":
                     self._defer_terminal_rental_charge()
+                    self._restore_terminal_turtle_bean(terminal_turtle_snapshot)
                     raw = self._backend.handle("gamestate", {})
             return self._backend.handle("gamestate", {}) if used_credit else raw
 
@@ -828,6 +862,47 @@ class JackdawBackend:
             )
             rental_count += int(is_rental)
         game_state["dollars"] = dollars + rental_rate * rental_count
+
+    def _terminal_turtle_bean_snapshot(
+        self, method: str
+    ) -> int | None:
+        """Capture non-expiring Turtle Bean state before a possible loss."""
+
+        if method != "play":
+            return None
+        game_state = getattr(self._backend, "_gs", None)
+        if not isinstance(game_state, Mapping):
+            raise RuntimeError("Jackdaw game state is unavailable before play")
+        hand_size = game_state.get("hand_size")
+        jokers = game_state.get("jokers")
+        if not isinstance(hand_size, int) or isinstance(hand_size, bool):
+            raise RuntimeError("Jackdaw hand size is unavailable before play")
+        if not isinstance(jokers, list):
+            raise RuntimeError("Jackdaw Joker state is unavailable before play")
+        for card in jokers:
+            if getattr(card, "center_key", None) != "j_turtle_bean":
+                continue
+            ability = getattr(card, "ability", None)
+            extra = ability.get("extra") if isinstance(ability, Mapping) else None
+            if not isinstance(extra, dict) or not isinstance(extra.get("h_size"), int):
+                raise RuntimeError("Jackdaw Turtle Bean state is unavailable before play")
+            if int(extra["h_size"]) <= int(extra.get("h_mod", 1)):
+                continue
+            return hand_size
+        return None
+
+    def _restore_terminal_turtle_bean(
+        self,
+        snapshot: int | None,
+    ) -> None:
+        """Keep queued Turtle Bean decay out of the immediate loss snapshot."""
+
+        if snapshot is None:
+            return
+        game_state = getattr(self._backend, "_gs", None)
+        if not isinstance(game_state, dict):
+            raise RuntimeError("Jackdaw terminal Turtle Bean state is unavailable")
+        game_state["hand_size"] = snapshot
 
     def _apply_pending_skip_dollars(self) -> None:
         if not self._pending_skip_dollars:
@@ -1171,6 +1246,7 @@ class JackdawBackend:
             raise RuntimeError("Jackdaw backend does not expose its active game state")
         _refresh_swashbuckler_mult(game_state)
         _refresh_stencil_x_mult(game_state)
+        _refresh_drivers_license_tally(game_state)
         pack_card_limit = self._track_pack_card_limit(game_state)
         normalized = _normalize_jackdaw_bridge(
             raw,
@@ -2139,13 +2215,15 @@ def _jackdaw_deck_composition(
     composition: list[dict[str, object]] = []
     for (rank, suit, enhancement, edition, seal, permanent_bonus), count in sorted(
         counts.items(),
-        key=lambda pair: (
-            pair[0][0],
-            pair[0][1],
-            pair[0][2] or "",
-            pair[0][3] or "",
-            pair[0][4] or "",
-            pair[0][5],
+        key=lambda pair: "|".join(
+            (
+                pair[0][0],
+                pair[0][1],
+                pair[0][2] or "",
+                pair[0][3] or "",
+                pair[0][4] or "",
+                str(pair[0][5]),
+            )
         ),
     ):
         entry: dict[str, object] = {
