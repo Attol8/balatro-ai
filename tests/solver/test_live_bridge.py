@@ -1,4 +1,5 @@
 from copy import deepcopy
+from types import SimpleNamespace
 
 from balatro_ai_v2.live.observation import public_observation
 from balatro_ai_v2.live.runner import RunConfig, make_policy, replay, run_episode
@@ -76,6 +77,19 @@ def test_boss_variant_is_isolated_from_other_changes():
     assert candidate.shop_search.evaluate_planets is False
     assert candidate.model_green_joker is False
     assert RunConfig(policy='search-boss').policy == 'search-boss'
+
+
+def test_order_variant_has_a_bounded_reassessment_budget():
+    from balatro_ai_v2.solver.actions import HandSlot, PlayCards, ReorderHand
+    policy = make_policy('search-order')
+    assert policy.optimize_order and not make_policy('search').optimize_order
+    swap = SimpleNamespace(action=ReorderHand((HandSlot(1), HandSlot(0))))
+    policy.history = [swap] * 7
+    assert policy._reorder_budget_available()
+    policy.history.append(swap)
+    assert not policy._reorder_budget_available()
+    policy.history.append(SimpleNamespace(action=PlayCards((HandSlot(0),))))
+    assert policy._reorder_budget_available()
 
 
 def test_planet_variant_projects_typed_state_and_replays(tmp_path):

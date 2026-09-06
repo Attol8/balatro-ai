@@ -28,6 +28,7 @@ SEARCH_VARIANTS = {
     "search-planets": {"evaluate_planets": True},
     "search-green": {"model_green_joker": True},
     "search-boss": {"project_next_boss": True},
+    "search-order": {"optimize_order": True},
 }
 POLICY_NAMES = ("baseline", "strategic", *SEARCH_VARIANTS)
 DECISION_STATES = {

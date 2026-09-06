@@ -6,7 +6,7 @@ from dataclasses import dataclass
 
 from balatro_ai_v2.live.observation import public_observation
 from balatro_ai_v2.live.policy import Decision
-from balatro_ai_v2.solver.actions import DiscardCards, PlayCards, action_from_data, action_to_data, iter_legal_actions
+from balatro_ai_v2.solver.actions import DiscardCards, PlayCards, ReorderHand, ReorderJokers, action_from_data, action_to_data, iter_legal_actions
 from balatro_ai_v2.solver.adapter import action_to_rpc, to_public_observation
 from balatro_ai_v2.solver.baselines import PublicStrategicPolicy, _with_history_derived_joker_runtime
 from balatro_ai_v2.solver.policy import PublicHistoryStep
@@ -78,13 +78,15 @@ class SearchPolicy(StrategicPolicy):
     """Numerical shop comparisons and sampled public draw lookahead."""
 
     def __init__(self, tactical_samples: int = 8, shop_samples: int = 6, evaluate_planets: bool = False,
-                 model_green_joker: bool = False, project_next_boss: bool = False) -> None:
+                 model_green_joker: bool = False, project_next_boss: bool = False,
+                 optimize_order: bool = False) -> None:
         super().__init__()
         from balatro_ai_v2.solver.shop_search import ShopSearch
         self.shop_search = ShopSearch(samples=shop_samples, evaluate_planets=evaluate_planets,
                                       project_next_boss=project_next_boss)
         self.tactical_samples = tactical_samples
         self.model_green_joker = model_green_joker
+        self.optimize_order = optimize_order
 
     def select(self, observation):
         from balatro_ai_v2.solver.public_state import Phase
@@ -98,8 +100,23 @@ class SearchPolicy(StrategicPolicy):
         elif isinstance(action, (PlayCards, DiscardCards)):
             tactical = choose_tactical(observation, action, samples=self.tactical_samples,
                                        model_green_joker=self.model_green_joker)
+            if self.optimize_order and isinstance(tactical.action, PlayCards) and self._reorder_budget_available():
+                from balatro_ai_v2.solver.ordering_search import improve_play_order
+                ordering = improve_play_order(observation, tactical.action)
+                if ordering is not None:
+                    return ordering.action, ordering.reason, ordering.diagnostics
             return tactical.action, tactical.reason, {
                 "sampled_next_play_score": tactical.expected_score,
                 "baseline_score": tactical.baseline_score, "samples": tactical.samples,
             }
         return action, reason, diagnostics
+
+    def _reorder_budget_available(self) -> bool:
+        # Choices are reassessed after each mutation. Bound cross-selection
+        # cycles even when individually improving swaps propose different plays.
+        consecutive = 0
+        for step in reversed(self.history):
+            if not isinstance(step.action, (ReorderHand, ReorderJokers)):
+                break
+            consecutive += 1
+        return consecutive < 8
