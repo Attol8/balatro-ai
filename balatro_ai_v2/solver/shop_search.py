@@ -63,7 +63,8 @@ def _owned_fingerprints(jokers: tuple) -> tuple:
 class ShopSearch:
     def __init__(self, samples: int = 6, max_rerolls: int = 2, evaluate_planets: bool = False, project_next_boss: bool = False,
                  evaluate_blueprint_placement: bool = False, prioritize_all_jokers: bool = True,
-                 survival_rerolls: int | None = None, project_static_bosses: bool = False):
+                 survival_rerolls: int | None = None, project_static_bosses: bool = False,
+                 boss_readiness: bool = False):
         if not 1 <= samples <= 12 or not 0 <= max_rerolls <= 5:
             raise ValueError('shop search budgets must be bounded')
         self.samples = samples
@@ -81,6 +82,9 @@ class ShopSearch:
         if not isinstance(project_static_bosses, bool) or (project_static_bosses and not project_next_boss):
             raise ValueError('static boss projection requires project_next_boss')
         self.project_static_bosses = project_static_bosses
+        if not isinstance(boss_readiness, bool) or (boss_readiness and not project_next_boss):
+            raise ValueError('boss readiness requires project_next_boss')
+        self.boss_readiness = boss_readiness
         self._pending: tuple[int, PublicItem] | None = None
         if not isinstance(evaluate_blueprint_placement, bool):
             raise ValueError('evaluate_blueprint_placement must be boolean')
@@ -162,10 +166,44 @@ class ShopSearch:
         upcoming = [b.score for b in sorted(observation.blinds, key=lambda b: {'SMALL': 0, 'BIG': 1, 'BOSS': 2}.get(b.kind, 3))
                     if b.status in {'SELECT', 'UPCOMING'}]
         target = float(upcoming[0] if upcoming else max((b.score for b in observation.blinds), default=300) * 1.5)
+        readiness_boss, readiness_reason = self._readiness_boss(observation)
+        readiness_cache = {}
+
+        def pace(values, only_hand=False):
+            first, repeated, final = values
+            return first if only_hand else min(first, .5 * first + .35 * repeated + .15 * final) * 3
+
+        immediate_pace = pace((current_first, current_repeat, current_final), needle) / max(1, target)
+
+        def readiness(candidate, values):
+            immediate = pace(values, needle) / max(1, target)
+            if readiness_boss is None:
+                return immediate, immediate
+            if candidate not in readiness_cache:
+                forecast = self._capacity_components(candidate, hands, readiness_boss)
+                readiness_cache[candidate] = pace(forecast, readiness_boss.name == 'The Needle') / max(1, readiness_boss.score)
+            return immediate, readiness_cache[candidate]
+
+        current_readiness = readiness(observation, (current_first, current_repeat, current_final))
+        boss_weak = readiness_boss is not None and current_readiness[1] < 1
+
+        def objective(candidate, values):
+            if readiness_boss is None:
+                return log1p(aggregate(*values))
+            immediate, boss = readiness(candidate, values)
+            if immediate + 1e-9 < min(1.0, immediate_pace):
+                return float('-inf')
+            return log1p(100 * min(immediate, boss))
+
+        current_objective = objective(observation, (current_first, current_repeat, current_final))
         # Optimistic continuation bonuses must not lock up survival cash when
         # ordinary first-hand capacity is below the next blind's pace.
-        weak = min(current_first, current) * (1 if needle else 3) < target
+        weak = min(current_first, current) * (1 if needle else 3) < target or boss_weak
         reroll_limit = self.survival_rerolls if weak and self.survival_rerolls is not None else self.max_rerolls
+        preparation_history = self.boss_readiness and self._complete_history(observation, history)
+        ante_rerolls = sum(isinstance(step.action, RerollShop) for step in history if step.before.ante == observation.ante)
+        if boss_weak and preparation_history:
+            reroll_limit = 4
         reserve = 2 if weak else min(25, 8 + 3 * max(0, observation.ante - 1))
         diagnostics = {'current_capacity': current, 'next_blind_target': target,
                        'reserve': reserve, 'samples': self.samples,
@@ -174,6 +212,13 @@ class ShopSearch:
                        'continuation_assumption': '50% first / 35% same-family repeat / 15% final; no intervening discards; Green Joker +1 per prior play'}
         if self.survival_rerolls is not None:
             diagnostics.update(reroll_limit=reroll_limit, below_forecast_pace=weak)
+        if self.boss_readiness:
+            diagnostics.update(boss_readiness_projection=readiness_reason,
+                               immediate_pace_ratio=immediate_pace,
+                               boss_pace_ratio=current_readiness[1] if readiness_boss is not None else -1,
+                               public_boss_target=readiness_boss.score if readiness_boss is not None else 0,
+                               ante_rerolls=ante_rerolls, reroll_limit=reroll_limit,
+                               preparation_history_complete=bool(preparation_history))
         if self.project_next_boss:
             diagnostics.update(boss_projection=projection_reason,
                                projected_hand_budget=1 if needle else 4,
@@ -181,6 +226,7 @@ class ShopSearch:
             if needle:
                 diagnostics['continuation_assumption'] = 'Needle: first and only hand; no continuation bonus'
         best = None
+        best_readiness = None
         for i, offer in enumerate(observation.shop):
             if not isinstance(offer, PublicItem) or offer.kind != 'JOKER' or offer.buy_cost is None:
                 continue
@@ -228,11 +274,12 @@ class ShopSearch:
                     for position in range(len(before_buy.jokers)):
                         placed = replace(candidate, jokers=before_buy.jokers[:position] + (offer,) + before_buy.jokers[position:])
                         alternate = components(placed)
-                        if aggregate(*alternate) > aggregate(first, repeated, final):
+                        if objective(placed, alternate) > objective(candidate, (first, repeated, final)):
                             first, repeated, final = alternate
                             destination = position
+                            candidate = placed
                 capacity = aggregate(first, repeated, final)
-                gain = log1p(capacity) - log1p(current)
+                gain = objective(candidate, (first, repeated, final)) - current_objective
                 # Small explicit future utility; unknown/non-scoring cards
                 # cannot win merely through rarity or a generic tier score.
                 future = 0.08 if profile.role == 'scaling' and observation.ante <= 4 else 0.0
@@ -251,6 +298,7 @@ class ShopSearch:
                 utility = gain + future - opportunity - cash_penalty
                 if utility > 0.025 and (best is None or utility > best[0]):
                     best = (utility, sale or buy, offer, capacity, first, repeated, final, destination)
+                    best_readiness = readiness(candidate, (first, repeated, final))
         planet_screen = self.evaluate_planets and isinstance(baseline_action, (LeaveShop, RerollShop))
         if planet_screen:
             evaluated = 0
@@ -281,18 +329,22 @@ class ShopSearch:
                                                      if stat.name == family else stat for stat in observation.hand_stats))
                 first, repeated, final = components(candidate)
                 capacity = aggregate(first, repeated, final)
-                utility = log1p(capacity) - log1p(current) - offer.buy_cost * (0.004 if weak else 0.008)
+                utility = objective(candidate, (first, repeated, final)) - current_objective - offer.buy_cost * (0.004 if weak else 0.008)
                 evaluated += 1
                 best_planet_gain = max(best_planet_gain if best_planet_gain is not None else utility, utility)
                 reasons.append(f'{offer.key}: utility {utility:.6f}')
                 if utility > 0.025 and (best is None or utility > best[0]):
                     best = (utility, buy, offer, capacity, first, repeated, final, None)
+                    best_readiness = readiness(candidate, (first, repeated, final))
             diagnostics.update(planet_candidates_evaluated=evaluated,
                                planet_screen='; '.join(reasons) or 'no planet offers')
             if best_planet_gain is not None:
                 diagnostics['best_planet_utility'] = best_planet_gain
         if best is not None:
             utility, action, offer, capacity, first, repeated, final, destination = best
+            if self.boss_readiness and best_readiness is not None:
+                diagnostics.update(candidate_immediate_pace_ratio=best_readiness[0],
+                                   candidate_boss_pace_ratio=best_readiness[1] if readiness_boss is not None else -1)
             if destination is not None:
                 diagnostics['blueprint_destination'] = destination
                 if isinstance(action, SellJoker):
@@ -313,11 +365,15 @@ class ShopSearch:
                       if step.before.round_no == observation.round_no)
         # Cost growth also bounds rerolls when callers provide no history.
         cost = observation.round.reroll_cost
+        ante_budget_available = not (preparation_history and readiness_boss is not None) or ante_rerolls < 6
         if (weak and rerolls < reroll_limit and cost < 5 + reroll_limit
+                and ante_budget_available
                 and observation.money - cost >= reserve + 6
                 and is_legal(observation, RerollShop())):
-            return ShopChoice(RerollShop(), 'Search for a scoring upgrade while the build is below next-blind pace.', diagnostics)
-        if isinstance(baseline_action, RerollShop) and (rerolls >= reroll_limit or cost >= 5 + reroll_limit):
+            goal = 'the visible ante boss' if boss_weak else 'the next blind'
+            return ShopChoice(RerollShop(), f'Search for a scoring upgrade while the build is below modeled pace for {goal}.', diagnostics)
+        if isinstance(baseline_action, RerollShop) and (rerolls >= reroll_limit or cost >= 5 + reroll_limit or not ante_budget_available
+                or (self.boss_readiness and observation.money - cost < reserve + 6)):
             return ShopChoice(LeaveShop(), 'Stop after the bounded shop reroll budget.', diagnostics)
         if planet_screen:
             return ShopChoice(baseline_action, 'Preserve baseline after scoring available planets.', diagnostics)
@@ -326,6 +382,32 @@ class ShopSearch:
         # Respect an existing conservative fallback instead of suppressing
         # strategy purchases that the immediate scorer cannot value.
         return None
+
+    def _readiness_boss(self, observation):
+        if not self.boss_readiness:
+            return None, 'disabled'
+        boss = next((b for b in observation.blinds if b.kind == 'BOSS' and b.status in {'SELECT', 'UPCOMING'}), None)
+        supported = {'The Needle', 'The Flint', 'The Wall', 'Violet Vessel', 'The Water'} | (_STATIC_BOSSES if self.project_static_bosses else set())
+        if boss is None or boss.name not in supported:
+            return None, 'unsupported or unavailable public boss'
+        inventory = (*observation.jokers, *observation.shop)
+        if any(isinstance(j, PublicItem) and j.key in {'j_chicot', 'j_burglar', 'j_luchador', 'j_ceremonial'} for j in inventory):
+            return None, 'activation interaction'
+        if any(isinstance(j, PublicItem) and j.perishable_rounds is not None and not j.debuffed for j in inventory):
+            return None, 'future perishable timing excluded'
+        return replace(boss, status='CURRENT', disabled=False), 'current-build stress test: ' + boss.name
+
+    @staticmethod
+    def _complete_history(observation, history):
+        if not history or history[0].before.round_no != 0 or history[0].before.antes_cleared != 0:
+            return False
+        if any(a.after != b.before for a, b in zip(history, history[1:])):
+            return False
+        # Shop scoring enriches runtime from history; ignore only that derived
+        # field, not inventory, ordering, money or any other public state.
+        def without_runtime(obs):
+            return replace(obs, jokers=tuple(replace(j, runtime=None) if isinstance(j, PublicItem) else j for j in obs.jokers))
+        return without_runtime(history[-1].after) == without_runtime(observation)
 
     def _arm_blueprint_order(self, observation: PublicObservation, offer: PublicItem, destination: int) -> None:
         index = len(observation.jokers)
@@ -342,11 +424,13 @@ class ShopSearch:
         blind = upcoming[0]
         if blind.kind == 'BOSS':
             supported = {'The Needle', 'The Flint'} | (_STATIC_BOSSES if self.project_static_bosses else set())
+            if self.boss_readiness:
+                supported |= {'The Wall', 'Violet Vessel', 'The Water'}
             if blind.name not in supported:
                 return None, f'control fallback: unsupported {blind.name}'
             interactions = [j.key for j in (*observation.jokers, *observation.shop)
                             if isinstance(j, PublicItem) and j.key in
-                            ({'j_chicot', 'j_burglar', 'j_luchador', 'j_ceremonial'} if blind.name in _STATIC_BOSSES else {'j_chicot', 'j_burglar'})]
+                            ({'j_chicot', 'j_burglar', 'j_luchador', 'j_ceremonial'} if blind.name in _STATIC_BOSSES or self.boss_readiness else {'j_chicot', 'j_burglar'})]
             if interactions:
                 return None, 'control fallback: activation interaction ' + ','.join(sorted(set(interactions)))
         elif blind.kind not in {'SMALL', 'BIG'}:
@@ -378,7 +462,7 @@ class ShopSearch:
                                 blinds=((projected_blind,) if projected_blind is not None else
                                         tuple(replace(b, status='UPCOMING', disabled=False) for b in observation.blinds)),
                                 round=replace(observation.round, chips=0, hands_left=1 if projected_blind is not None and projected_blind.name == 'The Needle' else 4, hands_played=0,
-                                              discards_left=3, discards_used=0),
+                                              discards_left=0 if projected_blind is not None and projected_blind.name == 'The Water' else 3, discards_used=0),
                                 hand_stats=tuple(replace(h, played_this_round=0) for h in observation.hand_stats))
             best = 0.0
             best_selection = ()

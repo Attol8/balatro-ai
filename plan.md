@@ -323,3 +323,27 @@ ante-level preparation budget, while protecting immediate-blind survival. This
 is not knowledge of an unrevealed future boss and not indiscriminate rerolling.
 Do not assume a winning alternative exists in the diagnosed traces; measure a
 frozen new policy on the development panel before held-out evaluation.
+
+V7 design: keep immediate and visible-current-ante boss projections separate.
+Rank purchases by the weaker normalized pace, rejecting candidates that turn an
+apparently adequate immediate build inadequate or further weaken an already
+inadequate one. Use the public boss score unchanged. Admit Needle/Flint, five
+static bosses, Wall/Violet/Water; Water gets zero projected discards. Exclude
+activation interactions and active perishables from future-boss estimates.
+These stress-test today's build, freezing intervening growth/decay and upgrades.
+They are not future survival probabilities.
+
+When boss readiness is below modeled pace, allow up to four rerolls per shop and
+six total per ante, counting every actual reroll from complete contiguous public
+history. Pack excursions do not reset the visit. Preserve a purchase cash buffer
+and enforce caps on inherited baseline rerolls too. Without complete history,
+retain the original budget. V7 builds on V6; Misprint probability remains off.
+
+V6 completed 3/20 wins (D1/D5/D6), no execution failures. D5's peak hand increased
+to 157,320 from V4's 97,020; the win-rate result is unchanged. V7's offline D2
+shop190 check now reports immediate pace 1.685 versus boss pace 0.281, protects
+$2 instead of the old safe-build reserve, and searches before the Small Blind.
+This is a changed decision at a recorded state, not a counterfactual win.
+The full candidate-enabled suite passes 838 tests, including independent tests
+of the new objective, Water counters, budget/history bookkeeping, immediate-
+capacity guard, inherited reroll cash protection, and unchanged flag-off behavior.

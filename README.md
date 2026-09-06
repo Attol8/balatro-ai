@@ -64,7 +64,12 @@ Experimental variants keep that search control unchanged:
   seeds as V4 and is not promoted.
 - `search-v6`: adds candidate-specific suit/face boss debuffs to V4's shop forecasts,
   including Wild/Smeared/Pareidolia interactions. It does not include V5's spending
-  change. History-dependent and random-disabling bosses remain unsupported.
+  change. Its completed batch won the same 3/20 seeds. History-dependent and
+  random-disabling bosses remain unsupported.
+- `search-v7`: adds current-ante boss readiness to V6, balancing it against the
+  immediate blind. A visible supported boss deficit permits up to four rerolls
+  per shop and six across the ante, with complete public history and purchase
+  cash protected. It stress-tests the current build, not future growth or decay.
 
 Each variant is an ablation, not an established improvement. Draw estimates use
 eight shared samples; shop estimates use six synthetic hands and approximate
