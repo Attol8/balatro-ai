@@ -17,6 +17,11 @@ _ORGANIC_TRACE = (
     / "runs/evidence/planet-buy-use-organic-v1-seeds2411-2430-attempt1"
     / "red-white-seed2411.jsonl"
 )
+_CURRENT_ORGANIC_TRACE = (
+    _ROOT
+    / "runs/evidence/expert-admission-organic-v1-source"
+    / "red-white-seed2507.jsonl"
+)
 
 
 def _load_script():
@@ -69,6 +74,42 @@ def test_imports_exact_cohort_to_opaque_public_bundle(tmp_path: Path) -> None:
 
     with pytest.raises(FileExistsError, match="refusing to overwrite"):
         script.import_expert_cohort(manifest, key, dataset, report)
+
+
+def test_imports_current_real_balatro_pack_sale_to_choice_trace(
+    tmp_path: Path,
+) -> None:
+    script = _load_script()
+    digest = hashlib.sha256(_CURRENT_ORGANIC_TRACE.read_bytes()).hexdigest()
+    manifest = tmp_path / "cohort.json"
+    manifest.write_text(json.dumps(_manifest(_CURRENT_ORGANIC_TRACE, digest)))
+    key = tmp_path / "origin.key"
+    key.write_bytes(b"real-organic-fixture-origin-key!!")
+    dataset = tmp_path / "bundle/expert.jsonl"
+
+    result = script.import_expert_cohort(
+        manifest,
+        key,
+        dataset,
+        tmp_path / "bundle/report.json",
+    )
+
+    trajectory = read_expert_trajectories(dataset)[0]
+    action_names = [
+        transition.action.__class__.__name__
+        for transition in trajectory.transitions
+    ]
+    assert result == {
+        "dataset_sha256": hashlib.sha256(dataset.read_bytes()).hexdigest(),
+        "runs": 1,
+        "decisions": 68,
+        "tensor_unsupported_decisions": 0,
+    }
+    assert sum(
+        current.startswith("Sell") and following == "ChoosePackCard"
+        for current, following in zip(action_names, action_names[1:])
+    ) == 5
+    assert "2507" not in dataset.read_text()
 
 
 def test_manifest_rejects_duplicate_keys_and_digest_mismatch(tmp_path: Path) -> None:

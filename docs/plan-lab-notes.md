@@ -4797,3 +4797,35 @@ the exact pack state, opened offer, and remaining choice count. The committed
 compact summary binds every raw trace hash and the aggregate trace-set digest;
 the three raw directories remain local because their hash-chained observations
 total roughly 100 MB. This certifies action fidelity, not policy strength.
+
+### Strict expert admission and schema-2 organic proof (2026-09-06)
+
+Commit `5e7c3f0` establishes the public-only expert trajectory firewall before
+any demonstrations can influence a model. Authority traces now bind the exact
+action contract under schema 2; historical schema-1 traces remain replayable
+but are inadmissible. Import reconstructs every public observation, RPC/action
+mapping, exact legal candidate set, public prefix, terminal metric, and capture
+protocol from bounded inputs. It rejects partial or dirty captures, mixed or
+duplicate cohorts, private/unknown data, noncanonical bytes, invalid typed
+counters, budget overflow, and non-authority provenance. Bundle publication is
+atomic and no-overwrite. The checkpoint passes 1,174 tests in the pinned `uv`
+environment; the host interpreter's missing optional Jackdaw/CMA dependencies
+are not a product failure.
+
+A fresh non-fast BalatroBot run from clean revision `5e7c3f0` captured Red/White
+seed 2507 under schema 2. All 68 authority decisions completed, including five
+pack-phase inventory sales immediately followed by pack choices. Import admits
+68/68 transitions, tensorizes all of them (maximum 445 candidates), preserves
+all five sale-to-choice pairs, and emits no source seed. The exact source,
+cohort manifest, public trajectory, and report are under
+`runs/evidence/expert-admission-organic-v1-*`; the source SHA-256 is
+`cf6f34ad104dda3d72dae568f57584c53e218c022937c409e432a81e87f396b8`
+and public dataset SHA-256 is
+`d7c800e6fdf3849ad79fa9e3b9b146bfb0bafbb5b02eb2f6a40dbfe7cf28d16a`.
+This is an admission/capability fixture from a deterministic coverage policy,
+not a claim of expert quality and not authorized training data.
+
+The same trace exposes a new candidate-fidelity defect at transition 30:
+pinned Jackdaw has 44 permanent cards where Balatro has 51 after a pack choice.
+It remains valid real-authority input, but the simulator mismatch must be fixed
+and replayed before this trajectory can support any candidate-result claim.
