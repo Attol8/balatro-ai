@@ -1680,3 +1680,63 @@ index 0000000..512c380
 +end
 +
 +return run_restore
+diff --git a/src/lua/endpoints/sell.lua b/src/lua/endpoints/sell.lua
+index 31ef538..129b6e5 100644
+--- a/src/lua/endpoints/sell.lua
++++ b/src/lua/endpoints/sell.lua
+@@ -32,7 +32,15 @@ return {
+     },
+   },
+ 
+-  requires_state = { G.STATES.SELECTING_HAND, G.STATES.SHOP },
++  requires_state = {
++    G.STATES.SELECTING_HAND,
++    G.STATES.SHOP,
++    G.STATES.TAROT_PACK,
++    G.STATES.PLANET_PACK,
++    G.STATES.SPECTRAL_PACK,
++    G.STATES.STANDARD_PACK,
++    G.STATES.BUFFOON_PACK,
++  },
+ 
+   ---@param args Request.Endpoint.Sell.Params
+   ---@param send_response fun(response: Response.Endpoint)
+@@ -101,6 +109,14 @@ return {
+     local initial_money = G.GAME.dollars
+     local expected_money = initial_money + card.sell_cost
+     local card_id = card.sort_id
++    local initial_state = G.STATE
++    local initial_pack_area = G.pack_cards
++    local initial_pack_choices = G.GAME.pack_choices
++    local in_pack = initial_state == G.STATES.TAROT_PACK
++      or initial_state == G.STATES.PLANET_PACK
++      or initial_state == G.STATES.SPECTRAL_PACK
++      or initial_state == G.STATES.STANDARD_PACK
++      or initial_state == G.STATES.BUFFOON_PACK
+ 
+     -- Log what we're selling
+     local item_name = card.ability and card.ability.name or "Unknown"
+@@ -139,13 +155,20 @@ return {
+         -- 3. State stability
+         local state_stable = G.STATE_COMPLETE == true
+ 
+-        -- 4. Still in valid state
+-        local valid_state = (G.STATE == G.STATES.SHOP or G.STATE == G.STATES.SELECTING_HAND)
++        -- 4. The action did not advance or replace the active state.
++        local valid_state = G.STATE == initial_state
++
++        -- 5. A pack sale must leave the same offer and choice budget active.
++        local pack_stable = not in_pack or (
++          G.pack_cards == initial_pack_area
++          and G.pack_cards ~= nil
++          and G.GAME.pack_choices == initial_pack_choices
++        )
+ 
+         -- Note: card count is NOT checked here — some jokers (e.g. Invisible Joker)
+         -- spawn a replacement on sell, leaving count unchanged. card_gone + money_increased
+         -- uniquely identify completion without relying on count.
+-        if money_increased and card_gone and state_stable and valid_state then
++        if money_increased and card_gone and state_stable and valid_state and pack_stable then
+           sendDebugMessage("Return sell()", "BB.ENDPOINTS")
+           send_response(BB_GAMESTATE.get_gamestate())
+           return true

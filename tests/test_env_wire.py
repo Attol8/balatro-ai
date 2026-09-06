@@ -8,6 +8,7 @@ from balatro_ai_v2.actions import SelectBlind
 from balatro_ai_v2.balatrobot.adapter import to_public_observation
 from balatro_ai_v2.env_wire import (
     ENV_CANONICAL_SCHEMA_VERSION,
+    ENV_PROTOCOL_VERSION,
     ENV_REWARD_SCHEMA,
     EnvCloseRequest,
     EnvClosed,
@@ -99,7 +100,7 @@ def test_environment_wire_rejects_inconsistent_terminal_data() -> None:
 
 def test_environment_wire_rejects_noncanonical_action() -> None:
     payload = {
-        "protocol": 2,
+        "protocol": ENV_PROTOCOL_VERSION,
         "type": "step",
         "request_id": 1,
         "step_index": 0,

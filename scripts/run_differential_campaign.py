@@ -214,7 +214,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--pack-strategy", choices=("mixed", "skip", "pick"), default="mixed")
     parser.add_argument(
         "--coverage-mode",
-        choices=("default", "extended", "planet_use"),
+        choices=("default", "extended", "planet_use", "pack_sale"),
         default="default",
     )
     parser.add_argument("--host", default="127.0.0.1")
@@ -282,6 +282,12 @@ def summarize_trace_coverage(
         if isinstance(action, dict):
             family = str(action.get("type") or "unknown")
             accepted_counts[family] += 1
+            if (
+                current_public is not None
+                and current_public.get("phase") == "PACK"
+                and family in {"sell_joker", "sell_consumable"}
+            ):
+                accepted_counts["pack_inventory_sale"] += 1
             if family == "buy_shop_card" and action.get("mode") == "use":
                 accepted_counts["buy_shop_card_use"] += 1
         public_after = row.get("public_after")
@@ -300,6 +306,8 @@ def summarize_trace_coverage(
         raise ValueError(f"unsupported pack strategy {pack_strategy!r}")
     if coverage_mode == "extended":
         required.update({"reroll_shop", "use_consumable"})
+    elif coverage_mode == "pack_sale":
+        required.add("pack_inventory_sale")
     elif coverage_mode not in {"default", "planet_use"}:
         raise ValueError(f"unsupported coverage mode {coverage_mode!r}")
 

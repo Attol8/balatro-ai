@@ -2641,7 +2641,7 @@ def test_strategic_baseline_rerolls_full_weak_build_before_buying_pack() -> None
     assert isinstance(action, RerollShop)
 
 
-def test_strategic_baseline_keeps_pack_replacement_fail_closed() -> None:
+def test_strategic_baseline_does_not_sell_inventory_without_search() -> None:
     raw = state("BUFFOON_PACK")
     raw["pack"]["cards"] = [item_card("j_order", card_id=30, kind="JOKER")]
     raw["jokers"]["cards"] = [
@@ -2655,7 +2655,7 @@ def test_strategic_baseline_keeps_pack_replacement_fail_closed() -> None:
     action = PublicStrategicPolicy().choose_action(pack, lambda: iter(legal), ())
 
     assert isinstance(action, SkipPack)
-    assert not any(isinstance(candidate, SellJoker) for candidate in legal)
+    assert any(isinstance(candidate, SellJoker) for candidate in legal)
 
 
 def test_coverage_policy_leaves_shop_at_its_public_budget() -> None:
@@ -2740,6 +2740,45 @@ def test_explicit_pack_lanes_skip_or_pick_safe_visible_offer() -> None:
 
     assert isinstance(skipped, SkipPack)
     assert isinstance(picked, ChoosePackCard)
+
+
+def test_pack_sale_coverage_sells_once_then_resumes_pack_choice() -> None:
+    raw = state("BUFFOON_PACK")
+    raw["jokers"]["cards"] = [
+        item_card("j_joker", card_id=30, kind="JOKER")
+    ]
+    raw["jokers"]["count"] = 1
+    pack = to_public_observation(raw)
+    policy = DeterministicCoveragePolicy(
+        coverage_mode="pack_sale", pack_strategy="pick"
+    )
+
+    sale = policy.choose_action(pack, lambda: iter_legal_actions(pack), ())
+    history = (PublicHistoryStep(pack, sale, pack),)
+    next_action = policy.choose_action(
+        pack, lambda: iter_legal_actions(pack), history
+    )
+
+    assert sale == SellJoker(JokerSlot(0))
+    assert isinstance(next_action, ChoosePackCard)
+
+
+def test_pack_sale_coverage_buys_inventory_before_a_pack() -> None:
+    raw = state("SHOP", money=10)
+    raw["shop"] = {
+        "cards": [item_card("j_joker", card_id=30, kind="JOKER", buy=2)],
+        "count": 1,
+        "highlighted_limit": 1,
+        "limit": 2,
+    }
+    observation = to_public_observation(raw)
+    policy = DeterministicCoveragePolicy(coverage_mode="pack_sale")
+
+    action = policy.choose_action(
+        observation, lambda: iter_legal_actions(observation), ()
+    )
+
+    assert action == BuyShopCard(ShopSlot(0))
 
 
 def test_public_poker_classifier_covers_wheel_straight_and_full_house() -> None:

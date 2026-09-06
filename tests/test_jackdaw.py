@@ -15,12 +15,18 @@ from balatro_ai_v2.actions import (
     DiscardCards,
     HandSlot,
     LeaveShop,
+    OpenedPackSlot,
     PackOfferSlot,
     PlayCards,
     RerollBoss,
     SelectBlind,
+    SellConsumable,
+    SellJoker,
     ShopSlot,
     SkipPack,
+    ConsumableSlot,
+    JokerSlot,
+    ChoosePackCard,
     action_from_data,
     iter_legal_actions,
 )
@@ -1027,6 +1033,70 @@ def test_candidate_planet_buy_and_use_is_atomic_at_full_capacity() -> None:
         assert game_state["cards_purchased"] == 1
         assert game_state["consumable_usage"]["c_mercury"]["count"] == 1
         assert constellation.ability["x_mult"] == pytest.approx(before_x_mult + 0.1)
+    finally:
+        backend.close()
+
+
+def test_candidate_pack_inventory_sales_preserve_pack_and_fire_campfire() -> None:
+    pytest.importorskip("jackdaw")
+    from jackdaw.engine.actions import GamePhase
+    from jackdaw.engine.card_factory import create_consumable, create_joker
+
+    backend = jackdaw.JackdawBackend()
+    try:
+        backend.reset(RunSpec("RED", "WHITE", "9005"))
+        game_state = backend._backend._gs
+        campfire = create_joker("j_campfire")
+        owned = create_joker("j_joker")
+        owned.sell_cost = 2
+        consumable = create_consumable("c_mercury")
+        consumable.sell_cost = 1
+        offered = create_joker("j_greedy_joker")
+        game_state["phase"] = GamePhase.PACK_OPENING
+        game_state["pack_type"] = "Buffoon"
+        game_state["pack_cards"] = [offered]
+        game_state["pack_choices_remaining"] = 1
+        game_state["jokers"] = [campfire, owned]
+        game_state["joker_slots"] = 2
+        game_state["consumables"] = [consumable]
+        game_state["consumable_slots"] = 2
+        game_state["dollars"] = 10
+        backend.observe()
+
+        before = backend.current_public
+        assert before is not None
+        assert before.pack_kind == "BUFFOON"
+        assert ChoosePackCard(OpenedPackSlot(0)) not in tuple(
+            iter_legal_actions(before)
+        )
+        assert SellJoker(JokerSlot(1)) in tuple(iter_legal_actions(before))
+
+        sold_joker = backend.step(SellJoker(JokerSlot(1)))
+
+        after_joker = backend.current_public
+        assert sold_joker.status == "accepted"
+        assert after_joker is not None
+        assert after_joker.phase.value == "PACK"
+        assert after_joker.pack_kind == "BUFFOON"
+        assert after_joker.pack_choices_remaining == 1
+        assert len(after_joker.opened_pack) == 1
+        assert after_joker.money == 12
+        assert campfire.ability["x_mult"] == pytest.approx(1.25)
+        assert ChoosePackCard(OpenedPackSlot(0)) in tuple(
+            iter_legal_actions(after_joker)
+        )
+
+        sold_consumable = backend.step(SellConsumable(ConsumableSlot(0)))
+
+        after_consumable = backend.current_public
+        assert sold_consumable.status == "accepted"
+        assert after_consumable is not None
+        assert after_consumable.phase.value == "PACK"
+        assert after_consumable.pack_kind == "BUFFOON"
+        assert after_consumable.pack_choices_remaining == 1
+        assert len(after_consumable.opened_pack) == 1
+        assert after_consumable.money == 13
+        assert campfire.ability["x_mult"] == pytest.approx(1.5)
     finally:
         backend.close()
 

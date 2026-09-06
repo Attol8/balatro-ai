@@ -949,7 +949,7 @@ def test_strategy_checkpoint_round_trip_and_digest(tmp_path) -> None:
     assert loaded.calibration == StrategyCalibration()
     assert loaded.provenance == {"training_status": "untrained"}
     payload = torch.load(path, weights_only=True)
-    assert payload["format_version"] == STRATEGY_MODEL_FORMAT_VERSION == 10
+    assert payload["format_version"] == STRATEGY_MODEL_FORMAT_VERSION == 11
     assert set(payload) == {
         "format_version",
         "schema_digest",

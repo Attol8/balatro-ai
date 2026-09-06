@@ -374,7 +374,9 @@ def test_staged_reload_rejects_different_finite_model_state(tmp_path, monkeypatc
     assert not tuple(tmp_path.glob(".bundle.*.tmp"))
 
 
-def test_collection_preregistration_digest_and_frozen_contract(tmp_path):
+def test_superseded_collection_preregistration_remains_immutable_and_rejected(
+    tmp_path,
+):
     module = _module()
     repository = Path(__file__).parents[1]
     raw = (
@@ -383,13 +385,9 @@ def test_collection_preregistration_digest_and_frozen_contract(tmp_path):
     path = tmp_path / "experiments/route-terminal-v1-preregistration.json"
     path.parent.mkdir()
     path.write_bytes(raw)
-    spec, digest = module._load_collection_preregistration(path, tmp_path)
-    assert spec["protocol_id"] == "route-terminal-development-v1"
-    assert digest == hashlib.sha256(raw).hexdigest()
-
-    tampered = json.loads(raw)
-    tampered["training_authorized"] = True
-    path.write_text(json.dumps(tampered))
+    assert hashlib.sha256(path.read_bytes()).hexdigest() == hashlib.sha256(
+        raw
+    ).hexdigest()
     with pytest.raises(SystemExit, match="changed the frozen protocol"):
         module._load_collection_preregistration(path, tmp_path)
 
@@ -449,7 +447,7 @@ def _merged_fixture():
         "strategy_teacher_dataset": {
             "status": "written",
             "mode": ROUTE_LEARNING_COLLECTION_MODE,
-            "schema_version": 11,
+            "schema_version": 12,
             "sha256": dataset_digest,
             "records": len(records),
             "groups": len(groups),

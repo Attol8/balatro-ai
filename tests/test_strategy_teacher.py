@@ -74,7 +74,7 @@ def test_teacher_record_round_trips_without_seed_or_private_state(tmp_path) -> N
     assert "seed" not in encoded.casefold()
     assert "rng" not in encoded.casefold()
     assert "private" not in encoded.casefold()
-    assert data["schema_version"] == 11
+    assert data["schema_version"] == 12
     assert data["ordinary_index"] == record.baseline_index
     assert data["behavior_index"] == record.selected_index
     assert teacher_record_from_data(data) == record

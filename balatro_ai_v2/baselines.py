@@ -768,12 +768,19 @@ class DeterministicCoveragePolicy:
     policy_seed: str = "coverage-v1"
     max_shop_actions: int = 3
     pack_strategy: Literal["mixed", "skip", "pick"] = "mixed"
-    coverage_mode: Literal["default", "extended", "planet_use"] = "default"
+    coverage_mode: Literal[
+        "default", "extended", "planet_use", "pack_sale"
+    ] = "default"
 
     def __post_init__(self) -> None:
         if self.max_shop_actions < 0:
             raise ValueError("max_shop_actions must be non-negative")
-        if self.coverage_mode not in {"default", "extended", "planet_use"}:
+        if self.coverage_mode not in {
+            "default",
+            "extended",
+            "planet_use",
+            "pack_sale",
+        }:
             raise ValueError(f"unsupported coverage mode {self.coverage_mode!r}")
 
     def choose_action(
@@ -786,7 +793,7 @@ class DeterministicCoveragePolicy:
             actions = _bounded_actions(legal_actions())
             skips = [action for action in actions if isinstance(action, SkipBlind)]
             if (
-                self.coverage_mode != "planet_use"
+                self.coverage_mode not in {"planet_use", "pack_sale"}
                 and skips
                 and self._number(observation, history, "blind") % 5 == 0
             ):
@@ -838,6 +845,31 @@ class DeterministicCoveragePolicy:
             pack_purchases = [
                 action for action in actions if isinstance(action, BuyPack)
             ]
+            if self.coverage_mode == "pack_sale":
+                if (observation.jokers or observation.consumables) and pack_purchases:
+                    return self._pick(
+                        pack_purchases, observation, history, "pack-sale-pack"
+                    )
+                inventory_purchases = [
+                    action
+                    for action in actions
+                    if isinstance(action, BuyShopCard)
+                    and action.mode == BuyMode.STORE
+                    and isinstance(observation.shop[action.card.value], PublicItem)
+                    and observation.shop[action.card.value].kind
+                    in {"JOKER", "TAROT", "PLANET", "SPECTRAL"}
+                ]
+                if inventory_purchases:
+                    return self._pick(
+                        inventory_purchases,
+                        observation,
+                        history,
+                        "pack-sale-inventory",
+                    )
+                if pack_purchases:
+                    return self._pick(
+                        pack_purchases, observation, history, "pack-sale-pack"
+                    )
             if pack_purchases and self.pack_strategy != "mixed" and shop_steps == 0:
                 return self._pick(pack_purchases, observation, history, "pack-buy")
             purchases = [
@@ -855,6 +887,18 @@ class DeterministicCoveragePolicy:
 
         if observation.phase == Phase.PACK:
             actions = _bounded_actions(legal_actions())
+            if self.coverage_mode == "pack_sale" and not _current_pack_has_sale(
+                history
+            ):
+                sales = [
+                    action
+                    for action in actions
+                    if isinstance(action, (SellJoker, SellConsumable))
+                ]
+                if sales:
+                    return self._pick(
+                        sales, observation, history, "pack-inventory-sale"
+                    )
             if self.pack_strategy == "skip":
                 return next(
                     action for action in actions if isinstance(action, SkipPack)
@@ -2556,6 +2600,15 @@ def _current_shop_action_count(history: tuple[PublicHistoryStep, ...]) -> int:
         if step.before.phase == Phase.SHOP:
             count += 1
     return count
+
+
+def _current_pack_has_sale(history: tuple[PublicHistoryStep, ...]) -> bool:
+    for step in reversed(history):
+        if step.before.phase != Phase.PACK:
+            break
+        if isinstance(step.action, (SellJoker, SellConsumable)):
+            return True
+    return False
 
 
 def _current_shop_has_sale(history: tuple[PublicHistoryStep, ...]) -> bool:

@@ -121,6 +121,35 @@ def test_planet_use_coverage_requires_explicit_buy_mode(tmp_path: Path) -> None:
     assert coverage["required_action_counts"]["buy_shop_card_use"] == 1
 
 
+def test_pack_sale_coverage_requires_sale_while_pack_is_active(tmp_path: Path) -> None:
+    trace_path = tmp_path / "trace.jsonl"
+    states = _baseline_states(pack_card={"kind": "JOKER"})
+    _write_trace(
+        trace_path,
+        states[0],
+        [
+            ("select_blind", states[1]),
+            ("discard_cards", states[2]),
+            ("play_cards", states[3]),
+            ("cash_out", states[4]),
+            ("buy_pack", states[5]),
+            ({"type": "sell_joker", "joker": 0}, states[5]),
+            ("choose_pack_card", states[6]),
+            ("leave_shop", states[7]),
+        ],
+    )
+
+    coverage = summarize_trace_coverage(
+        trace_path,
+        pack_strategy="pick",
+        coverage_mode="pack_sale",
+    )
+
+    assert coverage["coverage_complete"] is True
+    assert coverage["accepted_action_counts"]["pack_inventory_sale"] == 1
+    assert coverage["required_action_counts"]["pack_inventory_sale"] == 1
+
+
 def _baseline_states(*, pack_card: dict[str, object]) -> list[dict[str, object]]:
     return [
         _public("BLIND_SELECT", blinds=[{"status": "SELECT"}]),

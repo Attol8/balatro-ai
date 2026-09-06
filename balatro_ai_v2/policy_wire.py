@@ -17,8 +17,8 @@ from balatro_ai_v2.public_codec import public_observation_from_data, public_obse
 from balatro_ai_v2.public_state import PublicObservation
 
 
-POLICY_PROTOCOL_VERSION: Final = 9
-POLICY_ACTION_CONTRACT: Final = "public_legality_boss_reroll_v7"
+POLICY_PROTOCOL_VERSION: Final = 10
+POLICY_ACTION_CONTRACT: Final = "public_legality_pack_inventory_sale_v10"
 MAX_PUBLIC_HISTORY: Final = 2048
 MAX_REQUEST_BYTES: Final = 1_000_000
 MAX_RESPONSE_BYTES: Final = 32_000

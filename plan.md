@@ -1613,6 +1613,42 @@ regressions all preserve legacy output, independently legal actions, and
 fail-closed behavior. Retain the exact local cleanup, but do not claim a
 full-run improvement without a matched replay.
 
+Pack-phase inventory-sale design: admit only vanilla's observable sale button
+for owned inventory while a known vanilla booster remains open. The dumped
+vanilla `Card:can_sell_card` has no pack exclusion, and its focus UI attaches
+the sell action to owned Joker and consumable areas independently of booster
+state. Pinned Jackdaw already permits `SellCard` in `PACK_OPENING`; the missing
+boundaries are this repository's public legality and BalatroBot's endpoint
+state/completion contract. Split sale phases from held-use phases, append
+visible non-Eternal Joker sales and consumable sales after the existing pack
+choice roots, and admit them only for ARCANA, CELESTIAL, SPECTRAL, STANDARD, or
+BUFFOON. SMODS and unknown packs remain fail closed. Do not enable held
+consumable use, hand/Joker/consumable reorder, pack-offer sale, or any composite
+action in this slice.
+
+The authority endpoint must accept the five vanilla pack states and complete
+only when the same pack state/area remains open with its choice count unchanged,
+in addition to the existing exact money and sold-card disappearance checks.
+Shop and selecting-hand behavior must remain unchanged. Add exact public
+legality/order, Eternal/hidden, unknown-pack, RPC, semantic-label, candidate
+transition, Campfire/selling-self, and readiness-patch source tests. Run the
+complete suite and candidate public round trips before committing. Then use a
+deterministic public coverage policy on a predeclared fresh development scan to
+reach one natural pack-phase inventory sale in real Balatro and replay the
+whole trace through pinned Jackdaw with zero observed-state mismatch. Until
+that organic transition passes, the action is provisional contract coverage
+and cannot enter strength search or teacher collection.
+
+The organic gate is preregistered on fresh development seeds 2501-2520,
+Red/White, deterministic `pack_sale` coverage policy, three shop actions,
+mixed pack selection, Ante cap 3, and 300 decisions. Run the complete range;
+do not select a successful seed after inspection. The gate requires at least
+one accepted Joker-or-consumable sale whose public pre-state is PACK, with the
+same pack kind, offer, and remaining choice count after the sale, plus zero
+authority rejection and zero Jackdaw observed-state mismatch across every
+completed trace. The installed endpoint and readiness patch are bound by
+SHA-256 `6cc921acb0f3778bf6d5fda461c0a419fe39c23aa44390481840253f763aee69`.
+
 Strength replan: throughput is no longer the immediate score ceiling. Across
 the descriptive frozen v9/v10 trajectories, 340 of 365 losses (93.2%) end on
 Pair or Two Pair; 116 of 243 losses with a full Joker row have zero xMult roles

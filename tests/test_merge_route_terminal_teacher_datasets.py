@@ -150,7 +150,7 @@ def test_actual_batch_report_shape_has_collection_flags_only_in_binding(tmp_path
             {
                 "strategy_teacher_dataset": {
                     "mode": "route_terminal_paired_utility",
-                    "schema_version": 11,
+                    "schema_version": 12,
                     "status": "written",
                     "sha256": digest,
                     "records": 1,
