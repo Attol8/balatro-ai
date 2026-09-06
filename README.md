@@ -79,6 +79,11 @@ continuations. Unsupported state transitions retain the strategic fallback.
 The runner waits for two identical public snapshots between actions to allow
 queued effects to settle; this remains bounded polling, not engine synchronization.
 
+`--policy build-first` is an unpromoted integrated strategic prototype. It shares
+build intent across purchases, replacement plans, pack choices and safe growth
+plays. Its first full development panel won **1/20**, below V6's **3/20**, with
+no execution errors. See [implementation scope and findings](docs/build-first-policy.md).
+
 Each new output directory contains:
 
 - `manifest.json`: seeds, configuration, policy/source fingerprint, and server metadata.

@@ -536,3 +536,13 @@ floor, not the whole objective. Revalidate pending purchases and preserve V6 as
 control. First version retains conservative fallback for unsupported effects and
 does not claim complete advanced-engine support. Freeze before the full20-run
 development batch; evaluate the integrated policy without per-Joker ablations.
+
+Build-first prototype frozen at dcba69c completed the full 20-game development panel:
+1/20 wins (D5), 19 losses, no errors/truncations. V6 remains 3/20; D1 and D6 winning
+seeds regressed, and no new winning seeds appeared. Maximum hand 78,240.
+All 903 correctness tests passed before freezing. The integrated prototype is not
+promoted. Full evidence: runs/build-first-001/summary.json and public trajectories.
+Mechanism-specific valuation remains missing: Throwback stayed X1 in D0/D3;
+Red Card stayed +0 in D4/D11 despite the category-based purchase value. Future
+growth valuation must require an executable growth plan with resource costs,
+not a generic scaling-role bonus. See docs/build-first-policy.md for scope gaps.

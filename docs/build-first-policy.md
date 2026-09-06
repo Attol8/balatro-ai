@@ -1,8 +1,33 @@
 # Build-first policy: the next substantial bet
 
-Status: researched design, not implemented or measured. Best real development
-result remains 3/20. Replace strategic decision ownership, not the game adapter,
-scorer or evaluation framework.
+Status: first prototype implemented at `dcba69c` and evaluated on 20 real
+development games: 1/20 wins versus V6's 3/20. Not promoted. Best measured real
+development result remains 3/20. The design below remains the broader target;
+the prototype does not fulfill all of its mechanism-specific planning requirements.
+
+## First prototype result and limitations
+
+`--policy build-first` shares a public intent and heuristic valuation across shop
+offers, replacement plans, packs and safe growth plays. Pending purchases are
+revalidated; V6 remains unchanged. Correctness verification: 903 tests passed.
+The complete real panel is `runs/build-first-001/summary.json`: D5 won, the other
+19 runs lost, with no errors or truncations. No new winning seeds relative to
+V6; D1 and D6 regressed from wins to losses. Peak hand score was 78,240.
+
+The prototype still assigns broad role/tag-based acquisition values. Actual
+growth-aware hand preference covers only a subset of scaling mechanisms; advanced
+route labels are not complete executable plans, and consumable handling during
+hands largely retains the inherited fallback. This is not the full architecture
+described below, nor evidence that the full architecture cannot work.
+
+Concrete observed weakness: D0/D3 ended with Throwback at X1, and D4/D11 ended
+with Red Card at +0. Generic growth preference can even conflict with these
+mechanisms: avoiding blind skips does not grow Throwback. These facts do not
+explain every loss, but establish that role labels are insufficient for valuing
+an executable build. Future investment value must be conditional on a supported
+sequence of growth events, its costs, and retained immediate scoring power.
+Do not patch this evidence into a universal blacklist or call it a proven causal
+explanation of the whole panel. No training labels or live promotion follow.
 
 ## Game model
 
