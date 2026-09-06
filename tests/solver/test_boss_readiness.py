@@ -143,3 +143,19 @@ def test_readiness_requires_projection_and_boolean():
         ShopSearch(boss_readiness=True)
     with pytest.raises(ValueError):
         ShopSearch(project_next_boss=True, boss_readiness=1)
+
+
+@pytest.mark.parametrize('cost,money', [(0, 11), (5, 20)])
+def test_unmodeled_boss_does_not_add_cash_guard_to_baseline_reroll(monkeypatch, cost, money):
+    obs = observation()
+    obs = replace(obs, ante=3, money=money, round=replace(obs.round, reroll_cost=cost),
+                  blinds=tuple(replace(b, name='The Arm') if b.kind == 'BOSS' else b for b in obs.blinds))
+    monkeypatch.setattr(ShopSearch, '_capacity_components', staticmethod(lambda *args: (10000,) * 3))
+    assert planner().choose(obs, RerollShop(), history_to(obs)).action == RerollShop()
+
+
+def test_free_preparation_reroll_needs_no_cash_buffer_but_still_counts():
+    obs = replace(observation(), money=1)
+    p = planner()
+    assert p.choose(obs, LeaveShop(), history_to(obs)).action == RerollShop()
+    assert p.choose(obs, RerollShop(), history_to(obs, visit=4)).action == LeaveShop()

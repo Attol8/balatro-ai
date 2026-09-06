@@ -368,12 +368,12 @@ class ShopSearch:
         ante_budget_available = not (preparation_history and readiness_boss is not None) or ante_rerolls < 6
         if (weak and rerolls < reroll_limit and cost < 5 + reroll_limit
                 and ante_budget_available
-                and observation.money - cost >= reserve + 6
+                and ((boss_weak and cost == 0) or observation.money - cost >= reserve + 6)
                 and is_legal(observation, RerollShop())):
             goal = 'the visible ante boss' if boss_weak else 'the next blind'
             return ShopChoice(RerollShop(), f'Search for a scoring upgrade while the build is below modeled pace for {goal}.', diagnostics)
         if isinstance(baseline_action, RerollShop) and (rerolls >= reroll_limit or cost >= 5 + reroll_limit or not ante_budget_available
-                or (self.boss_readiness and observation.money - cost < reserve + 6)):
+                or (boss_weak and cost > 0 and observation.money - cost < reserve + 6)):
             return ShopChoice(LeaveShop(), 'Stop after the bounded shop reroll budget.', diagnostics)
         if planet_screen:
             return ShopChoice(baseline_action, 'Preserve baseline after scoring available planets.', diagnostics)
