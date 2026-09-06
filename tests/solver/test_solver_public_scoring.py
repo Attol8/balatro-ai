@@ -17,6 +17,50 @@ from balatro_ai_v2.solver.public_state import (
 )
 
 
+@pytest.mark.parametrize("copy_key", ["j_blueprint", "j_brainstorm"])
+@pytest.mark.parametrize("key,runtime,expected", [
+    ("j_popcorn", PublicJokerRuntime(current_mult=20), 656),
+    ("j_blackboard", None, 144),
+    ("j_throwback", PublicJokerRuntime(current_x_mult=2), 64),
+    ("j_constellation", PublicJokerRuntime(current_x_mult=2), 64),
+    ("j_hologram", PublicJokerRuntime(current_x_mult=2), 64),
+    ("j_ice_cream", PublicJokerRuntime(current_chips=50), 116),
+])
+def test_verified_main_copy_targets_use_current_public_runtime(copy_key, key, runtime, expected):
+    observation = replace(to_public_observation(state("SELECTING_HAND")),
+                          hand=(VisiblePlayingCard("A", "S"),),
+                          hand_stats=(HandStat("High Card", 1, 5, 1, 0, 0),))
+    target = PublicItem(key, key, "JOKER", runtime=runtime)
+    copy = PublicItem(copy_key, copy_key, "JOKER")
+    observation = replace(observation, jokers=(copy, target) if copy_key == "j_blueprint" else (target, copy))
+    assert public_scoring.score_play(observation, (HandSlot(0),))[0] == expected
+    assert target.runtime == runtime
+
+
+@pytest.mark.parametrize("key,field", list(public_scoring._COPY_MAIN_RUNTIME_FIELDS.items()))
+def test_new_runtime_copy_targets_require_known_field_and_reject_debuff(key, field):
+    copy = PublicItem("j_blueprint", "Blueprint", "JOKER")
+    target = PublicItem(key, key, "JOKER")
+    resolve = public_scoring._effective_joker_for_pass
+    allowed = public_scoring._COPY_MAIN_JOKERS
+    assert resolve((copy, target), 0, allowed) is None
+    runtime = PublicJokerRuntime(**{field: 0 if field != "current_x_mult" else 2})
+    target = replace(target, runtime=runtime)
+    assert resolve((copy, target), 0, allowed) == target
+    assert resolve((copy, replace(target, debuffed=True)), 0, allowed) is None
+
+
+def test_new_copy_target_does_not_duplicate_edition():
+    observation = replace(to_public_observation(state("SELECTING_HAND")),
+                          hand=(VisiblePlayingCard("A", "S"),),
+                          hand_stats=(HandStat("High Card", 1, 5, 1, 0, 0),),
+                          jokers=(PublicItem("j_blueprint", "Blueprint", "JOKER"),
+                                  PublicItem("j_popcorn", "Popcorn", "JOKER", edition="HOLOGRAPHIC",
+                                             runtime=PublicJokerRuntime(current_mult=20))))
+    # 1 base + twice20 Popcorn + only one target edition's10 Mult.
+    assert public_scoring.score_play(observation, (HandSlot(0),))[0] == 816
+
+
 def test_wee_does_not_grow_from_a_debuffed_two():
     observation = to_public_observation(state("SELECTING_HAND"))
     observation = replace(

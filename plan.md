@@ -142,4 +142,12 @@ bounded history-based hidden-joker belief model is being developed for Amber
 Acorn; it must not infer the actual hidden permutation. Shop purchase placement
 is under review because appending Blueprint undervalues its available copies.
 
+After the planet ablation, evaluate `search-v2` on the same development suite.
+It combines the independently tested Green, boss, ordering, remembered-inventory,
+and executable Blueprint-placement changes. This is a package comparison, not
+individual causal attribution; isolated switches remain available for regressions.
+The scorer's missing deterministic copier targets are also being corrected from
+installed source. Record that physics revision explicitly rather than pretending
+it is the old control. Planet purchasing remains separate pending its results.
+
 The milestone remains incomplete until live performance supports reliable wins.

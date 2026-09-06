@@ -50,6 +50,11 @@ Experimental variants keep that search control unchanged:
 - `search-green`: models Green Joker's discard penalty during draw lookahead.
 - `search-boss`: projects Needle and Flint into shop scoring estimates.
 - `search-order`: checks adjacent hand/joker ordering before a non-clearing play.
+- `search-hidden`: remembers a narrowly supported inventory through Amber Acorn,
+  comparing hands across every possible joker ordering without revealing positions.
+- `search-placement`: values Blueprint in available positions and executes the
+  required purchase/reorder plan before discretionary spending.
+- `search-v2`: combines Green, boss, ordering, hidden-inventory, and placement changes.
 
 Each variant is an ablation, not an established improvement. Draw estimates use
 eight shared samples; shop estimates use six synthetic hands and approximate

@@ -88,6 +88,13 @@ def test_placement_variant_is_isolated():
     assert not policy.model_green_joker and not policy.model_hidden_jokers
 
 
+def test_v2_combines_fixes_without_unmeasured_planet_change():
+    policy = make_policy('search-v2')
+    assert policy.model_green_joker and policy.model_hidden_jokers and policy.optimize_order
+    assert policy.shop_search.project_next_boss and policy.shop_search.evaluate_blueprint_placement
+    assert not policy.shop_search.evaluate_planets
+
+
 def test_hidden_variant_is_isolated_and_uses_recorded_observation(monkeypatch):
     from balatro_ai_v2.solver.adapter import to_public_observation
     from balatro_ai_v2.solver.actions import PlayCards, HandSlot

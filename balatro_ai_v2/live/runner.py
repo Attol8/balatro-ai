@@ -31,6 +31,11 @@ SEARCH_VARIANTS = {
     "search-order": {"optimize_order": True},
     "search-hidden": {"model_hidden_jokers": True},
     "search-placement": {"evaluate_blueprint_placement": True},
+    "search-v2": {
+        "model_green_joker": True, "project_next_boss": True,
+        "optimize_order": True, "model_hidden_jokers": True,
+        "evaluate_blueprint_placement": True,
+    },
 }
 POLICY_NAMES = ("baseline", "strategic", *SEARCH_VARIANTS)
 DECISION_STATES = {

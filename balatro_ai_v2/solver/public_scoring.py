@@ -86,6 +86,16 @@ _FIBONACCI_RANKS = {"A", "2", "3", "5", "8"}
 _THREE_HALVES = Fraction(3, 2)
 _FIVE_FOURTHS = Fraction(5, 4)
 _COPY_JOKERS = frozenset({"j_blueprint", "j_brainstorm"})
+# Installed vanilla game.lua marks these targets blueprint_compat=true. Their
+# current main-scoring effects are already modeled below; copying delegates to
+# that same public runtime, never to the target's edition or growth mutation.
+_COPY_MAIN_RUNTIME_FIELDS = {
+    "j_popcorn": "current_mult",
+    "j_ice_cream": "current_chips",
+    "j_throwback": "current_x_mult",
+    "j_constellation": "current_x_mult",
+    "j_hologram": "current_x_mult",
+}
 _COPY_MAIN_JOKERS = frozenset(
     {
         "j_joker",
@@ -108,6 +118,8 @@ _COPY_MAIN_JOKERS = frozenset(
     | frozenset(_TYPE_MULT_JOKERS)
     | frozenset(_TYPE_CHIP_JOKERS)
     | frozenset(_TYPE_XMULT_JOKERS)
+    | frozenset(_COPY_MAIN_RUNTIME_FIELDS)
+    | {"j_blackboard"}
 )
 _PLAYED_INDIVIDUAL_ADDITIVE_JOKERS = frozenset(
     {
@@ -412,6 +424,11 @@ def _effective_joker_for_pass(
             return None
         if joker.key not in _COPY_JOKERS:
             if joker.key not in copyable_keys:
+                return None
+            runtime_field = _COPY_MAIN_RUNTIME_FIELDS.get(joker.key)
+            if runtime_field is not None and (
+                joker.runtime is None or getattr(joker.runtime, runtime_field) is None
+            ):
                 return None
             if joker.key == "j_green_joker" and (
                 joker.runtime is None or joker.runtime.current_mult is None
