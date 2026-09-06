@@ -1,0 +1,88 @@
+"""Offline CLI for public-only next-blind comparisons on a recorded decision.
+
+Run with Python 3.12 and the pinned candidate extra. This module has no live
+transport dependency and cannot apply its hypothetical actions to Balatro.
+"""
+from __future__ import annotations
+
+import argparse
+from dataclasses import asdict
+import hashlib
+import json
+from pathlib import Path
+
+from .actions import action_from_data
+from .blind_rollout import compare_next_blind
+from .policy import PublicHistoryStep
+from .public_codec import public_observation_from_data
+
+
+def load_decision(path: Path, index: int):
+    """Decode only typed public states/actions; metadata and raw fields ignored."""
+    history = []
+    pending = None
+    expected = 0
+    with path.open() as stream:
+        for line in stream:
+            event = json.loads(line)
+            if event.get("event") == "decision":
+                if pending is not None or event["index"] != expected:
+                    raise ValueError("noncontiguous decision trace")
+                obs = public_observation_from_data(event["observation"]["public_solver"])
+                if history and history[-1].after != obs:
+                    raise ValueError("public state changed outside recorded transition")
+                if event["index"] == index:
+                    return obs, tuple(history)
+                pending = (obs, action_from_data(event["action"]["public_action"]))
+            elif event.get("event") == "transition":
+                if pending is None or event["index"] != expected:
+                    raise ValueError("noncontiguous transition trace")
+                after = public_observation_from_data(event["observation"]["public_solver"])
+                history.append(PublicHistoryStep(*pending, after))
+                pending = None
+                expected += 1
+    raise ValueError(f"decision {index} not found")
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--trace", type=Path, required=True)
+    parser.add_argument("--decision", type=int, required=True)
+    parser.add_argument("--samples", type=int, default=8)
+    parser.add_argument("--max-steps", type=int, default=64)
+    parser.add_argument("--output", type=Path, required=True)
+    args = parser.parse_args()
+    if args.output.exists():
+        parser.error("output already exists; choose a new evidence path")
+    from .baselines import PublicStrategicPolicy
+    from .jackdaw import verify_jackdaw_runtime
+    from .public_root import construct_public_root
+
+    runtime = verify_jackdaw_runtime()
+    observation, history = load_decision(args.trace, args.decision)
+    comparison = compare_next_blind(
+        observation, history, root_factory=construct_public_root,
+        continuation_factory=PublicStrategicPolicy, samples=args.samples,
+        max_steps=args.max_steps,
+    )
+    report = {
+        "schema_version": 1, "evidence_kind": "shadow_candidate_not_authority",
+        "decision": args.decision, "samples": args.samples,
+        "max_steps": args.max_steps, "runtime": runtime,
+        "solver_sha256": hashlib.sha256(b"".join(
+            p.name.encode() + b"\0" + p.read_bytes()
+            for p in sorted(Path(__file__).parent.glob("*.py")))).hexdigest(),
+        "comparison": asdict(comparison),
+        "complete": comparison.complete, "clear_rates": comparison.clear_rates,
+    }
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    with args.output.open("x") as stream:
+        json.dump(report, stream, indent=2)
+        stream.write("\n")
+    print(json.dumps({"complete": comparison.complete,
+                      "clear_rates": comparison.clear_rates,
+                      "output": str(args.output)}))
+
+
+if __name__ == "__main__":
+    main()

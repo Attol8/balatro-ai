@@ -200,3 +200,59 @@ Safe shops retain the old cap. This tests spending under an existing forecast,
 not a claim that that forecast is calibrated. Full suite: 693 passing tests.
 
 The milestone remains incomplete until live performance supports reliable wins.
+
+V4 completed 3/20 wins (D1, D5, D6), 17 losses, no errors/truncations.
+The new D6 win replays all 178 decisions exactly. V5 is now running from clean
+revision `09f943c` in `runs/search-v5-001/`; do not pool its partial results.
+
+### Public-only full-blind planning experiment
+
+The next architectural experiment is shadow evaluation of complete next-blind
+outcomes, rather than another hand-capacity heuristic. Reuse the frozen newer
+checkout's public-root constructor and pinned Jackdaw compatibility wrapper,
+not its private-clone determinization path or large strategy-search framework.
+The public-root probe reconstructed all eight D1 first-shop states successfully;
+a two-particle, seven-action first-shop rollout rejected no simulations but tied
+all actions. Neither result demonstrates real-game strength.
+
+- Input: strict public observation, contiguous public action history, independent
+  public-derived particle nonce. Never real seed, hidden order, save, or raw frame.
+- Initial scope: shadow-only visible shop purchases versus leaving, followed by a
+  fixed public continuation through the next ordinary Small/Big Blind. Stop at
+  the blind outcome, before new-shop generation; reject unsupported roots.
+- Keep completed wins/losses separate from simulator rejection and step limits.
+  Use common particles for paired action comparisons. Do not promote on model
+  scores alone; actual paired development runs remain the acceptance evidence.
+- Import only the constructor, compatibility wrapper, backend contracts and
+  pinned data with provenance. Preserve Python 3.11 live operation; simulation is
+  an optional Python 3.12 dependency. A missing candidate cannot break live play.
+- Verify reconstruction and wrapper tests, then shadow real recorded shops.
+  Bosses, destructive consumables, and generated shops remain outside this first
+  evaluation slice. Widen only with explicit transition evidence.
+
+This trades additional candidate maintenance and computation for the ability to
+value draw/discard sequences and growth across a blind. Root equality alone is
+not transition parity; retained authoritative differential evidence supports only
+its exercised cases. In particular, forced-card destruction under Cerulean still
+lacks authoritative validation in the frozen source.
+
+The bounded shadow implementation now exists as `solver.blind_rollout` and
+`solver.shadow_blind`. The first control D1 shop (decision 4) completed all
+three-action/eight-particle comparisons: modeled clear rates 7/8, 8/8, 7/8.
+This intentionally buys once then leaves; it does not value continued shopping,
+future economy, bosses, or long-run scoring. No live policy was changed.
+
+The V4 failure audit identifies a separate concrete next target: ten of seventeen
+losses used unsupported-boss shop projections. D3's club-dependent build was
+forecast near 30,956 per hand before The Club but actually totaled 24,512 across
+four hands against 40,000. Verdant Leaf forecasts also omit the mandatory sale,
+and Crimson Heart forecasts omit the disabled Joker. Static boss-conditioned
+valuation is the smallest follow-up; do not attribute these deficits solely to
+insufficient sampling or spending. V5 remains a separate running ablation.
+
+Verification for the imported candidate and shadow slice: 800 tests pass under
+Python 3.12 with pinned Jackdaw; the dependency-free host passes 731 with 69
+candidate-only skips. Namespace-only source diffs were independently inspected.
+A second late D3 shop (decision 142, V4 trace) reconstructed and completed eight
+LeaveShop branches, six clearing the modeled Big Blind. Evidence lives under
+`runs/shadow-next-blind-001/`; neither probe changes live behavior.

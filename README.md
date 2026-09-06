@@ -57,7 +57,8 @@ Experimental variants keep that search control unchanged:
 - `search-v2`: combines Green, boss, ordering, hidden-inventory, and placement changes.
 - `search-v3`: restricts purchase priority to Blueprint; its development batch won
   2/20 runs, versus 1/20 for V2 and the initial search control.
-- `search-v4`: adds static-debuff refill search and preserves early Green Joker plays.
+- `search-v4`: adds static-debuff refill search and preserves early Green Joker plays;
+  its completed development batch won 3/20 runs, with no execution errors.
 - `search-v5`: extends the reroll limit from two to five only below forecast pace,
   retaining enough cash for a subsequent purchase.
 
@@ -118,6 +119,31 @@ not engine restoration or a claim that a changed policy would reach the same
 future states. Interrupted traces can replay their intact records. The command
 exits nonzero for differences or incomplete traces; batch execution exits nonzero
 for errors/truncations, while genuine game losses are successful executions.
+
+## Optional public-only simulation (shadow experiment)
+
+The candidate simulator is **not integrated into live decisions**. It reconstructs
+fresh states from typed public observations and history, never from the real
+game's seed, hidden order, or save. The frozen compatibility wrapper and its
+limits are recorded in [candidate provenance](balatro_ai_v2/solver/CANDIDATE_PROVENANCE.md).
+
+With Python 3.12 and the pinned `candidate` extra installed, compare a recorded
+shop decision without connecting to Balatro:
+
+```bash
+python -m balatro_ai_v2.solver.shadow_blind \
+  --trace runs/search-stable-001/0001-D0000001.jsonl --decision 4 \
+  --samples 8 --output runs/shadow-example/d1-4.json
+```
+
+This evaluates visible Joker purchases, immediate Planet use, and leaving, then
+leaves the shop and plays the next ordinary Small/Big Blind with a fresh fixed
+strategic continuation. Each action uses the same public-derived particles. It
+stops before cashout and new-shop generation; bosses, generated packs and other
+consumable actions are excluded. Step limits and unsupported simulations remain
+explicitly inconclusive, never counted as losses or silently dropped from rates.
+These are model comparisons, not win-rate evidence or calibrated probabilities.
+Python 3.11 live play remains independent of this optional dependency.
 
 See [plan.md](plan.md) for the design and next experiments.
 

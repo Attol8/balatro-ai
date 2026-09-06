@@ -6,11 +6,16 @@ requires-python = ">=3.11"
 dependencies = []
 
 [project.optional-dependencies]
+candidate = [
+  "jackdaw @ git+https://github.com/TylerFlar/jackdaw-balatro.git@dbedc66255fe594cce7b7cccc188c8a11649d9ec ; python_version >= '3.12'",
+]
 dev = [
   "pytest>=8.0",
 ]
 
+[tool.setuptools.package-data]
+"balatro_ai_v2.solver" = ["candidate_data/jackdaw/*.json"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
-
