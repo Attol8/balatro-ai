@@ -2535,6 +2535,39 @@ bound above zero, with the strategic layer held fixed.
 
 Search quality is bounded by the continuation. Improve it from search.
 
+### Paused slice: paired-utility continuation v17
+
+V16 ended only because its process was stopped on request, not because the
+frozen behavior produced a new defect. Preserve search v22, Jackdaw adapter
+v10, the six-sample one-ante budget, the 1,024-root complete-action envelope,
+and the utility-only training contract unchanged.
+
+Status at the 2026-09-06 stop: the collision audit selected seeds 3502--3801
+and the evaluator/merger bindings have been edited locally, but their contract
+tests have not been migrated or run. No v17 preregistration, key, report, or
+teacher data exists. Treat the current script diff as unvalidated work in
+progress; resume at the exact-test migration below before committing any v17
+implementation.
+
+- Extend the evaluator's unconditional retired range through v16 seeds
+  3202--3501 before checking any supplied preregistration. This makes the
+  no-restart rule executable rather than relying only on documentation.
+- Move the current collector and merger bindings to contextual v17 /
+  development-v9 on collision-free development seeds 3502--3801. The six
+  immutable 50-run batches begin at 3502, 3552, 3602, 3652, 3702, and 3752;
+  the first-100 gate covers 3502--3601.
+- Update exact evaluator and merger contract tests, including retired and
+  reserved boundary cases. Existing v9--v16 preregistrations and ignored
+  v14--v16 data/keys remain byte-for-byte untouched.
+- Run focused protocol tests, repository-wide Ruff, the complete suite, and a
+  final diff/immutability review. Commit the implementation first; only then
+  create a fresh ignored origin key and a separate v17 preregistration commit
+  bound to that clean implementation revision and source digest.
+- Open batches 1 and 2 only. Any incomplete run, rejected/censored rollout,
+  unavailable search, root overflow, provenance mismatch, or failed frozen
+  first-100 threshold retires v17 without training. Only a clean passing gate
+  permits batches 3--6, merge, training, and certification.
+
 ### Paused slice: paired-utility continuation v16
 
 #### Interruption: retire v16 after the requested stop

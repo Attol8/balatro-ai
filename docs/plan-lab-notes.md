@@ -5156,3 +5156,25 @@ training, the first-100 gate, or promotion, and the full reserved range
 When collection resumes, first encode that retirement in the evaluator and
 move the unchanged contract to a separately preregistered v17 range. This
 retirement is operational, not evidence of a new simulator or policy defect.
+
+### Contextual continuation v17 migration paused (2026-09-06)
+
+A repository-wide collision audit selected development seeds 3502--3801 for
+v17, with immutable 50-run batches beginning at 3502, 3552, 3602, 3652, 3702,
+and 3752. The intended first-100 gate is 3502--3601. Seeds 3202--3501 remain
+hard-retired after the interrupted v16 run; no part of that range may be
+restarted or reused.
+
+Work stopped after locally migrating the current evaluator and teacher merger
+bindings to development-v9, the v17 nonce and paths, and the new range. This is
+not yet a valid protocol implementation: the exact evaluator and merger tests
+still describe v16, no focused or full verification has run against the local
+diff, and no v17 origin key or preregistration has been created. No evaluator,
+test, or training process was running at the stop.
+
+Resume by migrating the two exact contract-test files, reviewing all remaining
+current-protocol literals, and running focused tests, repository-wide Ruff,
+the full suite, and `git diff --check`. Only a clean implementation commit may
+be used to calculate the source digest and create the separate immutable v17
+preregistration. Then open batches 1 and 2 only and apply the frozen first-100
+gate before any further collection or training.
