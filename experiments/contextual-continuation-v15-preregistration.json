@@ -1,0 +1,176 @@
+{
+  "protocol_id": "contextual-continuation-development-v7",
+  "status": "reserved",
+  "immutable_batches": true,
+  "implementation_revision": "569a7fb78a0aa46725c75a811582b4f602b1693b",
+  "expected_source_digest": "b751f4d26becea34c621f3d13912d38e7f569080da8d76977528d5307ad5bc01",
+  "seed_provenance": "development",
+  "deck": "RED",
+  "stake": "WHITE",
+  "candidate_runtime": {
+    "revision": "dbedc66255fe594cce7b7cccc188c8a11649d9ec",
+    "dirty": false,
+    "data_hashes": {
+      "blinds.json": "21df32cbd4b67e641ed991028ec0d2dc36ff69051d28460e45d26ae3ede385ad",
+      "cards.json": "4bbd866f53531d954fed146060cea06a84c7c6bcdd4f5306d0ba7b0be5fddd61",
+      "centers.json": "6de51cf3751ad957baf50fbe2ac632644b4f0178e82674e7f2e818e1befb5d71",
+      "seals.json": "405f43b9f465f053a0a2f5e753840b52235e5cdd794177176ac4e1de9a783bae",
+      "stakes.json": "6d1c74e7615b8becdec4755d5020c1286d77c504c4dbee5062568298023706d5",
+      "tags.json": "7301c0f25f902385ed8e0d00d87ac4638a0c6783af590d58a2c80038a70923b5"
+    }
+  },
+  "backend": {
+    "backend_name": "Jackdaw",
+    "backend_version": "0.1.0+dbedc66255fe594cce7b7cccc188c8a11649d9ec",
+    "adapter_version": "9",
+    "game_version": "Balatro-1.0.1o-model",
+    "runtime_version": "Python",
+    "capabilities": {
+      "authoritative": false,
+      "complete_private_state": true,
+      "snapshot": false,
+      "restore": false,
+      "batch_rollout": false
+    }
+  },
+  "strategy_tuning": {
+    "replacement_margin": 20,
+    "reserve_ante_1": 3,
+    "reserve_ante_2": 6,
+    "reserve_ante_3": 12,
+    "sell_threshold": 65
+  },
+  "search": {
+    "samples": 6,
+    "horizon_antes": 1,
+    "max_steps": 200,
+    "override_z": 1.0,
+    "max_decisions": 1200,
+    "ante_cap": 12,
+    "workers": 6,
+    "nonce": "contextual-continuation-v15-frozen",
+    "continuation": "strategic",
+    "policy_seed": "baseline-v1",
+    "strategy_options": false,
+    "include_reorders": false,
+    "dense_teacher": true
+  },
+  "origin_mapping": {
+    "algorithm": "hmac-sha256-truncated-128",
+    "key_path": "runs/secrets/contextual-continuation-v15-origin.key",
+    "key_sha256": "5976eed173b44766abbee7ab9f17cfdc579c2e6194b3f82e4f1537e1776c03b1"
+  },
+  "batches": [
+    {
+      "batch_id": "batch-01",
+      "seed_start": 2902,
+      "seeds": 50,
+      "teacher_jsonl": "runs/experiments/contextual-continuation-v15/batch-01/teacher.jsonl",
+      "report_json": "runs/experiments/contextual-continuation-v15/batch-01/report.json"
+    },
+    {
+      "batch_id": "batch-02",
+      "seed_start": 2952,
+      "seeds": 50,
+      "teacher_jsonl": "runs/experiments/contextual-continuation-v15/batch-02/teacher.jsonl",
+      "report_json": "runs/experiments/contextual-continuation-v15/batch-02/report.json"
+    },
+    {
+      "batch_id": "batch-03",
+      "seed_start": 3002,
+      "seeds": 50,
+      "teacher_jsonl": "runs/experiments/contextual-continuation-v15/batch-03/teacher.jsonl",
+      "report_json": "runs/experiments/contextual-continuation-v15/batch-03/report.json"
+    },
+    {
+      "batch_id": "batch-04",
+      "seed_start": 3052,
+      "seeds": 50,
+      "teacher_jsonl": "runs/experiments/contextual-continuation-v15/batch-04/teacher.jsonl",
+      "report_json": "runs/experiments/contextual-continuation-v15/batch-04/report.json"
+    },
+    {
+      "batch_id": "batch-05",
+      "seed_start": 3102,
+      "seeds": 50,
+      "teacher_jsonl": "runs/experiments/contextual-continuation-v15/batch-05/teacher.jsonl",
+      "report_json": "runs/experiments/contextual-continuation-v15/batch-05/report.json"
+    },
+    {
+      "batch_id": "batch-06",
+      "seed_start": 3152,
+      "seeds": 50,
+      "teacher_jsonl": "runs/experiments/contextual-continuation-v15/batch-06/teacher.jsonl",
+      "report_json": "runs/experiments/contextual-continuation-v15/batch-06/report.json"
+    }
+  ],
+  "training": {
+    "objective": {
+      "name": "paired_baseline_relative_search_utility_only_v1",
+      "regression": "smooth_l1",
+      "ordering": "signed_softplus;exact_ties=squared_delta",
+      "weighting": "run_then_decision_then_alternative_equal",
+      "trained_outputs": [
+        "policy_logits"
+      ],
+      "excluded_outputs": [
+        "selected_action",
+        "current_blind",
+        "next_boss",
+        "ante8",
+        "endless_ante",
+        "log_score"
+      ]
+    },
+    "loss_weights": {
+      "policy": 0.0,
+      "paired_utility": 1.0,
+      "ordering": 0.25,
+      "current_blind": 0.0,
+      "next_boss": 0.0,
+      "ante8": 0.0,
+      "endless_ante": 0.0,
+      "log_score": 0.0
+    },
+    "split_nonce": "strategy-split-v3-predeclared",
+    "train_groups": 182,
+    "calibration_groups": 59,
+    "holdout_groups": 59,
+    "epochs": 30,
+    "training_seed": 20260904,
+    "hidden_size": 64,
+    "attention_heads": 4,
+    "attention_layers": 2,
+    "feedforward_size": 128,
+    "max_entities": 256,
+    "max_actions": 1024,
+    "learning_rate": 0.0003,
+    "weight_decay": 0.0001,
+    "max_gradient_norm": 1.0,
+    "chunk_size": 16,
+    "device": "cpu"
+  },
+  "coverage_gate": {
+    "groups": 300,
+    "minimum_records": 2000,
+    "required_phases": [
+      "BLIND_SELECT",
+      "SHOP",
+      "PACK"
+    ],
+    "minimum_action_sensitive_fraction": 0.4,
+    "maximum_stored_roots": 1024,
+    "maximum_subset_rows": 0,
+    "minimum_winning_source_groups": 20,
+    "minimum_observed_victory_groups": 10,
+    "minimum_postwin_rows": 100,
+    "minimum_postwin_groups": 20,
+    "rejected_or_censored": 0
+  },
+  "first_100_kill_gate": {
+    "minimum_action_sensitive_fraction": 0.4,
+    "minimum_observed_victory_groups": 10,
+    "maximum_stored_roots": 1024,
+    "rejected_or_censored": 0
+  }
+}
