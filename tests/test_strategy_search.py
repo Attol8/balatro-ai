@@ -8,9 +8,11 @@ from types import SimpleNamespace
 import pytest
 
 import balatro_ai_v2.determinized_search as search_module
+import balatro_ai_v2.jackdaw as jackdaw
 from balatro_ai_v2.actions import (
     BuyShopCard,
     ChoosePackCard,
+    ConsumableSlot,
     HandSlot,
     JokerSlot,
     LeaveShop,
@@ -21,8 +23,10 @@ from balatro_ai_v2.actions import (
     SellJoker,
     ShopSlot,
     SkipPack,
+    UseConsumable,
     iter_legal_actions,
 )
+from balatro_ai_v2.backend import RunSpec
 from balatro_ai_v2.balatrobot.adapter import to_public_observation
 from balatro_ai_v2.baselines import PublicStrategicPolicy
 from balatro_ai_v2.determinized_search import (
@@ -41,6 +45,7 @@ from balatro_ai_v2.determinized_search import (
     _terminal_action_relation,
     select_paired_root,
 )
+from balatro_ai_v2.determinize import freeze_backend
 from balatro_ai_v2.public_state import PublicItem
 from balatro_ai_v2.policy import NoPublicProgressAction, PublicHistoryStep
 from balatro_ai_v2.strategy_engine import GoalUtility, RouteStage, RunGoal, RunRoute
@@ -462,6 +467,73 @@ def test_rollout_fails_closed_when_clone_omits_public_projection() -> None:
     assert outcome.rejection_reason == "missing_public_projection"
     assert outcome.goal_utility is not None
     assert outcome.goal_utility.alive_probability == 0
+
+
+def test_seed_2970_shaped_cerulean_consumable_clone_rollout_is_complete() -> None:
+    pytest.importorskip("jackdaw")
+    from jackdaw.engine.card_factory import create_consumable
+
+    source = jackdaw.JackdawBackend()
+    clone = None
+    try:
+        source.reset(RunSpec("RED", "WHITE", "2970"))
+        game_state = source._backend._gs
+        game_state["blind_on_deck"] = "Boss"
+        game_state["round_resets"]["blind_choices"]["Boss"] = "bl_final_bell"
+        game_state["round_resets"]["blind_states"].update(
+            Small="Defeated", Big="Defeated", Boss="Select"
+        )
+        source.observe()
+        selected = source.step(SelectBlind())
+        assert selected.status == "accepted"
+        assert source.current_public is not None
+        forced_slot = source.current_public.required_hand_slots[0]
+        game_state["consumables"].append(create_consumable("c_hanged_man"))
+        source.observe()
+        observation = source.current_public
+        assert observation is not None
+
+        legal = tuple(iter_legal_actions(observation))
+        uses = tuple(action for action in legal if isinstance(action, UseConsumable))
+        expected_uses = tuple(
+            UseConsumable(
+                ConsumableSlot(0),
+                tuple(HandSlot(index) for index in targets),
+            )
+            for size in (2, 1)
+            for targets in combinations(range(len(observation.hand)), size)
+            if forced_slot in targets
+        )
+        assert uses == expected_uses
+        root = UseConsumable(ConsumableSlot(0), (HandSlot(forced_slot),))
+
+        frozen = freeze_backend(source)
+        clone = frozen.clone()
+        assert clone.current_public == observation
+        assert tuple(iter_legal_actions(clone.current_public)) == legal
+        policy = DeterminizedSearchPolicy(
+            backend=None,  # type: ignore[arg-type]
+            continuation=PublicStrategicPolicy(),
+        )
+        outcome = policy._rollout(  # noqa: SLF001 - exact cloned-rollout regression
+            clone,
+            observation,
+            (),
+            root,
+            max_steps=1,
+        )
+
+        assert not outcome.rejected
+        assert outcome.rejection_reason is None
+        assert outcome.steps == 1
+        assert policy.counters.rejected_rollouts == 0
+        assert clone.current_public is not None
+        assert len(clone.current_public.hand) == len(observation.hand) - 1
+        assert len(clone.current_public.required_hand_slots) == 1
+    finally:
+        if clone is not None:
+            clone.close()
+        source.close()
 
 
 def test_opt_in_search_timing_reconciles_synthetic_rollout_stages() -> None:

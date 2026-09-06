@@ -421,6 +421,72 @@ def _clear_completed_cerulean_forced_selections(
             ability.pop("forced_selection", None)
 
 
+def _restore_cerulean_forced_selection_after_consumable(
+    game_state: Mapping[str, Any],
+) -> bool:
+    """Run Cerulean Bell's draw hook if a consumable destroyed its marker.
+
+    The modeled vanilla lifecycle schedules ``drawn_to_hand`` after the
+    hand-area removal and before returning control. Pinned Jackdaw keeps the
+    phase but omits that hook. The private engine chooses the replacement; this
+    bridge only applies the resulting marker that Balatro visibly exposes.
+    """
+
+    from jackdaw.engine.actions import GamePhase
+
+    if game_state.get("phase") != GamePhase.SELECTING_HAND:
+        return False
+    blind = game_state.get("blind")
+    if getattr(blind, "name", None) != "Cerulean Bell" or getattr(
+        blind, "disabled", None
+    ) is True:
+        return False
+    if getattr(blind, "disabled", None) is not False:
+        raise RuntimeError("Jackdaw Cerulean Bell disabled state is unavailable")
+
+    hand = game_state.get("hand")
+    jokers = game_state.get("jokers")
+    rng = game_state.get("rng")
+    if not isinstance(hand, list) or not isinstance(jokers, list) or rng is None:
+        raise RuntimeError("Jackdaw Cerulean Bell redraw state is unavailable")
+
+    forced: list[int] = []
+    for index, card in enumerate(hand):
+        ability = getattr(card, "ability", None)
+        if not isinstance(ability, dict):
+            raise RuntimeError("Jackdaw Cerulean Bell hand-card state is invalid")
+        marker = ability.get("forced_selection")
+        if marker is True:
+            forced.append(index)
+        elif marker is not None and marker is not False:
+            raise RuntimeError("Jackdaw Cerulean Bell forced marker is invalid")
+    if len(forced) > 1:
+        raise RuntimeError("Jackdaw Cerulean Bell exposes multiple forced cards")
+    if forced:
+        return False
+    if not hand:
+        raise RuntimeError("Jackdaw Cerulean Bell cannot force an empty hand")
+
+    drawn_to_hand = getattr(blind, "drawn_to_hand", None)
+    if not callable(drawn_to_hand):
+        raise RuntimeError("Jackdaw Cerulean Bell draw hook is unavailable")
+    result = drawn_to_hand(hand_cards=hand, joker_cards=jokers, rng=rng)
+    if not isinstance(result, Mapping):
+        raise RuntimeError("Jackdaw Cerulean Bell draw result is invalid")
+    forced_index = result.get("forced_card_index")
+    if (
+        not isinstance(forced_index, int)
+        or isinstance(forced_index, bool)
+        or not 0 <= forced_index < len(hand)
+    ):
+        raise RuntimeError("Jackdaw Cerulean Bell replacement slot is unavailable")
+    ability = getattr(hand[forced_index], "ability", None)
+    if not isinstance(ability, dict):
+        raise RuntimeError("Jackdaw Cerulean Bell replacement card is invalid")
+    ability["forced_selection"] = True
+    return True
+
+
 @dataclass(slots=True)
 class JackdawBackend:
     profile_mode: str = field(default="all_unlocked", init=False)
@@ -463,7 +529,7 @@ class JackdawBackend:
         self.metadata = BackendMetadata(
             backend_name="Jackdaw",
             backend_version=f"0.1.0+{JACKDAW_REVISION}",
-            adapter_version="9",
+            adapter_version="10",
             game_version="Balatro-1.0.1o-model",
             runtime_version="Python",
             capabilities=BackendCapabilities(
@@ -593,6 +659,14 @@ class JackdawBackend:
             voucher_effect
         ):
             raw_after = self._handle("gamestate", {})
+        if method == "use":
+            game_state = getattr(self._backend, "_gs", None)
+            if not isinstance(game_state, dict):
+                raise RuntimeError(
+                    "Jackdaw game state is unavailable after consumable use"
+                )
+            if _restore_cerulean_forced_selection_after_consumable(game_state):
+                raw_after = self._handle("gamestate", {})
         if method == "skip" and self._defer_economy_tag_dollars(raw_before):
             raw_after = self._handle("gamestate", {})
         if method == "next_round" and raw_after.get("state") == "BLIND_SELECT":

@@ -75,7 +75,7 @@ from balatro_ai_v2.strategy_teacher import (
 )
 
 
-SEARCH_VERSION = "determinized-search-v21"
+SEARCH_VERSION = "determinized-search-v22"
 _REORDER_TYPES = (ReorderHand, ReorderJokers, ReorderConsumables)
 STRATEGY_SPECIALIST_MAX_ROOTS = 128
 

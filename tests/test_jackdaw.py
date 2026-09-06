@@ -24,6 +24,7 @@ from balatro_ai_v2.actions import (
     SellJoker,
     ShopSlot,
     SkipPack,
+    UseConsumable,
     ConsumableSlot,
     JokerSlot,
     ChoosePackCard,
@@ -54,6 +55,23 @@ def _candidate_playing_card(raw_card: dict[str, object], **ability: object) -> o
     card = create_playing_card(suit, rank)
     card.ability.update(ability)
     return card
+
+
+def _select_candidate_cerulean(backend: jackdaw.JackdawBackend) -> int:
+    game_state = backend._backend._gs
+    game_state["blind_on_deck"] = "Boss"
+    game_state["round_resets"]["blind_choices"]["Boss"] = "bl_final_bell"
+    game_state["round_resets"]["blind_states"].update(
+        Small="Defeated", Big="Defeated", Boss="Select"
+    )
+    backend.observe()
+
+    selected = backend.step(SelectBlind())
+
+    assert selected.status == "accepted"
+    assert backend.current_public is not None
+    assert len(backend.current_public.required_hand_slots) == 1
+    return backend.current_public.required_hand_slots[0]
 
 
 def test_candidate_module_is_lazy_and_revision_is_pinned() -> None:
@@ -845,6 +863,123 @@ def test_bridge_normalization_exposes_disabled_cerulean_without_forced_slot() ->
 
     assert normalized["blinds"]["boss"]["disabled"] is True
     assert observation.required_hand_slots == ()
+
+
+def test_candidate_hanged_man_replaces_destroyed_cerulean_forced_slot() -> None:
+    pytest.importorskip("jackdaw")
+    from jackdaw.engine.card_factory import create_consumable
+
+    backend = jackdaw.JackdawBackend()
+    try:
+        backend.reset(RunSpec("RED", "WHITE", "91002"))
+        forced_slot = _select_candidate_cerulean(backend)
+        game_state = backend._backend._gs
+        destroyed = game_state["hand"][forced_slot]
+        before_hand_size = len(game_state["hand"])
+        game_state["consumables"].append(create_consumable("c_hanged_man"))
+        backend.observe()
+
+        result = backend.step(
+            UseConsumable(
+                ConsumableSlot(0),
+                (HandSlot(forced_slot),),
+            )
+        )
+
+        assert result.status == "accepted"
+        assert result.after is not None
+        assert len(game_state["hand"]) == before_hand_size - 1
+        assert destroyed not in game_state["hand"]
+        assert backend.current_public is not None
+        assert len(backend.current_public.required_hand_slots) == 1
+        replacement_slot = backend.current_public.required_hand_slots[0]
+        assert game_state["hand"][replacement_slot].ability["forced_selection"] is True
+        round_trip = to_public_observation(json.loads(result.after.observed.raw_json))
+        assert round_trip == backend.current_public
+    finally:
+        backend.close()
+
+
+def test_candidate_magician_preserves_cerulean_marker_without_redraw(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pytest.importorskip("jackdaw")
+    from jackdaw.engine.card_factory import create_consumable
+
+    backend = jackdaw.JackdawBackend()
+    try:
+        backend.reset(RunSpec("RED", "WHITE", "91003"))
+        forced_slot = _select_candidate_cerulean(backend)
+        game_state = backend._backend._gs
+        forced_card = game_state["hand"][forced_slot]
+        blind = game_state["blind"]
+        original_drawn_to_hand = blind.drawn_to_hand
+        draw_calls = 0
+
+        def count_draws(*args: object, **kwargs: object) -> dict[str, object]:
+            nonlocal draw_calls
+            draw_calls += 1
+            return original_drawn_to_hand(*args, **kwargs)
+
+        monkeypatch.setattr(blind, "drawn_to_hand", count_draws)
+        game_state["consumables"].append(create_consumable("c_magician"))
+        backend.observe()
+
+        result = backend.step(
+            UseConsumable(
+                ConsumableSlot(0),
+                (HandSlot(forced_slot),),
+            )
+        )
+
+        assert result.status == "accepted"
+        assert game_state["hand"][forced_slot] is forced_card
+        assert forced_card.ability["forced_selection"] is True
+        assert draw_calls == 0
+        assert backend.current_public is not None
+        assert backend.current_public.required_hand_slots == (forced_slot,)
+    finally:
+        backend.close()
+
+
+def test_cerulean_consumable_repair_rejects_multiple_private_markers() -> None:
+    pytest.importorskip("jackdaw")
+    from jackdaw.engine.actions import GamePhase
+
+    game_state = {
+        "phase": GamePhase.SELECTING_HAND,
+        "blind": SimpleNamespace(name="Cerulean Bell", disabled=False),
+        "hand": [
+            SimpleNamespace(ability={"forced_selection": True}),
+            SimpleNamespace(ability={"forced_selection": True}),
+        ],
+        "jokers": [],
+        "rng": object(),
+    }
+
+    with pytest.raises(RuntimeError, match="multiple forced cards"):
+        jackdaw._restore_cerulean_forced_selection_after_consumable(game_state)
+
+
+def test_cerulean_consumable_repair_rejects_missing_private_replacement() -> None:
+    pytest.importorskip("jackdaw")
+    from jackdaw.engine.actions import GamePhase
+
+    blind = SimpleNamespace(
+        name="Cerulean Bell",
+        disabled=False,
+        drawn_to_hand=lambda **_kwargs: {},
+    )
+    game_state = {
+        "phase": GamePhase.SELECTING_HAND,
+        "blind": blind,
+        "hand": [SimpleNamespace(ability={"forced_selection": None})],
+        "jokers": [],
+        "rng": object(),
+    }
+
+    with pytest.raises(RuntimeError, match="replacement slot is unavailable"):
+        jackdaw._restore_cerulean_forced_selection_after_consumable(game_state)
 
 
 def test_card_ability_normalization_matches_balatrobot_extractor() -> None:

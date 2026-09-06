@@ -2535,7 +2535,36 @@ bound above zero, with the strategic layer held fixed.
 
 Search quality is bounded by the continuation. Improve it from search.
 
-### Active slice: paired-utility continuation v15
+### Active slice: paired-utility continuation v16
+
+#### Recovery: retire v15 after an organic Cerulean rollout rejection
+
+V15 batch 1 completed 50/50 with zero rejected or unavailable rollouts, but
+batch 2 seed 2970 produced 18 rejected rollouts.  Every rejection is attributed
+to a `BuyShopCard(..., store)` root whose continuation later raises
+`ObservationError: active Cerulean Bell requires one visibly forced hand card`.
+The batch teacher was atomically discarded.  This is a hard gate failure: do
+not open batches 3--6, merge batch 1 alone, or weaken the forced-slot contract.
+
+- Preserve both v15 reports and batch-1 teacher as retired diagnostics.  Treat
+  the full reserved range 2902--3201 as opened and ineligible for future
+  evidence; seed 2970 may be replayed only as an explicitly labelled diagnostic.
+- Reproduce the failing Cerulean transition with the smallest retired-seed
+  budget that retains the same public root and private lifecycle.  Determine
+  whether the engine fails to choose a forced card, the bridge loses the marker,
+  or frozen rollout state loses compatibility lifecycle state.
+- Fix the root cause in the pinned fast environment without synthesizing a
+  policy-visible forced identity.  The forced slot must originate from
+  policy-owned private engine state and become public only through the normal
+  visible highlight/forced-selection projection; ambiguous states fail closed.
+- Add a direct lifecycle regression plus an organic seed-2970-shaped rollout
+  regression.  Require exact public observations, legal actions, root order,
+  and zero rejected rollouts, then run focused and complete suites.
+- Bump the search/contextual protocol identities, commit the verified repair,
+  and preregister a fresh collision-free development range in a separate
+  commit.  V16/development-v8 reserves seeds 3202--3501 in six 50-run batches
+  beginning at 3202, 3252, 3302, 3352, 3402, and 3452.  Only two new clean
+  immutable batches may reopen the first-100 gate.
 
 #### Recovery: retire v14 after an organic complete-root overflow
 
@@ -2623,11 +2652,12 @@ search budget or hand-written route rules before improving that continuation.
   weighting.  Freeze the chunk size with every other training argument.
 - Keep the contextual merger bound to the current search version and the
   utility-only training objective in its preregistered training contract.
-- Commit and fully test the capacity repair before creating the contextual-v15
+- Commit and fully test the Cerulean lifecycle repair before creating the
+  contextual-v16
   preregistration.  The preregistration is a separate commit and
   is the only tracked change permitted after the implementation revision.
 - Collect the first two immutable 50-run batches on development seeds
-  2902--3001, then apply the frozen first-100 kill gate.  Continue through all
+  3202--3301, then apply the frozen first-100 kill gate.  Continue through all
   six batches only if collection is complete, rejection/censor free, and meets
   its sensitivity and victory-coverage requirements.
 - Merge the 300 complete run groups, train with the frozen 182/59/59 split,

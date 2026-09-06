@@ -5078,3 +5078,52 @@ was 762,052,608 bytes. This fits the development machine but is large enough
 that collection and training must keep the 16-decision streaming contract;
 width bucketing remains the first memory optimization if organic rows approach
 the envelope frequently.
+
+### Contextual continuation v15 retirement and Cerulean repair (2026-09-06)
+
+V15 batch 01 completed 50/50 runs with four wins, mean 4.56 antes cleared,
+22/50 runs reaching Ante 6, and 3,262 dense decisions. Action sensitivity was
+88.23%; seven opaque groups contained observed-victory targets and four actual
+wins contributed 134 post-win rows. The widest complete decision had 234
+roots. All roots were complete, with zero subsets, cap rejections, unavailable
+searches, or rollout failures. It executed 3,152,667 rollout steps at 127.42
+steps/second. The teacher and report SHA-256 digests are
+`1999fa645267711d6a1a191ad7a4007faea479aceaea46694f477a25619aad5a`
+and `8b1a34c95c41902d4702c5763c4c718306a5088fde1f22883d0a63e7a402bdca`.
+
+Batch 02 completed its 50 game runs with three wins, mean 4.60 antes cleared,
+and 24/50 reaching Ante 6, but seed 2970 produced 18 rejected rollouts. Every
+rejection was reported against a stored `BuyShopCard(card=0)` root and carried
+`ObservationError: active Cerulean Bell requires one visibly forced hand card`.
+The batch teacher was atomically discarded; its report SHA-256 is
+`a4eef921c79e27ad704da23583d0bdfc4457bf92ce711f0938c4396a66790b15`.
+V15 and all reserved seeds 2902--3201 are retired without waiver or reuse.
+
+An organic candidate-backend reproduction isolated the later continuation
+transition hidden behind the initial-root attribution. Hanged Man may legally
+target Cerulean Bell's visibly forced card. Pinned Jackdaw destroys that card
+but, unlike Balatro, does not rerun the blind's `drawn_to_hand` hook before
+returning control, leaving seven cards and no forced marker. The strict public
+adapter correctly rejects that impossible visible state; it is not relaxed.
+
+The compatibility repair invokes the existing private-engine draw hook only
+after an accepted consumable use that remains in `SELECTING_HAND` with active,
+enabled Cerulean and no surviving marker. Jackdaw's policy-owned RNG selects
+the replacement, which becomes public only through the normal visible marker.
+One surviving marker consumes no draw RNG; multiple markers, malformed private
+state, an empty hand, or a missing/invalid replacement fail closed. Integrated
+regressions prove Hanged Man removes the old card and exposes exactly one new
+required slot, while Magician preserves the old marker without calling the draw
+hook. Search advances to v22, the Jackdaw adapter to v10, and the replacement
+contextual protocol to development-v8. Fresh v16 seeds are 3202--3501.
+This is fast-kernel developmental evidence, not authoritative differential
+parity. Promotion still requires an observed Balatro transition for destructive
+consumable use under active Cerulean, including the replacement-slot behavior.
+
+An exact retired-seed diagnostic then replayed seed 2970 with the original v15
+nonce, six samples, one-ante horizon, 200-step roots, and strategic
+continuation. It again won after clearing eight antes in 233 decisions and
+searched the same 110 strategic decisions. All 103,238 rollout steps completed
+with zero rejected or unavailable rollouts and no failure reasons, at 133.52
+steps/second. The replay is repair evidence only: seed 2970 and its output remain
+ineligible for v16 training, gates, or promotion.
