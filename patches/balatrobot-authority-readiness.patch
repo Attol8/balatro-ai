@@ -818,7 +818,7 @@ index 5d9d29f..966575e 100644
    end
 
    -- Rental (boolean from ability)
-@@ -388,6 +389,22 @@ local function extract_card_value(card)
+@@ -388,6 +389,36 @@ local function extract_card_value(card)
      if card.ability.driver_tally then ab.driver_tally = card.ability.driver_tally end
      -- Loyalty Card: remaining hands until trigger
      if card.ability.loyalty_remaining ~= nil then ab.loyalty_remaining = card.ability.loyalty_remaining end
@@ -838,10 +838,24 @@ index 5d9d29f..966575e 100644
 +      local castle = G.GAME.current_round and G.GAME.current_round.castle_card
 +      if castle then ab.castle_suit = convert_suit_to_enum(castle.suit) end
 +    end
++    -- Remaining stateful Joker values are all printed in vanilla tooltips.
++    if card.config and card.config.center_key == "j_caino" and card.ability.caino_xmult ~= nil then
++      ab.x_mult = card.ability.caino_xmult
++    end
++    if card.config and card.config.center_key == "j_invisible" and card.ability.invis_rounds ~= nil then
++      ab.invisible_rounds = card.ability.invis_rounds
++    end
++    if card.config and card.config.center_key == "j_mail" then
++      local mail = G.GAME.current_round and G.GAME.current_round.mail_card
++      if mail then ab.mail_rank = convert_rank_to_enum(mail.rank) end
++    end
++    if card.config and card.config.center_key == "j_yorick" and card.ability.yorick_discards ~= nil then
++      ab.remaining_discards = card.ability.yorick_discards
++    end
      -- Only include if non-empty
      if next(ab) ~= nil then
        value.ability = ab
-@@ -397,6 +414,52 @@ local function extract_card_value(card)
+@@ -397,6 +428,52 @@ local function extract_card_value(card)
    return value
  end
 
@@ -975,7 +989,7 @@ index 5d9d29f..966575e 100644
    -- Chips is stored in G.GAME not G.GAME.current_round
    if G.GAME.chips then
      round.chips = G.GAME.chips
-@@ -724,6 +808,7 @@ function gamestate.get_blinds_info()
+@@ -724,6 +822,7 @@ function gamestate.get_blinds_info()
      small = {
        type = "SMALL",
        status = "UPCOMING",
@@ -983,7 +997,7 @@ index 5d9d29f..966575e 100644
        name = "",
        effect = "",
        score = 0,
-@@ -733,6 +818,7 @@ function gamestate.get_blinds_info()
+@@ -733,6 +832,7 @@ function gamestate.get_blinds_info()
      big = {
        type = "BIG",
        status = "UPCOMING",
@@ -991,7 +1005,7 @@ index 5d9d29f..966575e 100644
        name = "",
        effect = "",
        score = 0,
-@@ -742,6 +828,7 @@ function gamestate.get_blinds_info()
+@@ -742,6 +842,7 @@ function gamestate.get_blinds_info()
      boss = {
        type = "BOSS",
        status = "UPCOMING",
@@ -999,7 +1013,7 @@ index 5d9d29f..966575e 100644
        name = "",
        effect = "",
        score = 0,
-@@ -835,6 +922,14 @@ function gamestate.get_blinds_info()
+@@ -835,6 +936,14 @@ function gamestate.get_blinds_info()
 
    -- Boss blind has no tags (tag_name and tag_effect remain empty strings)
 
@@ -1014,7 +1028,7 @@ index 5d9d29f..966575e 100644
    return blinds
  end
 
-@@ -864,12 +959,18 @@ function gamestate.get_gamestate()
+@@ -864,12 +973,18 @@ function gamestate.get_gamestate()
      state_data.ante_num = (G.GAME.round_resets and G.GAME.round_resets.ante) or 0
      state_data.money = G.GAME.dollars or 0
      state_data.won = G.GAME.won
@@ -1033,7 +1047,7 @@ index 5d9d29f..966575e 100644
 
      -- Stake (optional)
      if G.GAME.stake then
-@@ -897,6 +998,12 @@ function gamestate.get_gamestate()
+@@ -897,6 +1012,12 @@ function gamestate.get_gamestate()
      -- Poker hands
      if G.GAME.hands then
        state_data.hands = extract_hand_info(G.GAME.hands)
@@ -1046,7 +1060,7 @@ index 5d9d29f..966575e 100644
      end
 
      -- Round info
-@@ -907,7 +1014,7 @@ function gamestate.get_gamestate()
+@@ -907,7 +1028,7 @@ function gamestate.get_gamestate()
    end
 
    -- Always available areas
@@ -1055,7 +1069,7 @@ index 5d9d29f..966575e 100644
    state_data.consumables = extract_area(G.consumeables) -- Note: typo in game code
 
    -- Cards remaining in deck
-@@ -915,6 +1022,11 @@ function gamestate.get_gamestate()
+@@ -915,6 +1036,11 @@ function gamestate.get_gamestate()
      state_data.cards = extract_area(G.deck)
    end
 

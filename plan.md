@@ -2062,6 +2062,38 @@ died in Ante 6; this is encouraging controlled diagnostic movement, not
 selection evidence because the seed has been reused. The live coverage gate is
 now complete for BLIND_SELECT, ordinary SHOP, and shop-origin vanilla PACK.
 
+Remaining-Joker runtime design: complete the typed public contract for the
+five owned vanilla Jokers that still disable otherwise valid roots. Reuse
+`current_x_mult` for Caino's tooltip xMult while mapping its nonstandard engine
+field explicitly; add fixed fields for Invisible Joker's completed-round
+counter, Mail-In Rebate's visible rank, Turtle Bean's current hand-size bonus,
+and Yorick's remaining-discard countdown. BalatroBot must source only the exact
+values used by vanilla's normal tooltip (`caino_xmult`, `invis_rounds`,
+`current_round.mail_card.rank`, `extra.h_size`, and `yorick_discards`), and the
+Jackdaw bridge must emit the same semantics. Validate key ownership in the
+public dataclasses, evolve the codec compatibly with both pre-Castle and v12
+stored traces, and advance live policy protocol to v13. Reconstruct the exact
+Jackdaw fields, add model features, patch the pinned authority source and
+installed development copy, prove organic round trips for each Joker, and run
+the same live diagnostic. No tooltip text parsing and no generic ability-map
+exposure.
+
+Remaining-Joker runtime result: protocol v13 now carries all five exact
+tooltip-visible states, while the codec still reads both pre-Castle v11 and
+Castle-era v12 records. Caino's nonstandard accumulator is normalized into the
+fixed xMult field and restored to `caino_xmult`; Invisible Joker, Mail-In
+Rebate, Turtle Bean, and Yorick each reconstruct their precise engine field.
+The policy models receive the counters/rank without a generic ability map, and
+key ownership plus malformed values fail closed. A progressed five-Joker
+candidate state round-trips through a fresh public root, the readiness patch
+applies to its clean pinned base, and the complete suite passes 1,226 tests.
+The same reused-seed live diagnostic completed 63/63 search roots (16
+BLIND_SELECT, 42 SHOP, five PACK), changed nine actions, and had zero rejected
+or unavailable rollouts before dying in Ante 5 after 136 authority decisions.
+Its score is not comparable to earlier runs because the v13 observation digest
+intentionally changes policy-owned particle streams; only the complete
+coverage result is retained.
+
 Strength replan: throughput is no longer the immediate score ceiling. Across
 the descriptive frozen v9/v10 trajectories, 340 of 365 losses (93.2%) end on
 Pair or Two Pair; 116 of 243 losses with a full Joker row have zero xMult roles

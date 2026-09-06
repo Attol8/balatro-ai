@@ -29,7 +29,7 @@ from balatro_ai_v2.determinized_search import DeterminizedSearchPolicy, RolloutB
 from balatro_ai_v2.jackdaw import JackdawBackend
 from balatro_ai_v2.policy import PublicHistoryStep
 from balatro_ai_v2.public_root import construct_public_root, public_root_seed
-from balatro_ai_v2.public_state import Phase, PublicItem
+from balatro_ai_v2.public_state import Phase, PublicItem, PublicJokerRuntime
 
 
 def _blind_select_states(seed: str, limit: int = 5):
@@ -511,6 +511,49 @@ def test_publicly_derivable_runtime_jokers_round_trip(
         root.close()
 
 
+def test_remaining_stateful_jokers_round_trip_from_public_runtime() -> None:
+    pytest.importorskip("jackdaw")
+    from jackdaw.engine.card_factory import create_joker
+
+    source = JackdawBackend()
+    source.reset(RunSpec("RED", "WHITE", "7"))
+    state = source._backend._gs
+    caino = create_joker("j_caino")
+    caino.ability["caino_xmult"] = 4.5
+    invisible = create_joker("j_invisible")
+    invisible.ability["invis_rounds"] = 2
+    mail = create_joker("j_mail")
+    turtle = create_joker("j_turtle_bean")
+    turtle.ability["extra"]["h_size"] = 3
+    yorick = create_joker("j_yorick")
+    yorick.ability["x_mult"] = 7
+    yorick.ability["yorick_discards"] = 11
+    state["jokers"] = [caino, invisible, mail, turtle, yorick]
+    state["current_round"]["mail_card"] = {"rank": "Queen", "id": 12}
+    for joker in state["jokers"]:
+        joker.add_to_deck(state)
+    source.observe()
+    observation = source.current_public
+    source.close()
+    assert observation is not None
+
+    root = construct_public_root(observation, (), "remaining-runtime", 0)
+    try:
+        assert root.current_public == observation
+        rebuilt = root._backend._gs
+        abilities = [joker.ability for joker in rebuilt["jokers"]]
+        assert abilities[0]["caino_xmult"] == 4.5
+        assert abilities[1]["invis_rounds"] == 2
+        assert rebuilt["current_round"]["mail_card"] == {
+            "rank": "Queen",
+            "id": 12,
+        }
+        assert abilities[3]["extra"]["h_size"] == 3
+        assert (abilities[4]["x_mult"], abilities[4]["yorick_discards"]) == (7, 11)
+    finally:
+        root.close()
+
+
 def test_same_public_particle_is_deterministic_and_other_particles_are_hidden_twins() -> None:
     observation, history = next(iter(_blind_select_states("7", limit=1)))
     roots = [
@@ -653,8 +696,22 @@ def test_unsupported_phase_and_deck_boundary_fail_closed() -> None:
         initial,
         jokers=(PublicItem("j_caino", "Canio", "JOKER"),),
     )
-    with pytest.raises(DeterminizationUnavailable, match="lacks complete public runtime"):
+    with pytest.raises(DeterminizationUnavailable, match="has no public runtime"):
         construct_public_root(missing_runtime, (), "bad", 0)
+
+    incomplete_yorick = replace(
+        initial,
+        jokers=(
+            PublicItem(
+                "j_yorick",
+                "Yorick",
+                "JOKER",
+                runtime=PublicJokerRuntime(current_x_mult=2),
+            ),
+        ),
+    )
+    with pytest.raises(DeterminizationUnavailable, match="discard countdown"):
+        construct_public_root(incomplete_yorick, (), "bad", 0)
 
     boss = next(blind for blind in initial.blinds if blind.kind == "BOSS")
     unsupported_boss = replace(

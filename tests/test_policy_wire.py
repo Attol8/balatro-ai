@@ -27,7 +27,7 @@ def _request() -> PolicyRequest:
 
 
 def test_policy_wire_versions_structured_shop_card_legality() -> None:
-    assert POLICY_PROTOCOL_VERSION == 12
+    assert POLICY_PROTOCOL_VERSION == 13
     assert POLICY_ACTION_CONTRACT == "public_legality_pack_inventory_sale_v10"
 
 

@@ -761,12 +761,32 @@ def _add_item(
     vector.number(f"{prefix}.buy_cost", item.buy_cost or 0, 50)
     vector.number(f"{prefix}.sell_cost", item.sell_cost or 0, 50)
     if item.runtime is not None:
+        for name, value, scale in (
+            ("current_mult", item.runtime.current_mult, 1_000),
+            ("current_chips", item.runtime.current_chips, 100_000),
+            ("current_x_mult", item.runtime.current_x_mult, 100),
+            ("current_dollars", item.runtime.current_dollars, 1_000),
+            ("remaining_hands", item.runtime.remaining_hands, 20),
+            ("loyalty_remaining", item.runtime.loyalty_remaining, 10),
+            ("driver_tally", item.runtime.driver_tally, 52),
+            ("invisible_rounds", item.runtime.invisible_rounds, 10),
+            (
+                "current_hand_size_bonus",
+                item.runtime.current_hand_size_bonus,
+                10,
+            ),
+            ("remaining_discards", item.runtime.remaining_discards, 50),
+        ):
+            if value is not None:
+                vector.number(f"{prefix}.runtime.{name}", value, scale)
         if item.runtime.target_rank is not None:
             vector.category(f"{prefix}.runtime.target_rank", item.runtime.target_rank)
         if item.runtime.target_suit is not None:
             vector.category(f"{prefix}.runtime.target_suit", item.runtime.target_suit)
         if item.runtime.castle_suit is not None:
             vector.category(f"{prefix}.runtime.castle_suit", item.runtime.castle_suit)
+        if item.runtime.mail_rank is not None:
+            vector.category(f"{prefix}.runtime.mail_rank", item.runtime.mail_rank)
 
 
 class _HashedVector:

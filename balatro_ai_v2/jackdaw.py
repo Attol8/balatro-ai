@@ -2233,6 +2233,24 @@ def _normalize_jackdaw_bridge(
                     if not isinstance(ability, dict):
                         raise RuntimeError("Jackdaw Castle ability is invalid")
                     ability["castle_suit"] = suit
+                if card.get("key") == "j_mail":
+                    current_round = private.get("current_round")
+                    mail_card = (
+                        current_round.get("mail_card")
+                        if isinstance(current_round, Mapping)
+                        else None
+                    )
+                    rank = (
+                        _RANK_LETTER.get(str(mail_card.get("rank")))
+                        if isinstance(mail_card, Mapping)
+                        else None
+                    )
+                    if rank is None:
+                        raise RuntimeError("Jackdaw Mail-In Rebate target is unavailable")
+                    ability = value.setdefault("ability", {})
+                    if not isinstance(ability, dict):
+                        raise RuntimeError("Jackdaw Mail-In Rebate ability is invalid")
+                    ability["mail_rank"] = rank
             if str(card.get("set") or "").upper() in {"DEFAULT", "ENHANCED"}:
                 card["cost"] = {
                     "buy": max(1, int(getattr(private_card, "cost", 0))),
@@ -2431,6 +2449,19 @@ def _apply_balatrobot_card_values(value: dict[str, Any], card: object) -> None:
         item = ability.get(key)
         if isinstance(item, int | float) and not isinstance(item, bool) and item != 0:
             serialized[key] = item
+    center_key = getattr(card, "center_key", None)
+    if center_key == "j_caino":
+        caino_xmult = ability.get("caino_xmult")
+        if isinstance(caino_xmult, int | float) and not isinstance(caino_xmult, bool):
+            serialized["x_mult"] = caino_xmult
+    if center_key == "j_invisible":
+        invisible_rounds = ability.get("invis_rounds")
+        if isinstance(invisible_rounds, int) and not isinstance(invisible_rounds, bool):
+            serialized["invisible_rounds"] = invisible_rounds
+    if center_key == "j_yorick":
+        remaining_discards = ability.get("yorick_discards")
+        if isinstance(remaining_discards, int) and not isinstance(remaining_discards, bool):
+            serialized["remaining_discards"] = remaining_discards
     driver_tally = ability.get("driver_tally")
     if driver_tally is not None and driver_tally is not False:
         serialized["driver_tally"] = driver_tally

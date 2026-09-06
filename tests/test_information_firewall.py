@@ -336,6 +336,26 @@ def test_admitted_joker_runtime_is_fixed_and_tooltip_visible() -> None:
             kind="JOKER",
             ability={"chips": 12, "castle_suit": "D"},
         ),
+        item_card("j_caino", card_id=110, kind="JOKER", ability={"x_mult": 2.5}),
+        item_card(
+            "j_invisible",
+            card_id=111,
+            kind="JOKER",
+            ability={"invisible_rounds": 0},
+        ),
+        item_card("j_mail", card_id=112, kind="JOKER", ability={"mail_rank": "A"}),
+        item_card(
+            "j_turtle_bean",
+            card_id=113,
+            kind="JOKER",
+            ability={"h_size": 4},
+        ),
+        item_card(
+            "j_yorick",
+            card_id=114,
+            kind="JOKER",
+            ability={"x_mult": 3, "remaining_discards": 7},
+        ),
     ]
     raw["jokers"]["count"] = len(raw["jokers"]["cards"])
 
@@ -353,6 +373,12 @@ def test_admitted_joker_runtime_is_fixed_and_tooltip_visible() -> None:
     assert (runtimes[8].target_rank, runtimes[8].target_suit) == ("K", "H")
     assert runtimes[9] is not None
     assert (runtimes[9].current_chips, runtimes[9].castle_suit) == (12, "D")
+    assert runtimes[10] is not None and runtimes[10].current_x_mult == 2.5
+    assert runtimes[11] is not None and runtimes[11].invisible_rounds == 0
+    assert runtimes[12] is not None and runtimes[12].mail_rank == "A"
+    assert runtimes[13] is not None and runtimes[13].current_hand_size_bonus == 4
+    assert runtimes[14] is not None
+    assert (runtimes[14].current_x_mult, runtimes[14].remaining_discards) == (3, 7)
 
 
 def test_visible_idol_target_is_strict_but_hidden_idol_remains_anonymous() -> None:
@@ -370,6 +396,31 @@ def test_visible_idol_target_is_strict_but_hidden_idol_remains_anonymous() -> No
     raw["blinds"]["boss"].update(name="Amber Acorn", status="CURRENT")
     observation = to_public_observation(raw)
     assert observation.jokers == (HiddenJokerSlot(),)
+
+
+@pytest.mark.parametrize(
+    ("key", "ability", "message"),
+    (
+        ("j_invisible", {"invisible_rounds": True}, "must be an integer"),
+        ("j_invisible", {"invisible_rounds": -1}, "non-negative"),
+        ("j_mail", {"mail_rank": "1"}, "unsupported Mail-In Rebate rank"),
+        ("j_turtle_bean", {"h_size": 1.5}, "must be an integer"),
+        ("j_yorick", {"x_mult": 2, "remaining_discards": -1}, "non-negative"),
+    ),
+)
+def test_stateful_joker_runtime_rejects_malformed_visible_values(
+    key: str,
+    ability: dict[str, object],
+    message: str,
+) -> None:
+    raw = state("SELECTING_HAND")
+    raw["jokers"]["cards"] = [
+        item_card(key, card_id=120, kind="JOKER", ability=ability)
+    ]
+    raw["jokers"]["count"] = 1
+
+    with pytest.raises(ObservationError, match=message):
+        to_public_observation(raw)
 
 
 def test_unlisted_or_malformed_joker_ability_never_crosses_the_firewall() -> None:

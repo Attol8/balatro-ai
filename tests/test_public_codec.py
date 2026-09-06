@@ -243,13 +243,36 @@ def test_public_observation_codec_round_trips_fixed_joker_runtime_only() -> None
     assert decoded.shop[0].runtime.current_mult == 12
     assert decoded.shop[0].runtime.current_x_mult is None
 
-    legacy = deepcopy(data)
-    legacy_shop = legacy["shop"]
-    assert isinstance(legacy_shop, list) and isinstance(legacy_shop[0], dict)
-    legacy_runtime = legacy_shop[0]["runtime"]
-    assert isinstance(legacy_runtime, dict)
-    legacy_runtime.pop("castle_suit")
-    assert public_observation_from_data(legacy) == decoded
+    v12 = deepcopy(data)
+    v12_shop = v12["shop"]
+    assert isinstance(v12_shop, list) and isinstance(v12_shop[0], dict)
+    v12_runtime = v12_shop[0]["runtime"]
+    assert isinstance(v12_runtime, dict)
+    for field in (
+        "invisible_rounds",
+        "mail_rank",
+        "current_hand_size_bonus",
+        "remaining_discards",
+    ):
+        v12_runtime.pop(field)
+    assert public_observation_from_data(v12) == decoded
+
+    v11 = deepcopy(v12)
+    v11_shop = v11["shop"]
+    assert isinstance(v11_shop, list) and isinstance(v11_shop[0], dict)
+    v11_runtime = v11_shop[0]["runtime"]
+    assert isinstance(v11_runtime, dict)
+    v11_runtime.pop("castle_suit")
+    assert public_observation_from_data(v11) == decoded
+
+    wrong_owner = deepcopy(data)
+    wrong_shop = wrong_owner["shop"]
+    assert isinstance(wrong_shop, list) and isinstance(wrong_shop[0], dict)
+    wrong_runtime = wrong_shop[0]["runtime"]
+    assert isinstance(wrong_runtime, dict)
+    wrong_runtime["mail_rank"] = "A"
+    with pytest.raises(PublicCodecError, match="only j_mail"):
+        public_observation_from_data(wrong_owner)
 
     shop[0]["runtime"]["future_rng"] = "NOPE"  # type: ignore[index]
     with pytest.raises(PublicCodecError, match="joker runtime fields differ"):

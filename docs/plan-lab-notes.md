@@ -4855,3 +4855,28 @@ The authoritative source, cohort manifest, public dataset, and import report
 are committed under `runs/evidence/expert-admission-organic-v3-*`. This closes
 the organic admission/fidelity proof; it still does not promote the coverage
 policy as an expert or authorize training on it.
+
+### Remaining stateful-Joker public runtime (2026-09-06)
+
+Protocol v13 completes the fixed public runtime for the five vanilla owned
+Jokers that could still disable otherwise supported public-root search. Caino
+maps its tooltip's `caino_xmult` accumulator to typed `current_x_mult` and back
+to the nonstandard Jackdaw field. Invisible Joker carries completed rounds,
+Mail-In Rebate carries its current public rank target, Turtle Bean carries its
+remaining hand-size bonus, and Yorick carries both current xMult and remaining
+discard countdown. BalatroBot sources only those exact tooltip values;
+Jackdaw's bridge mirrors them; invalid values and wrong Joker ownership fail
+closed. The public codec remains compatible with complete v11 and v12 runtime
+objects, while new policy messages require v13.
+
+A progressed candidate fixture containing all five Jokers round-trips through
+a newly constructed root and restores each underlying engine field. The
+readiness patch applies cleanly to its pinned BalatroBot base, focused tests
+pass 268/268, and the complete suite passes 1,226/1,226. Repeating development
+seed 2601 completed 63/63 live strategic roots: 16 BLIND_SELECT, 42 SHOP, and
+five PACK, with nine changed decisions, 20,671 rollout steps, and no rejected
+or unavailable rollout. The authority run died in Ante 5 after 136 decisions.
+That terminal score is diagnostic only and is not compared with earlier v12
+runs: adding fields changes the public digest and therefore the policy-owned
+particle stream even where the added values are null. The retained conclusion
+is complete supported-phase coverage, not a strength claim.

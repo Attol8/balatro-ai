@@ -386,6 +386,10 @@ def _supported_runtime(joker: object) -> bool:
         "target_rank",
         "target_suit",
         "castle_suit",
+        "invisible_rounds",
+        "mail_rank",
+        "current_hand_size_bonus",
+        "remaining_discards",
     )
     return all(field == expected or getattr(runtime, field) is None for field in fields)
 

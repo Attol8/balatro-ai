@@ -90,6 +90,7 @@ _CURRENT_MULT_JOKERS = frozenset(
 _CURRENT_CHIP_JOKERS = frozenset({"j_castle", "j_ice_cream", "j_runner", "j_square", "j_wee"})
 _CURRENT_X_MULT_JOKERS = frozenset(
     {
+        "j_caino",
         "j_campfire",
         "j_constellation",
         "j_glass",
@@ -514,6 +515,26 @@ def _joker_runtime(key: str, kind: str, value: Mapping[str, Any]) -> PublicJoker
             castle_suit=(
                 _runtime_string(ability, "castle_suit")
                 if key == "j_castle"
+                else None
+            ),
+            invisible_rounds=(
+                _runtime_int(ability, "invisible_rounds")
+                if key == "j_invisible"
+                else None
+            ),
+            mail_rank=(
+                _runtime_string(ability, "mail_rank")
+                if key == "j_mail"
+                else None
+            ),
+            current_hand_size_bonus=(
+                _runtime_int(ability, "h_size")
+                if key == "j_turtle_bean"
+                else None
+            ),
+            remaining_discards=(
+                _runtime_int(ability, "remaining_discards")
+                if key == "j_yorick"
                 else None
             ),
         )

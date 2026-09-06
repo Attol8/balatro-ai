@@ -1501,6 +1501,13 @@ class PublicStrategyTensorizer:
                     ("remaining_hands", runtime.remaining_hands, 20),
                     ("loyalty_remaining", runtime.loyalty_remaining, 10),
                     ("driver_tally", runtime.driver_tally, 52),
+                    ("invisible_rounds", runtime.invisible_rounds, 10),
+                    (
+                        "current_hand_size_bonus",
+                        runtime.current_hand_size_bonus,
+                        10,
+                    ),
+                    ("remaining_discards", runtime.remaining_discards, 50),
                 ):
                     if value is not None:
                         _put_scaled(features, name, value, scale)
@@ -1521,6 +1528,8 @@ class PublicStrategyTensorizer:
                     _put_category(features, "suit", runtime.target_suit, _SUITS)
                 if runtime.castle_suit is not None:
                     _put_category(features, "suit", runtime.castle_suit, _SUITS)
+                if runtime.mail_rank is not None:
+                    _put_category(features, "mail_rank", runtime.mail_rank, _RANKS)
             identity = item.key
         elif kind in {"TAROT", "PLANET", "SPECTRAL"}:
             if item.key not in _CONSUMABLE_KEYS or public_consumable_rule(item) is None:

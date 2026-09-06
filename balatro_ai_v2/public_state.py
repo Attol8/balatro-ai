@@ -107,6 +107,10 @@ class PublicJokerRuntime:
     target_rank: str | None = None
     target_suit: str | None = None
     castle_suit: str | None = None
+    invisible_rounds: int | None = None
+    mail_rank: str | None = None
+    current_hand_size_bonus: int | None = None
+    remaining_discards: int | None = None
 
     def __post_init__(self) -> None:
         if (self.target_rank is None) != (self.target_suit is None):
@@ -141,6 +145,31 @@ class PublicJokerRuntime:
             "C",
         }:
             raise ValueError("unsupported Castle target suit")
+        if self.mail_rank is not None and self.mail_rank not in {
+            "2",
+            "3",
+            "4",
+            "5",
+            "6",
+            "7",
+            "8",
+            "9",
+            "T",
+            "J",
+            "Q",
+            "K",
+            "A",
+        }:
+            raise ValueError("unsupported Mail-In Rebate rank")
+        for name, value in (
+            ("Invisible Joker rounds", self.invisible_rounds),
+            ("Turtle Bean hand-size bonus", self.current_hand_size_bonus),
+            ("Yorick remaining discards", self.remaining_discards),
+        ):
+            if value is not None and (
+                isinstance(value, bool) or not isinstance(value, int) or value < 0
+            ):
+                raise ValueError(f"{name} must be a non-negative integer")
 
 
 @dataclass(frozen=True, slots=True)
@@ -182,6 +211,32 @@ class PublicItem:
             and self.key != "j_castle"
         ):
             raise ValueError("only Castle may carry a Castle target suit")
+        for value, key, label in (
+            (
+                self.runtime.invisible_rounds if self.runtime is not None else None,
+                "j_invisible",
+                "Invisible Joker rounds",
+            ),
+            (
+                self.runtime.mail_rank if self.runtime is not None else None,
+                "j_mail",
+                "Mail-In Rebate rank",
+            ),
+            (
+                self.runtime.current_hand_size_bonus
+                if self.runtime is not None
+                else None,
+                "j_turtle_bean",
+                "Turtle Bean hand-size bonus",
+            ),
+            (
+                self.runtime.remaining_discards if self.runtime is not None else None,
+                "j_yorick",
+                "Yorick remaining discards",
+            ),
+        ):
+            if value is not None and self.key != key:
+                raise ValueError(f"only {key} may carry {label}")
 
 
 PublicOffer: TypeAlias = PublicItem | VisiblePlayingCard

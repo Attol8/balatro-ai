@@ -159,6 +159,39 @@ def test_candidate_exposes_visible_castle_tooltip_target() -> None:
     assert castle.runtime.castle_suit in {"S", "H", "D", "C"}
 
 
+def test_candidate_exposes_remaining_stateful_joker_tooltip_values() -> None:
+    pytest.importorskip("jackdaw")
+    from jackdaw.engine.card_factory import create_joker
+
+    backend = jackdaw.JackdawBackend()
+    backend.reset(RunSpec("RED", "WHITE", "2"))
+    game_state = backend._backend._gs
+    caino = create_joker("j_caino")
+    caino.ability["caino_xmult"] = 4.5
+    caino.ability["x_mult"] = 99
+    invisible = create_joker("j_invisible")
+    invisible.ability["invis_rounds"] = 2
+    mail = create_joker("j_mail")
+    turtle = create_joker("j_turtle_bean")
+    turtle.ability["extra"]["h_size"] = 3
+    yorick = create_joker("j_yorick")
+    yorick.ability["x_mult"] = 7
+    yorick.ability["yorick_discards"] = 11
+    game_state["jokers"].extend((caino, invisible, mail, turtle, yorick))
+    game_state["current_round"]["mail_card"] = {"rank": "Queen", "id": 12}
+
+    backend.observe()
+
+    assert backend.current_public is not None
+    runtimes = [joker.runtime for joker in backend.current_public.jokers]
+    assert runtimes[0] is not None and runtimes[0].current_x_mult == 4.5
+    assert runtimes[1] is not None and runtimes[1].invisible_rounds == 2
+    assert runtimes[2] is not None and runtimes[2].mail_rank == "Q"
+    assert runtimes[3] is not None and runtimes[3].current_hand_size_bonus == 3
+    assert runtimes[4] is not None
+    assert (runtimes[4].current_x_mult, runtimes[4].remaining_discards) == (7, 11)
+
+
 def test_candidate_deck_composition_repairs_stale_private_count() -> None:
     pytest.importorskip("jackdaw")
     backend = jackdaw.JackdawBackend()

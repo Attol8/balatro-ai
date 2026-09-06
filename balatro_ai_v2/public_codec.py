@@ -33,7 +33,14 @@ _VISIBLE_CARD_FIELDS = {field.name for field in fields(VisiblePlayingCard)}
 _ITEM_FIELDS = {field.name for field in fields(PublicItem)}
 _SHOP_PLAYING_CARD_FIELDS = {field.name for field in fields(PublicShopPlayingCard)}
 _JOKER_RUNTIME_FIELDS = {field.name for field in fields(PublicJokerRuntime)}
-_LEGACY_JOKER_RUNTIME_FIELDS = _JOKER_RUNTIME_FIELDS - {"castle_suit"}
+_V13_JOKER_RUNTIME_FIELDS = {
+    "invisible_rounds",
+    "mail_rank",
+    "current_hand_size_bonus",
+    "remaining_discards",
+}
+_V12_JOKER_RUNTIME_FIELDS = _JOKER_RUNTIME_FIELDS - _V13_JOKER_RUNTIME_FIELDS
+_V11_JOKER_RUNTIME_FIELDS = _V12_JOKER_RUNTIME_FIELDS - {"castle_suit"}
 _OBSERVATION_FIELDS = {field.name for field in fields(PublicObservation)}
 
 
@@ -222,7 +229,8 @@ def _joker_runtime(value: object) -> PublicJokerRuntime | None:
         return None
     raw = _object(value, "joker runtime")
     if frozenset(raw) not in {
-        frozenset(_LEGACY_JOKER_RUNTIME_FIELDS),
+        frozenset(_V11_JOKER_RUNTIME_FIELDS),
+        frozenset(_V12_JOKER_RUNTIME_FIELDS),
         frozenset(_JOKER_RUNTIME_FIELDS),
     }:
         raise PublicCodecError("joker runtime fields differ from the contract")
@@ -242,6 +250,17 @@ def _joker_runtime(value: object) -> PublicJokerRuntime | None:
             target_suit=_optional_string(raw["target_suit"], "runtime.target_suit"),
             castle_suit=_optional_string(
                 raw.get("castle_suit"), "runtime.castle_suit"
+            ),
+            invisible_rounds=_optional_integer(
+                raw.get("invisible_rounds"), "runtime.invisible_rounds"
+            ),
+            mail_rank=_optional_string(raw.get("mail_rank"), "runtime.mail_rank"),
+            current_hand_size_bonus=_optional_integer(
+                raw.get("current_hand_size_bonus"),
+                "runtime.current_hand_size_bonus",
+            ),
+            remaining_discards=_optional_integer(
+                raw.get("remaining_discards"), "runtime.remaining_discards"
             ),
         )
     except ValueError as exc:

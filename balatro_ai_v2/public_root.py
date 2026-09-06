@@ -100,12 +100,15 @@ _RUNTIME_XMULT = frozenset(
         "j_yorick",
     }
 )
-# These owned Jokers depend on visible tooltip state that the public contract
-# does not yet carry completely.  Rejecting them is safer than silently using
-# a fresh-run default in rollouts.
-_MISSING_PUBLIC_RUNTIME = frozenset(
-    {"j_caino", "j_invisible", "j_mail", "j_turtle_bean", "j_yorick"}
-)
+_RANK_NAMES = {
+    **{str(value): str(value) for value in range(2, 10)},
+    "T": "10",
+    "J": "Jack",
+    "Q": "Queen",
+    "K": "King",
+    "A": "Ace",
+}
+_RANK_IDS = {rank: index + 2 for index, rank in enumerate(_RANK_NAMES)}
 _UNSUPPORTED_BLIND_STATE = frozenset({"The Ox", "The Pillar"})
 _PUBLIC_DERIVED_RUNTIME_FIELDS = {
     "j_flash": "current_mult",
@@ -927,10 +930,6 @@ def _rebuild_joker(
 
     if item.kind != "JOKER" or item.key not in JOKERS:
         raise DeterminizationUnavailable(f"unknown owned Joker {item.key!r}")
-    if require_complete_runtime and item.key in _MISSING_PUBLIC_RUNTIME:
-        raise DeterminizationUnavailable(
-            f"owned Joker {item.key!r} lacks complete public runtime"
-        )
     edition_key = _EDITION_KEYS.get(item.edition)
     if item.edition not in _EDITION_KEYS:
         raise DeterminizationUnavailable("unsupported Joker edition")
@@ -964,12 +963,16 @@ def _apply_joker_runtime(
 ) -> None:
     key = card.center_key
     required = key in _RUNTIME_MULT | _RUNTIME_CHIPS | _RUNTIME_XMULT | {
+        "j_caino",
+        "j_invisible",
+        "j_mail",
         "j_rocket",
         "j_selzer",
         "j_loyalty_card",
         "j_drivers_license",
         "j_todo_list",
         "j_idol",
+        "j_turtle_bean",
     }
     if (
         require_complete_runtime
@@ -1005,6 +1008,10 @@ def _apply_joker_runtime(
         if runtime.current_x_mult is None:
             raise DeterminizationUnavailable(f"owned Joker {key!r} has no current xMult")
         card.ability["x_mult"] = runtime.current_x_mult
+    if key == "j_caino":
+        if runtime.current_x_mult is None:
+            raise DeterminizationUnavailable("Caino has no public current xMult")
+        card.ability["caino_xmult"] = runtime.current_x_mult
     if key == "j_rocket":
         if runtime.current_dollars is None or not isinstance(card.ability.get("extra"), dict):
             raise DeterminizationUnavailable("Rocket has invalid public dollars")
@@ -1028,20 +1035,32 @@ def _apply_joker_runtime(
     elif key == "j_idol":
         if runtime.target_rank is None or runtime.target_suit is None:
             raise DeterminizationUnavailable("The Idol has no public card target")
-        rank_names = {
-            **{str(value): str(value) for value in range(2, 10)},
-            "T": "10",
-            "J": "Jack",
-            "Q": "Queen",
-            "K": "King",
-            "A": "Ace",
-        }
         suit_names = {"S": "Spades", "H": "Hearts", "D": "Diamonds", "C": "Clubs"}
         current_round["idol_card"] = {
-            "rank": rank_names[runtime.target_rank],
+            "rank": _RANK_NAMES[runtime.target_rank],
             "suit": suit_names[runtime.target_suit],
-            "id": tuple(rank_names).index(runtime.target_rank) + 2,
+            "id": _RANK_IDS[runtime.target_rank],
         }
+    elif key == "j_invisible":
+        if runtime.invisible_rounds is None:
+            raise DeterminizationUnavailable("Invisible Joker has no public round count")
+        card.ability["invis_rounds"] = runtime.invisible_rounds
+    elif key == "j_mail":
+        if runtime.mail_rank not in _RANK_NAMES:
+            raise DeterminizationUnavailable("Mail-In Rebate has no public target rank")
+        current_round["mail_card"] = {
+            "rank": _RANK_NAMES[runtime.mail_rank],
+            "id": _RANK_IDS[runtime.mail_rank],
+        }
+    elif key == "j_turtle_bean":
+        extra = card.ability.get("extra")
+        if runtime.current_hand_size_bonus is None or not isinstance(extra, dict):
+            raise DeterminizationUnavailable("Turtle Bean has invalid public hand size")
+        extra["h_size"] = runtime.current_hand_size_bonus
+    elif key == "j_yorick":
+        if runtime.remaining_discards is None:
+            raise DeterminizationUnavailable("Yorick has no public discard countdown")
+        card.ability["yorick_discards"] = runtime.remaining_discards
 
 
 def _rebuild_consumable(item: PublicItem) -> Any:
