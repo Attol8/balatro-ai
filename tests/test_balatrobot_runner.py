@@ -23,7 +23,7 @@ from balatro_ai_v2.balatrobot.runner import (
     NoBuySmokePolicy,
     _semantic_action_label,
 )
-from state_factory import item_card, state
+from state_factory import item_card, playing_card, state
 
 
 class FakeClient:
@@ -206,18 +206,35 @@ def test_backend_keeps_settling_an_established_empty_shop() -> None:
     assert result.after.observed.canonical["shop"]["count"] == 0
 
 
-def test_backend_waits_for_visible_hand_in_targeted_pack() -> None:
+def test_backend_waits_for_complete_visible_hand_in_targeted_pack() -> None:
     opening = state("SPECTRAL_PACK")
+    opening["hand"]["cards"] = [playing_card("S_A", card_id=90)]
+    opening["hand"]["count"] = 1
     ready = deepcopy(opening)
     dealt = state("SELECTING_HAND")
     ready["hand"] = dealt["hand"]
-    ready["cards"] = dealt["cards"]
+    ready["hand"]["limit"] = ready["hand"]["count"]
     client = FakeClient(opening, polls=[ready, ready])
     backend = BalatroBotBackend(client, settle_poll_delay=0)  # type: ignore[arg-type]
 
     observation = backend.reset(RunSpec("RED", "WHITE", "1"))
 
     assert len(observation.polls) == 3
+    assert len(observation.observed.canonical["hand"]["cards"]) == 3
+
+
+def test_backend_accepts_short_targeted_pack_hand_only_when_deck_is_empty() -> None:
+    ready = state("TAROT_PACK")
+    dealt = state("SELECTING_HAND")
+    ready["hand"] = dealt["hand"]
+    ready["cards"]["cards"] = []
+    ready["cards"]["count"] = 0
+    client = FakeClient(ready, polls=[ready])
+    backend = BalatroBotBackend(client, settle_poll_delay=0)  # type: ignore[arg-type]
+
+    observation = backend.reset(RunSpec("RED", "WHITE", "1"))
+
+    assert len(observation.polls) == 2
     assert len(observation.observed.canonical["hand"]["cards"]) == 3
 
 

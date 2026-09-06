@@ -1771,6 +1771,16 @@ by actually tensorizing every claimed row with its prefix-derived public context
 The dataset and report must share one previously nonexistent directory so one
 directory rename publishes both or neither.
 
+Non-fast authority settlement repair: the first schema-2 organic capture shows
+that two identical reads are not sufficient for a targeted Tarot/Spectral pack.
+The pack endpoint can expose one dealt card while the remaining hand-fill events
+are still queued; pinned Jackdaw correctly applies the full draw synchronously.
+At every visible-hand pack decision boundary, require a coherent pack area and
+a coherent hand that is either at its visible limit or has no drawable cards
+left. Keep ordinary/non-targeted packs unchanged. Pin partial-to-full and
+deck-exhausted cases, then recapture the exact seed from a clean non-fast build
+and require complete candidate lockstep before treating it as fidelity proof.
+
 Strength replan: throughput is no longer the immediate score ceiling. Across
 the descriptive frozen v9/v10 trajectories, 340 of 365 losses (93.2%) end on
 Pair or Two Pair; 116 of 243 losses with a full Joker row have zero xMult roles

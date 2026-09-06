@@ -246,7 +246,10 @@ def _is_ready(state: dict[str, Any], *, allow_empty_shop: bool = False) -> bool:
     if phase in _PACK_PHASES:
         if not _area_ready(state, "pack", require_cards=True):
             return False
-        return phase not in _PACK_PHASES_WITH_VISIBLE_HAND or _area_ready(state, "hand", require_cards=True)
+        return (
+            phase not in _PACK_PHASES_WITH_VISIBLE_HAND
+            or _visible_pack_hand_ready(state)
+        )
     return False
 
 
@@ -256,6 +259,26 @@ def _area_ready(state: dict[str, Any], name: str, *, require_cards: bool) -> boo
         return False
     cards = area["cards"]
     return area.get("count") == len(cards) and (bool(cards) or not require_cards)
+
+
+def _visible_pack_hand_ready(state: dict[str, Any]) -> bool:
+    """Wait until a targeted pack has dealt every currently drawable card."""
+
+    if not _area_ready(state, "hand", require_cards=True) or not _area_ready(
+        state, "cards", require_cards=False
+    ):
+        return False
+    hand = state["hand"]
+    deck = state["cards"]
+    hand_count = hand.get("count")
+    hand_limit = hand.get("limit")
+    deck_count = deck.get("count")
+    if any(
+        isinstance(value, bool) or not isinstance(value, int) or value < 0
+        for value in (hand_count, hand_limit, deck_count)
+    ):
+        return False
+    return hand_count >= hand_limit or deck_count == 0
 
 
 def _action_can_empty_shop(before: AuthorityObservation, action: PublicAction) -> bool:
