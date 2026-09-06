@@ -54,6 +54,7 @@ from balatro_ai_v2.actions import (
     UseConsumable,
     is_legal,
 )
+from balatro_ai_v2.strategy_teacher import DENSE_TEACHER_MAX_ROOTS
 from balatro_ai_v2.boss_rules import BOSS_RULES, BossConstraint, boss_rule
 from balatro_ai_v2.consumable_rules import public_consumable_rule
 from balatro_ai_v2.joker_catalog import JOKER_CATALOG
@@ -556,7 +557,7 @@ class StrategyModelConfig:
     feedforward_size: int = 192
     dropout: float = 0.0
     max_entities: int = 256
-    max_actions: int = 512
+    max_actions: int = DENSE_TEACHER_MAX_ROOTS
 
     def __post_init__(self) -> None:
         dimensions = (

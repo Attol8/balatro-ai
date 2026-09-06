@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import gc
+from itertools import combinations
 from dataclasses import replace
 from types import SimpleNamespace
 
@@ -9,11 +10,17 @@ import pytest
 import balatro_ai_v2.determinized_search as search_module
 from balatro_ai_v2.actions import (
     BuyShopCard,
+    ChoosePackCard,
+    HandSlot,
+    JokerSlot,
     LeaveShop,
+    OpenedPackSlot,
     PlayCards,
     RerollShop,
     SelectBlind,
+    SellJoker,
     ShopSlot,
+    SkipPack,
     iter_legal_actions,
 )
 from balatro_ai_v2.balatrobot.adapter import to_public_observation
@@ -37,6 +44,7 @@ from balatro_ai_v2.determinized_search import (
 from balatro_ai_v2.public_state import PublicItem
 from balatro_ai_v2.policy import NoPublicProgressAction, PublicHistoryStep
 from balatro_ai_v2.strategy_engine import GoalUtility, RouteStage, RunGoal, RunRoute
+from balatro_ai_v2.strategy_model import PublicStrategyTensorizer
 from balatro_ai_v2.strategy_options import (
     PersistentIntent,
     PersistentRoute,
@@ -44,8 +52,13 @@ from balatro_ai_v2.strategy_options import (
     StrategyCandidateRoot,
     StrategyIntent,
 )
-from balatro_ai_v2.strategy_teacher import StrategyTargetEndpoint
-from state_factory import state
+from balatro_ai_v2.strategy_teacher import (
+    DENSE_TEACHER_MAX_ROOTS,
+    StrategyTargetEndpoint,
+    teacher_record_from_data,
+    teacher_record_to_data,
+)
+from state_factory import item_card, playing_card, state
 
 
 def _utility(
@@ -639,6 +652,129 @@ def test_dense_teacher_reuses_paired_ordinary_search_without_changing_selection(
     } == {1.0, 2.0}
 
 
+def _seed_2657_arcana_observation():
+    raw = state("TAROT_PACK")
+    raw["hand"] = {
+        "cards": [
+            playing_card(f"{suit}_{rank}", card_id=100 + index)
+            for index, (suit, rank) in enumerate(
+                zip("SHDCSHDCSH", "AKQJT98765", strict=True)
+            )
+        ],
+        "count": 10,
+        "highlighted_limit": 5,
+        "limit": 10,
+    }
+    raw["pack"] = {
+        "cards": [
+            item_card(key, card_id=200 + index, kind="TAROT")
+            for index, key in enumerate(
+                ("c_fool", "c_emperor", "c_star", "c_world", "c_moon")
+            )
+        ],
+        "count": 5,
+        "highlighted_limit": 1,
+        "limit": 5,
+    }
+    raw["jokers"] = {
+        "cards": [
+            item_card("j_joker", card_id=300 + index, kind="JOKER")
+            for index in range(5)
+        ],
+        "count": 5,
+        "highlighted_limit": 1,
+        "limit": 5,
+    }
+    return to_public_observation(raw)
+
+
+def test_seed_2657_arcana_roots_are_complete_and_dense_teacher_safe(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class Sample:
+        def close(self) -> None:
+            pass
+
+    class Frozen:
+        def clone(self):
+            return SimpleNamespace(close=lambda: None)
+
+    observation = _seed_2657_arcana_observation()
+    expected = (
+        SkipPack(),
+        ChoosePackCard(OpenedPackSlot(1)),
+        *(
+            ChoosePackCard(
+                OpenedPackSlot(pack_index),
+                tuple(HandSlot(index) for index in targets),
+            )
+            for pack_index in (2, 3, 4)
+            for size in (3, 2, 1)
+            for targets in combinations(range(10), size)
+        ),
+        *(SellJoker(JokerSlot(index)) for index in range(5)),
+    )
+    legal = tuple(iter_legal_actions(observation))
+    assert legal == expected
+    assert len(legal) == 532
+    tensor_batch = PublicStrategyTensorizer().tensorize((observation,), (legal,))
+    tensor_batch.validate()
+    assert tensor_batch.action_mask.shape == (1, 532)
+    assert tensor_batch.action_mask.all().item()
+
+    monkeypatch.setattr(search_module, "sample_candidate", lambda *args: Sample())
+    monkeypatch.setattr(search_module, "freeze_backend", lambda sample: Frozen())
+    monkeypatch.setattr(
+        search_module, "_teacher_config_digest", lambda policy: "1" * 64
+    )
+
+    def rollout(self, clone, observation, history, root, **kwargs):
+        del self, clone, observation, history, root, kwargs
+        return RolloutOutcome(
+            value=1.0,
+            steps=1,
+            rejected=False,
+            goal_utility=_utility(clear=1, progress=1, ante=1),
+        )
+
+    monkeypatch.setattr(DeterminizedSearchPolicy, "_rollout", rollout)
+
+    class SkipContinuation:
+        def choose_action(self, observation, legal_actions, history):
+            del observation, history
+            return next(
+                action for action in legal_actions() if isinstance(action, SkipPack)
+            )
+
+    policy = DeterminizedSearchPolicy(
+        backend=None,  # type: ignore[arg-type]
+        continuation=SkipContinuation(),  # type: ignore[arg-type]
+        budget=RolloutBudget(samples=1, horizon_antes=1),
+        collect_dense_teacher=True,
+    )
+
+    assert policy.choose_action(observation, lambda: iter(legal), ()) == SkipPack()
+    assert len(policy.teacher_drafts) == 1
+    draft = policy.teacher_drafts[0]
+    assert draft.candidate_space_size == 532
+    assert tuple(candidate.action for candidate in draft.candidates) == legal
+    assert (
+        draft.baseline_index,
+        draft.selected_index,
+        draft.ordinary_index,
+        draft.behavior_index,
+    ) == (0, 0, 0, 0)
+    record = draft.finalize(
+        run_group="origin-" + "1" * 32,
+        decision_index=0,
+        run_complete=True,
+        run_won=False,
+        terminal_ante=1,
+        best_hand_score=1,
+    )
+    assert teacher_record_from_data(teacher_record_to_data(record)) == record
+
+
 def test_route_terminal_teacher_separates_ordinary_behavior_and_selected_indexes(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -736,23 +872,131 @@ def test_route_terminal_teacher_separates_ordinary_behavior_and_selected_indexes
 
 
 def test_dense_teacher_requires_the_complete_root_set_within_bound() -> None:
-    roots = (LeaveShop(), SelectBlind(), *(RerollShop() for _ in range(138)))
+    roots = tuple(RerollShop() for _ in range(DENSE_TEACHER_MAX_ROOTS))
 
     first = _dense_teacher_indexes(
         roots,
         baseline_index=0,
-        selected_index=139,
-        limit=512,
+        selected_index=DENSE_TEACHER_MAX_ROOTS - 1,
+        limit=DENSE_TEACHER_MAX_ROOTS,
     )
 
-    assert first == tuple(range(140))
+    assert first == tuple(range(DENSE_TEACHER_MAX_ROOTS))
     with pytest.raises(ValueError, match="complete-root cap"):
         _dense_teacher_indexes(
-            roots,
+            (*roots, RerollShop()),
             baseline_index=0,
-            selected_index=139,
-            limit=64,
+            selected_index=DENSE_TEACHER_MAX_ROOTS,
+            limit=DENSE_TEACHER_MAX_ROOTS,
         )
+
+
+def _dense_teacher_capacity_observation(*, joker_count: int):
+    raw = state("TAROT_PACK")
+    raw["hand"] = {
+        "cards": [
+            playing_card(f"{suit}_{rank}", card_id=600 + index)
+            for index, (suit, rank) in enumerate(
+                zip("SHDCSHDCSHDC", "AKQJT9876543", strict=True)
+            )
+        ],
+        "count": 12,
+        "highlighted_limit": 5,
+        "limit": 12,
+    }
+    raw["pack"] = {
+        "cards": [
+            item_card(key, card_id=700 + index, kind="TAROT")
+            for index, key in enumerate(
+                ("c_star", "c_star", "c_star", "c_empress")
+            )
+        ],
+        "count": 4,
+        "highlighted_limit": 1,
+        "limit": 4,
+    }
+    raw["jokers"] = {
+        "cards": [
+            item_card("j_joker", card_id=800 + index, kind="JOKER")
+            for index in range(joker_count)
+        ],
+        "count": joker_count,
+        "highlighted_limit": 1,
+        "limit": joker_count,
+    }
+    raw["consumables"] = {
+        "cards": [
+            item_card("c_mercury", card_id=900 + index, kind="PLANET")
+            for index in range(26)
+        ],
+        "count": 26,
+        "highlighted_limit": 1,
+        "limit": 26,
+    }
+    return to_public_observation(raw)
+
+
+def test_dense_teacher_exact_capacity_reaches_determinization(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    observation = _dense_teacher_capacity_observation(joker_count=25)
+    legal = tuple(iter_legal_actions(observation))
+    assert len(legal) == DENSE_TEACHER_MAX_ROOTS
+    sampled = False
+
+    def unavailable(*args):
+        nonlocal sampled
+        sampled = True
+        raise search_module.DeterminizationUnavailable("boundary probe")
+
+    monkeypatch.setattr(search_module, "sample_candidate", unavailable)
+
+    class SkipContinuation:
+        def choose_action(self, observation, legal_actions, history):
+            del observation, history
+            return next(
+                action for action in legal_actions() if isinstance(action, SkipPack)
+            )
+
+    policy = DeterminizedSearchPolicy(
+        backend=None,  # type: ignore[arg-type]
+        continuation=SkipContinuation(),  # type: ignore[arg-type]
+        budget=RolloutBudget(samples=1, horizon_antes=1),
+        collect_dense_teacher=True,
+    )
+
+    assert policy.choose_action(observation, lambda: iter(legal), ()) == SkipPack()
+    assert sampled
+    assert policy.counters.unavailable == 1
+
+
+def test_dense_teacher_overflow_fails_before_determinization(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    observation = _dense_teacher_capacity_observation(joker_count=26)
+    legal = tuple(iter_legal_actions(observation))
+    assert len(legal) == DENSE_TEACHER_MAX_ROOTS + 1
+    monkeypatch.setattr(
+        search_module,
+        "sample_candidate",
+        lambda *args: pytest.fail("overflow must fail before determinization"),
+    )
+
+    class FirstContinuation:
+        def choose_action(self, observation, legal_actions, history):
+            del observation, history
+            return next(
+                action for action in legal_actions() if isinstance(action, SkipPack)
+            )
+
+    policy = DeterminizedSearchPolicy(
+        backend=None,  # type: ignore[arg-type]
+        continuation=FirstContinuation(),  # type: ignore[arg-type]
+        collect_dense_teacher=True,
+    )
+
+    with pytest.raises(ValueError, match="complete-root cap"):
+        policy.choose_action(observation, lambda: iter(legal), ())
 
 
 def _terminal_outcome(*, won: bool, admissible: bool = True) -> RolloutOutcome:

@@ -137,7 +137,7 @@ def _preregistration(tmp_path: Path, script, monkeypatch):
     monkeypatch.setattr(script, "_validate_source_freeze", lambda *_args: None)
     monkeypatch.setattr(script, "_verify_merger_checkout", lambda *_args: None)
     key = b"0123456789abcdef0123456789abcdef"
-    key_path = tmp_path / "runs/secrets/contextual-continuation-v14-origin.key"
+    key_path = tmp_path / "runs/secrets/contextual-continuation-v15-origin.key"
     key_path.parent.mkdir(parents=True)
     key_path.write_bytes(key)
     batches = [
@@ -146,15 +146,15 @@ def _preregistration(tmp_path: Path, script, monkeypatch):
             "seed_start": seed_start,
             "seeds": 50,
             "teacher_jsonl": (
-                "runs/experiments/contextual-continuation-v14/"
+                "runs/experiments/contextual-continuation-v15/"
                 f"batch-{index:02d}/teacher.jsonl"
             ),
             "report_json": (
-                "runs/experiments/contextual-continuation-v14/"
+                "runs/experiments/contextual-continuation-v15/"
                 f"batch-{index:02d}/report.json"
             ),
         }
-        for index, seed_start in enumerate(range(2602, 2902, 50), start=1)
+        for index, seed_start in enumerate(range(2902, 3202, 50), start=1)
     ]
     candidate_runtime = {"revision": "runtime", "data_hashes": {}}
     backend = {"backend_name": "Jackdaw", "adapter_version": "3"}
@@ -174,7 +174,7 @@ def _preregistration(tmp_path: Path, script, monkeypatch):
         "search": script._EXPECTED_SEARCH,
         "origin_mapping": {
             "algorithm": "hmac-sha256-truncated-128",
-            "key_path": "runs/secrets/contextual-continuation-v14-origin.key",
+            "key_path": "runs/secrets/contextual-continuation-v15-origin.key",
             "key_sha256": hashlib.sha256(key).hexdigest(),
         },
         "batches": batches,
@@ -182,7 +182,7 @@ def _preregistration(tmp_path: Path, script, monkeypatch):
         "coverage_gate": coverage_gate,
         "first_100_kill_gate": first_gate,
     }
-    path = tmp_path / "experiments/contextual-continuation-v14-preregistration.json"
+    path = tmp_path / "experiments/contextual-continuation-v15-preregistration.json"
     path.parent.mkdir(parents=True)
     path.write_text(json.dumps(spec), encoding="utf-8")
     return path, key_path, key, spec, hashlib.sha256(path.read_bytes()).hexdigest()
@@ -197,7 +197,7 @@ def _component(
     preregistration_digest: str,
     spec: dict[str, object],
 ):
-    root = tmp_path / "runs/experiments/contextual-continuation-v14"
+    root = tmp_path / "runs/experiments/contextual-continuation-v15"
     root = root / f"batch-{index:02d}"
     root.mkdir(parents=True, exist_ok=True)
     dataset = root / "teacher.jsonl"
@@ -227,7 +227,7 @@ def _component(
                 "max_steps": 200,
                 "override_z": 1.0,
             },
-            "nonce": "contextual-continuation-v14-frozen",
+            "nonce": "contextual-continuation-v15-frozen",
             "phases": ["BLIND_SELECT", "PACK", "SHOP"],
             "strategy_options": False,
             "include_reorders": False,
@@ -244,7 +244,7 @@ def _component(
             },
         },
         "contextual_teacher_preregistration": {
-            "protocol_id": "contextual-continuation-development-v6",
+            "protocol_id": "contextual-continuation-development-v7",
             "sha256": preregistration_digest,
             "immutable_batches": True,
             "batch_id": f"batch-{index:02d}",
@@ -300,7 +300,7 @@ def _fixtures(tmp_path, script, monkeypatch):
             preregistration_digest=digest,
             spec=spec,
         )
-        for index, seed_start in enumerate(range(2602, 2902, 50), start=1)
+        for index, seed_start in enumerate(range(2902, 3202, 50), start=1)
     ]
     return prereg_path, key_path, key, spec, digest, paths
 
@@ -345,10 +345,10 @@ def test_merge_cli_preserves_all_disjoint_groups_and_component_hashes(
     assert len(merged["merged_components"]) == 6
     assert (
         merged["contextual_teacher_preregistration"]["protocol_id"]
-        == "contextual-continuation-development-v6"
+        == "contextual-continuation-development-v7"
     )
     assert "results" not in merged
-    assert "2602" not in json.dumps(merged)
+    assert "2902" not in json.dumps(merged)
 
 
 def test_merge_rejects_revision_or_seed_overlap(tmp_path, monkeypatch) -> None:
@@ -362,7 +362,7 @@ def test_merge_rejects_revision_or_seed_overlap(tmp_path, monkeypatch) -> None:
         "results"
     ]
     duplicate["contextual_teacher_preregistration"].update(
-        {"batch_id": "batch-01", "seed_start": 2602}
+        {"batch_id": "batch-01", "seed_start": 2902}
     )
     paths[1][1].write_text(json.dumps(duplicate), encoding="utf-8")
     components = tuple(script._load_component(*component) for component in paths)

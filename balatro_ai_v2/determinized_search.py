@@ -65,6 +65,8 @@ from balatro_ai_v2.strategy_options import (
     build_strategy_candidates,
 )
 from balatro_ai_v2.strategy_teacher import (
+    DENSE_TEACHER_MAX_ROOTS,
+    DENSE_TEACHER_SUBSET_CONTRACT,
     STRATEGY_TEACHER_SCHEMA_VERSION,
     StrategyRolloutTarget,
     StrategyTargetEndpoint,
@@ -73,9 +75,8 @@ from balatro_ai_v2.strategy_teacher import (
 )
 
 
-SEARCH_VERSION = "determinized-search-v20"
+SEARCH_VERSION = "determinized-search-v21"
 _REORDER_TYPES = (ReorderHand, ReorderJokers, ReorderConsumables)
-_DENSE_TEACHER_MAX_ROOTS = 512
 STRATEGY_SPECIALIST_MAX_ROOTS = 128
 
 
@@ -711,6 +712,8 @@ class DeterminizedSearchPolicy:
         ]
         if baseline not in roots:
             roots.append(baseline)
+        if self.collect_dense_teacher and len(roots) > DENSE_TEACHER_MAX_ROOTS:
+            raise ValueError("dense teacher root set exceeds the complete-root cap")
         if len(roots) <= 1:
             if success_anchor:
                 engine = derive_engine_state(observation)
@@ -812,7 +815,7 @@ class DeterminizedSearchPolicy:
                 roots,
                 baseline_index=baseline_index,
                 selected_index=selected_index,
-                limit=_DENSE_TEACHER_MAX_ROOTS,
+                limit=DENSE_TEACHER_MAX_ROOTS,
             )
             self.teacher_drafts.append(
                 StrategyTeacherDraft(
@@ -2727,10 +2730,8 @@ def _teacher_config_digest(policy: DeterminizedSearchPolicy) -> str:
         "nonce": policy.nonce,
         "strategy_options": policy.enable_strategy_options,
         "dense_teacher": policy.collect_dense_teacher,
-        "dense_teacher_max_roots": _DENSE_TEACHER_MAX_ROOTS,
-        "dense_teacher_subset": (
-            "behavior+selected+each_action_family+sha256_public_action"
-        ),
+        "dense_teacher_max_roots": DENSE_TEACHER_MAX_ROOTS,
+        "dense_teacher_subset": DENSE_TEACHER_SUBSET_CONTRACT,
         "include_reorders": policy.include_reorders,
         "success_teacher": (
             policy.success_teacher.canonical()

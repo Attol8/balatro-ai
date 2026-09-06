@@ -35,6 +35,10 @@ from balatro_ai_v2.strategy_options import StrategyIntent
 
 
 STRATEGY_TEACHER_SCHEMA_VERSION = 12
+DENSE_TEACHER_MAX_ROOTS = 1024
+DENSE_TEACHER_SUBSET_CONTRACT = (
+    f"complete_roots;max{DENSE_TEACHER_MAX_ROOTS};overflow=fail_closed"
+)
 _RUN_GROUP = re.compile(r"origin-[0-9a-f]{32}")
 _SHA256 = re.compile(r"[0-9a-f]{64}")
 
@@ -586,6 +590,8 @@ def _optional_float(value: object) -> float | None:
 
 
 __all__ = [
+    "DENSE_TEACHER_MAX_ROOTS",
+    "DENSE_TEACHER_SUBSET_CONTRACT",
     "STRATEGY_TEACHER_SCHEMA_VERSION",
     "StrategyRolloutTarget",
     "StrategyTargetEndpoint",

@@ -5038,3 +5038,43 @@ with p99 227 and maximum 430 roots, versus SHOP p99 14. The 100 runs consumed
 continuation learning if the fresh v14 first-100 gate reproduces the signal;
 after promotion evidence, optimize exact PACK transformation reuse without
 dropping or reordering roots. Do not spend model capacity on blind selection.
+
+### Contextual continuation v14 retirement and v15 capacity repair (2026-09-06)
+
+V14 batch 01 completed 50/50 runs with three wins, 2,614 dense decisions,
+25,531 complete roots, 89.33% action-sensitive decisions, four observed-victory
+groups, and zero rejected or unavailable search. It executed 2,664,590 rollout
+steps at 108.92 steps/second. The teacher and report SHA-256 digests are
+`9be62b84cbbcb30a2dfbe682bfa31877317177adfa0011dbf9072ad6fbad4fe3`
+and `cbfaaadd29de46d2e69b0c7ce67640ae51bffe0d5252534e8be6e33279984086`.
+
+Batch 02 hard-failed at 49/50 complete runs. Seed 2657 reached an organic
+10-card Arcana pack with Fool, Emperor, Star, World, Moon, and five sellable
+Jokers. Its canonical root count is `1 skip + 1 Emperor + 3 * 175 targeted
+Tarot choices + 5 sales = 532`. The frozen 512-root collector cap raised only
+after 12,114 rollout steps had already been spent on the decision. The batch
+report SHA-256 is
+`7ee7b22e8765a650dd6f2f75bfed349859819dfb64074a1caeb5525f76ef62b8`;
+the teacher was atomically discarded. V14 and all reserved seeds 2602--2901
+are retired without waiver, omission, truncation, or reuse.
+
+There is no finite global vanilla action bound: hand-size effects and Negative
+inventory can widen the public legal set, and the public codec admits much
+larger arrays than the observed state. V15 therefore names 1,024 as an
+operational complete-root envelope, not a Balatro maximum. Collection now
+checks it before determinization, stores every canonical root inside it, and
+fails closed on overflow. The relational tensorizer already allocates the
+observed batch width, so raising its guard does not pad ordinary batches to
+1,024. The collector, tensorizer, trainer, first-100 gate, merger, diagnostics,
+and configuration digest share the same constant. Search advances to v21 and
+contextual protocol to development-v7; fresh reserved seeds are 2902--3201.
+All-vanilla and Endless claims remain blocked on a factorized or otherwise
+variable-width action protocol rather than a still-larger flat ceiling.
+
+A worst-envelope memory preflight tensorized 16 copies of an exact 1,024-root
+PACK decision with the frozen 64/4/2/128 model, completed a full model forward
+and backward pass, and produced a `(16, 1024)` policy tensor. Peak process RSS
+was 762,052,608 bytes. This fits the development machine but is large enough
+that collection and training must keep the 16-decision streaming contract;
+width bucketing remains the first memory optimization if organic rows approach
+the envelope frequently.

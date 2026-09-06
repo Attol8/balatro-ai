@@ -99,6 +99,8 @@ from balatro_ai_v2.route_teacher_protocol import (
 )
 from balatro_ai_v2.strategy_shadow import ShadowStrategyPolicy
 from balatro_ai_v2.strategy_teacher import (
+    DENSE_TEACHER_MAX_ROOTS,
+    DENSE_TEACHER_SUBSET_CONTRACT,
     STRATEGY_TEACHER_SCHEMA_VERSION,
     StrategyTargetEndpoint,
     StrategyTeacherCandidate,
@@ -119,15 +121,15 @@ _CONTEXTUAL_BATCHES = tuple(
         "seed_start": seed_start,
         "seeds": 50,
         "teacher_jsonl": (
-            "runs/experiments/contextual-continuation-v14/"
+            "runs/experiments/contextual-continuation-v15/"
             f"batch-{index + 1:02d}/teacher.jsonl"
         ),
         "report_json": (
-            "runs/experiments/contextual-continuation-v14/"
+            "runs/experiments/contextual-continuation-v15/"
             f"batch-{index + 1:02d}/report.json"
         ),
     }
-    for index, seed_start in enumerate(range(2602, 2902, 50))
+    for index, seed_start in enumerate(range(2902, 3202, 50))
 )
 _CONTEXTUAL_SEARCH = {
     "samples": 6,
@@ -137,7 +139,7 @@ _CONTEXTUAL_SEARCH = {
     "max_decisions": 1200,
     "ante_cap": 12,
     "workers": 6,
-    "nonce": "contextual-continuation-v14-frozen",
+    "nonce": "contextual-continuation-v15-frozen",
     "continuation": "strategic",
     "policy_seed": "baseline-v1",
     "strategy_options": False,
@@ -158,7 +160,7 @@ _CONTEXTUAL_TRAINING = {
     "attention_layers": 2,
     "feedforward_size": 128,
     "max_entities": 256,
-    "max_actions": 512,
+    "max_actions": DENSE_TEACHER_MAX_ROOTS,
     "learning_rate": 0.0003,
     "weight_decay": 0.0001,
     "max_gradient_norm": 1.0,
@@ -168,6 +170,7 @@ _CONTEXTUAL_TRAINING = {
 _CONTEXTUAL_FIRST_100_GATE = {
     "minimum_action_sensitive_fraction": 0.4,
     "minimum_observed_victory_groups": 10,
+    "maximum_stored_roots": DENSE_TEACHER_MAX_ROOTS,
     "rejected_or_censored": 0,
 }
 _CONTEXTUAL_REORDERS = (ReorderHand, ReorderJokers, ReorderConsumables)
@@ -850,11 +853,16 @@ def _validate_contextual_preregistration(
     *,
     repository_root: Path,
 ) -> dict[str, object] | None:
-    retired = range(1075, 2275)
-    reserved = range(2602, 2902)
+    retired_ranges = (range(1075, 2275), range(2602, 2902))
+    reserved = range(2902, 3202)
     requested = range(args.seed_start, args.seed_start + args.seeds)
-    if requested.start < retired.stop and retired.start < requested.stop:
-        raise SystemExit("contextual v9-v13 seeds 1075-2274 are retired")
+    if any(
+        requested.start < retired.stop and retired.start < requested.stop
+        for retired in retired_ranges
+    ):
+        raise SystemExit(
+            "contextual v9-v14 seeds 1075-2274 and 2602-2901 are retired"
+        )
     overlaps_reserved = (
         requested.start < reserved.stop and reserved.start < requested.stop
     )
@@ -862,7 +870,7 @@ def _validate_contextual_preregistration(
     if path is None:
         if overlaps_reserved:
             raise SystemExit(
-                "seeds 2602-2901 require --contextual-preregistration-json"
+                "seeds 2902-3201 require --contextual-preregistration-json"
             )
         return None
     try:
@@ -873,7 +881,7 @@ def _validate_contextual_preregistration(
     if not isinstance(spec, dict):
         raise SystemExit("contextual preregistration root must be an object")
     if (
-        spec.get("protocol_id") != "contextual-continuation-development-v6"
+        spec.get("protocol_id") != "contextual-continuation-development-v7"
         or spec.get("status") != "reserved"
         or spec.get("immutable_batches") is not True
     ):
@@ -912,7 +920,7 @@ def _validate_contextual_preregistration(
         not isinstance(origin, dict)
         or origin.get("algorithm") != "hmac-sha256-truncated-128"
         or origin.get("key_path")
-        != "runs/secrets/contextual-continuation-v14-origin.key"
+        != "runs/secrets/contextual-continuation-v15-origin.key"
         or not isinstance(origin.get("key_sha256"), str)
         or len(origin["key_sha256"]) != 64
         or args.origin_key_file is None
@@ -1068,6 +1076,7 @@ def _validate_contextual_first_100(
         < float(gate["minimum_action_sensitive_fraction"])
         or int(dense["observed_victory_origin_groups"])
         < int(gate["minimum_observed_victory_groups"])
+        or int(dense["stored_root_max"]) > int(gate["maximum_stored_roots"])
         or gate.get("rejected_or_censored") != 0
     ):
         raise SystemExit("contextual first-100 kill gate failed")
@@ -1213,7 +1222,7 @@ def _verify_contextual_freeze(
         ).stdout.splitlines()
     except (OSError, subprocess.CalledProcessError) as exc:
         raise SystemExit("cannot verify contextual implementation ancestry") from exc
-    if set(changed) != {"experiments/contextual-continuation-v14-preregistration.json"}:
+    if set(changed) != {"experiments/contextual-continuation-v15-preregistration.json"}:
         raise SystemExit(
             "contextual preregistration commit changed implementation source"
         )
@@ -2756,7 +2765,7 @@ def _teacher_coverage(
                 record.candidate_space_size > len(record.candidates)
                 for record in records
             ),
-            "subset_contract": "complete_roots;max512;overflow=fail_closed",
+            "subset_contract": DENSE_TEACHER_SUBSET_CONTRACT,
             "observed_victory_origin_groups": len(observed_victory_groups),
             "postwin_rows": len(endless_rows),
             "postwin_origin_groups": endless_groups,

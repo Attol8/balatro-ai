@@ -34,7 +34,7 @@ from balatro_ai_v2.strategy_model import (
     StrategyModelConfig,
     save_strategy_model,
 )
-from balatro_ai_v2.strategy_teacher import read_teacher_records
+from balatro_ai_v2.strategy_teacher import DENSE_TEACHER_MAX_ROOTS, read_teacher_records
 
 
 def main() -> None:
@@ -502,7 +502,7 @@ def _validate_dense_collection_coverage(collection: dict[str, object], records) 
         or len(observed_victory_groups) < 10
         or len(postwin) < 100
         or computed["postwin_origin_groups"] < 20
-        or computed["stored_root_max"] > 512
+        or computed["stored_root_max"] > DENSE_TEACHER_MAX_ROOTS
         or computed["subset_rows"] != 0
         or coverage.get("winning_source_groups") != len(winning_groups)
     ):
@@ -690,7 +690,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--attention-layers", type=int, default=2)
     parser.add_argument("--feedforward-size", type=int, default=128)
     parser.add_argument("--max-entities", type=int, default=256)
-    parser.add_argument("--max-actions", type=int, default=512)
+    parser.add_argument(
+        "--max-actions", type=int, default=DENSE_TEACHER_MAX_ROOTS
+    )
     parser.add_argument("--learning-rate", type=float, default=3e-4)
     parser.add_argument("--weight-decay", type=float, default=1e-4)
     parser.add_argument("--max-gradient-norm", type=float, default=1.0)

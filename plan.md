@@ -2535,7 +2535,41 @@ bound above zero, with the strategic layer held fixed.
 
 Search quality is bounded by the continuation. Improve it from search.
 
-### Active slice: paired-utility continuation v14
+### Active slice: paired-utility continuation v15
+
+#### Recovery: retire v14 after an organic complete-root overflow
+
+V14 batch 1 completed cleanly, but batch 2 seed 2657 reached a public 10-card
+Arcana-pack state with 532 strategic options.  The dense teacher's frozen
+512-root ceiling raised `ValueError`, so the run ended `policy_error` and the
+batch was atomically discarded (49/50 complete).  This is a hard gate failure:
+do not splice the batch, omit the state, truncate roots, or continue v14.
+
+- Preserve both v14 reports and the complete batch-1 teacher as retired
+  diagnostic evidence.  Treat all reserved v14 seeds 2602--2901 as opened and
+  ineligible for reuse.
+- Replace the accidental 512 ceiling with a shared 1,024-root operational
+  envelope.  This is not a claimed global Balatro maximum: Negative editions,
+  hand-size effects, and the wider public-codec limits admit larger states.
+  Every state inside the envelope stores the complete canonical root set;
+  overflow is a preregistered resource kill, never pruning or partial evidence.
+- Raise the relational tensorizer/training `max_actions`, dense-teacher cap,
+  preregistered coverage ceiling, and every validator together.  Do not prune,
+  reorder, or subset roots.  Retain fixed 16-decision streamed training and
+  prove its memory preflight under the wider action dimension.
+- Add a seed-2657-shaped 10-card Arcana regression that enumerates every legal
+  root in canonical order, stores all roots, round-trips the record, and cannot
+  terminate the policy.  Add boundary tests at the new cap and one above it.
+- Bump search/contextual protocol identities, commit and fully verify the
+  implementation, then use a separate preregistration-only commit on fresh
+  collision-free seeds 2902--3201.  Only its first two clean 50-run batches may
+  reopen the first-100 gate.  Treat v9--v13 seeds 1075--2274 and all v14 seeds
+  2602--2901 as retired; seeds 2275--2601 retain their separate historical uses.
+- Before any later claim of all-vanilla or Endless coverage, replace padded
+  flat action enumeration with a factorized or otherwise variable-width action
+  protocol and validate the full admitted public-observation domain.  The
+  1,024 envelope is deliberately a bounded development protocol, not that
+  terminal architecture.
 
 #### Recovery: retire v13 and freeze a canonical v14 selector
 
@@ -2569,7 +2603,7 @@ Do not waive the gate, edit the v13 preregistration, or train on any v13 batch.
   Only after that gate passes may collection, merge, utility-only training, and
   the paired behavioral screen resume.
 
-The protocol-v14 coverage census and fresh seed-2507/2432 diagnostics make the
+The contextual coverage census and fresh seed-2507/2432 diagnostics make the
 next bottleneck concrete: every eligible strategic root is searchable and
 rollouts sustain roughly 190--197 steps/second, but the continuation still
 dies predominantly on Pair/Two Pair builds.  Do not spend another panel on
@@ -2589,11 +2623,11 @@ search budget or hand-written route rules before improving that continuation.
   weighting.  Freeze the chunk size with every other training argument.
 - Keep the contextual merger bound to the current search version and the
   utility-only training objective in its preregistered training contract.
-- Commit and fully test the canonical-selector repair before creating the
-  contextual-v14 preregistration.  The preregistration is a separate commit and
+- Commit and fully test the capacity repair before creating the contextual-v15
+  preregistration.  The preregistration is a separate commit and
   is the only tracked change permitted after the implementation revision.
 - Collect the first two immutable 50-run batches on development seeds
-  2602--2701, then apply the frozen first-100 kill gate.  Continue through all
+  2902--3001, then apply the frozen first-100 kill gate.  Continue through all
   six batches only if collection is complete, rejection/censor free, and meets
   its sensitivity and victory-coverage requirements.
 - Merge the 300 complete run groups, train with the frozen 182/59/59 split,

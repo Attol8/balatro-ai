@@ -36,6 +36,8 @@ from balatro_ai_v2.strategy_model import (
 )
 from balatro_ai_v2.balatrobot.tracing import source_snapshot
 from balatro_ai_v2.strategy_teacher import (
+    DENSE_TEACHER_MAX_ROOTS,
+    DENSE_TEACHER_SUBSET_CONTRACT,
     StrategyTargetEndpoint,
     StrategyTeacherRecord,
     teacher_records_from_bytes,
@@ -43,9 +45,9 @@ from balatro_ai_v2.strategy_teacher import (
 )
 
 
-_BATCH_STARTS = tuple(range(2602, 2902, 50))
+_BATCH_STARTS = tuple(range(2902, 3202, 50))
 _BATCH_SIZE = 50
-_EXPECTED_SEEDS = set(range(2602, 2902))
+_EXPECTED_SEEDS = set(range(2902, 3202))
 _EXPECTED_BUDGET = {
     "samples": 6,
     "horizon_antes": 1,
@@ -53,8 +55,8 @@ _EXPECTED_BUDGET = {
     "override_z": 1.0,
 }
 _REORDER_ACTIONS = (ReorderHand, ReorderJokers, ReorderConsumables)
-_PROTOCOL_ID = "contextual-continuation-development-v6"
-_NONCE = "contextual-continuation-v14-frozen"
+_PROTOCOL_ID = "contextual-continuation-development-v7"
+_NONCE = "contextual-continuation-v15-frozen"
 _SEARCH_VERSION = SEARCH_VERSION
 _EXPECTED_SEARCH = {
     **_EXPECTED_BUDGET,
@@ -82,7 +84,7 @@ _EXPECTED_TRAINING = {
     "attention_layers": 2,
     "feedforward_size": 128,
     "max_entities": 256,
-    "max_actions": 512,
+    "max_actions": DENSE_TEACHER_MAX_ROOTS,
     "learning_rate": 0.0003,
     "weight_decay": 0.0001,
     "max_gradient_norm": 1.0,
@@ -94,7 +96,7 @@ _EXPECTED_COVERAGE_GATE = {
     "minimum_records": 2000,
     "required_phases": ["BLIND_SELECT", "SHOP", "PACK"],
     "minimum_action_sensitive_fraction": 0.4,
-    "maximum_stored_roots": 512,
+    "maximum_stored_roots": DENSE_TEACHER_MAX_ROOTS,
     "maximum_subset_rows": 0,
     "minimum_winning_source_groups": 20,
     "minimum_observed_victory_groups": 10,
@@ -105,6 +107,7 @@ _EXPECTED_COVERAGE_GATE = {
 _EXPECTED_FIRST_100_GATE = {
     "minimum_action_sensitive_fraction": 0.4,
     "minimum_observed_victory_groups": 10,
+    "maximum_stored_roots": DENSE_TEACHER_MAX_ROOTS,
     "rejected_or_censored": 0,
 }
 
@@ -238,7 +241,7 @@ def _load_component(
             for candidate in record.candidates
         )
         or any(
-            len(record.candidates) > 512
+            len(record.candidates) > DENSE_TEACHER_MAX_ROOTS
             or record.candidate_space_size != len(record.candidates)
             for record in records
         )
@@ -401,7 +404,7 @@ def _validate_source_freeze(
         ).stdout.splitlines()
     except (OSError, subprocess.CalledProcessError) as exc:
         raise SystemExit("cannot verify teacher implementation ancestry") from exc
-    if set(changed) != {"experiments/contextual-continuation-v14-preregistration.json"}:
+    if set(changed) != {"experiments/contextual-continuation-v15-preregistration.json"}:
         raise SystemExit("teacher collection revision changed implementation source")
 
 
@@ -412,7 +415,7 @@ def _load_preregistration(
     repository_root: Path,
 ) -> tuple[dict[str, object], str, bytes]:
     expected_path = (
-        repository_root / "experiments/contextual-continuation-v14-preregistration.json"
+        repository_root / "experiments/contextual-continuation-v15-preregistration.json"
     ).resolve()
     if path.resolve() != expected_path:
         raise SystemExit("contextual preregistration path is not frozen")
@@ -429,11 +432,11 @@ def _load_preregistration(
             "seed_start": seed_start,
             "seeds": _BATCH_SIZE,
             "teacher_jsonl": (
-                "runs/experiments/contextual-continuation-v14/"
+                "runs/experiments/contextual-continuation-v15/"
                 f"batch-{index:02d}/teacher.jsonl"
             ),
             "report_json": (
-                "runs/experiments/contextual-continuation-v14/"
+                "runs/experiments/contextual-continuation-v15/"
                 f"batch-{index:02d}/report.json"
             ),
         }
@@ -455,7 +458,7 @@ def _load_preregistration(
         or not isinstance(origin, dict)
         or origin.get("algorithm") != "hmac-sha256-truncated-128"
         or origin.get("key_path")
-        != "runs/secrets/contextual-continuation-v14-origin.key"
+        != "runs/secrets/contextual-continuation-v15-origin.key"
     ):
         raise SystemExit("contextual preregistration changed the frozen protocol")
     for field, length in (
@@ -600,8 +603,9 @@ def _tensorization_preflight(
         )
     )
     try:
-        for offset in range(0, len(records), 32):
-            chunk = records[offset : offset + 32]
+        chunk_size = int(_EXPECTED_TRAINING["chunk_size"])
+        for offset in range(0, len(records), chunk_size):
+            chunk = records[offset : offset + chunk_size]
             batch = tensorizer.tensorize(
                 tuple(record.observation for record in chunk),
                 tuple(
@@ -804,7 +808,7 @@ def _coverage(records, results) -> dict[str, object]:
                 record.candidate_space_size > len(record.candidates)
                 for record in records
             ),
-            "subset_contract": "complete_roots;max512;overflow=fail_closed",
+            "subset_contract": DENSE_TEACHER_SUBSET_CONTRACT,
             "observed_victory_origin_groups": len(victory_groups),
             "postwin_rows": len(postwin),
             "postwin_origin_groups": len({record.run_group for record in postwin}),
