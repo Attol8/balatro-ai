@@ -54,6 +54,7 @@ class TacticalChoice:
 
 def choose_tactical(
     observation: PublicObservation, baseline: PublicAction, *, samples: int = 8,
+    model_green_joker: bool = False,
 ) -> TacticalChoice:
     """Prefer a clear now, or a materially better sampled discard/refill."""
     if isinstance(samples, bool) or not isinstance(samples, int) or not 1 <= samples <= 64:
@@ -91,8 +92,15 @@ def choose_tactical(
         return TacticalChoice(play, score, baseline_score, 0, "estimated clear now" if stochastic else "clear blind now")
     if observation.round.discards_left <= 0 or observation.draw_count <= 0:
         return TacticalChoice(play, score, baseline_score, 0, "best immediate legal play")
-    if any(joker.key in _DISCARD_STATE_JOKERS and not joker.debuffed for joker in observation.jokers):
+    unsupported = _DISCARD_STATE_JOKERS - {"j_green_joker"} if model_green_joker else _DISCARD_STATE_JOKERS
+    if any(joker.key in unsupported and not joker.debuffed for joker in observation.jokers):
         return unchanged("discard changes joker state: preserve baseline")
+    if model_green_joker and any(
+        joker.key == "j_green_joker" and not joker.debuffed
+        and (joker.runtime is None or joker.runtime.current_mult is None)
+        for joker in observation.jokers
+    ):
+        return unchanged("unknown Green Joker runtime: preserve baseline")
     if any(card.seal == "PURPLE" for card in observation.hand):
         return unchanged("discard generates consumables: preserve baseline")
     if sum(entry.count for entry in observation.remaining_deck) != observation.draw_count:
@@ -119,7 +127,8 @@ def choose_tactical(
     for discard in candidates:
         outcomes = []
         for drawn in shared_draws:
-            after = _after_discard(observation, discard, drawn, sort_mode=sort_mode)
+            after = _after_discard(observation, discard, drawn, sort_mode=sort_mode,
+                                   model_green_joker=model_green_joker)
             if after not in cache:
                 next_play = _best_play(after)
                 cache[after] = next_play[1] if next_play is not None else 0.0
@@ -247,7 +256,8 @@ def _discard_candidates(observation: PublicObservation, baseline: PublicAction,
 
 
 def _after_discard(observation: PublicObservation, discard: DiscardCards,
-                   shared_draw: tuple[VisiblePlayingCard, ...], *, sort_mode: str | None = None) -> PublicObservation:
+                   shared_draw: tuple[VisiblePlayingCard, ...], *, sort_mode: str | None = None,
+                   model_green_joker: bool = False) -> PublicObservation:
     selected = {slot.value for slot in discard.cards}
     kept = tuple(card for index, card in enumerate(observation.hand) if index not in selected)
     draw = shared_draw[:max(0, observation.hand_limit - len(kept))]
@@ -255,7 +265,20 @@ def _after_discard(observation: PublicObservation, discard: DiscardCards,
     remaining.subtract(draw)
     deck = tuple(DeckCardCount(card, count) for card, count in remaining.items() if count > 0)
     hand = _sort_hand(kept + draw, sort_mode) if sort_mode else kept + draw
-    return replace(observation, hand=hand, draw_count=observation.draw_count - len(draw),
+    jokers = observation.jokers
+    if model_green_joker:
+        # Installed card.lua: one decrement on the last discarded card, excluding
+        # Blueprint contexts. Copies subsequently score the updated target runtime.
+        updated = []
+        for joker in jokers:
+            if joker.key == "j_green_joker" and not joker.debuffed:
+                if joker.runtime is None or joker.runtime.current_mult is None:
+                    raise ValueError("Green Joker discard requires known current_mult")
+                joker = replace(joker, runtime=replace(
+                    joker.runtime, current_mult=max(0, joker.runtime.current_mult - 1)))
+            updated.append(joker)
+        jokers = tuple(updated)
+    return replace(observation, hand=hand, jokers=jokers, draw_count=observation.draw_count - len(draw),
                    remaining_deck=deck, round=replace(observation.round,
                        discards_left=observation.round.discards_left - 1,
                        discards_used=observation.round.discards_used + 1))

@@ -61,6 +61,14 @@ def test_planet_variant_is_explicit_and_control_remains_disabled():
     assert RunConfig(policy='search-planets').policy == 'search-planets'
 
 
+def test_green_variant_is_isolated_from_planet_and_control():
+    assert make_policy('search').model_green_joker is False
+    assert make_policy('search-planets').model_green_joker is False
+    assert make_policy('search-green').model_green_joker is True
+    assert make_policy('search-green').shop_search.evaluate_planets is False
+    assert RunConfig(policy='search-green').policy == 'search-green'
+
+
 def test_planet_variant_projects_typed_state_and_replays(tmp_path):
     initial = state('SELECTING_HAND', seed='TEST')
     final = state('GAME_OVER', seed='TEST')

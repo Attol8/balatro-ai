@@ -9,6 +9,59 @@ from balatro_ai_v2.solver.public_scoring import score_play
 from balatro_ai_v2.solver.public_state import DeckCardCount, HandStat, HiddenHandCard, HiddenJokerSlot, PublicBlind, PublicItem, VisiblePlayingCard
 from balatro_ai_v2.solver.tactical_search import _after_discard, _observed_sort, choose_tactical
 from solver_state_factory import state
+from balatro_ai_v2.solver.public_state import PublicJokerRuntime
+
+
+@pytest.mark.parametrize("mult,expected", [(5, 4), (1, 0), (0, 0)])
+def test_opt_in_green_discard_penalty_once_and_immutable(mult, expected):
+    obs = observation(["H_A", "C_3", "S_7"], ["H_4", "C_5"], target=10000)
+    green = PublicItem("j_green_joker", "Green Joker", "JOKER", runtime=PublicJokerRuntime(current_mult=mult))
+    obs = replace(obs, jokers=(green,))
+    original = obs.canonical_json()
+    after = _after_discard(obs, discard(1, 2), (VisiblePlayingCard("4", "H"), VisiblePlayingCard("5", "C")),
+                           model_green_joker=True)
+    assert after.jokers[0].runtime.current_mult == expected
+    assert obs.canonical_json() == original
+    assert _after_discard(obs, discard(1), (VisiblePlayingCard("4", "H"),)).jokers == obs.jokers
+
+
+def test_green_opt_in_enables_samples_but_default_still_falls_back():
+    obs = observation(["H_A", "H_K", "H_9", "H_6", "C_2", "D_3", "S_4", "C_7"],
+                      ["H_2", "H_3", "H_4", "H_5", "H_7", "H_8", "H_T", "H_J"], target=10000)
+    green = PublicItem("j_green_joker", "Green Joker", "JOKER", runtime=PublicJokerRuntime(current_mult=5))
+    obs = replace(obs, jokers=(green,))
+    assert choose_tactical(obs, play(0)).reason == "discard changes joker state: preserve baseline"
+    choice = choose_tactical(obs, play(0), samples=4, model_green_joker=True)
+    assert choice.samples == 4 and is_legal(obs, choice.action)
+    assert choice == choose_tactical(obs, play(0), samples=4, model_green_joker=True)
+    unknown = replace(obs, jokers=(replace(green, runtime=None),))
+    assert choose_tactical(unknown, play(0), model_green_joker=True).reason == "unknown Green Joker runtime: preserve baseline"
+    other = replace(obs, jokers=(green, PublicItem("j_ramen", "Ramen", "JOKER")))
+    assert choose_tactical(other, play(0), model_green_joker=True).reason == "discard changes joker state: preserve baseline"
+
+
+def test_debuffed_green_is_not_decremented():
+    obs = observation(["H_A", "C_3"], ["H_4"])
+    green = PublicItem("j_green_joker", "Green Joker", "JOKER", debuffed=True,
+                       runtime=PublicJokerRuntime(current_mult=5))
+    obs = replace(obs, jokers=(green,))
+    assert _after_discard(obs, discard(1), (VisiblePlayingCard("4", "H"),),
+                          model_green_joker=True).jokers == obs.jokers
+
+
+@pytest.mark.parametrize("copy_key", ["j_blueprint", "j_brainstorm"])
+def test_copied_green_scores_updated_target_without_double_decrement(copy_key):
+    obs = observation(["H_A", "C_3"], ["H_4"])
+    green = PublicItem("j_green_joker", "Green Joker", "JOKER", runtime=PublicJokerRuntime(current_mult=5))
+    copier = PublicItem(copy_key, "Copy", "JOKER")
+    obs = replace(obs, jokers=(copier, green) if copy_key == "j_blueprint" else (green, copier))
+    drawn = (VisiblePlayingCard("4", "H"),)
+    after = _after_discard(obs, discard(1), drawn, model_green_joker=True)
+    unpenalized = _after_discard(obs, discard(1), drawn)
+    target = next(joker for joker in after.jokers if joker.key == "j_green_joker")
+    assert target.runtime.current_mult == 4
+    # High Card's 5 chips + Ace's 11, losing one Mult from each scoring copy.
+    assert score_play(unpenalized, play(0).cards)[0] - score_play(after, play(0).cards)[0] == 32
 
 
 _HAND_BASES = {

@@ -4,12 +4,12 @@ Balatro AI experiments focused on measurable real-game playing strength.
 The live runner evaluates public-information policies against actual Balatro;
 local scoring and search improve decisions, with real trajectories providing feedback.
 
-## Real-game baseline
+## Real-game evaluation
 
 Run complete **Red Deck / White Stake** games against a running BalatroBot server:
 
 ```bash
-python -m balatro_ai_v2.live run --policy strategic --episodes 5 --output runs/dev-001
+python -m balatro_ai_v2.live run --policy search --episodes 5 --output runs/dev-001
 ```
 
 The server defaults to `127.0.0.1:12346`. Start it using your installed BalatroBot
@@ -36,6 +36,23 @@ actions, public history, richer Joker/card effects, ordering, and broader shop a
 consumable decisions. See [solver provenance](balatro_ai_v2/solver/README.md).
 Historical results do not establish the playing strength of this imported artifact;
 new runs measure it directly.
+
+`--policy search` adds bounded public draw lookahead and scoring-based joker
+purchases/replacements. It has a confirmed real Ante-8 clear on development seed
+`D0000001`, but does **not** yet establish reliable wins. The completed imported
+strategic comparison lost all 20 development runs. See [the evolving evidence and
+experiment plan](plan.md); development results are not held-out performance.
+
+Experimental variants keep that search control unchanged:
+
+- `search-planets`: also compares immediate planet upgrades against shop offers.
+- `search-green`: models Green Joker's discard penalty during draw lookahead.
+
+Each variant is an ablation, not an established improvement. Draw estimates use
+eight shared samples; shop estimates use six synthetic hands and approximate
+continuations. Unsupported state transitions retain the strategic fallback.
+The runner waits for two identical public snapshots between actions to allow
+queued effects to settle; this remains bounded polling, not engine synchronization.
 
 Each new output directory contains:
 
@@ -91,7 +108,11 @@ for errors/truncations, while genuine game losses are successful executions.
 
 See [plan.md](plan.md) for the design and next experiments.
 
-## Current vertical slice
+## Legacy simulator experiments
+
+The modules below remain available for comparison and small scoring tests. They
+are incomplete game models, not the source of truth for live win rates or the
+current training recommendation.
 
 - immutable-ish card and deck primitives
 - deterministic seeded deck shuffling
@@ -107,8 +128,8 @@ See [plan.md](plan.md) for the design and next experiments.
 
 ## Fast Training Env
 
-The training hot loop should use `balatro_ai_v2.fast`, not BalatroBot. The env
-is designed to grow into full Balatro coverage with deterministic local
+The legacy training hot loop uses `balatro_ai_v2.fast`, not BalatroBot. The env
+was designed to grow into full Balatro coverage with deterministic local
 rollouts, fixed 512-action tactical encoding, compact observations, and no
 network or rendering dependency.
 

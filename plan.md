@@ -125,4 +125,10 @@ Policy fingerprints and profile metadata belong in every experiment manifest.
 4. Freeze a materially stronger policy before opening held-out H seeds. Report
    confidence intervals, errors, truncations and score distributions with wins.
 
+The stable control has now confirmed a win on development seed D0000001:
+Ante 9 / ROUND_EVAL, final boss score 131,820 and peak hand score 165,600.
+All 204 recorded decisions replay identically. The fixed execution boundary
+preserved Smiley Face after the required Verdant Leaf sale. The batch is ongoing;
+a selected successful seed does not establish a win rate.
+
 The milestone remains incomplete until live performance supports reliable wins.

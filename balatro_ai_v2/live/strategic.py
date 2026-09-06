@@ -77,11 +77,13 @@ class StrategicPolicy:
 class SearchPolicy(StrategicPolicy):
     """Numerical shop comparisons and sampled public draw lookahead."""
 
-    def __init__(self, tactical_samples: int = 8, shop_samples: int = 6, evaluate_planets: bool = False) -> None:
+    def __init__(self, tactical_samples: int = 8, shop_samples: int = 6, evaluate_planets: bool = False,
+                 model_green_joker: bool = False) -> None:
         super().__init__()
         from balatro_ai_v2.solver.shop_search import ShopSearch
         self.shop_search = ShopSearch(samples=shop_samples, evaluate_planets=evaluate_planets)
         self.tactical_samples = tactical_samples
+        self.model_green_joker = model_green_joker
 
     def select(self, observation):
         from balatro_ai_v2.solver.public_state import Phase
@@ -93,7 +95,8 @@ class SearchPolicy(StrategicPolicy):
             if choice is not None:
                 return choice.action, choice.reason, choice.diagnostics
         elif isinstance(action, (PlayCards, DiscardCards)):
-            tactical = choose_tactical(observation, action, samples=self.tactical_samples)
+            tactical = choose_tactical(observation, action, samples=self.tactical_samples,
+                                       model_green_joker=self.model_green_joker)
             return tactical.action, tactical.reason, {
                 "sampled_next_play_score": tactical.expected_score,
                 "baseline_score": tactical.baseline_score, "samples": tactical.samples,
