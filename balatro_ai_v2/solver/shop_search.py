@@ -12,12 +12,13 @@ from math import log1p
 from random import Random
 
 from balatro_ai_v2.solver.actions import (
-    BuyShopCard, HandSlot, JokerSlot, LeaveShop, PublicAction, RerollShop,
+    BuyMode, BuyShopCard, HandSlot, JokerSlot, LeaveShop, PublicAction, RerollShop,
     SellJoker, ShopSlot, is_legal,
 )
 from balatro_ai_v2.solver.joker_catalog import get_joker_profile
+from balatro_ai_v2.solver.build_strategy import planet_hand
 from balatro_ai_v2.solver.policy import PublicHistoryStep
-from balatro_ai_v2.solver.public_scoring import _prepare_score_context, _score_play_prepared
+from balatro_ai_v2.solver.public_scoring import _HAND_LEVEL_GAINS, _prepare_score_context, _score_play_prepared
 from balatro_ai_v2.solver.public_state import DeckCardCount, Phase, PublicItem, PublicJokerRuntime, PublicObservation
 
 
@@ -35,11 +36,14 @@ def _hand_size_delta(item: PublicItem) -> int | None:
 
 
 class ShopSearch:
-    def __init__(self, samples: int = 6, max_rerolls: int = 2):
+    def __init__(self, samples: int = 6, max_rerolls: int = 2, evaluate_planets: bool = False):
         if not 1 <= samples <= 12 or not 0 <= max_rerolls <= 5:
             raise ValueError('shop search budgets must be bounded')
         self.samples = samples
         self.max_rerolls = max_rerolls
+        if not isinstance(evaluate_planets, bool):
+            raise ValueError('evaluate_planets must be boolean')
+        self.evaluate_planets = evaluate_planets
         self._pending: tuple[int, PublicItem] | None = None
 
     def choose(self, observation: PublicObservation, baseline_action: PublicAction,
@@ -138,6 +142,46 @@ class ShopSearch:
                 utility = gain + future - opportunity - cash_penalty
                 if utility > 0.025 and (best is None or utility > best[0]):
                     best = (utility, sale or buy, offer, capacity, first, repeated, final)
+        planet_screen = self.evaluate_planets and isinstance(baseline_action, (LeaveShop, RerollShop))
+        if planet_screen:
+            evaluated = 0
+            reasons = []
+            best_planet_gain = None
+            for i, offer in enumerate(observation.shop):
+                if not isinstance(offer, PublicItem) or offer.kind != 'PLANET':
+                    continue
+                family = planet_hand(offer.key)
+                buy = BuyShopCard(ShopSlot(i), BuyMode.USE)
+                if 'v_observatory' in observation.used_vouchers:
+                    reasons.append(f'{offer.key}: Observatory hold/use tradeoff excluded')
+                    continue
+                if family not in _HAND_LEVEL_GAINS or not any(s.name == family for s in observation.hand_stats):
+                    reasons.append(f'{offer.key}: unsupported hand family')
+                    continue
+                if not is_legal(observation, buy) or offer.buy_cost is None:
+                    reasons.append(f'{offer.key}: buy-and-use is not legal or affordable')
+                    continue
+                if observation.money - offer.buy_cost < reserve and offer.buy_cost > 0:
+                    reasons.append(f'{offer.key}: protected cash reserve')
+                    continue
+                chip_gain, mult_gain = _HAND_LEVEL_GAINS[family]
+                candidate = replace(observation, money=observation.money - offer.buy_cost,
+                                    hand_stats=tuple(replace(stat, level=stat.level + 1,
+                                                             chips=stat.chips + chip_gain,
+                                                             mult=stat.mult + mult_gain)
+                                                     if stat.name == family else stat for stat in observation.hand_stats))
+                first, repeated, final = self._capacity_components(candidate, hands)
+                capacity = .5 * first + .35 * repeated + .15 * final
+                utility = log1p(capacity) - log1p(current) - offer.buy_cost * (0.004 if weak else 0.008)
+                evaluated += 1
+                best_planet_gain = max(best_planet_gain if best_planet_gain is not None else utility, utility)
+                reasons.append(f'{offer.key}: utility {utility:.6f}')
+                if utility > 0.025 and (best is None or utility > best[0]):
+                    best = (utility, buy, offer, capacity, first, repeated, final)
+            diagnostics.update(planet_candidates_evaluated=evaluated,
+                               planet_screen='; '.join(reasons) or 'no planet offers')
+            if best_planet_gain is not None:
+                diagnostics['best_planet_utility'] = best_planet_gain
         if best is not None:
             utility, action, offer, capacity, first, repeated, final = best
             if isinstance(action, SellJoker):
@@ -146,7 +190,7 @@ class ShopSearch:
                               {**diagnostics, 'candidate_capacity': capacity, 'utility_gain': utility,
                                'candidate_first_hand': first, 'candidate_repeat_hand': repeated,
                                'candidate_final_hand': final,
-                               'desired_joker': offer.key})
+                               ('desired_planet' if offer.kind == 'PLANET' else 'desired_joker'): offer.key})
         rerolls = sum(isinstance(step.action, RerollShop) for step in history
                       if step.before.round_no == observation.round_no)
         # Cost growth also bounds rerolls when callers provide no history.
@@ -157,6 +201,8 @@ class ShopSearch:
             return ShopChoice(RerollShop(), 'Search for a scoring upgrade while the build is below next-blind pace.', diagnostics)
         if isinstance(baseline_action, RerollShop) and (rerolls >= self.max_rerolls or cost >= 5 + self.max_rerolls):
             return ShopChoice(LeaveShop(), 'Stop after the bounded shop reroll budget.', diagnostics)
+        if planet_screen:
+            return ShopChoice(baseline_action, 'Preserve baseline after scoring available planets.', diagnostics)
         # Respect an existing conservative fallback instead of suppressing
         # strategy purchases that the immediate scorer cannot value.
         return None

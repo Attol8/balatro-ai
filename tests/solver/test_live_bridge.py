@@ -34,7 +34,7 @@ def test_live_trace_replays_strategic_history(tmp_path):
             return deepcopy(initial if method == "start" else final)
 
     path = tmp_path / "strategic.jsonl"
-    result = run_episode(Client(), StrategicPolicy(), "TEST", path, RunConfig(policy="strategic"))
+    result = run_episode(Client(), StrategicPolicy(), "TEST", path, RunConfig(stable_reads=1, policy="strategic"))
     assert result["status"] == "lost"
     replayed = replay(path)
     assert replayed["matching"] == replayed["decisions"] == 1
@@ -51,5 +51,5 @@ def test_strategic_final_boss_loss_does_not_violate_typed_win_invariant(tmp_path
         def rpc(self, method, params=None):
             return deepcopy(initial if method == "start" else final)
 
-    result = run_episode(Client(), StrategicPolicy(), "TEST", tmp_path / "run.jsonl", RunConfig(policy="strategic"))
+    result = run_episode(Client(), StrategicPolicy(), "TEST", tmp_path / "run.jsonl", RunConfig(stable_reads=1, policy="strategic"))
     assert result["status"] == "lost" and result["won"] is False

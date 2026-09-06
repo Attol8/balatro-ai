@@ -47,12 +47,13 @@ class RunConfig:
     endless: bool = False
     max_ante: int = 16
     settle_polls: int = 100
+    stable_reads: int = 2
     poll_interval: float = 0.1
     policy: str = "baseline"
     expected_profile: str | None = None
 
     def __post_init__(self) -> None:
-        if self.max_decisions < 1 or self.settle_polls < 1 or self.max_ante < 1:
+        if self.max_decisions < 1 or self.settle_polls < 1 or self.max_ante < 1 or self.stable_reads < 1:
             raise ValueError("decision, poll, and ante limits must be positive")
         if self.poll_interval < 0 or self.split not in {"dev", "heldout"}:
             raise ValueError("invalid poll interval or seed split")
@@ -101,9 +102,20 @@ def record_transition(policy: Policy, before: dict, action: dict, after: dict) -
 
 
 def _settle(client: Client, state: dict, config: RunConfig) -> dict:
+    # Decision phases may precede queued effects, such as Verdant Leaf disabling.
+    # Compare public API snapshots without deriving typed policy state.
+    previous = None
+    stable = 0
     for poll in range(config.settle_polls + 1):
         if state.get("state") in DECISION_STATES | {"GAME_OVER"}:
-            return state
+            public = public_observation(state)
+            stable = stable + 1 if public == previous else 1
+            previous = public
+            if stable >= config.stable_reads:
+                return state
+        else:
+            previous = None
+            stable = 0
         if state.get("state") == "MENU":
             raise RuntimeError("game unexpectedly returned to MENU")
         if poll == config.settle_polls:

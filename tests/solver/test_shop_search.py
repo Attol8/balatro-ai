@@ -1,9 +1,9 @@
 from dataclasses import replace
 
-from balatro_ai_v2.solver.actions import BuyPack, BuyVoucher, PackOfferSlot, VoucherSlot, BuyShopCard, LeaveShop, RerollShop, SellJoker, ShopSlot, UseConsumable, ConsumableSlot, is_legal
+from balatro_ai_v2.solver.actions import BuyMode, BuyPack, BuyVoucher, PackOfferSlot, VoucherSlot, BuyShopCard, LeaveShop, RerollShop, SellJoker, ShopSlot, UseConsumable, ConsumableSlot, is_legal
 from balatro_ai_v2.solver.adapter import to_public_observation
 from balatro_ai_v2.solver.policy import PublicHistoryStep
-from balatro_ai_v2.solver.public_state import DeckCardCount, Phase, PublicItem, VisiblePlayingCard
+from balatro_ai_v2.solver.public_state import DeckCardCount, HandStat, Phase, PublicItem, VisiblePlayingCard
 from balatro_ai_v2.solver.shop_search import ShopSearch
 from solver_state_factory import state
 
@@ -211,3 +211,56 @@ def test_shared_sample_stream_is_independent_of_loadout_hand_size():
 def test_unknown_turtle_bean_hand_size_is_not_projected():
     obs = shop(offers=(item('j_turtle_bean', 1),))
     assert ShopSearch(samples=1, max_rerolls=0).choose(obs, LeaveShop()) is None
+
+
+def planet(key='c_pluto', cost=3):
+    return PublicItem(key=key, label=key, kind='PLANET', buy_cost=cost, sell_cost=1)
+
+
+def test_planet_ablation_is_off_by_default():
+    obs = shop(offers=(planet(),))
+    assert ShopSearch(samples=1, max_rerolls=0).choose(obs, LeaveShop()) is None
+    choice = ShopSearch(samples=1, max_rerolls=0, evaluate_planets=True).choose(obs, LeaveShop())
+    assert choice.action == BuyShopCard(ShopSlot(0), BuyMode.USE)
+    assert choice.diagnostics['candidate_first_hand'] == 52
+    assert choice.diagnostics['desired_planet'] == 'c_pluto'
+
+
+def test_irrelevant_planet_does_not_improve_sampled_hands():
+    obs = shop(offers=(planet('c_mercury'),))
+    obs = replace(obs, hand_stats=obs.hand_stats + (HandStat('Pair', 1, 10, 2, 0, 0),))
+    choice = ShopSearch(samples=1, max_rerolls=0, evaluate_planets=True).choose(obs, LeaveShop())
+    assert isinstance(choice.action, LeaveShop)
+    assert choice.diagnostics['best_planet_utility'] < 0
+
+
+def test_planet_capacity_accounts_for_bull_cash_spending():
+    obs = shop(money=20, offers=(planet(),), jokers=(item('j_bull'),))
+    choice = ShopSearch(samples=1, max_rerolls=0, evaluate_planets=True).choose(obs, LeaveShop())
+    # Planet: (High Card 15 + Ace 11 + Bull 2*$17) * 2.
+    assert choice.diagnostics['candidate_first_hand'] == 120
+
+
+def test_planet_ablation_preserves_reserve_and_use_legality():
+    planner = ShopSearch(samples=1, max_rerolls=0, evaluate_planets=True)
+    obs = shop(money=2, offers=(planet(),))
+    assert isinstance(planner.choose(obs, LeaveShop()).action, LeaveShop)
+    obs = replace(obs, money=4)
+    assert 'protected cash reserve' in planner.choose(obs, LeaveShop()).diagnostics['planet_screen']
+    obs = replace(obs, money=5, consumable_limit=0)
+    choice = planner.choose(obs, LeaveShop())
+    assert choice.action == BuyShopCard(ShopSlot(0), BuyMode.USE)
+    assert is_legal(obs, choice.action)
+
+
+def test_planet_ablation_skips_observatory():
+    obs = replace(shop(offers=(planet(),)), used_vouchers=('v_observatory',))
+    choice = ShopSearch(samples=1, max_rerolls=0, evaluate_planets=True).choose(obs, LeaveShop())
+    assert isinstance(choice.action, LeaveShop)
+    assert 'Observatory' in choice.diagnostics['planet_screen']
+
+
+def test_planet_and_joker_compete_on_same_capacity_utility():
+    obs = shop(offers=(planet(), item('j_joker', 3)))
+    choice = ShopSearch(samples=1, max_rerolls=0, evaluate_planets=True).choose(obs, LeaveShop())
+    assert choice.action == BuyShopCard(ShopSlot(1))
