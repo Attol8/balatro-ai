@@ -517,3 +517,14 @@ the completed run; no training or model API calls occurred.
 Next work should evaluate multi-action build changes and check candidate
 transition fidelity on these newly divergent real states, not distil isolated
 action labels from a handful of rollout successes. Real wins remain the metric.
+
+## Build-first strategic replacement (user requested big bet)
+
+Stop the isolated-intervention loop. Study the full Joker catalogue and expert
+build principles, then replace strategic ownership across shops, packs,
+consumables and hand play as one coherent policy. Design and evidence are in
+`docs/build-first-policy.md`. Reuse public mechanics, legal actions and numerical
+scoring; do not construct another simulator/framework. Runtime stays local with
+no model API. Basic correctness tests remain, but evaluate the integrated policy
+on a complete fixed development panel instead of one experiment per small rule.
+This is the next implementation, not a measured improvement yet.
