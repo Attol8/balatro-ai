@@ -261,7 +261,12 @@ def test_public_roots_reconstruct_publicly_derivable_pool_lifecycle() -> None:
 
 @pytest.mark.parametrize(
     ("seed", "key"),
-    (("4", "j_green_joker"), ("27", "j_flash"), ("46", "j_stencil")),
+    (
+        ("4", "j_green_joker"),
+        ("38", "j_castle"),
+        ("27", "j_flash"),
+        ("46", "j_stencil"),
+    ),
 )
 def test_publicly_derivable_runtime_jokers_round_trip(
     seed: str,

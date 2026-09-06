@@ -2001,6 +2001,31 @@ same reused seed but invalidated stored authority public states; that result is
 not a candidate and must not be used for selection. Continue with the frozen
 wire, add Castle's typed public target, then reconstruct vanilla PACK roots.
 
+Castle contract design: add `castle_suit` to the existing fixed Joker runtime,
+not to tooltip text or a generic round target. The BalatroBot extractor reads
+only `G.GAME.current_round.castle_card.suit` for a visible Castle; the Jackdaw
+bridge emits the same value from its current-round state; the public adapter
+accepts it only on Castle and validates the canonical suit enum. Evolve the
+runtime codec backward-compatibly so old stored authority traces decode the
+missing field as `None`, while protocol v12 requires it on new live messages.
+The public-root constructor must require both Castle's chips and suit and set
+the rollout target before round-trip. Patch and test both the repository's
+readiness patch and the installed development BalatroBot before the next live
+diagnostic.
+
+Castle contract result: protocol v12 now carries the visible suit as typed
+Joker runtime, with backward-compatible decoding for retained v11 authority
+traces. BalatroBot and Jackdaw expose the same tooltip-visible target, the
+adapter rejects it on every non-Castle item, and reconstructed roots require
+and restore it. The readiness patch applies cleanly to its pinned BalatroBot
+base, focused tests pass, and the complete suite passes at 1,215 tests. On the
+same accelerated development seed and nonce, public search completed 68 of 74
+attempts, changed 13 actions, rejected zero rollout branches, and reached Ante
+6 after 173 live decisions. Every one of the six remaining fallbacks was a
+PACK root; Castle is no longer a fallback. Because this is a repeatedly used
+development seed, the score is diagnostic rather than selection evidence.
+Proceed to vanilla PACK reconstruction before any strength comparison.
+
 Strength replan: throughput is no longer the immediate score ceiling. Across
 the descriptive frozen v9/v10 trajectories, 340 of 365 losses (93.2%) end on
 Pair or Two Pair; 116 of 243 losses with a full Joker row have zero xMult roles

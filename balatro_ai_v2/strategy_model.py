@@ -1519,6 +1519,8 @@ class PublicStrategyTensorizer:
                     _put_category(features, "rank", runtime.target_rank, _RANKS)
                 if runtime.target_suit is not None:
                     _put_category(features, "suit", runtime.target_suit, _SUITS)
+                if runtime.castle_suit is not None:
+                    _put_category(features, "suit", runtime.castle_suit, _SUITS)
             identity = item.key
         elif kind in {"TAROT", "PLANET", "SPECTRAL"}:
             if item.key not in _CONSUMABLE_KEYS or public_consumable_rule(item) is None:

@@ -765,6 +765,8 @@ def _add_item(
             vector.category(f"{prefix}.runtime.target_rank", item.runtime.target_rank)
         if item.runtime.target_suit is not None:
             vector.category(f"{prefix}.runtime.target_suit", item.runtime.target_suit)
+        if item.runtime.castle_suit is not None:
+            vector.category(f"{prefix}.runtime.castle_suit", item.runtime.castle_suit)
 
 
 class _HashedVector:

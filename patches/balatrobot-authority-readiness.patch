@@ -818,7 +818,7 @@ index 5d9d29f..966575e 100644
    end
 
    -- Rental (boolean from ability)
-@@ -388,6 +389,17 @@ local function extract_card_value(card)
+@@ -388,6 +389,22 @@ local function extract_card_value(card)
      if card.ability.driver_tally then ab.driver_tally = card.ability.driver_tally end
      -- Loyalty Card: remaining hands until trigger
      if card.ability.loyalty_remaining ~= nil then ab.loyalty_remaining = card.ability.loyalty_remaining end
@@ -833,10 +833,15 @@ index 5d9d29f..966575e 100644
 +        ab.idol_suit = convert_suit_to_enum(idol.suit)
 +      end
 +    end
++    -- Castle's current suit is printed in its normal tooltip.
++    if card.config and card.config.center_key == "j_castle" then
++      local castle = G.GAME.current_round and G.GAME.current_round.castle_card
++      if castle then ab.castle_suit = convert_suit_to_enum(castle.suit) end
++    end
      -- Only include if non-empty
      if next(ab) ~= nil then
        value.ability = ab
-@@ -397,6 +409,52 @@ local function extract_card_value(card)
+@@ -397,6 +414,52 @@ local function extract_card_value(card)
    return value
  end
 
@@ -889,7 +894,7 @@ index 5d9d29f..966575e 100644
  ---Extracts state information from a card
  ---@param card table The card object
  ---@return Card.State state The Card.State object
-@@ -418,6 +476,11 @@ local function extract_card_state(card)
+@@ -418,6 +481,11 @@ local function extract_card_state(card)
      state.highlight = true
    end
 
@@ -901,7 +906,7 @@ index 5d9d29f..966575e 100644
    return state
  end
 
-@@ -437,8 +500,9 @@ end
+@@ -437,8 +505,9 @@ end
 
  ---Extracts a complete Card object from a game card
  ---@param card table The game card object
@@ -913,7 +918,7 @@ index 5d9d29f..966575e 100644
    -- Determine set
    local set = "DEFAULT"
    if card.ability and card.ability.set then
-@@ -462,6 +526,17 @@ local function extract_card(card)
+@@ -462,6 +531,17 @@ local function extract_card(card)
      end
    end
 
@@ -931,7 +936,7 @@ index 5d9d29f..966575e 100644
    -- Extract key (prefer card_key for playing cards, fallback to center_key)
    local key = ""
    if card.config then
-@@ -479,7 +554,7 @@ local function extract_card(card)
+@@ -479,7 +559,7 @@ local function extract_card(card)
      label = card.label or "",
      value = extract_card_value(card),
      modifier = extract_card_modifier(card),
@@ -940,7 +945,7 @@ index 5d9d29f..966575e 100644
      cost = extract_card_cost(card),
    }
  end
-@@ -490,8 +565,9 @@ end
+@@ -490,8 +570,9 @@ end
 
  ---Extracts an Area object from a game area (like G.jokers, G.hand, etc.)
  ---@param area table The game area object
@@ -951,7 +956,7 @@ index 5d9d29f..966575e 100644
    if not area then
      return nil
    end
-@@ -499,7 +575,7 @@ local function extract_area(area)
+@@ -499,7 +580,7 @@ local function extract_area(area)
    local cards = {}
    if area.cards then
      for i, card in pairs(area.cards) do
@@ -960,7 +965,7 @@ index 5d9d29f..966575e 100644
      end
    end
 
-@@ -578,6 +654,9 @@ local function extract_round_info()
+@@ -578,6 +659,9 @@ local function extract_round_info()
      round.reroll_cost = G.GAME.current_round.reroll_cost
    end
 
@@ -970,7 +975,7 @@ index 5d9d29f..966575e 100644
    -- Chips is stored in G.GAME not G.GAME.current_round
    if G.GAME.chips then
      round.chips = G.GAME.chips
-@@ -724,6 +803,7 @@ function gamestate.get_blinds_info()
+@@ -724,6 +808,7 @@ function gamestate.get_blinds_info()
      small = {
        type = "SMALL",
        status = "UPCOMING",
@@ -978,7 +983,7 @@ index 5d9d29f..966575e 100644
        name = "",
        effect = "",
        score = 0,
-@@ -733,6 +813,7 @@ function gamestate.get_blinds_info()
+@@ -733,6 +818,7 @@ function gamestate.get_blinds_info()
      big = {
        type = "BIG",
        status = "UPCOMING",
@@ -986,7 +991,7 @@ index 5d9d29f..966575e 100644
        name = "",
        effect = "",
        score = 0,
-@@ -742,6 +823,7 @@ function gamestate.get_blinds_info()
+@@ -742,6 +828,7 @@ function gamestate.get_blinds_info()
      boss = {
        type = "BOSS",
        status = "UPCOMING",
@@ -994,7 +999,7 @@ index 5d9d29f..966575e 100644
        name = "",
        effect = "",
        score = 0,
-@@ -835,6 +917,14 @@ function gamestate.get_blinds_info()
+@@ -835,6 +922,14 @@ function gamestate.get_blinds_info()
 
    -- Boss blind has no tags (tag_name and tag_effect remain empty strings)
 
@@ -1009,7 +1014,7 @@ index 5d9d29f..966575e 100644
    return blinds
  end
 
-@@ -864,12 +954,18 @@ function gamestate.get_gamestate()
+@@ -864,12 +959,18 @@ function gamestate.get_gamestate()
      state_data.ante_num = (G.GAME.round_resets and G.GAME.round_resets.ante) or 0
      state_data.money = G.GAME.dollars or 0
      state_data.won = G.GAME.won
@@ -1028,7 +1033,7 @@ index 5d9d29f..966575e 100644
 
      -- Stake (optional)
      if G.GAME.stake then
-@@ -897,6 +993,12 @@ function gamestate.get_gamestate()
+@@ -897,6 +998,12 @@ function gamestate.get_gamestate()
      -- Poker hands
      if G.GAME.hands then
        state_data.hands = extract_hand_info(G.GAME.hands)
@@ -1041,7 +1046,7 @@ index 5d9d29f..966575e 100644
      end
 
      -- Round info
-@@ -907,7 +1009,7 @@ function gamestate.get_gamestate()
+@@ -907,7 +1014,7 @@ function gamestate.get_gamestate()
    end
 
    -- Always available areas
@@ -1050,7 +1055,7 @@ index 5d9d29f..966575e 100644
    state_data.consumables = extract_area(G.consumeables) -- Note: typo in game code
 
    -- Cards remaining in deck
-@@ -915,6 +1017,11 @@ function gamestate.get_gamestate()
+@@ -915,6 +1022,11 @@ function gamestate.get_gamestate()
      state_data.cards = extract_area(G.deck)
    end
 

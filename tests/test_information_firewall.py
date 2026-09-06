@@ -330,6 +330,12 @@ def test_admitted_joker_runtime_is_fixed_and_tooltip_visible() -> None:
             kind="JOKER",
             ability={"idol_rank": "K", "idol_suit": "H"},
         ),
+        item_card(
+            "j_castle",
+            card_id=109,
+            kind="JOKER",
+            ability={"chips": 12, "castle_suit": "D"},
+        ),
     ]
     raw["jokers"]["count"] = len(raw["jokers"]["cards"])
 
@@ -345,6 +351,8 @@ def test_admitted_joker_runtime_is_fixed_and_tooltip_visible() -> None:
     assert runtimes[7] is not None and runtimes[7].target_hand == "Flush"
     assert runtimes[8] is not None
     assert (runtimes[8].target_rank, runtimes[8].target_suit) == ("K", "H")
+    assert runtimes[9] is not None
+    assert (runtimes[9].current_chips, runtimes[9].castle_suit) == (12, "D")
 
 
 def test_visible_idol_target_is_strict_but_hidden_idol_remains_anonymous() -> None:

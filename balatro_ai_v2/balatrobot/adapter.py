@@ -511,6 +511,11 @@ def _joker_runtime(key: str, kind: str, value: Mapping[str, Any]) -> PublicJoker
             target_hand=_runtime_string(ability, "poker_hand") if key == "j_todo_list" else None,
             target_rank=_runtime_string(ability, "idol_rank") if key == "j_idol" else None,
             target_suit=_runtime_string(ability, "idol_suit") if key == "j_idol" else None,
+            castle_suit=(
+                _runtime_string(ability, "castle_suit")
+                if key == "j_castle"
+                else None
+            ),
         )
     except ValueError as exc:
         raise ObservationError(str(exc)) from exc

@@ -142,6 +142,23 @@ def test_candidate_exposes_visible_idol_tooltip_target() -> None:
     assert idol.runtime.target_suit in {"S", "H", "D", "C"}
 
 
+def test_candidate_exposes_visible_castle_tooltip_target() -> None:
+    pytest.importorskip("jackdaw")
+    from jackdaw.engine.card_factory import create_joker
+
+    backend = jackdaw.JackdawBackend()
+    backend.reset(RunSpec("RED", "WHITE", "2"))
+    backend._backend._gs["jokers"].append(create_joker("j_castle"))
+
+    backend.observe()
+
+    assert backend.current_public is not None
+    castle = backend.current_public.jokers[0]
+    assert castle.runtime is not None
+    assert castle.runtime.current_chips == 0
+    assert castle.runtime.castle_suit in {"S", "H", "D", "C"}
+
+
 def test_candidate_deck_composition_repairs_stale_private_count() -> None:
     pytest.importorskip("jackdaw")
     backend = jackdaw.JackdawBackend()

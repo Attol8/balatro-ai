@@ -33,6 +33,7 @@ _VISIBLE_CARD_FIELDS = {field.name for field in fields(VisiblePlayingCard)}
 _ITEM_FIELDS = {field.name for field in fields(PublicItem)}
 _SHOP_PLAYING_CARD_FIELDS = {field.name for field in fields(PublicShopPlayingCard)}
 _JOKER_RUNTIME_FIELDS = {field.name for field in fields(PublicJokerRuntime)}
+_LEGACY_JOKER_RUNTIME_FIELDS = _JOKER_RUNTIME_FIELDS - {"castle_suit"}
 _OBSERVATION_FIELDS = {field.name for field in fields(PublicObservation)}
 
 
@@ -220,7 +221,11 @@ def _joker_runtime(value: object) -> PublicJokerRuntime | None:
     if value is None:
         return None
     raw = _object(value, "joker runtime")
-    _require_fields(raw, _JOKER_RUNTIME_FIELDS, "joker runtime")
+    if frozenset(raw) not in {
+        frozenset(_LEGACY_JOKER_RUNTIME_FIELDS),
+        frozenset(_JOKER_RUNTIME_FIELDS),
+    }:
+        raise PublicCodecError("joker runtime fields differ from the contract")
     try:
         return PublicJokerRuntime(
             current_mult=_optional_integer(raw["current_mult"], "runtime.current_mult"),
@@ -235,6 +240,9 @@ def _joker_runtime(value: object) -> PublicJokerRuntime | None:
             target_hand=_optional_string(raw["target_hand"], "runtime.target_hand"),
             target_rank=_optional_string(raw["target_rank"], "runtime.target_rank"),
             target_suit=_optional_string(raw["target_suit"], "runtime.target_suit"),
+            castle_suit=_optional_string(
+                raw.get("castle_suit"), "runtime.castle_suit"
+            ),
         )
     except ValueError as exc:
         raise PublicCodecError(str(exc)) from exc

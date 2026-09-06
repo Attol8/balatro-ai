@@ -106,6 +106,7 @@ class PublicJokerRuntime:
     target_hand: str | None = None
     target_rank: str | None = None
     target_suit: str | None = None
+    castle_suit: str | None = None
 
     def __post_init__(self) -> None:
         if (self.target_rank is None) != (self.target_suit is None):
@@ -133,6 +134,13 @@ class PublicJokerRuntime:
             "C",
         }:
             raise ValueError("unsupported Joker target suit")
+        if self.castle_suit is not None and self.castle_suit not in {
+            "S",
+            "H",
+            "D",
+            "C",
+        }:
+            raise ValueError("unsupported Castle target suit")
 
 
 @dataclass(frozen=True, slots=True)
@@ -168,6 +176,12 @@ class PublicItem:
         )
         if has_card_target != (self.key == "j_idol"):
             raise ValueError("only a visible Idol may carry its required card target")
+        if (
+            self.runtime is not None
+            and self.runtime.castle_suit is not None
+            and self.key != "j_castle"
+        ):
+            raise ValueError("only Castle may carry a Castle target suit")
 
 
 PublicOffer: TypeAlias = PublicItem | VisiblePlayingCard

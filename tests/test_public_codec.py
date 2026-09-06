@@ -243,6 +243,14 @@ def test_public_observation_codec_round_trips_fixed_joker_runtime_only() -> None
     assert decoded.shop[0].runtime.current_mult == 12
     assert decoded.shop[0].runtime.current_x_mult is None
 
+    legacy = deepcopy(data)
+    legacy_shop = legacy["shop"]
+    assert isinstance(legacy_shop, list) and isinstance(legacy_shop[0], dict)
+    legacy_runtime = legacy_shop[0]["runtime"]
+    assert isinstance(legacy_runtime, dict)
+    legacy_runtime.pop("castle_suit")
+    assert public_observation_from_data(legacy) == decoded
+
     shop[0]["runtime"]["future_rng"] = "NOPE"  # type: ignore[index]
     with pytest.raises(PublicCodecError, match="joker runtime fields differ"):
         public_observation_from_data(data)

@@ -2215,6 +2215,24 @@ def _normalize_jackdaw_bridge(
                         raise RuntimeError("Jackdaw Idol ability is invalid")
                     ability["idol_rank"] = rank
                     ability["idol_suit"] = suit
+                if card.get("key") == "j_castle":
+                    current_round = private.get("current_round")
+                    castle_card = (
+                        current_round.get("castle_card")
+                        if isinstance(current_round, Mapping)
+                        else None
+                    )
+                    suit = (
+                        _SUIT_LETTER.get(str(castle_card.get("suit")))
+                        if isinstance(castle_card, Mapping)
+                        else None
+                    )
+                    if suit is None:
+                        raise RuntimeError("Jackdaw Castle target is unavailable")
+                    ability = value.setdefault("ability", {})
+                    if not isinstance(ability, dict):
+                        raise RuntimeError("Jackdaw Castle ability is invalid")
+                    ability["castle_suit"] = suit
             if str(card.get("set") or "").upper() in {"DEFAULT", "ENHANCED"}:
                 card["cost"] = {
                     "buy": max(1, int(getattr(private_card, "cost", 0))),

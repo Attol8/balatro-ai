@@ -103,7 +103,7 @@ _RUNTIME_XMULT = frozenset(
 # does not yet carry completely.  Rejecting them is safer than silently using
 # a fresh-run default in rollouts.
 _MISSING_PUBLIC_RUNTIME = frozenset(
-    {"j_caino", "j_castle", "j_invisible", "j_mail", "j_turtle_bean", "j_yorick"}
+    {"j_caino", "j_invisible", "j_mail", "j_turtle_bean", "j_yorick"}
 )
 _UNSUPPORTED_BLIND_STATE = frozenset({"The Ox", "The Pillar"})
 _PUBLIC_DERIVED_RUNTIME_FIELDS = {
@@ -729,6 +729,16 @@ def _apply_joker_runtime(
         if not isinstance(extra, dict):
             raise DeterminizationUnavailable(f"owned Joker {key!r} has invalid chip state")
         extra["chips"] = runtime.current_chips
+    if key == "j_castle":
+        suit_names = {
+            "S": "Spades",
+            "H": "Hearts",
+            "D": "Diamonds",
+            "C": "Clubs",
+        }
+        if runtime.castle_suit not in suit_names:
+            raise DeterminizationUnavailable("Castle has no public target suit")
+        current_round["castle_card"] = {"suit": suit_names[runtime.castle_suit]}
     if key in _RUNTIME_XMULT:
         if runtime.current_x_mult is None:
             raise DeterminizationUnavailable(f"owned Joker {key!r} has no current xMult")
