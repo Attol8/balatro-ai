@@ -1810,10 +1810,13 @@ through real Balatro and admit only the new authoritative trace.
 2. Add one strict replay policy for a single candidate trace. At construction it
    verifies the hash chain, current transcript/action contract, complete terminal
    run, exact transition continuity, and canonical public/action payloads. At
-   every live decision it requires exact equality with the recorded public
-   `before`, exact history position, and one unique match in the live legal
-   action set. Any divergence, extra call, incomplete source, or unconsumed
-   transition fails closed.
+   every live decision it requires equality on every decision-bearing public
+   field, exact history position, and one unique match in the live legal action
+   set. Only the presentation text already excluded by the canonical agreement
+   contract (card/item labels and effects, blind/tag effect prose) is ignored;
+   card keys, blind/tag names, runtime values, and all other fields remain exact.
+   Any other divergence, extra call, incomplete source, or unconsumed transition
+   fails closed.
 3. Give the seed separately to the authority launcher, never to the replay
    policy, and run that public transcript through a fresh non-fast BalatroBot
    process. Capture a new authority trace with the replay-controller and
@@ -1834,10 +1837,60 @@ through real Balatro and admit only the new authoritative trace.
    initialization data until separately certified.
 
 Gate: focused codec/replay tamper tests, complete suite, one complete current
-candidate trace, exact live public replay with every source action consumed,
+candidate trace, canonical live public replay with every source action consumed,
 zero authority rejection, zero Jackdaw lockstep mismatch, and strict expert
 import with every supported decision tensorized. This proves a data path, not a
 superhuman model or a benchmark win.
+
+Authority-replay replan: the first seed-2491 replay established that Jackdaw and
+Balatro differ only in canonical presentation text at the initial boundary.
+Replay therefore uses the same narrow presentation exclusion as the existing
+canonical agreement contract and pins that all decision-bearing fields remain
+exact. The replay then advances through 115 actions and exposes a real lifecycle
+difference: after selling Juggler in a shop, Jackdaw immediately reports hand
+limit eight while vanilla still reports nine. Do not ignore hand limit. Capture
+the vanilla boundary through the following Planet use, pack open/close, shop
+leave, and next hand; identify when the visible limit changes, then mirror that
+timing in the candidate projection without changing sale economics or eventual
+hand size. Regenerate the candidate trajectory from the corrected clean commit,
+because the old search observed the premature limit and cannot be promoted.
+
+Transcript conclusion and live-root replan: do not promote or repeatedly replay
+the seed-2491 candidate transcript. Across fresh real processes, To Do List's
+public target hand changes because vanilla selects from a Lua table whose
+iteration order is process-dependent; Jackdaw's fixed order produced another
+valid target. One process happened to match and advanced to the Juggler timing
+defect, while another exposed `Two Pair` versus `Straight` at the first shop and
+later rejected a targeted Devil use. Selecting the matching process would be a
+hidden-runtime filter, and tolerating the target would mean the recorded action
+was not actually chosen from the live public state. The transcript bridge stays
+diagnostic-only and never supplies benchmark actions or expert-policy identity.
+
+Build the stronger Stage-F path next:
+
+1. Construct a fresh Jackdaw root from `PublicObservation` plus public history,
+   never from the authority seed, raw frame, save payload, object IDs, or a
+   private lockstep clone. Use only policy-owned randomness for all missing
+   identities, deck order, and RNG state.
+2. Reproduce every visible card/item/runtime field and phase invariant with
+   Jackdaw's own objects and lifecycle state. Sample hidden hand cards and the
+   remaining draw order from the public multiset belief; do not attempt to
+   reproduce the authority's actual hidden ordering.
+3. Require exact public round-trip after presentation normalization before any
+   rollout. Unknown fields, phases, card/item constructors, or lifecycle state
+   fail closed to the public strategic control.
+4. Run determinized search on independent constructed roots in the live policy
+   process. Hidden twins with the same public observation/history must yield the
+   same root distribution and action under the same policy nonce, regardless of
+   authority seed or process-specific poker-hand iteration order.
+5. Certify organic coverage phase by phase, then compare a frozen live-search
+   artifact against control in real Balatro. Only those actual authority traces
+   may enter a controller-qualified behavior cohort.
+
+Gate: constructor round-trip and hidden-twin tests across every supported phase,
+no forbidden import or private input in the policy child, fail-closed fallback
+coverage, complete suite, then a fresh non-fast live run whose action decisions
+are computed online rather than selected by a seed-specific transcript.
 
 Strength replan: throughput is no longer the immediate score ceiling. Across
 the descriptive frozen v9/v10 trajectories, 340 of 365 losses (93.2%) end on

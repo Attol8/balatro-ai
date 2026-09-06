@@ -22,6 +22,7 @@ from balatro_ai_v2.balatrobot.tracing import source_snapshot
 from balatro_ai_v2.policy import ActionSource, PublicHistoryStep
 from balatro_ai_v2.policy_wire import POLICY_ACTION_CONTRACT
 from balatro_ai_v2.public_codec import public_observation_from_data
+from balatro_ai_v2.public_codec import public_observation_to_data
 from balatro_ai_v2.public_state import PublicObservation
 
 
@@ -250,16 +251,30 @@ class CandidateTraceReplayPolicy:
             raise CandidateTraceReplayError("candidate trace has no remaining action")
         if len(history) != self._index:
             raise CandidateTraceReplayError("live public history length diverged")
-        if self._index and history[-1] != PublicHistoryStep(
-            before=self.steps[self._index - 1].before,
-            action=self.steps[self._index - 1].action,
-            after=self.steps[self._index - 1].after,
-        ):
-            raise CandidateTraceReplayError("live public history diverged")
+        if self._index:
+            previous = self.steps[self._index - 1]
+            live_previous = history[-1]
+            if live_previous.action != previous.action:
+                raise CandidateTraceReplayError(
+                    f"live public history action diverged at decision {self._index - 1}"
+                )
+            for boundary, live, expected in (
+                ("before", live_previous.before, previous.before),
+                ("after", live_previous.after, previous.after),
+            ):
+                difference = _decision_difference(live, expected)
+                if difference is not None:
+                    raise CandidateTraceReplayError(
+                        "live public history diverged at "
+                        f"decision {self._index - 1} {boundary}"
+                        f"{_format_difference(difference)}"
+                    )
         step = self.steps[self._index]
-        if observation != step.before:
+        difference = _decision_difference(observation, step.before)
+        if difference is not None:
             raise CandidateTraceReplayError(
-                f"live public observation diverged at decision {self._index}"
+                "live public observation diverged at "
+                f"decision {self._index}{_format_difference(difference)}"
             )
         legal = tuple(legal_actions())
         matches = tuple(action for action in legal if action == step.action)
@@ -275,8 +290,16 @@ class CandidateTraceReplayPolicy:
             raise CandidateTraceReplayError(
                 f"live run consumed {self._index} of {len(self.steps)} actions"
             )
-        if final_observation != self.final_observation:
-            raise CandidateTraceReplayError("live final public observation diverged")
+        if final_observation is None:
+            raise CandidateTraceReplayError("live final public observation is absent")
+        difference = _decision_difference(
+            final_observation, self.final_observation
+        )
+        if difference is not None:
+            raise CandidateTraceReplayError(
+                "live final public observation diverged at"
+                f"{_format_difference(difference)}"
+            )
 
 
 def _parse_candidate_trace(rows: tuple[dict[str, Any], ...]) -> dict[str, object]:
@@ -496,6 +519,71 @@ def _manifest_config(manifest: dict[str, object]) -> dict[str, object]:
             "schema_version",
         )
     }
+
+
+def _decision_difference(
+    left: PublicObservation,
+    right: PublicObservation,
+) -> tuple[str, object, object] | None:
+    """Ignore only canonical presentation text; names retain all semantics."""
+
+    return _first_difference(
+        _without_presentation(public_observation_to_data(left)),
+        _without_presentation(public_observation_to_data(right)),
+    )
+
+
+def _without_presentation(value: object) -> object:
+    if isinstance(value, dict):
+        return {
+            key: _without_presentation(item)
+            for key, item in value.items()
+            if key not in {"effect", "effect_text", "label", "tag_effect"}
+        }
+    if isinstance(value, list):
+        return [_without_presentation(item) for item in value]
+    return value
+
+
+def _first_difference(
+    left: object,
+    right: object,
+    path: str = "",
+) -> tuple[str, object, object] | None:
+    if type(left) is not type(right):
+        return path or "/", left, right
+    if isinstance(left, dict) and isinstance(right, dict):
+        keys = sorted(set(left) | set(right))
+        for key in keys:
+            if key not in left or key not in right:
+                return f"{path}/{key}", left.get(key), right.get(key)
+            difference = _first_difference(left[key], right[key], f"{path}/{key}")
+            if difference is not None:
+                return difference
+        return None
+    if isinstance(left, list) and isinstance(right, list):
+        if len(left) != len(right):
+            return f"{path}/length", len(left), len(right)
+        for index, (left_item, right_item) in enumerate(zip(left, right, strict=True)):
+            difference = _first_difference(
+                left_item, right_item, f"{path}/{index}"
+            )
+            if difference is not None:
+                return difference
+        return None
+    return None if left == right else (path or "/", left, right)
+
+
+def _format_difference(difference: tuple[str, object, object]) -> str:
+    path, live, expected = difference
+    return (
+        f"{path} (live={_bounded_repr(live)}, expected={_bounded_repr(expected)})"
+    )
+
+
+def _bounded_repr(value: object) -> str:
+    rendered = repr(value)
+    return rendered if len(rendered) <= 80 else rendered[:77] + "..."
 
 
 def _string_integer_counts(value: object) -> dict[str, int]:

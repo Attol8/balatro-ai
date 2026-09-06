@@ -158,6 +158,43 @@ def test_candidate_trace_replay_fails_on_public_divergence(tmp_path: Path) -> No
         policy.choose_action(wrong, lambda: iter_legal_actions(wrong), ())
 
 
+def test_candidate_trace_replay_ignores_only_canonical_presentation_text(
+    tmp_path: Path,
+) -> None:
+    policy = CandidateTraceReplayPolicy.from_path(
+        _write_candidate_trace(tmp_path / "candidate.jsonl")
+    )
+    before = policy.steps[0].before
+    translated = replace(
+        before,
+        blinds=(
+            replace(
+                before.blinds[0],
+                effect="Localized blind prose",
+                tag_effect="Localized tag prose",
+            ),
+            *before.blinds[1:],
+        ),
+    )
+
+    assert policy.choose_action(
+        translated, lambda: iter_legal_actions(translated), ()
+    ) == LeaveShop()
+
+
+def test_candidate_trace_replay_keeps_decision_fields_exact(tmp_path: Path) -> None:
+    policy = CandidateTraceReplayPolicy.from_path(
+        _write_candidate_trace(tmp_path / "candidate.jsonl")
+    )
+    wrong = replace(policy.steps[0].before, money=policy.steps[0].before.money + 1)
+
+    with pytest.raises(
+        CandidateTraceReplayError,
+        match=r"/money \(live=5, expected=4\)",
+    ):
+        policy.choose_action(wrong, lambda: iter_legal_actions(wrong), ())
+
+
 def test_candidate_trace_replay_rejects_source_action_that_is_not_publicly_legal(
     tmp_path: Path,
 ) -> None:

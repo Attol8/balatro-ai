@@ -190,7 +190,13 @@ def main() -> None:
             trace=trace,
         ).run(spec)
         if replay_policy is not None:
-            replay_policy.assert_complete(result.final_observation)
+            try:
+                replay_policy.assert_complete(result.final_observation)
+            except CandidateTraceReplayError as exc:
+                raise CandidateTraceReplayError(
+                    f"{exc}; terminal_reason={result.terminal_reason}; "
+                    f"terminal_error={result.terminal_error}"
+                ) from exc
             assert staged_trace is not None and args.trace_jsonl is not None
             if args.trace_jsonl.exists():
                 raise CandidateTraceReplayError(
@@ -247,7 +253,7 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         help=(
             "Replay one complete non-authoritative search trace against a fresh "
-            "non-fast Balatro authority, failing on any public divergence."
+            "non-fast Balatro authority, failing on any canonical public divergence."
         ),
     )
     parser.add_argument("--balatrobot-version", default=os.environ.get("BALATROBOT_VERSION"))
