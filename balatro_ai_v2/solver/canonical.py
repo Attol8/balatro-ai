@@ -1,0 +1,497 @@
+"""Strict canonicalization for privileged, observed BalatroBot state.
+
+This is intentionally named *observed* state: BalatroBot does not expose the
+complete RNG or event queues, so matching it cannot prove snapshot fidelity.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import math
+from collections import defaultdict
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
+from typing import Any
+
+
+_TOP_LEVEL_FIELDS = {
+    "ante_num",
+    "blinds",
+    "cards",
+    "consumables",
+    "deck",
+    "deck_composition",
+    "discard",
+    "hand",
+    "poker_hand_iteration_order",
+    "hands",
+    "jokers",
+    "last_tarot_planet",
+    "money",
+    "pack",
+    "pack_choices_remaining",
+    "packs",
+    "round",
+    "round_num",
+    "seed",
+    "shop",
+    "stake",
+    "state",
+    "used_vouchers",
+    "vouchers",
+    "won",
+}
+_REQUIRED_TOP_LEVEL_FIELDS = {
+    "ante_num",
+    "blinds",
+    "cards",
+    "consumables",
+    "deck",
+    "deck_composition",
+    "discard",
+    "hand",
+    "hands",
+    "jokers",
+    "last_tarot_planet",
+    "money",
+    "pack_choices_remaining",
+    "round",
+    "round_num",
+    "seed",
+    "stake",
+    "state",
+    "used_vouchers",
+    "poker_hand_iteration_order",
+    "won",
+}
+_AREA_FIELDS = {"cards", "count", "highlighted_limit", "limit"}
+_CARD_FIELDS = {"cost", "id", "key", "label", "modifier", "set", "state", "value"}
+_COST_FIELDS = {"buy", "sell"}
+_VALUE_FIELDS = {"ability", "effect", "perma_bonus", "rarity", "rank", "suit"}
+_HAND_FIELDS = {"chips", "example", "level", "mult", "order", "played", "played_this_round"}
+_BLIND_FIELDS = {
+    "disabled",
+    "effect",
+    "name",
+    "score",
+    "status",
+    "tag_effect",
+    "tag_name",
+    "type",
+}
+_ROUND_FIELDS = {
+    "ancient_suit",
+    "boss_rerolled",
+    "chips",
+    "discards_left",
+    "discards_used",
+    "hands_left",
+    "hands_played",
+    "most_played_poker_hand",
+    "reroll_cost",
+}
+_DECK_RANKS = frozenset(
+    {"2", "3", "4", "5", "6", "7", "8", "9", "T", "J", "Q", "K", "A"}
+)
+_DECK_SUITS = frozenset({"S", "H", "D", "C"})
+_DECK_ENHANCEMENTS = frozenset(
+    {"BONUS", "MULT", "WILD", "GLASS", "STEEL", "STONE", "GOLD", "LUCKY"}
+)
+_DECK_EDITIONS = frozenset(
+    {"FOIL", "HOLO", "HOLOGRAPHIC", "POLYCHROME", "NEGATIVE"}
+)
+_DECK_SEALS = frozenset({"RED", "BLUE", "GOLD", "GOLD SEAL", "PURPLE"})
+_VANILLA_BOOSTER_VARIANT_COUNTS = {
+    ("arcana", "normal"): 4,
+    ("arcana", "jumbo"): 2,
+    ("arcana", "mega"): 2,
+    ("buffoon", "normal"): 2,
+    ("buffoon", "jumbo"): 1,
+    ("buffoon", "mega"): 1,
+    ("celestial", "normal"): 4,
+    ("celestial", "jumbo"): 2,
+    ("celestial", "mega"): 2,
+    ("spectral", "normal"): 2,
+    ("spectral", "jumbo"): 1,
+    ("spectral", "mega"): 1,
+    ("standard", "normal"): 4,
+    ("standard", "jumbo"): 2,
+    ("standard", "mega"): 2,
+}
+_VANILLA_BOOSTER_ARTWORK_KEYS = {
+    f"p_{kind}_{size}_{variant}"
+    for (kind, size), count in _VANILLA_BOOSTER_VARIANT_COUNTS.items()
+    for variant in range(1, count + 1)
+}
+_OPEN_PACK_STATES = {
+    "TAROT_PACK",
+    "PLANET_PACK",
+    "SPECTRAL_PACK",
+    "STANDARD_PACK",
+    "BUFFOON_PACK",
+    "SMODS_BOOSTER_OPENED",
+}
+
+
+def semantic_card_key(kind: str, key: str) -> str:
+    """Collapse numbered booster artwork variants with identical game rules."""
+
+    if kind.upper() == "BOOSTER" and key in _VANILLA_BOOSTER_ARTWORK_KEYS:
+        return key.rpartition("_")[0]
+    return key
+
+
+class CanonicalizationError(ValueError):
+    """The authority schema changed or contained non-canonical data."""
+
+
+@dataclass(frozen=True, slots=True)
+class CanonicalObservedState:
+    raw_json: str
+    canonical_json: str
+    raw_digest: str
+    canonical_digest: str
+
+    @property
+    def canonical(self) -> dict[str, Any]:
+        value = json.loads(self.canonical_json)
+        if not isinstance(value, dict):
+            raise AssertionError("canonical state root is not an object")
+        return value
+
+
+class BalatroBotCanonicalizer:
+    """Stateful raw-ID normalization for one run."""
+
+    def __init__(self) -> None:
+        self.reset()
+
+    def reset(self) -> None:
+        self._entity_ids: dict[tuple[str, str], str] = {}
+        self._initialized = False
+        self._spawn_index = 0
+
+    def canonicalize(self, raw: Mapping[str, Any]) -> CanonicalObservedState:
+        _validate_state(raw)
+        raw_json = _canonical_json(raw)
+        self._assign_new_entities(raw)
+        canonical = self._normalize(raw, path=())
+        if not isinstance(canonical, dict):
+            raise AssertionError("normalized state root is not an object")
+        canonical_json = _canonical_json(canonical)
+        self._initialized = True
+        return CanonicalObservedState(
+            raw_json=raw_json,
+            canonical_json=canonical_json,
+            raw_digest=_sha256(raw_json),
+            canonical_digest=_sha256(canonical_json),
+        )
+
+    def _assign_new_entities(self, raw: Mapping[str, Any]) -> None:
+        unseen: list[tuple[tuple[str, str], str, str]] = []
+        for card in _walk_cards(raw):
+            if _is_hidden_joker_payload(card):
+                continue
+            raw_id = card.get("id")
+            if raw_id is None:
+                raise CanonicalizationError("card is missing id")
+            identity = _raw_identity(raw_id)
+            if identity in self._entity_ids:
+                continue
+            kind = str(card.get("set") or "UNKNOWN")
+            key = semantic_card_key(kind, str(card.get("key") or "UNKNOWN"))
+            unseen.append((identity, kind, key))
+
+        grouped: dict[tuple[str, str], list[tuple[str, str]]] = defaultdict(list)
+        for identity, kind, key in unseen:
+            grouped[(kind, key)].append(identity)
+        for (kind, key), identities in sorted(grouped.items()):
+            identities.sort()
+            for occurrence, identity in enumerate(identities):
+                if self._initialized:
+                    stable = f"spawn:{self._spawn_index}:{kind}:{key}"
+                    self._spawn_index += 1
+                else:
+                    stable = f"initial:{kind}:{key}:{occurrence}"
+                self._entity_ids[identity] = stable
+
+    def _normalize(self, value: object, *, path: tuple[str, ...]) -> object:
+        if isinstance(value, Mapping):
+            normalized: dict[str, object] = {}
+            for key, child in value.items():
+                key_string = str(key)
+                if _is_presentation_field(path, key_string):
+                    continue
+                if key_string == "id" and _is_card_path(path):
+                    normalized[key_string] = self._entity_ids[_raw_identity(child)]
+                elif key_string == "key" and _is_card_path(path):
+                    normalized[key_string] = semantic_card_key(
+                        str(value.get("set") or "UNKNOWN"),
+                        str(child),
+                    )
+                elif (
+                    not path
+                    and key_string == "pack_choices_remaining"
+                    and value.get("state") not in _OPEN_PACK_STATES
+                ):
+                    # G.GAME.pack_choices is not cleared after a single-choice
+                    # pack closes.  Outside the pack UI it is stale internal
+                    # state, not a remaining public decision.
+                    normalized[key_string] = 0
+                else:
+                    normalized[key_string] = self._normalize(child, path=(*path, key_string))
+            return normalized
+        if isinstance(value, list):
+            if not value and _empty_lua_map_path(path):
+                return {}
+            return [self._normalize(child, path=(*path, "*")) for child in value]
+        if isinstance(value, bool) or value is None or isinstance(value, str):
+            return value
+        if isinstance(value, int):
+            return value
+        if isinstance(value, float):
+            if not math.isfinite(value):
+                raise CanonicalizationError(f"non-finite number at {'/'.join(path)}")
+            # Match the 14-significant-digit number boundary used by the Lua
+            # JSON encoder so Python arithmetic noise is not semantic drift.
+            value = float(format(value, ".14g"))
+            if value == 0:
+                return 0
+            if value.is_integer():
+                return int(value)
+            return value
+        raise CanonicalizationError(f"unsupported value {type(value).__name__} at {'/'.join(path)}")
+
+
+def _validate_state(raw: Mapping[str, Any]) -> None:
+    keys = set(raw)
+    unknown = keys - _TOP_LEVEL_FIELDS
+    missing = _REQUIRED_TOP_LEVEL_FIELDS - keys
+    if unknown:
+        raise CanonicalizationError(f"unknown top-level fields: {sorted(unknown)}")
+    if missing:
+        raise CanonicalizationError(f"missing top-level fields: {sorted(missing)}")
+    if isinstance(raw["pack_choices_remaining"], bool) or not isinstance(
+        raw["pack_choices_remaining"], int
+    ):
+        raise CanonicalizationError("pack_choices_remaining must be an integer")
+    deck_composition = raw["deck_composition"]
+    if not isinstance(deck_composition, list):
+        raise CanonicalizationError("deck_composition must be a list")
+    composition_fields = {
+        "rank",
+        "suit",
+        "enhancement",
+        "edition",
+        "seal",
+        "permanent_bonus",
+        "count",
+    }
+    required_composition_fields = {"rank", "suit", "permanent_bonus", "count"}
+    composition_signatures: set[tuple[object, ...]] = set()
+    composition_total = 0
+    for index, entry in enumerate(deck_composition):
+        item = _expect_mapping(entry, f"deck_composition[{index}]")
+        _reject_unknown(item, composition_fields, f"deck_composition[{index}]")
+        missing = required_composition_fields - set(item)
+        if missing:
+            raise CanonicalizationError(
+                f"deck_composition[{index}] missing fields: {sorted(missing)}"
+            )
+        if not isinstance(item["rank"], str) or not item["rank"]:
+            raise CanonicalizationError(
+                f"deck_composition[{index}].rank must be a non-empty string"
+            )
+        if not isinstance(item["suit"], str) or not item["suit"]:
+            raise CanonicalizationError(
+                f"deck_composition[{index}].suit must be a non-empty string"
+            )
+        for field in ("enhancement", "edition", "seal"):
+            if item.get(field) is not None and (
+                not isinstance(item[field], str) or not item[field]
+            ):
+                raise CanonicalizationError(
+                    f"deck_composition[{index}].{field} must be null or a non-empty string"
+                )
+        enhancement = item.get("enhancement")
+        edition = item.get("edition")
+        seal = item.get("seal")
+        if enhancement not in _DECK_ENHANCEMENTS | {None}:
+            raise CanonicalizationError("deck_composition enhancement is unsupported")
+        if edition not in _DECK_EDITIONS | {None}:
+            raise CanonicalizationError("deck_composition edition is unsupported")
+        if seal not in _DECK_SEALS | {None}:
+            raise CanonicalizationError("deck_composition seal is unsupported")
+        if enhancement == "STONE":
+            if item["rank"] != "?" or item["suit"] != "?":
+                raise CanonicalizationError(
+                    "deck_composition Stone identity must be obscured"
+                )
+        elif item["rank"] not in _DECK_RANKS or item["suit"] not in _DECK_SUITS:
+            raise CanonicalizationError("deck_composition rank or suit is unsupported")
+        permanent_bonus = item["permanent_bonus"]
+        count = item["count"]
+        if isinstance(permanent_bonus, bool) or not isinstance(permanent_bonus, int):
+            raise CanonicalizationError(
+                f"deck_composition[{index}].permanent_bonus must be an integer"
+            )
+        if isinstance(count, bool) or not isinstance(count, int) or count <= 0:
+            raise CanonicalizationError(
+                f"deck_composition[{index}].count must be a positive integer"
+            )
+        signature = tuple(
+            item.get(field) for field in sorted(composition_fields - {"count"})
+        )
+        if signature in composition_signatures:
+            raise CanonicalizationError("deck_composition contains a duplicate entry")
+        composition_signatures.add(signature)
+        composition_total += count
+
+    cards_area = _expect_mapping(raw["cards"], "cards")
+    deck_limit = cards_area.get("limit")
+    if isinstance(deck_limit, bool) or not isinstance(deck_limit, int):
+        raise CanonicalizationError("cards.limit must be an integer")
+    if composition_total != deck_limit:
+        raise CanonicalizationError("deck_composition total must equal cards.limit")
+
+    for area_name in (
+        "cards",
+        "consumables",
+        "discard",
+        "hand",
+        "jokers",
+        "pack",
+        "packs",
+        "shop",
+        "vouchers",
+    ):
+        if area_name not in raw:
+            continue
+        area = _expect_mapping(raw[area_name], area_name)
+        _reject_unknown(area, _AREA_FIELDS, area_name)
+        cards = area.get("cards")
+        if not isinstance(cards, list):
+            raise CanonicalizationError(f"{area_name}.cards must be a list")
+        for index, card_value in enumerate(cards):
+            card = _expect_mapping(card_value, f"{area_name}.cards[{index}]")
+            card_state = card.get("state")
+            if (
+                area_name == "jokers"
+                and isinstance(card_state, Mapping)
+                and "hidden" in card_state
+            ):
+                if not isinstance(card_state["hidden"], bool):
+                    raise CanonicalizationError(
+                        f"{area_name}.cards[{index}].state.hidden must be boolean"
+                    )
+                if card_state["hidden"] and not _is_hidden_joker_payload(card):
+                    raise CanonicalizationError(
+                        "hidden Joker payload exposed private fields"
+                    )
+            if _is_hidden_joker_payload(card):
+                if area_name != "jokers":
+                    raise CanonicalizationError(
+                        "anonymous hidden Joker slot is valid only in jokers"
+                    )
+                continue
+            _reject_unknown(card, _CARD_FIELDS, f"{area_name}.cards[{index}]")
+            cost = _expect_mapping(card.get("cost"), f"{area_name}.cards[{index}].cost")
+            _reject_unknown(cost, _COST_FIELDS, f"{area_name}.cards[{index}].cost")
+            value = _expect_mapping(card.get("value"), f"{area_name}.cards[{index}].value")
+            _reject_unknown(value, _VALUE_FIELDS, f"{area_name}.cards[{index}].value")
+            if not isinstance(card.get("state"), Mapping | list):
+                raise CanonicalizationError(f"{area_name}.cards[{index}].state must be a table")
+            if not isinstance(card.get("modifier"), Mapping | list):
+                raise CanonicalizationError(f"{area_name}.cards[{index}].modifier must be a table")
+
+    hands = _expect_mapping(raw["hands"], "hands")
+    for name, hand_value in hands.items():
+        hand = _expect_mapping(hand_value, f"hands.{name}")
+        _reject_unknown(hand, _HAND_FIELDS, f"hands.{name}")
+    blinds = _expect_mapping(raw["blinds"], "blinds")
+    for name, blind_value in blinds.items():
+        blind = _expect_mapping(blind_value, f"blinds.{name}")
+        _reject_unknown(blind, _BLIND_FIELDS, f"blinds.{name}")
+        if not isinstance(blind.get("disabled"), bool):
+            raise CanonicalizationError(f"blinds.{name}.disabled must be boolean")
+    round_state = _expect_mapping(raw["round"], "round")
+    _reject_unknown(round_state, _ROUND_FIELDS, "round")
+
+
+def _walk_cards(raw: Mapping[str, Any]) -> Sequence[Mapping[str, Any]]:
+    cards: list[Mapping[str, Any]] = []
+    for area_name in (
+        "cards",
+        "consumables",
+        "discard",
+        "hand",
+        "jokers",
+        "pack",
+        "packs",
+        "shop",
+        "vouchers",
+    ):
+        area = raw.get(area_name)
+        if not isinstance(area, Mapping):
+            continue
+        values = area.get("cards")
+        if isinstance(values, list):
+            cards.extend(card for card in values if isinstance(card, Mapping))
+    return cards
+
+
+def _is_hidden_joker_payload(card: Mapping[str, Any]) -> bool:
+    return (
+        set(card) == {"set", "state"}
+        and card.get("set") == "JOKER"
+        and isinstance(card.get("state"), Mapping)
+        and dict(card["state"]) == {"hidden": True}
+    )
+
+
+def _is_presentation_field(path: tuple[str, ...], key: str) -> bool:
+    if _is_card_path(path) and key == "label":
+        return True
+    if path and path[-1] == "value" and _is_card_path(path[:-1]) and key == "effect":
+        return True
+    if len(path) >= 2 and path[-2] == "hands" and key == "example":
+        return True
+    if len(path) >= 2 and path[-2] == "blinds" and key in {"effect", "tag_effect"}:
+        return True
+    return False
+
+
+def _is_card_path(path: tuple[str, ...]) -> bool:
+    return len(path) >= 3 and path[-2:] == ("cards", "*")
+
+
+def _empty_lua_map_path(path: tuple[str, ...]) -> bool:
+    return bool(path) and path[-1] in {"modifier", "state", "used_vouchers"}
+
+
+def _raw_identity(value: object) -> tuple[str, str]:
+    return type(value).__name__, repr(value)
+
+
+def _expect_mapping(value: object, path: str) -> Mapping[str, Any]:
+    if not isinstance(value, Mapping):
+        raise CanonicalizationError(f"{path} must be an object")
+    return value
+
+
+def _reject_unknown(value: Mapping[str, Any], allowed: set[str], path: str) -> None:
+    unknown = set(value) - allowed
+    if unknown:
+        raise CanonicalizationError(f"unknown fields at {path}: {sorted(unknown)}")
+
+
+def _canonical_json(value: object) -> str:
+    try:
+        return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False)
+    except (TypeError, ValueError) as exc:
+        raise CanonicalizationError(f"state is not canonical JSON: {exc}") from exc
+
+
+def _sha256(value: str) -> str:
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()

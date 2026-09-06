@@ -1,0 +1,200 @@
+"""Bounded shop comparisons on shared, synthetic public-deck hands.
+
+Capacity estimates omit future boss effects and stochastic trigger outcomes;
+they are a purchasing heuristic, not predictions of the next actual draw.
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass, replace
+from itertools import combinations
+from math import log1p
+from random import Random
+
+from balatro_ai_v2.solver.actions import (
+    BuyShopCard, HandSlot, JokerSlot, LeaveShop, PublicAction, RerollShop,
+    SellJoker, ShopSlot, is_legal,
+)
+from balatro_ai_v2.solver.joker_catalog import get_joker_profile
+from balatro_ai_v2.solver.policy import PublicHistoryStep
+from balatro_ai_v2.solver.public_scoring import _prepare_score_context, _score_play_prepared
+from balatro_ai_v2.solver.public_state import Phase, PublicItem, PublicJokerRuntime, PublicObservation
+
+
+@dataclass(frozen=True, slots=True)
+class ShopChoice:
+    action: PublicAction
+    reason: str
+    diagnostics: dict[str, float | int | str]
+
+
+class ShopSearch:
+    def __init__(self, samples: int = 6, max_rerolls: int = 2):
+        if not 1 <= samples <= 12 or not 0 <= max_rerolls <= 5:
+            raise ValueError('shop search budgets must be bounded')
+        self.samples = samples
+        self.max_rerolls = max_rerolls
+        self._pending: tuple[int, PublicItem] | None = None
+
+    def choose(self, observation: PublicObservation, baseline_action: PublicAction,
+               history: tuple[PublicHistoryStep, ...] = ()) -> ShopChoice | None:
+        if observation.phase != Phase.SHOP:
+            self._pending = None
+            return None
+        if not isinstance(baseline_action, (LeaveShop, BuyShopCard, RerollShop, SellJoker)):
+            return None
+        if self._pending is not None:
+            round_no, desired = self._pending
+            self._pending = None
+            if round_no == observation.round_no:
+                for i, offer in enumerate(observation.shop):
+                    action = BuyShopCard(ShopSlot(i))
+                    if offer == desired and is_legal(observation, action):
+                        return ShopChoice(action, 'Complete the revalidated joker upgrade.', {'planned_purchase': 1})
+        if isinstance(baseline_action, BuyShopCard):
+            offer = observation.shop[baseline_action.card.value]
+            if not isinstance(offer, PublicItem) or offer.kind != 'JOKER':
+                return None
+        if not observation.full_deck or any(not isinstance(j, PublicItem) for j in observation.jokers):
+            return None
+        hands = self._hands(observation)
+        current_first, current_repeat, current_final = self._capacity_components(observation, hands)
+        current = .5 * current_first + .35 * current_repeat + .15 * current_final
+        upcoming = [b.score for b in sorted(observation.blinds, key=lambda b: {'SMALL': 0, 'BIG': 1, 'BOSS': 2}.get(b.kind, 3))
+                    if b.status in {'SELECT', 'UPCOMING'}]
+        target = float(upcoming[0] if upcoming else max((b.score for b in observation.blinds), default=300) * 1.5)
+        weak = current * 3 < target
+        reserve = 2 if weak else min(25, 8 + 3 * max(0, observation.ante - 1))
+        diagnostics = {'current_capacity': current, 'next_blind_target': target,
+                       'reserve': reserve, 'samples': self.samples,
+                       'current_first_hand': current_first, 'current_repeat_hand': current_repeat,
+                       'current_final_hand': current_final,
+                       'continuation_assumption': '50% first / 35% same-family repeat / 15% final; no intervening discards; Green Joker +1 per prior play'}
+        best = None
+        for i, offer in enumerate(observation.shop):
+            if not isinstance(offer, PublicItem) or offer.kind != 'JOKER' or offer.buy_cost is None:
+                continue
+            try:
+                profile = get_joker_profile(offer.key)
+            except KeyError:
+                continue
+            buy = BuyShopCard(ShopSlot(i))
+            options = [(None, observation)] if is_legal(observation, buy) else []
+            # Only consider removing an owned card when capacity is full. A
+            # Negative joker takes its extra slot with it when sold.
+            if len(observation.jokers) >= observation.joker_limit and offer.edition != 'NEGATIVE':
+                for old_i, old in enumerate(observation.jokers):
+                    sale = SellJoker(JokerSlot(old_i))
+                    if old.eternal or old.edition == 'NEGATIVE' or not is_legal(observation, sale):
+                        continue
+                    after_sale = replace(observation, money=observation.money + (old.sell_cost or 0),
+                                         jokers=observation.jokers[:old_i] + observation.jokers[old_i + 1:])
+                    if is_legal(after_sale, buy):
+                        options.append((sale, after_sale))
+            for sale, before_buy in options:
+                cash_left = before_buy.money - offer.buy_cost
+                if cash_left < reserve and offer.buy_cost > 0:
+                    continue
+                candidate = replace(before_buy, money=cash_left,
+                                    jokers=before_buy.jokers + (offer,),
+                                    joker_limit=before_buy.joker_limit + int(offer.edition == 'NEGATIVE'))
+                first, repeated, final = self._capacity_components(candidate, hands)
+                capacity = .5 * first + .35 * repeated + .15 * final
+                gain = log1p(capacity) - log1p(current)
+                # Small explicit future utility; unknown/non-scoring cards
+                # cannot win merely through rarity or a generic tier score.
+                future = 0.08 if profile.role == 'scaling' and observation.ante <= 4 else 0.0
+                if profile.role == 'economy' and not weak and observation.ante <= 4:
+                    future = 0.06
+                if sale is not None:
+                    old = observation.jokers[sale.joker.value]
+                    try:
+                        old_role = get_joker_profile(old.key).role
+                    except KeyError:
+                        old_role = 'utility'
+                    if old_role in {'scaling', 'economy'}:
+                        future -= 0.08
+                opportunity = 0.025 if offer.edition == 'NEGATIVE' else 0.055
+                cash_penalty = (offer.buy_cost - ((observation.jokers[sale.joker.value].sell_cost or 0) if sale else 0)) * (0.004 if weak else 0.008)
+                utility = gain + future - opportunity - cash_penalty
+                if utility > 0.025 and (best is None or utility > best[0]):
+                    best = (utility, sale or buy, offer, capacity, first, repeated, final)
+        if best is not None:
+            utility, action, offer, capacity, first, repeated, final = best
+            if isinstance(action, SellJoker):
+                self._pending = (observation.round_no, offer)
+            return ShopChoice(action, f'Improve sampled scoring capacity with {offer.label or offer.key}.',
+                              {**diagnostics, 'candidate_capacity': capacity, 'utility_gain': utility,
+                               'candidate_first_hand': first, 'candidate_repeat_hand': repeated,
+                               'candidate_final_hand': final,
+                               'desired_joker': offer.key})
+        rerolls = sum(isinstance(step.action, RerollShop) for step in history
+                      if step.before.round_no == observation.round_no)
+        # Cost growth also bounds rerolls when callers provide no history.
+        cost = observation.round.reroll_cost
+        if (weak and rerolls < self.max_rerolls and cost < 5 + self.max_rerolls
+                and observation.money - cost >= reserve + 6
+                and is_legal(observation, RerollShop())):
+            return ShopChoice(RerollShop(), 'Search for a scoring upgrade while the build is below next-blind pace.', diagnostics)
+        if isinstance(baseline_action, RerollShop) and (rerolls >= self.max_rerolls or cost >= 5 + self.max_rerolls):
+            return ShopChoice(LeaveShop(), 'Stop after the bounded shop reroll budget.', diagnostics)
+        # Respect an existing conservative fallback instead of suppressing
+        # strategy purchases that the immediate scorer cannot value.
+        return None
+
+    def _hands(self, observation: PublicObservation) -> tuple[tuple, ...]:
+        deck = [entry.card for entry in observation.full_deck for _ in range(entry.count)]
+        # Fixed nonce intentionally independent of game seed, private order,
+        # candidate identity, and offered loadout: common random numbers.
+        rng = Random(730241)
+        size = min(observation.hand_limit, len(deck), 12)
+        return tuple(tuple(rng.sample(deck, size)) for _ in range(self.samples))
+
+    @staticmethod
+    def _capacity_components(observation: PublicObservation, hands: tuple[tuple, ...]) -> tuple[float, float, float]:
+        results = []
+        for hand in hands:
+            synthetic = replace(observation, phase=Phase.SELECTING_HAND, hand=hand,
+                                required_hand_slots=(), selection_limit=min(5, len(hand)),
+                                blinds=tuple(replace(b, status='UPCOMING', disabled=False) for b in observation.blinds),
+                                round=replace(observation.round, chips=0, hands_left=4, hands_played=0,
+                                              discards_left=3, discards_used=0),
+                                hand_stats=tuple(replace(h, played_this_round=0) for h in observation.hand_stats))
+            best = 0.0
+            best_selection = ()
+            best_family = None
+            context = _prepare_score_context(synthetic)
+            stats = {stat.name: stat for stat in synthetic.hand_stats}
+            for count in range(1, min(5, len(hand)) + 1):
+                for chosen in combinations(range(len(hand)), count):
+                    selection = tuple(HandSlot(i) for i in chosen)
+                    try:
+                        score, family = _score_play_prepared(synthetic, selection, stats, context)
+                    except (ValueError, KeyError, NotImplementedError):
+                        continue
+                    if float(score) > best:
+                        best, best_selection, best_family = float(score), selection, family
+            continuation = []
+            for prior_plays in (1, 3):
+                # A transparent counterfactual: repeat the first best family
+                # with the same synthetic cards, without any intervening
+                # discard. This is capacity, not a simulated draw trajectory.
+                projected_jokers = []
+                for joker in synthetic.jokers:
+                    if joker.key == 'j_green_joker':
+                        runtime = joker.runtime or PublicJokerRuntime()
+                        joker = replace(joker, runtime=replace(runtime, current_mult=(runtime.current_mult or 0) + prior_plays))
+                    projected_jokers.append(joker)
+                followup = replace(synthetic, jokers=tuple(projected_jokers),
+                                   round=replace(synthetic.round, hands_played=prior_plays, hands_left=4-prior_plays),
+                                   hand_stats=tuple(replace(stat, played=stat.played + prior_plays,
+                                                           played_this_round=prior_plays)
+                                                    if stat.name == best_family else stat for stat in synthetic.hand_stats))
+                try:
+                    projected, _ = _score_play_prepared(followup, best_selection,
+                                                       {stat.name: stat for stat in followup.hand_stats},
+                                                       _prepare_score_context(followup)) if best_selection else (0, '')
+                except (ValueError, KeyError, NotImplementedError):
+                    projected = best
+                continuation.append(float(projected))
+            results.append((best, *continuation))
+        return tuple(sum(row[i] for row in results) / max(len(results), 1) for i in range(3))

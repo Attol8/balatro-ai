@@ -1,10 +1,92 @@
 # balatro-ai-v2
 
-Clean-slate Balatro AI experiment.
+Balatro AI experiments focused on measurable real-game playing strength.
+The live runner evaluates public-information policies against actual Balatro;
+local scoring and search improve decisions, with real trajectories providing feedback.
 
-The first target is a correct, deterministic simulator with inspectable scoring.
-Learning comes later, after search-based baselines are strong enough to generate
-useful data.
+## Real-game baseline
+
+Run complete **Red Deck / White Stake** games against a running BalatroBot server:
+
+```bash
+python -m balatro_ai_v2.live run --policy strategic --episodes 5 --output runs/dev-001
+```
+
+The server defaults to `127.0.0.1:12346`. Start it using your installed BalatroBot
+launcher if necessary (for example,
+`BALATROBOT_ALL_UNLOCKED=1 uvx balatrobot serve --fast --headless`).
+The CLI requires the all-unlocked evaluation profile by default. Use
+`--profile-mode career` for a separate career-profile experiment; do not pool its
+results with all-unlocked runs.
+The runner accepts an idle menu or a finished game. Use `--reset` to explicitly
+replace an active game. It resets between its own episodes, stops on execution
+errors, and never retries a potentially applied action after an RPC timeout.
+
+`--policy baseline` selects the initial simple policy: approximate hand scoring with current
+hand levels, basic discards and boss constraints, conservative joker purchases,
+supported consumables, and pack selection. It handles all playable phases but
+does not implement every strategic action: vouchers, rerolls, and rearrangement
+are currently unused. Scoring is **not** simulator parity, and many joker
+interactions and boss effects are unmodeled. This is a baseline for improvement,
+not a claim of reliable wins.
+
+`--policy strategic` reuses a frozen public strategic policy and broader phased
+scorer from later local repository history. It adds typed observations and legal
+actions, public history, richer Joker/card effects, ordering, and broader shop and
+consumable decisions. See [solver provenance](balatro_ai_v2/solver/README.md).
+Historical results do not establish the playing strength of this imported artifact;
+new runs measure it directly.
+
+Each new output directory contains:
+
+- `manifest.json`: seeds, configuration, policy/source fingerprint, and server metadata.
+- `0000-SEED.jsonl`, etc.: public observations, chosen actions, reasoning,
+  approximate score estimates, actual score deltas, errors, and results.
+- `summary.json`: victory rates, confidence interval, completed-run peak-score
+  distribution, ante reached, and losses grouped by blind, with each run's final context.
+
+The raw API exposes private information. Policies and trajectories exclude the
+seed, ordered draw/discard piles, private iteration order, and face-down identities.
+The seed remains in episode metadata solely for reproducibility. Public unordered
+deck composition is retained. The strategic policy additionally receives a typed
+whitelisted observation, including unordered public Remaining-view counts that
+combine the draw pile with face-down hand cards. It never receives the surrounding
+API dictionaries or raw ability trees. No score oracle or checkpoint search is used.
+
+Default development seeds are `D0000000`, `D0000001`, etc. Reserve the separate
+held-out series for evaluation, and do not tune against its outcomes:
+
+```bash
+python -m balatro_ai_v2.live run --split heldout --episodes 20 --output runs/heldout-001
+python -m balatro_ai_v2.live run --seeds D0000000 D0000001 --output runs/comparison-001
+```
+
+Use `--seed-offset` to select a different section of a generated series. Explicit
+`--seeds` determines batch size instead of `--episodes`; when supplying your own
+seeds, you are responsible for keeping development and held-out sets disjoint.
+Compare policies on the same seeds, game/mod versions, and unlock profile.
+
+By default, episodes stop when the game's victory flag is set. Use `--endless`
+to continue until game over, entering ante 17 (adjust with `--max-ante`), or the
+decision limit. Ante-eight victory remains recorded even after an endless loss.
+Errors and truncations are separate from game losses. The headline attempted-run
+win rate includes all attempted episodes; the completed-run metric excludes
+errors/truncations, and unattempted seeds are reported explicitly. Score statistics
+use completed episodes only. Small batches do not establish playing strength.
+
+Replay the current policy on a recorded trajectory without connecting to the game:
+
+```bash
+python -m balatro_ai_v2.live replay runs/dev-001/0000-D0000000.jsonl
+```
+
+Replay reports action agreement and differences. It is **offline decision replay**,
+not engine restoration or a claim that a changed policy would reach the same
+future states. Interrupted traces can replay their intact records. The command
+exits nonzero for differences or incomplete traces; batch execution exits nonzero
+for errors/truncations, while genuine game losses are successful executions.
+
+See [plan.md](plan.md) for the design and next experiments.
 
 ## Current vertical slice
 
