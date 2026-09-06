@@ -299,6 +299,50 @@ def before_boss(name, **kwargs):
                                     for b in obs.blinds))
 
 
+@pytest.mark.parametrize('boss,suit', [('The Club', 'C'), ('The Goad', 'S'), ('The Head', 'H'), ('The Window', 'D')])
+def test_static_suit_projection_wild_stone_and_smeared(boss, suit):
+    from balatro_ai_v2.solver.shop_search import _project_static_card
+    obs = before_boss(boss)
+    blind, _ = ShopSearch(project_next_boss=True, project_static_bosses=True)._next_blind_projection(obs)
+    project = lambda card, o=obs: _project_static_card(card, o, blind)
+    assert project(VisiblePlayingCard('A', suit)).debuffed
+    assert project(VisiblePlayingCard('A', 'H', enhancement='WILD')).debuffed
+    assert not project(VisiblePlayingCard('?', '?', enhancement='STONE')).debuffed
+    other = {'C': 'S', 'S': 'C', 'H': 'D', 'D': 'H'}[suit]
+    card = VisiblePlayingCard('A', other, debuffed=True)
+    assert not project(card).debuffed  # Clear old boss flags before recomputing.
+    assert project(card, replace(obs, jokers=(item('j_smeared'),))).debuffed
+    assert not project(card, replace(obs, jokers=(item('j_smeared', debuffed=True),))).debuffed
+
+
+def test_plant_projection_recomputed_for_candidate_pareidolia():
+    from balatro_ai_v2.solver.shop_search import _project_static_card
+    obs = before_boss('The Plant')
+    blind, _ = ShopSearch(project_next_boss=True, project_static_bosses=True)._next_blind_projection(obs)
+    cards = (VisiblePlayingCard('Q', 'S'), VisiblePlayingCard('A', 'S'),
+             VisiblePlayingCard('?', '?', enhancement='STONE'))
+    assert [_project_static_card(c, obs, blind).debuffed for c in cards] == [True, False, False]
+    candidate = replace(obs, jokers=(item('j_pareidolia'),))
+    assert all(_project_static_card(c, candidate, blind).debuffed for c in cards)
+
+
+def test_static_shop_projection_reduces_capacity_without_mutating_input():
+    obs = before_boss('The Goad', jokers=(item('j_joker'),))
+    original = obs.canonical_json()
+    control = ShopSearch(samples=1, project_next_boss=True).choose(obs, LeaveShop())
+    candidate = ShopSearch(samples=1, project_next_boss=True, project_static_bosses=True).choose(obs, LeaveShop())
+    assert candidate.diagnostics['boss_projection'] == 'projected The Goad'
+    assert candidate.diagnostics['current_first_hand'] < control.diagnostics['current_first_hand']
+    assert obs.canonical_json() == original
+
+
+@pytest.mark.parametrize('key', ['j_chicot', 'j_burglar', 'j_luchador'])
+def test_static_activation_interactions_fail_back_explicitly(key):
+    obs = before_boss('The Club', jokers=(item(key),))
+    blind, reason = ShopSearch(project_next_boss=True, project_static_bosses=True)._next_blind_projection(obs)
+    assert blind is None and 'activation interaction' in reason
+
+
 def test_needle_projection_uses_one_hand_and_activates_acrobat():
     obs = before_boss('The Needle', offers=(item('j_acrobat', 4),))
     choice = ShopSearch(samples=1, max_rerolls=0, project_next_boss=True).choose(obs, LeaveShop())

@@ -21,6 +21,24 @@ from balatro_ai_v2.solver.policy import PublicHistoryStep
 from balatro_ai_v2.solver.public_scoring import _HAND_LEVEL_GAINS, _prepare_score_context, _score_play_prepared
 from balatro_ai_v2.solver.public_state import DeckCardCount, Phase, PublicBlind, PublicItem, PublicJokerRuntime, PublicObservation
 
+_SUIT_BOSSES = {'The Club': 'C', 'The Goad': 'S', 'The Head': 'H', 'The Window': 'D'}
+_STATIC_BOSSES = {*_SUIT_BOSSES, 'The Plant'}
+
+
+def _project_static_card(card, observation, blind):
+    """Installed Card:is_suit(..., true)/is_face(true), for vanilla cards."""
+    if blind is None or blind.name not in _STATIC_BOSSES:
+        return card
+    active = {j.key for j in observation.jokers if isinstance(j, PublicItem) and not j.debuffed}
+    if blind.name == 'The Plant':
+        debuffed = 'j_pareidolia' in active or (card.enhancement != 'STONE' and card.rank in {'J', 'Q', 'K'})
+    else:
+        suit = _SUIT_BOSSES[blind.name]
+        debuffed = card.enhancement != 'STONE' and (
+            card.enhancement == 'WILD' or card.suit == suit
+            or ('j_smeared' in active and (card.suit in {'H', 'D'}) == (suit in {'H', 'D'})))
+    return replace(card, debuffed=debuffed)
+
 
 @dataclass(frozen=True, slots=True)
 class ShopChoice:
@@ -45,7 +63,7 @@ def _owned_fingerprints(jokers: tuple) -> tuple:
 class ShopSearch:
     def __init__(self, samples: int = 6, max_rerolls: int = 2, evaluate_planets: bool = False, project_next_boss: bool = False,
                  evaluate_blueprint_placement: bool = False, prioritize_all_jokers: bool = True,
-                 survival_rerolls: int | None = None):
+                 survival_rerolls: int | None = None, project_static_bosses: bool = False):
         if not 1 <= samples <= 12 or not 0 <= max_rerolls <= 5:
             raise ValueError('shop search budgets must be bounded')
         self.samples = samples
@@ -60,6 +78,9 @@ class ShopSearch:
         if not isinstance(project_next_boss, bool):
             raise ValueError('project_next_boss must be boolean')
         self.project_next_boss = project_next_boss
+        if not isinstance(project_static_bosses, bool) or (project_static_bosses and not project_next_boss):
+            raise ValueError('static boss projection requires project_next_boss')
+        self.project_static_bosses = project_static_bosses
         self._pending: tuple[int, PublicItem] | None = None
         if not isinstance(evaluate_blueprint_placement, bool):
             raise ValueError('evaluate_blueprint_placement must be boolean')
@@ -320,10 +341,12 @@ class ShopSearch:
             return None, 'control fallback: no public next blind'
         blind = upcoming[0]
         if blind.kind == 'BOSS':
-            if blind.name not in {'The Needle', 'The Flint'}:
+            supported = {'The Needle', 'The Flint'} | (_STATIC_BOSSES if self.project_static_bosses else set())
+            if blind.name not in supported:
                 return None, f'control fallback: unsupported {blind.name}'
             interactions = [j.key for j in (*observation.jokers, *observation.shop)
-                            if isinstance(j, PublicItem) and j.key in {'j_chicot', 'j_burglar'}]
+                            if isinstance(j, PublicItem) and j.key in
+                            ({'j_chicot', 'j_burglar', 'j_luchador', 'j_ceremonial'} if blind.name in _STATIC_BOSSES else {'j_chicot', 'j_burglar'})]
             if interactions:
                 return None, 'control fallback: activation interaction ' + ','.join(sorted(set(interactions)))
         elif blind.kind not in {'SMALL', 'BIG'}:
@@ -342,8 +365,11 @@ class ShopSearch:
     def _capacity_components(observation: PublicObservation, hands: tuple[tuple, ...], projected_blind: PublicBlind | None = None) -> tuple[float, float, float]:
         results = []
         for stream in hands:
-            hand = stream[:observation.hand_limit]
-            remaining = Counter({entry.card: entry.count for entry in observation.full_deck})
+            hand = tuple(_project_static_card(card, observation, projected_blind)
+                         for card in stream[:observation.hand_limit])
+            remaining = Counter()
+            for entry in observation.full_deck:
+                remaining[_project_static_card(entry.card, observation, projected_blind)] += entry.count
             remaining.subtract(hand)
             remaining_deck = tuple(DeckCardCount(card, count) for card, count in remaining.items() if count > 0)
             synthetic = replace(observation, phase=Phase.SELECTING_HAND, hand=hand,

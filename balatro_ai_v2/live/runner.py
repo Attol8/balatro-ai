@@ -54,6 +54,13 @@ SEARCH_VARIANTS = {
         "model_static_debuffs": True, "preserve_green_plays": True,
         "survival_rerolls": 5,
     },
+    "search-v6": {
+        "model_green_joker": True, "project_next_boss": True,
+        "optimize_order": True, "model_hidden_jokers": True,
+        "evaluate_blueprint_placement": True, "prioritize_all_jokers": False,
+        "model_static_debuffs": True, "preserve_green_plays": True,
+        "project_static_bosses": True,
+    },
 }
 POLICY_NAMES = ("baseline", "strategic", *SEARCH_VARIANTS)
 DECISION_STATES = {

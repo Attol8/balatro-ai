@@ -60,7 +60,11 @@ Experimental variants keep that search control unchanged:
 - `search-v4`: adds static-debuff refill search and preserves early Green Joker plays;
   its completed development batch won 3/20 runs, with no execution errors.
 - `search-v5`: extends the reroll limit from two to five only below forecast pace,
-  retaining enough cash for a subsequent purchase.
+  retaining enough cash for a subsequent purchase; it won the same 3/20 development
+  seeds as V4 and is not promoted.
+- `search-v6`: adds candidate-specific suit/face boss debuffs to V4's shop forecasts,
+  including Wild/Smeared/Pareidolia interactions. It does not include V5's spending
+  change. History-dependent and random-disabling bosses remain unsupported.
 
 Each variant is an ablation, not an established improvement. Draw estimates use
 eight shared samples; shop estimates use six synthetic hands and approximate

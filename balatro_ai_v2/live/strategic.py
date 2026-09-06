@@ -82,14 +82,15 @@ class SearchPolicy(StrategicPolicy):
                  optimize_order: bool = False, model_hidden_jokers: bool = False,
                  evaluate_blueprint_placement: bool = False, prioritize_all_jokers: bool = True,
                  model_static_debuffs: bool = False, preserve_green_plays: bool = False,
-                 survival_rerolls: int | None = None) -> None:
+                 survival_rerolls: int | None = None, project_static_bosses: bool = False) -> None:
         super().__init__()
         from balatro_ai_v2.solver.shop_search import ShopSearch
         self.shop_search = ShopSearch(samples=shop_samples, evaluate_planets=evaluate_planets,
                                       project_next_boss=project_next_boss,
                                       evaluate_blueprint_placement=evaluate_blueprint_placement,
                                       prioritize_all_jokers=prioritize_all_jokers,
-                                      survival_rerolls=survival_rerolls)
+                                      survival_rerolls=survival_rerolls,
+                                      project_static_bosses=project_static_bosses)
         self.tactical_samples = tactical_samples
         self.model_green_joker = model_green_joker
         self.optimize_order = optimize_order

@@ -256,3 +256,27 @@ candidate-only skips. Namespace-only source diffs were independently inspected.
 A second late D3 shop (decision 142, V4 trace) reconstructed and completed eight
 LeaveShop branches, six clearing the modeled Big Blind. Evidence lives under
 `runs/shadow-next-blind-001/`; neither probe changes live behavior.
+
+### Static boss-conditioned shop valuation
+
+Add an isolated `project_static_bosses` switch: Club/Goad/Head/Window and Plant
+transform the sampled public cards before scoring every candidate build. Recompute
+from candidate-owned Jokers so Smeared and Pareidolia purchases/sales change the
+projection. Wild cards match every suit, Stone cards have no suit; Plant treats
+Stone as face only with active Pareidolia. Preserve input state and common sampled
+cards, updating both synthetic hand and remaining-deck multisets consistently.
+Exclude Pillar (history), random-disabling bosses, and unmodeled activation/sale
+interactions. Keep V4/V5 controls unchanged. V6 starts from V4, not the unfinished
+V5 spending ablation, so it isolates this forecast correction.
+
+V5 completed 3/20 wins, the same D1/D5/D6 wins as V4, with no execution failures.
+Do not promote the larger reroll budget on that result. V6's static forecast
+changes the diagnosed D3 final-shop first-hand estimate from 30,956 to 5,803,
+and reserve from $23 to $2, against the observed 24,512 total over four hands.
+
+Static projection was checked against 267 visible cards immediately after actual
+blind selections in the V4 suite: Club 93, Goad 40, Head 56, Window 48, Plant 30;
+all debuff flags matched. This validates the exercised activation slice, not full
+future-blind survival. The permanent `full_deck` contract deliberately excludes
+transient debuffs; only sampled hands and synthetic Remaining counts carry them.
+809 tests pass with the candidate installed (740 plus 69 skips without it).
