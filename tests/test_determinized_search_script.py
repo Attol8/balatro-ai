@@ -1022,7 +1022,7 @@ def test_reserved_contextual_seeds_require_preregistration_before_backend_work(
         [
             "evaluate_determinized_search.py",
             "--seed-start",
-            "3202",
+            "3502",
             "--seeds",
             "50",
             "--dense-teacher",
@@ -1042,8 +1042,8 @@ def test_reserved_contextual_seeds_require_preregistration_before_backend_work(
         module.main()
 
 
-@pytest.mark.parametrize("seed_start", [3202, 3501])
-def test_v16_reserved_seed_boundaries_require_preregistration(
+@pytest.mark.parametrize("seed_start", [3502, 3801])
+def test_v17_reserved_seed_boundaries_require_preregistration(
     tmp_path: Path,
     seed_start: int,
 ) -> None:
@@ -1052,13 +1052,15 @@ def test_v16_reserved_seed_boundaries_require_preregistration(
         ["--seed-start", str(seed_start), "--seeds", "1"]
     )
 
-    with pytest.raises(SystemExit, match="seeds 3202-3501 require"):
+    with pytest.raises(SystemExit, match="seeds 3502-3801 require"):
         module._validate_contextual_preregistration(
             args, StrategyTuning(), repository_root=tmp_path
         )
 
 
-@pytest.mark.parametrize("seed_start", [1075, 1975, 2274, 2602, 2902, 3201])
+@pytest.mark.parametrize(
+    "seed_start", [1075, 1975, 2274, 2602, 2902, 3201, 3202, 3501]
+)
 def test_retired_contextual_seeds_cannot_be_reused(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -1089,12 +1091,12 @@ def test_retired_contextual_seeds_cannot_be_reused(
 
     with pytest.raises(
         SystemExit,
-        match="v9-v15 seeds 1075-2274 and 2602-3201 are retired",
+        match="v9-v16 seeds 1075-2274 and 2602-3501 are retired",
     ):
         module.main()
 
 
-@pytest.mark.parametrize("seed_start", [2275, 2601, 3502])
+@pytest.mark.parametrize("seed_start", [2275, 2601, 3802])
 def test_unreserved_development_seed_boundaries_remain_available(
     tmp_path: Path,
     seed_start: int,
@@ -1117,12 +1119,12 @@ def test_contextual_preregistration_binds_batch_budget_and_outputs(tmp_path) -> 
     root = tmp_path
     teacher = root / module._CONTEXTUAL_BATCHES[0]["teacher_jsonl"]
     report = root / module._CONTEXTUAL_BATCHES[0]["report_json"]
-    origin_key = root / "runs/secrets/contextual-continuation-v16-origin.key"
+    origin_key = root / "runs/secrets/contextual-continuation-v17-origin.key"
     origin_key.parent.mkdir(parents=True)
     origin_key.write_bytes(b"k" * 32)
     preregistration = tmp_path / "prereg.json"
     spec = {
-        "protocol_id": "contextual-continuation-development-v8",
+        "protocol_id": "contextual-continuation-development-v9",
         "status": "reserved",
         "immutable_batches": True,
         "seed_provenance": "development",
@@ -1137,7 +1139,7 @@ def test_contextual_preregistration_binds_batch_budget_and_outputs(tmp_path) -> 
             "max_decisions": 1200,
             "ante_cap": 12,
             "workers": 6,
-            "nonce": "contextual-continuation-v16-frozen",
+            "nonce": "contextual-continuation-v17-frozen",
             "continuation": "strategic",
             "policy_seed": "baseline-v1",
             "strategy_options": False,
@@ -1147,7 +1149,7 @@ def test_contextual_preregistration_binds_batch_budget_and_outputs(tmp_path) -> 
         "training": module._CONTEXTUAL_TRAINING,
         "origin_mapping": {
             "algorithm": "hmac-sha256-truncated-128",
-            "key_path": "runs/secrets/contextual-continuation-v16-origin.key",
+            "key_path": "runs/secrets/contextual-continuation-v17-origin.key",
             "key_sha256": hashlib.sha256(b"k" * 32).hexdigest(),
         },
         "batches": list(module._CONTEXTUAL_BATCHES),
@@ -1157,7 +1159,7 @@ def test_contextual_preregistration_binds_batch_budget_and_outputs(tmp_path) -> 
     args = module.build_parser().parse_args(
         [
             "--seed-start",
-            "3202",
+            "3502",
             "--seeds",
             "50",
             "--samples",
@@ -1173,7 +1175,7 @@ def test_contextual_preregistration_binds_batch_budget_and_outputs(tmp_path) -> 
             "--workers",
             "6",
             "--nonce",
-            "contextual-continuation-v16-frozen",
+            "contextual-continuation-v17-frozen",
             "--dense-teacher",
             "--teacher-jsonl",
             str(teacher),

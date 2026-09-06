@@ -121,15 +121,15 @@ _CONTEXTUAL_BATCHES = tuple(
         "seed_start": seed_start,
         "seeds": 50,
         "teacher_jsonl": (
-            "runs/experiments/contextual-continuation-v16/"
+            "runs/experiments/contextual-continuation-v17/"
             f"batch-{index + 1:02d}/teacher.jsonl"
         ),
         "report_json": (
-            "runs/experiments/contextual-continuation-v16/"
+            "runs/experiments/contextual-continuation-v17/"
             f"batch-{index + 1:02d}/report.json"
         ),
     }
-    for index, seed_start in enumerate(range(3202, 3502, 50))
+    for index, seed_start in enumerate(range(3502, 3802, 50))
 )
 _CONTEXTUAL_SEARCH = {
     "samples": 6,
@@ -139,7 +139,7 @@ _CONTEXTUAL_SEARCH = {
     "max_decisions": 1200,
     "ante_cap": 12,
     "workers": 6,
-    "nonce": "contextual-continuation-v16-frozen",
+    "nonce": "contextual-continuation-v17-frozen",
     "continuation": "strategic",
     "policy_seed": "baseline-v1",
     "strategy_options": False,
@@ -853,15 +853,15 @@ def _validate_contextual_preregistration(
     *,
     repository_root: Path,
 ) -> dict[str, object] | None:
-    retired_ranges = (range(1075, 2275), range(2602, 3202))
-    reserved = range(3202, 3502)
+    retired_ranges = (range(1075, 2275), range(2602, 3502))
+    reserved = range(3502, 3802)
     requested = range(args.seed_start, args.seed_start + args.seeds)
     if any(
         requested.start < retired.stop and retired.start < requested.stop
         for retired in retired_ranges
     ):
         raise SystemExit(
-            "contextual v9-v15 seeds 1075-2274 and 2602-3201 are retired"
+            "contextual v9-v16 seeds 1075-2274 and 2602-3501 are retired"
         )
     overlaps_reserved = (
         requested.start < reserved.stop and reserved.start < requested.stop
@@ -870,7 +870,7 @@ def _validate_contextual_preregistration(
     if path is None:
         if overlaps_reserved:
             raise SystemExit(
-                "seeds 3202-3501 require --contextual-preregistration-json"
+                "seeds 3502-3801 require --contextual-preregistration-json"
             )
         return None
     try:
@@ -881,7 +881,7 @@ def _validate_contextual_preregistration(
     if not isinstance(spec, dict):
         raise SystemExit("contextual preregistration root must be an object")
     if (
-        spec.get("protocol_id") != "contextual-continuation-development-v8"
+        spec.get("protocol_id") != "contextual-continuation-development-v9"
         or spec.get("status") != "reserved"
         or spec.get("immutable_batches") is not True
     ):
@@ -920,7 +920,7 @@ def _validate_contextual_preregistration(
         not isinstance(origin, dict)
         or origin.get("algorithm") != "hmac-sha256-truncated-128"
         or origin.get("key_path")
-        != "runs/secrets/contextual-continuation-v16-origin.key"
+        != "runs/secrets/contextual-continuation-v17-origin.key"
         or not isinstance(origin.get("key_sha256"), str)
         or len(origin["key_sha256"]) != 64
         or args.origin_key_file is None
@@ -1222,7 +1222,7 @@ def _verify_contextual_freeze(
         ).stdout.splitlines()
     except (OSError, subprocess.CalledProcessError) as exc:
         raise SystemExit("cannot verify contextual implementation ancestry") from exc
-    if set(changed) != {"experiments/contextual-continuation-v16-preregistration.json"}:
+    if set(changed) != {"experiments/contextual-continuation-v17-preregistration.json"}:
         raise SystemExit(
             "contextual preregistration commit changed implementation source"
         )
