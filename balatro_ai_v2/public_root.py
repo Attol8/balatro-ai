@@ -14,6 +14,7 @@ from __future__ import annotations
 import hashlib
 import json
 import random
+from collections import Counter
 from collections.abc import Mapping, Sequence
 from typing import Any
 
@@ -113,6 +114,16 @@ _PUBLIC_DERIVED_RUNTIME_FIELDS = {
     "j_ride_the_bus": "current_mult",
     "j_stencil": "current_x_mult",
 }
+_VANILLA_PACK_KINDS = frozenset(
+    {"ARCANA", "CELESTIAL", "SPECTRAL", "STANDARD", "BUFFOON"}
+)
+_PACK_KIND_FROM_KEY_PREFIX = {
+    "p_arcana_": "ARCANA",
+    "p_celestial_": "CELESTIAL",
+    "p_spectral_": "SPECTRAL",
+    "p_standard_": "STANDARD",
+    "p_buffoon_": "BUFFOON",
+}
 
 
 def public_root_seed(
@@ -179,8 +190,15 @@ def construct_public_root(
         backend._stale_shop_areas = None
         backend._round_targets_rolled = False
         backend._pending_ante_setup = None
-        backend._active_pack_cards = None
-        backend._pack_card_limit = None
+        if observation.phase == Phase.PACK:
+            pack_cards = game_state.get("pack_cards")
+            if not isinstance(pack_cards, list):
+                raise DeterminizationUnavailable("fresh PACK root has no opened cards")
+            backend._active_pack_cards = pack_cards
+            backend._pack_card_limit = _pack_initial_capacity(observation, history)
+        else:
+            backend._active_pack_cards = None
+            backend._pack_card_limit = None
         backend._won = observation.won
         backend._pending_skip_dollars = 0
         backend._lightweight_normalized = None
@@ -205,13 +223,19 @@ def _require_supported_root(
     observation: PublicObservation,
     history: Sequence[PublicHistoryStep],
 ) -> None:
-    if observation.phase not in {Phase.BLIND_SELECT, Phase.SHOP}:
+    if observation.phase not in {Phase.BLIND_SELECT, Phase.SHOP, Phase.PACK}:
         raise DeterminizationUnavailable(
             f"phase {observation.phase.value} has no fresh public constructor"
         )
     _validate_history(observation, history)
-    if observation.hand:
-        raise DeterminizationUnavailable("BLIND_SELECT root unexpectedly has a hand")
+    if observation.phase != Phase.PACK and observation.hand:
+        raise DeterminizationUnavailable(
+            f"{observation.phase.value} root unexpectedly has a hand"
+        )
+    if observation.phase == Phase.PACK and any(
+        not isinstance(card, VisiblePlayingCard) for card in observation.hand
+    ):
+        raise DeterminizationUnavailable("PACK root contains a hidden hand card")
     if observation.required_hand_slots:
         raise DeterminizationUnavailable("BLIND_SELECT root has required hand slots")
     if observation.phase == Phase.BLIND_SELECT and (
@@ -223,16 +247,27 @@ def _require_supported_root(
         raise DeterminizationUnavailable("BLIND_SELECT root exposes a transient card area")
     if observation.phase == Phase.SHOP and observation.opened_pack:
         raise DeterminizationUnavailable("SHOP root exposes an opened pack")
-    if observation.pack_kind is not None or observation.pack_choices_remaining:
-        raise DeterminizationUnavailable("BLIND_SELECT root exposes pack metadata")
-    if observation.draw_count != observation.deck_size:
-        raise DeterminizationUnavailable("BLIND_SELECT draw count differs from deck size")
-    if _deck_multiset(observation.remaining_deck) != _deck_multiset(
-        observation.full_deck
+    if observation.phase == Phase.PACK and (
+        observation.shop or observation.vouchers or observation.packs
     ):
-        raise DeterminizationUnavailable(
-            "BLIND_SELECT Remaining view differs from permanent deck"
-        )
+        raise DeterminizationUnavailable("PACK public state exposes hidden shop areas")
+    if observation.phase != Phase.PACK and (
+        observation.pack_kind is not None or observation.pack_choices_remaining
+    ):
+        raise DeterminizationUnavailable("BLIND_SELECT root exposes pack metadata")
+    if observation.phase == Phase.PACK:
+        _validate_pack_root(observation, history)
+    else:
+        if observation.draw_count != observation.deck_size:
+            raise DeterminizationUnavailable(
+                f"{observation.phase.value} draw count differs from deck size"
+            )
+        if _deck_multiset(observation.remaining_deck) != _deck_multiset(
+            observation.full_deck
+        ):
+            raise DeterminizationUnavailable(
+                f"{observation.phase.value} Remaining view differs from permanent deck"
+            )
     if any(isinstance(joker, HiddenJokerSlot) for joker in observation.jokers):
         raise DeterminizationUnavailable("face-down Jokers cannot seed a public root")
     if any(isinstance(step.action, SkipBlind) for step in history):
@@ -242,8 +277,10 @@ def _require_supported_root(
     selecting = [blind for blind in observation.blinds if blind.status == "SELECT"]
     if observation.phase == Phase.BLIND_SELECT and len(selecting) != 1:
         raise DeterminizationUnavailable("BLIND_SELECT requires exactly one selectable blind")
-    if observation.phase == Phase.SHOP and selecting:
-        raise DeterminizationUnavailable("SHOP root unexpectedly has a selectable blind")
+    if observation.phase in {Phase.SHOP, Phase.PACK} and selecting:
+        raise DeterminizationUnavailable(
+            f"{observation.phase.value} root unexpectedly has a selectable blind"
+        )
     for blind in observation.blinds:
         if blind.kind not in {"SMALL", "BIG", "BOSS"}:
             raise DeterminizationUnavailable(f"unknown blind kind {blind.kind!r}")
@@ -278,6 +315,172 @@ def _validate_history(
         raise DeterminizationUnavailable("non-initial public root requires complete history")
 
 
+def _validate_pack_root(
+    observation: PublicObservation,
+    history: Sequence[PublicHistoryStep],
+) -> None:
+    from balatro_ai_v2.actions import ChoosePackCard, SellConsumable, SellJoker
+
+    if observation.pack_kind not in _VANILLA_PACK_KINDS:
+        raise DeterminizationUnavailable(
+            f"unsupported opened pack kind {observation.pack_kind!r}"
+        )
+    if not observation.opened_pack:
+        raise DeterminizationUnavailable("PACK root has no opened offers")
+    entrance, buy_step, pack_steps = _current_pack_visit(observation, history)
+    pack_index = buy_step.action.pack.value
+    if not 0 <= pack_index < len(entrance.packs):
+        raise DeterminizationUnavailable("PACK purchase index is outside its public shop")
+    purchased = entrance.packs[pack_index]
+    expected_kind = next(
+        (
+            kind
+            for prefix, kind in _PACK_KIND_FROM_KEY_PREFIX.items()
+            if purchased.key.startswith(prefix)
+        ),
+        None,
+    )
+    if expected_kind != observation.pack_kind:
+        raise DeterminizationUnavailable(
+            "opened pack kind disagrees with the purchased public booster"
+        )
+    initial = buy_step.after
+    if initial.pack_kind != observation.pack_kind or not initial.opened_pack:
+        raise DeterminizationUnavailable("PACK entrance metadata is inconsistent")
+    _validate_pack_offers(initial.pack_kind, initial.opened_pack)
+    expected_offers = list(initial.opened_pack)
+    picks = 0
+    for step in pack_steps:
+        if tuple(expected_offers) != step.before.opened_pack:
+            raise DeterminizationUnavailable(
+                "PACK history has an inconsistent ordered offer list"
+            )
+        if isinstance(step.action, ChoosePackCard):
+            index = step.action.card.value
+            if not 0 <= index < len(expected_offers):
+                raise DeterminizationUnavailable(
+                    "PACK history chose an offer outside the visible pack"
+                )
+            expected_offers.pop(index)
+            picks += 1
+        elif not isinstance(step.action, (SellJoker, SellConsumable)):
+            raise DeterminizationUnavailable(
+                "PACK history contains an unsupported in-pack action"
+            )
+        if tuple(expected_offers) != step.after.opened_pack:
+            raise DeterminizationUnavailable(
+                "PACK action did not produce the expected ordered offers"
+            )
+        if _visible_joker_count(step.before, "j_astronomer") != _visible_joker_count(
+            step.after, "j_astronomer"
+        ):
+            raise DeterminizationUnavailable(
+                "mid-pack Astronomer repricing is not yet reconstructible"
+            )
+    if initial.pack_choices_remaining - picks != observation.pack_choices_remaining:
+        raise DeterminizationUnavailable("PACK choice history does not reach the root")
+    if tuple(expected_offers) != observation.opened_pack:
+        raise DeterminizationUnavailable("PACK offer history does not reach the root")
+    _validate_pack_offers(observation.pack_kind, observation.opened_pack)
+
+    visible_hand = tuple(
+        card for card in observation.hand if isinstance(card, VisiblePlayingCard)
+    )
+    if observation.pack_kind not in {"ARCANA", "SPECTRAL"} and visible_hand:
+        raise DeterminizationUnavailable(
+            f"{observation.pack_kind} pack unexpectedly exposes a target hand"
+        )
+    if observation.draw_count != sum(entry.count for entry in observation.remaining_deck):
+        raise DeterminizationUnavailable("PACK draw count disagrees with Remaining")
+    if observation.deck_size != observation.draw_count + len(visible_hand):
+        raise DeterminizationUnavailable("PACK hand and Remaining do not fill the deck")
+    partition: Counter[tuple[object, ...]] = Counter()
+    for entry in observation.remaining_deck:
+        partition[_permanent_card_identity(entry.card)] += entry.count
+    partition.update(_permanent_card_identity(card) for card in visible_hand)
+    full: Counter[tuple[object, ...]] = Counter()
+    for entry in observation.full_deck:
+        full[_permanent_card_identity(entry.card)] += entry.count
+    if partition != full:
+        raise DeterminizationUnavailable(
+            "PACK visible hand and Remaining do not match the permanent deck"
+        )
+
+
+def _validate_pack_offers(
+    pack_kind: str | None,
+    offers: Sequence[PublicItem | VisiblePlayingCard],
+) -> None:
+    def valid(offer: PublicItem | VisiblePlayingCard) -> bool:
+        if pack_kind == "STANDARD":
+            return isinstance(offer, VisiblePlayingCard)
+        if not isinstance(offer, PublicItem):
+            return False
+        if pack_kind == "BUFFOON":
+            return offer.kind == "JOKER"
+        if pack_kind == "ARCANA":
+            return offer.kind in {"TAROT", "SPECTRAL"}
+        if pack_kind == "CELESTIAL":
+            return offer.kind == "PLANET" or offer.key == "c_black_hole"
+        if pack_kind == "SPECTRAL":
+            return offer.kind == "SPECTRAL"
+        return False
+
+    if not all(valid(offer) for offer in offers):
+        raise DeterminizationUnavailable(
+            f"{pack_kind} pack contains an incompatible public offer"
+        )
+
+
+def _current_pack_visit(
+    observation: PublicObservation,
+    history: Sequence[PublicHistoryStep],
+) -> tuple[PublicObservation, PublicHistoryStep, tuple[PublicHistoryStep, ...]]:
+    from balatro_ai_v2.actions import BuyPack
+
+    boundary = next(
+        (
+            index
+            for index in range(len(history) - 1, -1, -1)
+            if history[index].before.phase == Phase.SHOP
+            and history[index].after.phase == Phase.PACK
+            and isinstance(history[index].action, BuyPack)
+        ),
+        None,
+    )
+    if boundary is None:
+        raise DeterminizationUnavailable("PACK history has no public shop purchase")
+    buy_step = history[boundary]
+    pack_steps = tuple(history[boundary + 1 :])
+    if any(
+        step.before.phase != Phase.PACK or step.after.phase != Phase.PACK
+        for step in pack_steps
+    ):
+        raise DeterminizationUnavailable("PACK visit history crosses another phase")
+    if history[-1].after != observation:
+        raise DeterminizationUnavailable("PACK visit history does not end at the root")
+    return buy_step.before, buy_step, pack_steps
+
+
+def _pack_initial_capacity(
+    observation: PublicObservation,
+    history: Sequence[PublicHistoryStep],
+) -> int:
+    _, buy_step, _ = _current_pack_visit(observation, history)
+    return len(buy_step.after.opened_pack)
+
+
+def _permanent_card_identity(card: VisiblePlayingCard) -> tuple[object, ...]:
+    return (
+        card.rank,
+        card.suit,
+        card.enhancement,
+        card.edition,
+        card.seal,
+        card.permanent_bonus,
+    )
+
+
 def _rebuild_state(
     game_state: dict[str, Any],
     observation: PublicObservation,
@@ -294,11 +497,11 @@ def _rebuild_state(
     if observation.deck not in DECK_FROM_BOT or observation.stake not in STAKE_FROM_BOT:
         raise DeterminizationUnavailable("unknown deck or stake")
 
-    game_state["phase"] = (
-        GamePhase.BLIND_SELECT
-        if observation.phase == Phase.BLIND_SELECT
-        else GamePhase.SHOP
-    )
+    game_state["phase"] = {
+        Phase.BLIND_SELECT: GamePhase.BLIND_SELECT,
+        Phase.SHOP: GamePhase.SHOP,
+        Phase.PACK: GamePhase.PACK_OPENING,
+    }[observation.phase]
     game_state["selected_back_key"] = DECK_FROM_BOT[observation.deck]
     game_state["stake"] = STAKE_FROM_BOT[observation.stake]
     game_state["rng"] = PseudoRandom(seed)
@@ -354,7 +557,7 @@ def _rebuild_state(
                     f"unknown public tag {public_blind.tag_name!r}"
                 )
             tags[title] = tag_key
-    if observation.phase == Phase.SHOP:
+    if observation.phase in {Phase.SHOP, Phase.PACK}:
         selected_kind = _next_shop_blind_kind(states)
     if selected_kind is None:
         raise DeterminizationUnavailable("public root has no next blind boundary")
@@ -381,7 +584,13 @@ def _rebuild_state(
         current_round["ancient_card"] = {"suit": suits[observation.round.ancient_suit]}
 
     _rebuild_hand_levels(game_state, observation)
-    game_state["deck"] = _rebuild_deck(observation, seed)
+    if observation.phase == Phase.PACK:
+        deck, hand = _rebuild_pack_playing_cards(observation, seed)
+        game_state["deck"] = deck
+        game_state["hand"] = hand
+        game_state["pack_hand"] = list(hand)
+    else:
+        game_state["deck"] = _rebuild_deck(observation, seed)
     game_state["playing_card_count"] = observation.deck_size
     game_state["playing_cards_count"] = observation.deck_size
     game_state["starting_deck_size"] = _starting_deck_size(observation, history)
@@ -426,13 +635,20 @@ def _rebuild_state(
     current_round["discards_left"] = observation.round.discards_left
     _restore_shop_reroll_state(game_state, observation, history)
 
-    _rebuild_shop(game_state, observation)
+    hand_plays = sum(stat.played for stat in observation.hand_stats)
+    game_state["hands_played"] = hand_plays
+    usage, usage_total = _public_consumable_usage(history)
+    game_state["consumable_usage"] = usage
+    game_state["consumable_usage_total"] = usage_total
+    game_state["consumable_usage_tarot"] = usage_total["tarot"]
+    _rebuild_shop(game_state, observation, history)
+    _rebuild_open_pack(game_state, observation, history)
     _assign_public_root_sort_ids(game_state)
     game_state["used_jokers"] = {
-        key: True for key in _active_center_keys(observation)
+        key: True for key in _active_center_keys(observation, history)
     }
     game_state["has_showman"] = any(card.center_key == "j_ring_master" for card in jokers)
-    game_state["first_shop_buffoon"] = observation.phase == Phase.SHOP or any(
+    game_state["first_shop_buffoon"] = observation.phase in {Phase.SHOP, Phase.PACK} or any(
         step.before.phase == Phase.SHOP or step.after.phase == Phase.SHOP
         for step in history
     )
@@ -442,17 +658,15 @@ def _rebuild_state(
         else {}
     )
 
-    hand_plays = sum(stat.played for stat in observation.hand_stats)
-    game_state["hands_played"] = hand_plays
     game_state["round_scores"] = _public_round_scores(history)
     shop_purchases, joker_purchases = (
         _current_shop_purchases(history)
-        if observation.phase == Phase.SHOP
+        if observation.phase in {Phase.SHOP, Phase.PACK}
         else (0, 0)
     )
     game_state["cards_purchased"] = shop_purchases
     current_round["jokers_purchased"] = joker_purchases
-    game_state["skips"] = 0
+    game_state["skips"] = sum(isinstance(step.action, SkipBlind) for step in history)
     game_state["bosses_used"] = _public_bosses_used(observation, history, BLINDS)
 
     # Validate the current blind objects are constructible at the declared
@@ -487,7 +701,7 @@ def _restore_shop_reroll_state(
     observation: PublicObservation,
     history: Sequence[PublicHistoryStep],
 ) -> None:
-    if observation.phase != Phase.SHOP:
+    if observation.phase not in {Phase.SHOP, Phase.PACK}:
         game_state["current_round"]["reroll_cost"] = observation.round.reroll_cost
         return
 
@@ -587,13 +801,40 @@ def _set_most_played_hand(
 
 
 def _rebuild_deck(observation: PublicObservation, seed: str) -> list[Any]:
+    return _rebuild_card_entries(observation.full_deck, seed, "")
+
+
+def _rebuild_pack_playing_cards(
+    observation: PublicObservation,
+    seed: str,
+) -> tuple[list[Any], list[Any]]:
+    deck = _rebuild_card_entries(observation.remaining_deck, seed, "pack-deck")
+    chooser = random.Random(
+        int(hashlib.sha256(f"{seed}|pack-hand-stone-base".encode()).hexdigest(), 16)
+    )
+    hand = [
+        _rebuild_visible_playing_card(card, chooser)
+        for card in observation.hand
+        if isinstance(card, VisiblePlayingCard)
+    ]
+    return deck, hand
+
+
+def _rebuild_card_entries(
+    entries: Sequence[Any],
+    seed: str,
+    stream: str,
+) -> list[Any]:
     from jackdaw.engine.card_factory import RANK_LETTER, SUIT_LETTER, create_playing_card
 
-    chooser = random.Random(int(hashlib.sha256(f"{seed}|stone-base".encode()).hexdigest(), 16))
+    prefix = f"{stream}-" if stream else ""
+    chooser = random.Random(
+        int(hashlib.sha256(f"{seed}|{prefix}stone-base".encode()).hexdigest(), 16)
+    )
     rank_letters = tuple(RANK_LETTER)
     suit_letters = tuple(SUIT_LETTER)
     cards: list[Any] = []
-    for entry in observation.full_deck:
+    for entry in entries:
         public = entry.card
         enhancement = _ENHANCEMENT_KEYS.get(public.enhancement)
         edition_key = _EDITION_KEYS.get(public.edition)
@@ -620,7 +861,9 @@ def _rebuild_deck(observation: PublicObservation, seed: str) -> list[Any]:
             card.ability["perma_bonus"] = public.permanent_bonus
             card.debuff = public.debuffed
             cards.append(card)
-    random.Random(int(hashlib.sha256(f"{seed}|deck-order".encode()).hexdigest(), 16)).shuffle(cards)
+    random.Random(
+        int(hashlib.sha256(f"{seed}|{prefix}deck-order".encode()).hexdigest(), 16)
+    ).shuffle(cards)
     return cards
 
 
@@ -632,13 +875,17 @@ def _assign_public_root_sort_ids(game_state: dict[str, Any]) -> None:
     next_id = 0
     for area_name in (
         "deck",
+        "hand",
         "jokers",
         "consumables",
         "shop_cards",
         "shop_vouchers",
         "shop_boosters",
+        "pack_cards",
     ):
         area = game_state.get(area_name)
+        if area is None and area_name == "pack_cards":
+            continue
         if not isinstance(area, list):
             raise DeterminizationUnavailable(f"fresh {area_name} area is invalid")
         for card in area:
@@ -668,13 +915,19 @@ def _deck_multiset(entries: Sequence[Any]) -> tuple[tuple[object, ...], ...]:
     return tuple(sorted(values, key=repr))
 
 
-def _rebuild_joker(item: PublicItem, current_round: dict[str, Any]) -> Any:
+def _rebuild_joker(
+    item: PublicItem,
+    current_round: dict[str, Any],
+    *,
+    require_complete_runtime: bool = True,
+    creation_hands_played: int = 0,
+) -> Any:
     from jackdaw.engine.card_factory import create_joker
     from jackdaw.engine.data.prototypes import JOKERS
 
     if item.kind != "JOKER" or item.key not in JOKERS:
         raise DeterminizationUnavailable(f"unknown owned Joker {item.key!r}")
-    if item.key in _MISSING_PUBLIC_RUNTIME:
+    if require_complete_runtime and item.key in _MISSING_PUBLIC_RUNTIME:
         raise DeterminizationUnavailable(
             f"owned Joker {item.key!r} lacks complete public runtime"
         )
@@ -687,12 +940,18 @@ def _rebuild_joker(item: PublicItem, current_round: dict[str, Any]) -> Any:
         eternal=item.eternal,
         perishable=item.perishable_rounds is not None,
         rental=item.rental,
+        hands_played=creation_hands_played,
     )
     card.debuff = item.debuffed
     if item.perishable_rounds is not None:
         card.perish_tally = item.perishable_rounds
     _set_costs(card, item)
-    _apply_joker_runtime(card, item.runtime, current_round)
+    _apply_joker_runtime(
+        card,
+        item.runtime,
+        current_round,
+        require_complete_runtime=require_complete_runtime,
+    )
     return card
 
 
@@ -700,6 +959,8 @@ def _apply_joker_runtime(
     card: Any,
     runtime: PublicJokerRuntime | None,
     current_round: dict[str, Any],
+    *,
+    require_complete_runtime: bool = True,
 ) -> None:
     key = card.center_key
     required = key in _RUNTIME_MULT | _RUNTIME_CHIPS | _RUNTIME_XMULT | {
@@ -711,7 +972,8 @@ def _apply_joker_runtime(
         "j_idol",
     }
     if (
-        required
+        require_complete_runtime
+        and required
         and runtime is None
         and key not in _PUBLIC_DERIVED_RUNTIME_FIELDS
     ):
@@ -802,12 +1064,32 @@ def _rebuild_consumable(item: PublicItem) -> Any:
     return card
 
 
-def _rebuild_shop(game_state: dict[str, Any], observation: PublicObservation) -> None:
-    if observation.phase != Phase.SHOP:
+def _rebuild_shop(
+    game_state: dict[str, Any],
+    observation: PublicObservation,
+    history: Sequence[PublicHistoryStep],
+) -> None:
+    if observation.phase not in {Phase.SHOP, Phase.PACK}:
         game_state["shop_cards"] = []
         game_state["shop_vouchers"] = []
         game_state["shop_boosters"] = []
         return
+
+    if observation.phase == Phase.PACK:
+        shop_observation, buy_step, _ = _current_pack_visit(observation, history)
+        purchased_index = buy_step.action.pack.value
+        shop_offers = shop_observation.shop
+        voucher_offers = shop_observation.vouchers
+        booster_offers = tuple(
+            pack
+            for index, pack in enumerate(shop_observation.packs)
+            if index != purchased_index
+        )
+    else:
+        shop_observation = observation
+        shop_offers = observation.shop
+        voucher_offers = observation.vouchers
+        booster_offers = observation.packs
 
     current_round = game_state["current_round"]
     chooser = random.Random(
@@ -819,20 +1101,25 @@ def _rebuild_shop(game_state: dict[str, Any], observation: PublicObservation) ->
         )
     )
     game_state["shop_cards"] = [
-        _rebuild_shop_offer(offer, current_round, chooser)
-        for offer in observation.shop
+        _rebuild_shop_offer(
+            offer,
+            current_round,
+            chooser,
+            creation_hands_played=game_state["hands_played"],
+        )
+        for offer in shop_offers
     ]
     game_state["shop_vouchers"] = [
-        _rebuild_voucher(item) for item in observation.vouchers
+        _rebuild_voucher(item) for item in voucher_offers
     ]
     game_state["shop_boosters"] = [
-        _rebuild_booster(item) for item in observation.packs
+        _rebuild_booster(item) for item in booster_offers
     ]
     game_state["shop_voucher_limit"] = max(1, len(game_state["shop_vouchers"]))
     shop = game_state.setdefault("shop", {})
     if not isinstance(shop, dict):
         raise DeterminizationUnavailable("fresh shop capacity state is invalid")
-    shop["joker_max"] = max(int(shop.get("joker_max", 2)), len(observation.shop))
+    shop["joker_max"] = max(int(shop.get("joker_max", 2)), len(shop_observation.shop))
     current_round["voucher"] = (
         game_state["shop_vouchers"][0].center_key
         if game_state["shop_vouchers"]
@@ -841,17 +1128,89 @@ def _rebuild_shop(game_state: dict[str, Any], observation: PublicObservation) ->
     game_state["shop_return_phase"] = "shop"
 
 
+def _rebuild_open_pack(
+    game_state: dict[str, Any],
+    observation: PublicObservation,
+    history: Sequence[PublicHistoryStep],
+) -> None:
+    if observation.phase != Phase.PACK:
+        game_state.pop("pack_cards", None)
+        game_state.pop("pack_hand", None)
+        game_state.pop("pack_type", None)
+        game_state["pack_choices_remaining"] = 0
+        return
+
+    from jackdaw.engine.actions import GamePhase
+
+    current_round = game_state["current_round"]
+    chooser = random.Random(
+        int(
+            hashlib.sha256(
+                f"{game_state['seed']}|opened-pack-stone-base".encode()
+            ).hexdigest(),
+            16,
+        )
+    )
+    game_state["pack_cards"] = [
+        _rebuild_pack_offer(
+            offer,
+            current_round,
+            chooser,
+            creation_hands_played=game_state["hands_played"],
+        )
+        for offer in observation.opened_pack
+    ]
+    game_state["pack_choices_remaining"] = observation.pack_choices_remaining
+    game_state["pack_type"] = observation.pack_kind.title()
+    game_state["shop_return_phase"] = GamePhase.SHOP
+    game_state["pending_tag_packs"] = []
+    if observation.pack_kind in {"ARCANA", "SPECTRAL"}:
+        game_state["pack_hand"] = list(game_state["hand"])
+    else:
+        game_state["pack_hand"] = []
+    if _pack_initial_capacity(observation, history) < len(game_state["pack_cards"]):
+        raise DeterminizationUnavailable("PACK capacity is smaller than visible offers")
+
+
+def _rebuild_pack_offer(
+    offer: PublicItem | VisiblePlayingCard,
+    current_round: dict[str, Any],
+    chooser: random.Random,
+    *,
+    creation_hands_played: int,
+) -> Any:
+    if isinstance(offer, VisiblePlayingCard):
+        return _rebuild_visible_playing_card(offer, chooser)
+    if offer.kind == "JOKER":
+        return _rebuild_joker(
+            offer,
+            current_round,
+            require_complete_runtime=False,
+            creation_hands_played=creation_hands_played,
+        )
+    if offer.kind in {"TAROT", "PLANET", "SPECTRAL"}:
+        return _rebuild_consumable(offer)
+    raise DeterminizationUnavailable(f"unsupported opened-pack offer {offer.kind!r}")
+
+
 def _rebuild_shop_offer(
     offer: PublicItem | PublicShopPlayingCard,
     current_round: dict[str, Any],
     chooser: random.Random,
+    *,
+    creation_hands_played: int,
 ) -> Any:
     if isinstance(offer, PublicShopPlayingCard):
         card = _rebuild_visible_playing_card(offer.card, chooser)
         card.cost = offer.buy_cost
         return card
     if offer.kind == "JOKER":
-        return _rebuild_joker(offer, current_round)
+        return _rebuild_joker(
+            offer,
+            current_round,
+            require_complete_runtime=False,
+            creation_hands_played=creation_hands_played,
+        )
     if offer.kind in {"TAROT", "PLANET", "SPECTRAL"}:
         return _rebuild_consumable(offer)
     raise DeterminizationUnavailable(f"unsupported shop offer kind {offer.kind!r}")
@@ -995,6 +1354,49 @@ def _public_round_scores(
     }
 
 
+def _public_consumable_usage(
+    history: Sequence[PublicHistoryStep],
+) -> tuple[dict[str, dict[str, object]], dict[str, int]]:
+    from balatro_ai_v2.actions import BuyMode, BuyShopCard, ChoosePackCard, UseConsumable
+
+    usage: dict[str, dict[str, object]] = {}
+    totals = {"tarot": 0, "planet": 0, "spectral": 0, "tarot_planet": 0, "all": 0}
+    for step in history:
+        action = step.action
+        item: PublicItem | None = None
+        if isinstance(action, UseConsumable):
+            index = action.consumable.value
+            if 0 <= index < len(step.before.consumables):
+                item = step.before.consumables[index]
+        elif isinstance(action, BuyShopCard) and action.mode == BuyMode.USE:
+            index = action.card.value
+            if 0 <= index < len(step.before.shop):
+                offer = step.before.shop[index]
+                if isinstance(offer, PublicItem):
+                    item = offer
+        elif isinstance(action, ChoosePackCard):
+            index = action.card.value
+            if 0 <= index < len(step.before.opened_pack):
+                offer = step.before.opened_pack[index]
+                if isinstance(offer, PublicItem) and offer.kind in {
+                    "TAROT",
+                    "PLANET",
+                    "SPECTRAL",
+                }:
+                    item = offer
+        if item is None:
+            continue
+        card_set = item.kind.title()
+        entry = usage.setdefault(item.key, {"count": 0, "set": card_set})
+        entry["count"] = int(entry["count"]) + 1
+        kind = item.kind.lower()
+        totals[kind] += 1
+        if item.kind in {"TAROT", "PLANET"}:
+            totals["tarot_planet"] += 1
+        totals["all"] += 1
+    return usage, totals
+
+
 def _current_shop_purchases(
     history: Sequence[PublicHistoryStep],
 ) -> tuple[int, int]:
@@ -1038,14 +1440,16 @@ def _current_shop_visit(
     return history[boundary].after, steps
 
 
-def _active_center_keys(observation: PublicObservation) -> frozenset[str]:
+def _active_center_keys(
+    observation: PublicObservation,
+    history: Sequence[PublicHistoryStep],
+) -> frozenset[str]:
     keys: set[str] = set()
-    for item in [
-        *observation.jokers,
-        *observation.consumables,
-        *observation.shop,
-        *observation.opened_pack,
-    ]:
+    shop_offers = observation.shop
+    if observation.phase == Phase.PACK:
+        shop_observation, _, _ = _current_pack_visit(observation, history)
+        shop_offers = shop_observation.shop
+    for item in [*observation.jokers, *observation.consumables, *shop_offers]:
         if isinstance(item, PublicItem):
             keys.add(item.key)
         elif isinstance(item, PublicShopPlayingCard):

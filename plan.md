@@ -2026,6 +2026,42 @@ PACK root; Castle is no longer a fallback. Because this is a repeatedly used
 development seed, the score is diagnostic rather than selection evidence.
 Proceed to vanilla PACK reconstruction before any strength comparison.
 
+Vanilla PACK root design: admit only shop-origin ARCANA, CELESTIAL, SPECTRAL,
+STANDARD, and BUFFOON boundaries reached through a complete contiguous public
+history. The last SHOP-to-PACK `BuyPack` transition identifies the exact shop
+to restore, the purchased booster to remove, the return phase, and the initial
+pack capacity; later PACK-to-PACK picks preserve that entrance record. Rebuild
+the current opened offers from their typed public representations and require
+the pack kind, offer types, remaining choices, and history transition to agree.
+For Arcana and Spectral packs, partition the permanent public deck into the
+visible target hand and Remaining multiset, preserving visible hand order and
+sampling only Stone bases and hidden remaining-deck order from the policy
+nonce. Other vanilla packs require an empty hand and a Remaining multiset equal
+to the permanent deck. Restore the current shop's reroll/purchase counters and
+remaining offers so either a pick or skip returns to the exact public shop.
+Keep skip-tag packs, SMODS packs, hidden hand cards, impossible deck
+partitions, unsupported pack offers, and ambiguous/truncated visits fail
+closed. Certify initial and multi-pick organic round trips, every public pack
+action in isolated clones, exact return-to-shop behavior, targeted card
+effects, and Standard/Buffoon inventory additions before another live run.
+
+Vanilla PACK constructor result: all five shop-origin families now reconstruct
+from public state and complete history, including visible target hands,
+ordered offers, original Mega-pack capacity after a first pick, underlying shop
+areas, and return-to-shop lifecycle. The constructor also restores public
+consumable-use totals and fresh-offer creation hand counts, which feed Fortune
+Teller, Satellite, and Loyalty Card, and derives skip count for Throwback while
+skip-tag roots remain deliberately closed. Organic tests cover every family,
+every legal root action in isolated clones, exact pack close, a Mega Arcana
+mid-pick root, pristine stateful Buffoon offers, and malformed-state rejection.
+The complete suite passes at 1,218 tests. Repeating development seed 2601 with
+the same nonce completed all 98 attempted public-root searches, including ten
+PACK decisions, changed 22 actions, rejected zero rollout branches, and died in
+Ante 7 after 215 decisions. The prior Castle build completed 68 of 74 roots and
+died in Ante 6; this is encouraging controlled diagnostic movement, not
+selection evidence because the seed has been reused. The live coverage gate is
+now complete for BLIND_SELECT, ordinary SHOP, and shop-origin vanilla PACK.
+
 Strength replan: throughput is no longer the immediate score ceiling. Across
 the descriptive frozen v9/v10 trajectories, 340 of 365 losses (93.2%) end on
 Pair or Two Pair; 116 of 243 losses with a full Joker row have zero xMult roles

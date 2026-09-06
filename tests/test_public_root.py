@@ -15,6 +15,7 @@ from balatro_ai_v2.actions import (
     RerollShop,
     SelectBlind,
     SkipBlind,
+    SkipPack,
     iter_legal_actions,
 )
 from balatro_ai_v2.backend import RunSpec
@@ -61,6 +62,68 @@ def _organic_states(seed: str, phase: Phase, limit: int = 5):
             observation = after
     finally:
         backend.close()
+
+
+def _pack_kind_for_key(key: str) -> str | None:
+    return next(
+        (
+            kind
+            for prefix, kind in {
+                "p_arcana_": "ARCANA",
+                "p_celestial_": "CELESTIAL",
+                "p_spectral_": "SPECTRAL",
+                "p_standard_": "STANDARD",
+                "p_buffoon_": "BUFFOON",
+            }.items()
+            if key.startswith(prefix)
+        ),
+        None,
+    )
+
+
+def _all_vanilla_pack_states():
+    wanted = {"ARCANA", "CELESTIAL", "SPECTRAL", "STANDARD", "BUFFOON"}
+    found = {}
+    backend = JackdawBackend()
+    backend.reset(RunSpec("RED", "WHITE", "1"))
+    policy = PublicStrategicPolicy()
+    observation = backend.current_public
+    history: list[PublicHistoryStep] = []
+    try:
+        assert observation is not None
+        while not observation.terminal and len(history) < 200 and set(found) != wanted:
+            if observation.phase == Phase.PACK:
+                found.setdefault(observation.pack_kind, (observation, tuple(history)))
+            legal = tuple(iter_legal_actions(observation))
+            forced = None
+            if observation.phase == Phase.SHOP:
+                forced = next(
+                    (
+                        action
+                        for action in legal
+                        if isinstance(action, BuyPack)
+                        and _pack_kind_for_key(
+                            observation.packs[action.pack.value].key
+                        )
+                        in wanted - set(found)
+                    ),
+                    None,
+                )
+            action = forced or policy.choose_action(
+                observation,
+                lambda: iter(legal),
+                tuple(history),
+            )
+            result = backend.step(action)
+            assert result.status == "accepted", result.error
+            after = backend.current_public
+            assert after is not None
+            history.append(PublicHistoryStep(observation, action, after))
+            observation = after
+    finally:
+        backend.close()
+    assert set(found) == wanted
+    return found
 
 
 def test_public_root_api_accepts_only_public_inputs() -> None:
@@ -155,6 +218,167 @@ def test_shop_root_standard_pack_pick_updates_permanent_deck() -> None:
         assert after.deck_size == observation.deck_size + 1
     finally:
         root.close()
+
+
+def test_all_vanilla_pack_roots_round_trip_accept_actions_and_return_to_shop() -> None:
+    for kind, (observation, history) in _all_vanilla_pack_states().items():
+        root = construct_public_root(observation, history, f"pack-{kind}", 0)
+        frozen = freeze_backend(root)
+        root.close()
+        assert frozen.current_public == observation
+
+        for action in iter_legal_actions(observation):
+            clone = frozen.clone()
+            try:
+                result = clone.step(action)
+                assert result.status == "accepted", (kind, action, result.error)
+            finally:
+                clone.close()
+
+        entrance = history[-1]
+        assert isinstance(entrance.action, BuyPack)
+        skipped = frozen.clone()
+        try:
+            result = skipped.step(SkipPack())
+            assert result.status == "accepted", result.error
+            after = skipped.current_public
+            assert after is not None and after.phase == Phase.SHOP
+            assert after.shop == entrance.before.shop
+            assert after.vouchers == entrance.before.vouchers
+            assert after.packs == tuple(
+                pack
+                for index, pack in enumerate(entrance.before.packs)
+                if index != entrance.action.pack.value
+            )
+            assert not after.hand
+            assert after.draw_count == after.deck_size
+            assert {
+                replace(entry.card, effect_text=""): entry.count
+                for entry in after.remaining_deck
+            } == {
+                replace(entry.card, effect_text=""): entry.count
+                for entry in after.full_deck
+            }
+        finally:
+            skipped.close()
+
+    spectral, spectral_history = _all_vanilla_pack_states()["SPECTRAL"]
+    spectral_root = construct_public_root(
+        spectral,
+        spectral_history,
+        "pack-usage",
+        0,
+    )
+    try:
+        state = spectral_root._backend._gs
+        assert state["consumable_usage"] == {
+            "c_mercury": {"count": 1, "set": "Planet"},
+            "c_moon": {"count": 1, "set": "Tarot"},
+        }
+        assert state["consumable_usage_total"] == {
+            "all": 2,
+            "planet": 1,
+            "spectral": 0,
+            "tarot": 1,
+            "tarot_planet": 2,
+        }
+    finally:
+        spectral_root.close()
+
+
+def test_mega_pack_mid_pick_root_preserves_capacity_and_return_shop() -> None:
+    backend = JackdawBackend()
+    backend.reset(RunSpec("RED", "WHITE", "1"))
+    policy = PublicStrategicPolicy()
+    observation = backend.current_public
+    history: list[PublicHistoryStep] = []
+    try:
+        assert observation is not None
+        for _ in range(100):
+            legal = tuple(iter_legal_actions(observation))
+            mega = None
+            if observation.phase == Phase.SHOP:
+                mega = next(
+                    (
+                        action
+                        for action in legal
+                        if isinstance(action, BuyPack)
+                        and observation.packs[action.pack.value].key == "p_arcana_mega"
+                    ),
+                    None,
+                )
+            action = mega or policy.choose_action(
+                observation,
+                lambda: iter(legal),
+                tuple(history),
+            )
+            result = backend.step(action)
+            assert result.status == "accepted", result.error
+            after = backend.current_public
+            assert after is not None
+            history.append(PublicHistoryStep(observation, action, after))
+            observation = after
+            if mega is not None:
+                break
+        assert observation.phase == Phase.PACK
+        assert observation.pack_choices_remaining == 2
+        entrance = history[-1]
+        first_pick = next(
+            action
+            for action in iter_legal_actions(observation)
+            if isinstance(action, ChoosePackCard)
+        )
+        result = backend.step(first_pick)
+        assert result.status == "accepted", result.error
+        after_pick = backend.current_public
+        assert after_pick is not None and after_pick.phase == Phase.PACK
+        history.append(PublicHistoryStep(observation, first_pick, after_pick))
+    finally:
+        backend.close()
+
+    root = construct_public_root(after_pick, tuple(history), "mega-mid-pick", 0)
+    try:
+        assert root.current_public == after_pick
+        assert root._pack_card_limit == 5
+        skipped = root.step(SkipPack())
+        assert skipped.status == "accepted", skipped.error
+        shop = root.current_public
+        assert shop is not None and shop.phase == Phase.SHOP
+        assert shop.shop == entrance.before.shop
+        assert shop.vouchers == entrance.before.vouchers
+        assert shop.packs == tuple(
+            pack
+            for index, pack in enumerate(entrance.before.packs)
+            if index != entrance.action.pack.value
+        )
+    finally:
+        root.close()
+
+
+def test_pack_roots_fail_closed_on_ambiguous_public_state() -> None:
+    pack, history = _all_vanilla_pack_states()["ARCANA"]
+    def ending_at(observation):
+        return (*history[:-1], replace(history[-1], after=observation))
+
+    smods = replace(pack, pack_kind="SMODS")
+    with pytest.raises(DeterminizationUnavailable, match="unsupported opened pack"):
+        construct_public_root(smods, ending_at(smods), "bad", 0)
+    incompatible = replace(
+        pack,
+        opened_pack=(PublicItem("j_joker", "Joker", "JOKER"),),
+    )
+    with pytest.raises(DeterminizationUnavailable, match="incompatible public offer"):
+        construct_public_root(
+            incompatible,
+            ending_at(incompatible),
+            "bad",
+            0,
+        )
+    empty_hand = replace(pack, hand=())
+    with pytest.raises(DeterminizationUnavailable, match="fill the deck"):
+        construct_public_root(empty_hand, ending_at(empty_hand), "bad", 0)
+    with pytest.raises(DeterminizationUnavailable, match="does not end"):
+        construct_public_root(pack, history[:-1], "bad", 0)
 
 
 def test_shop_root_reconstructs_paid_and_chaos_rerolls() -> None:
@@ -380,22 +604,17 @@ def test_existing_search_consumes_fresh_public_roots_and_falls_back_elsewhere() 
     assert policy.last_decision is not None
     assert policy.last_decision.unavailable_reason is None
 
-    # The constructor's unsupported PACK error is contained by search and the
-    # public continuation remains authoritative for the fallback action.
+    # PACK now uses the same fresh public-root search path.
     pack, pack_history = next(iter(_organic_states("11", Phase.PACK, limit=1)))
-    baseline = continuation.choose_action(
+    pack_action = policy.choose_action(
         pack,
         lambda: iter_legal_actions(pack),
         pack_history,
     )
-    fallback = policy.choose_action(
-        pack,
-        lambda: iter_legal_actions(pack),
-        pack_history,
-    )
-    assert fallback == baseline
+    assert pack_action in tuple(iter_legal_actions(pack))
     assert policy.last_decision is not None
-    assert "no fresh public constructor" in (policy.last_decision.unavailable_reason or "")
+    assert policy.last_decision.unavailable_reason is None
+    assert policy.counters.searched == 3
 
 
 def test_noninitial_root_requires_contiguous_complete_public_history() -> None:
