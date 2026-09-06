@@ -480,6 +480,11 @@ def test_live_lua_table_shapes_are_normalized_at_the_firewall() -> None:
     assert observation.shop[0].rental
     assert observation.used_vouchers == ("v_seed_money",)
     assert observation.round.ancient_suit == "H"
+    assert observation.round.most_played_hand == "High Card"
+
+    raw["round"]["most_played_poker_hand"] = "Royal Flush"
+    with pytest.raises(ValueError, match="unsupported most-played"):
+        to_public_observation(raw)
 
 
 def test_magic_trick_shop_card_preserves_only_visible_card_semantics() -> None:

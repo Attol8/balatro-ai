@@ -2113,6 +2113,65 @@ Zero and progressed candidate fixtures round-trip through fresh public roots,
 the updated readiness patch applies to the clean pinned base, focused tests
 pass 93/93, and the complete suite passes 1,231/1,231.
 
+Coverage-priority replan: defer skip-tag reconstruction. Recent retained
+cohorts contain zero skips in 9,645 strategic decisions, the broader 38,373-
+decision descriptive history contains only two, and the v13 live diagnostic
+already completed 63/63 roots. Ox/Pillar affect roughly 5--6% of stored rows
+and cluster much more severely: The Pillar alone occupies 13/30 strategic
+observations in the committed seed-2507 authority trajectory. The dominant
+strength gap also remains long-horizon continuation rather than tag coverage:
+88/96 route-cohort losses ended on Pair/Two Pair, 91/96 had empty consumables,
+and 64/96 died to bosses. Close Ox/Pillar next, then move to strong high-Ante
+trajectory acquisition and a calibrated long-horizon continuation/leaf before
+retrying two-Ante search. Preserve the audited future tag design for later;
+doing it now would add an active-tag protocol, tag-pack lifecycle, and several
+Jackdaw repairs for nearly absent behavior.
+
+Ox/Pillar design: advance the public protocol once to carry the exact visible,
+frozen most-played poker hand already exported by both engines and validate it
+against the fixed hand set. Set that target directly in the candidate and fix
+Jackdaw's incorrect dynamic-max Ox comparison. Condition the policy-owned
+hidden hand-iteration order only on the cumulative hand counts at prior boss-
+defeat transitions: each visible target must be last among the then-tied
+maxima. Current Small/Big plays cannot constrain a value frozen at the prior
+boss. This removes The Ox's missing target without exposing engine-private
+state. For The Pillar, reconstruct
+`played_this_ante` only from contiguous public `PlayCards` history when every
+played permanent card identity is unique and the permanent deck multiset
+has not changed during the current ante. Under that boundary, the union of
+selected visible identities is the exact physical-card set even if a card was
+replayed across blinds; mark those rebuilt cards before future draws. Reject
+hidden selected cards, duplicate/obscured identities, or any same-Ante deck
+mutation whenever Pillar is live or could be reached through a Boss Tag or an
+owned/offered boss-reroll voucher. Ignore a defeated Pillar because vanilla
+clears the markers at boss defeat. Keep old observation codecs readable with a
+missing target default, but require the target for any live Ox root. Prove a
+public-only Pillar route
+through small/big shops into the boss, exact future debuffs, explicit unsafe-
+history rejection, Ox money reset, full tests, and an availability census on
+retained public trajectories.
+
+Ox/Pillar result: retain protocol v14 and the exact candidate reconstruction.
+The source audit caught and corrected the initial design before promotion:
+Ox's target is frozen at the prior boss defeat, not recomputed from current
+counts, and pinned Jackdaw's dynamic comparison was wrong. Candidate tests now
+prove that a one-card High Card zeros $20 when High Card is the frozen target
+despite Pair being the current statistical maximum, while the same play keeps
+$20 when Pair is the frozen target. The hidden Lua iteration order is sampled
+subject to every public boss-defeat tie constraint in the complete history.
+An organic seed-2507 Pillar root reconstructs every uniquely identifiable card
+played this ante and exactly matches the debuffed membership of the next drawn
+hand. Hidden identities and deck mutation fail closed whenever Pillar is live
+or reachable through an extant Boss Tag or boss-reroll voucher. Legacy expert
+traces are verified under their old omitted-field digest and upgraded only from
+their independently verified raw authority frame. The readiness patch still
+applies to the clean pinned BalatroBot base, Ruff passes, and the full suite
+passes 1,240/1,240. A two-seed live-candidate census completed every root before
+the known skip boundary: seed 2507 completed 77/77 roots including nine Pillar
+roots; seed 39 completed 71/71 roots including sixteen Ox roots, then correctly
+rejected the eight later roots after an actual skip. This is exact candidate
+coverage, not new authority differential evidence or a score claim.
+
 Strength replan: throughput is no longer the immediate score ceiling. Across
 the descriptive frozen v9/v10 trajectories, 340 of 365 losses (93.2%) end on
 Pair or Two Pair; 116 of 243 losses with a full Joker row have zero xMult roles

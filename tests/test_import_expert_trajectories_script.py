@@ -109,6 +109,11 @@ def test_imports_current_real_balatro_pack_sale_to_choice_trace(
         current.startswith("Sell") and following == "ChoosePackCard"
         for current, following in zip(action_names, action_names[1:])
     ) == 5
+    assert all(
+        transition.before.round.most_played_hand is not None
+        and transition.after.round.most_played_hand is not None
+        for transition in trajectory.transitions
+    )
     assert "2507" not in dataset.read_text()
 
 

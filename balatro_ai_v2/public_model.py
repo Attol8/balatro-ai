@@ -565,6 +565,10 @@ def _observation_features(observation: PublicObservation, size: int) -> list[flo
     ):
         vector.number(name, value, scale)
     vector.add("round.boss_rerolled", float(observation.round.boss_rerolled))
+    vector.category(
+        "round.most_played_hand",
+        observation.round.most_played_hand or "<NONE>",
+    )
     vector.number("won", int(observation.won), 1)
     vector.category("pack_kind", observation.pack_kind or "<NONE>")
     vector.number("pack_choices_remaining", observation.pack_choices_remaining, 4)

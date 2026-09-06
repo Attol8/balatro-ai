@@ -435,6 +435,7 @@ _FEATURE_NAMES = (
     *(f"phase:{value}" for value in _PHASES),
     *(f"pack_kind:{value}" for value in _PACK_KINDS),
     *(f"ancient_suit:{value}" for value in _SUITS),
+    *(f"most_played_hand:{value}" for value in _HAND_NAMES),
     *(f"target_hand:{value}" for value in _HAND_NAMES),
     *(f"tag:{value}" for value in _TAGS),
     *(f"intent:{value}" for value in _INTENT_VALUES),
@@ -1121,6 +1122,13 @@ class PublicStrategyTensorizer:
         if observation.round.ancient_suit is not None:
             _put_category(
                 global_features, "ancient_suit", observation.round.ancient_suit, _SUITS
+            )
+        if observation.round.most_played_hand is not None:
+            _put_category(
+                global_features,
+                "most_played_hand",
+                observation.round.most_played_hand,
+                _HAND_NAMES,
             )
         if observation.pack_kind is not None:
             _put_category(

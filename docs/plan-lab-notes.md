@@ -4889,3 +4889,43 @@ and every other Joker remain on the prior path. Candidate fixtures prove zero
 and progressed public-root round trips, the readiness patch still applies to
 the clean pinned base, and the full suite passes 1,231/1,231. This closes a
 fallback hole without a protocol revision or particle-stream change.
+
+### Exact Ox/Pillar public-root state (2026-09-06)
+
+Coverage analysis redirected the next slice away from skip tags. Recent
+retained cohorts contain no skips in 9,645 strategic decisions, while Ox and
+Pillar occur in roughly 5--6% of stored rows and Pillar alone occupies 13/30
+strategic observations in the committed seed-2507 authority trajectory. The
+dominant score failure remains long-horizon strategy, but closing this compact
+root hole is prerequisite to letting search learn from that trajectory class.
+
+Protocol v14 adds the already-visible `most_played_poker_hand` as the typed
+round-level Ox target. A source audit caught a crucial semantic distinction:
+vanilla freezes this target at the prior boss defeat, so Small/Big plays may
+make another hand the current maximum without changing the target. Roots set
+the frozen value directly and condition policy-owned Lua hand-table order only
+on tie constraints revealed at historical boss-defeat transitions. Jackdaw's
+incorrect dynamic `HandLevels.most_played()` Ox check is compatibility-wrapped
+to use the frozen value. A regression proves High Card drains $20 despite Pair
+being the current maximum, while the same play preserves $20 when Pair is the
+frozen target.
+
+Pillar markers are recovered from the union of selected, visible permanent-card
+identities in current-ante `PlayCards` history. Reconstruction requires every
+played identity to be unique in an unchanged permanent deck; hidden selections,
+duplicates, and same-ante mutation fail closed whenever Pillar is live or can
+still be reached through a Boss Tag or an owned/offered Director's Cut/Retcon.
+The exact marker is applied to both rebuilt deck cards and visible pack-hand
+cards before future draws. On the organic seed-2507 route, the reconstructed
+root's next Pillar hand has exactly the expected debuffed membership.
+
+The codec reads old rows missing only this field. Strict expert import verifies
+such immutable rows under the old projection and final digest, then upgrades
+the output solely from the separately re-canonicalized raw authority frame; it
+rejects mixed contracts. The clean BalatroBot readiness patch still applies,
+Ruff passes, and the complete suite passes 1,240 tests. A live-candidate census
+completed seed 2507 at 77/77 strategic roots including nine Pillar roots, and
+seed 39 at 71/71 pre-skip roots including sixteen Ox roots. Its eight later
+roots remained correctly unavailable after the policy actually skipped. These
+counts certify candidate root availability, not authoritative differential
+lockstep and not improved game score.

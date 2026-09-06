@@ -463,7 +463,7 @@ class JackdawBackend:
         self.metadata = BackendMetadata(
             backend_name="Jackdaw",
             backend_version=f"0.1.0+{JACKDAW_REVISION}",
-            adapter_version="8",
+            adapter_version="9",
             game_version="Balatro-1.0.1o-model",
             runtime_version="Python",
             capabilities=BackendCapabilities(
@@ -550,6 +550,7 @@ class JackdawBackend:
             elif method == "play":
                 with (
                     self._play_compatibility(),
+                    self._ox_target_compatibility(),
                     self._observatory_scoring_compatibility(),
                     self._round_end_compatibility(),
                 ):
@@ -1767,6 +1768,47 @@ class JackdawBackend:
                 yield
             finally:
                 game._fire_discard_effects = original_fire_discard_effects
+
+    @contextmanager
+    def _ox_target_compatibility(self) -> Iterator[None]:
+        """Make Jackdaw's Ox compare against vanilla's frozen ante target."""
+
+        from jackdaw.engine.data.hands import HandType
+        from jackdaw.engine.hand_levels import HandLevels
+
+        game_state = getattr(self._backend, "_gs", None)
+        if not isinstance(game_state, Mapping):
+            raise RuntimeError("Jackdaw backend does not expose its active game state")
+        levels = game_state.get("hand_levels")
+        blind = game_state.get("blind")
+        current_round = game_state.get("current_round")
+        if (
+            levels is None
+            or not isinstance(current_round, Mapping)
+            or getattr(blind, "name", "") != "The Ox"
+            or getattr(blind, "disabled", False)
+        ):
+            yield
+            return
+        target = current_round.get("most_played_poker_hand")
+        try:
+            frozen = HandType(target)
+        except (TypeError, ValueError) as exc:
+            raise RuntimeError("Jackdaw Ox target is unavailable") from exc
+
+        original_most_played = HandLevels.most_played
+
+        def frozen_most_played(candidate: Any) -> Any:
+            if candidate is levels:
+                return frozen
+            return original_most_played(candidate)
+
+        with _JACKDAW_PATCH_LOCK:
+            HandLevels.most_played = frozen_most_played
+            try:
+                yield
+            finally:
+                HandLevels.most_played = original_most_played
 
     @contextmanager
     def _observatory_scoring_compatibility(self) -> Iterator[None]:

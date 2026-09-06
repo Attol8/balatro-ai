@@ -198,6 +198,21 @@ def _observation(phase: str = "BLIND_SELECT"):
     return to_public_observation(raw)
 
 
+def test_tensorizer_distinguishes_frozen_ox_target() -> None:
+    high_card = _observation()
+    pair = replace(
+        high_card,
+        round=replace(high_card.round, most_played_hand="Pair"),
+    )
+    actions = tuple(iter_legal_actions(high_card))
+    batch = PublicStrategyTensorizer(_config()).tensorize(
+        (high_card, pair),
+        (actions, actions),
+    )
+
+    assert not torch.equal(batch.entity_features[0, 0], batch.entity_features[1, 0])
+
+
 def test_relational_model_outputs_policy_and_all_distinct_finite_value_heads() -> None:
     observations = (_observation(), _observation("SELECTING_HAND"))
     actions = tuple(

@@ -8,7 +8,9 @@ import pytest
 from balatro_ai_v2.actions import (
     BuyPack,
     ChoosePackCard,
+    HandSlot,
     LeaveShop,
+    PlayCards,
     ReorderConsumables,
     ReorderHand,
     ReorderJokers,
@@ -28,8 +30,20 @@ from balatro_ai_v2.determinize import (
 from balatro_ai_v2.determinized_search import DeterminizedSearchPolicy, RolloutBudget
 from balatro_ai_v2.jackdaw import JackdawBackend
 from balatro_ai_v2.policy import PublicHistoryStep
-from balatro_ai_v2.public_root import construct_public_root, public_root_seed
-from balatro_ai_v2.public_state import Phase, PublicItem, PublicJokerRuntime
+from balatro_ai_v2.public_root import (
+    _permanent_card_identity,
+    _pillar_played_identities,
+    _sample_poker_hand_order,
+    construct_public_root,
+    public_root_seed,
+)
+from balatro_ai_v2.public_state import (
+    HiddenHandCard,
+    Phase,
+    PublicItem,
+    PublicJokerRuntime,
+    VisiblePlayingCard,
+)
 
 
 def _blind_select_states(seed: str, limit: int = 5):
@@ -62,6 +76,41 @@ def _organic_states(seed: str, phase: Phase, limit: int = 5):
             observation = after
     finally:
         backend.close()
+
+
+def _organic_boss_select_state(
+    seed: str,
+    boss_name: str,
+):
+    backend = JackdawBackend(lightweight=True)
+    backend.reset(RunSpec("RED", "WHITE", seed))
+    policy = PublicStrategicPolicy()
+    observation = backend.current_public
+    history: list[PublicHistoryStep] = []
+    try:
+        assert observation is not None
+        while not observation.terminal and len(history) < 100:
+            selectable = next(
+                (blind for blind in observation.blinds if blind.status == "SELECT"),
+                None,
+            )
+            if selectable is not None and selectable.kind == "BOSS":
+                assert selectable.name == boss_name
+                return observation, tuple(history)
+            action = policy.choose_action(
+                observation,
+                lambda: iter_legal_actions(observation),
+                tuple(history),
+            )
+            result = backend.step(action)
+            assert result.status == "accepted", result.error
+            after = backend.current_public
+            assert after is not None
+            history.append(PublicHistoryStep(observation, action, after))
+            observation = after
+    finally:
+        backend.close()
+    raise AssertionError(f"seed {seed} did not reach {boss_name}")
 
 
 def _pack_kind_for_key(key: str) -> str | None:
@@ -483,6 +532,172 @@ def test_public_roots_reconstruct_publicly_derivable_pool_lifecycle() -> None:
     assert checked == 16
 
 
+def test_pillar_root_reconstructs_current_ante_markers_and_future_debuffs() -> None:
+    observation, history = _organic_boss_select_state("2507", "The Pillar")
+    played = {
+        _permanent_card_identity(step.before.hand[slot.value])
+        for step in history
+        if step.before.ante == observation.ante
+        and isinstance(step.action, PlayCards)
+        for slot in step.action.cards
+        if isinstance(step.before.hand[slot.value], VisiblePlayingCard)
+    }
+    assert played
+
+    root = construct_public_root(observation, history, "pillar-organic", 0)
+    try:
+        private = root._backend._gs
+        marked = sum(
+            bool(card.ability.get("played_this_ante"))
+            for area in ("deck", "hand", "discard_pile")
+            for card in private[area]
+        )
+        assert marked == len(played)
+
+        selected = root.step(SelectBlind())
+        assert selected.status == "accepted", selected.error
+        assert root.current_public is not None
+        assert root.current_public.phase == Phase.SELECTING_HAND
+        visible_hand = tuple(
+            card
+            for card in root.current_public.hand
+            if isinstance(card, VisiblePlayingCard)
+        )
+        assert any(card.debuffed for card in visible_hand)
+        assert all(
+            card.debuffed == (_permanent_card_identity(card) in played)
+            for card in visible_hand
+        )
+    finally:
+        root.close()
+
+
+def test_live_pillar_rejects_hidden_play_identity() -> None:
+    observation, history = _organic_boss_select_state("2507", "The Pillar")
+    index = next(
+        index
+        for index, step in enumerate(history)
+        if step.before.ante == observation.ante and isinstance(step.action, PlayCards)
+    )
+    step = history[index]
+    slot = step.action.cards[0]
+    hidden_hand = list(step.before.hand)
+    hidden_hand[slot.value] = HiddenHandCard()
+    malformed = list(history)
+    malformed[index] = replace(
+        step,
+        before=replace(step.before, hand=tuple(hidden_hand)),
+    )
+
+    with pytest.raises(DeterminizationUnavailable, match="identity was hidden"):
+        _pillar_played_identities(observation, tuple(malformed))
+
+
+def test_future_boss_reroll_keeps_unsafe_pillar_history_fail_closed() -> None:
+    observation, history = _organic_boss_select_state("2507", "The Pillar")
+    index = next(
+        index
+        for index, step in enumerate(history)
+        if step.before.ante == observation.ante and isinstance(step.action, PlayCards)
+    )
+    step = history[index]
+    changed_deck = list(step.before.full_deck)
+    changed_deck[0] = replace(changed_deck[0], count=2)
+    changed_deck.pop()
+    malformed = list(history)
+    malformed[index] = replace(
+        step,
+        before=replace(step.before, full_deck=tuple(changed_deck)),
+    )
+    without_pillar = replace(
+        observation,
+        used_vouchers=(*observation.used_vouchers, "v_directors_cut"),
+        blinds=tuple(
+            replace(blind, name="The Wall", effect="The Wall")
+            if blind.kind == "BOSS"
+            else blind
+            for blind in observation.blinds
+        ),
+    )
+
+    with pytest.raises(DeterminizationUnavailable, match="permanent deck changed"):
+        _pillar_played_identities(without_pillar, tuple(malformed))
+
+
+@pytest.mark.parametrize(
+    ("target", "expected_money"),
+    (("High Card", 0), ("Pair", 20)),
+)
+def test_ox_uses_frozen_public_target_not_dynamic_hand_maximum(
+    target: str,
+    expected_money: int,
+) -> None:
+    initial, _ = next(_blind_select_states("11", limit=1))
+    blinds = tuple(
+        replace(blind, status="DEFEATED")
+        if blind.kind != "BOSS"
+        else replace(blind, status="SELECT", name="The Ox", effect="The Ox")
+        for blind in initial.blinds
+    )
+    hand_stats = tuple(
+        replace(stat, played=5) if stat.name == "Pair" else stat
+        for stat in initial.hand_stats
+    )
+    observation = replace(
+        initial,
+        money=20,
+        blinds=blinds,
+        hand_stats=hand_stats,
+        round=replace(initial.round, most_played_hand=target),
+    )
+
+    root = construct_public_root(observation, (), f"ox-{target}", 0)
+    try:
+        assert root.current_public == observation
+        selected = root.step(SelectBlind())
+        assert selected.status == "accepted", selected.error
+        played = root.step(PlayCards((HandSlot(0),)))
+        assert played.status == "accepted", played.error
+        assert root.current_public is not None
+        assert root.current_public.money == expected_money
+    finally:
+        root.close()
+
+
+def test_hidden_hand_order_is_conditioned_at_boss_defeats_only() -> None:
+    initial, _ = next(_blind_select_states("11", limit=1))
+    tied = tuple(
+        replace(stat, played=3)
+        if stat.name in {"Pair", "Two Pair"}
+        else stat
+        for stat in initial.hand_stats
+    )
+    after = replace(
+        initial,
+        ante=2,
+        round_no=1,
+        hand_stats=tied,
+        round=replace(initial.round, most_played_hand="Pair"),
+    )
+    history = (PublicHistoryStep(initial, SelectBlind(), after),)
+
+    order = _sample_poker_hand_order(after, history, "conditioned")
+    assert order.index("Two Pair") < order.index("Pair")
+
+    current_counts_disagree = replace(
+        after,
+        hand_stats=tuple(
+            replace(stat, played=9) if stat.name == "Two Pair" else stat
+            for stat in after.hand_stats
+        ),
+    )
+    assert _sample_poker_hand_order(
+        current_counts_disagree,
+        history,
+        "conditioned",
+    ) == order
+
+
 @pytest.mark.parametrize(
     ("seed", "key"),
     (
@@ -744,12 +959,13 @@ def test_unsupported_phase_and_deck_boundary_fail_closed() -> None:
         construct_public_root(incomplete_yorick, (), "bad", 0)
 
     boss = next(blind for blind in initial.blinds if blind.kind == "BOSS")
-    unsupported_boss = replace(
+    missing_ox_target = replace(
         initial,
+        round=replace(initial.round, most_played_hand=None),
         blinds=tuple(
-            replace(blind, name="The Pillar") if blind is boss else blind
+            replace(blind, name="The Ox") if blind is boss else blind
             for blind in initial.blinds
         ),
     )
-    with pytest.raises(DeterminizationUnavailable, match="absent from the public contract"):
-        construct_public_root(unsupported_boss, (), "bad", 0)
+    with pytest.raises(DeterminizationUnavailable, match="requires its visible"):
+        construct_public_root(missing_ox_target, (), "bad", 0)

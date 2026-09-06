@@ -24,6 +24,22 @@ _VOUCHER_KINDS = frozenset({"VOUCHER"})
 _BOOSTER_KINDS = frozenset({"BOOSTER"})
 _SHOP_ITEM_KINDS = frozenset({"JOKER", "TAROT", "PLANET", "SPECTRAL"})
 _OPENED_PACK_ITEM_KINDS = _SHOP_ITEM_KINDS
+_POKER_HAND_NAMES = frozenset(
+    {
+        "High Card",
+        "Pair",
+        "Two Pair",
+        "Three of a Kind",
+        "Straight",
+        "Flush",
+        "Full House",
+        "Four of a Kind",
+        "Straight Flush",
+        "Five of a Kind",
+        "Flush House",
+        "Flush Five",
+    }
+)
 
 
 class Phase(str, Enum):
@@ -302,10 +318,16 @@ class RoundObservation:
     reroll_cost: int
     boss_rerolled: bool
     ancient_suit: str | None = None
+    most_played_hand: str | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.boss_rerolled, bool):
             raise ValueError("boss_rerolled must be boolean")
+        if (
+            self.most_played_hand is not None
+            and self.most_played_hand not in _POKER_HAND_NAMES
+        ):
+            raise ValueError("unsupported most-played poker hand")
 
 
 @dataclass(frozen=True, slots=True)

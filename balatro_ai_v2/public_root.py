@@ -109,7 +109,6 @@ _RANK_NAMES = {
     "A": "Ace",
 }
 _RANK_IDS = {rank: index + 2 for index, rank in enumerate(_RANK_NAMES)}
-_UNSUPPORTED_BLIND_STATE = frozenset({"The Ox", "The Pillar"})
 _PUBLIC_DERIVED_RUNTIME_FIELDS = {
     "j_flash": "current_mult",
     "j_green_joker": "current_mult",
@@ -184,10 +183,18 @@ def construct_public_root(
         _rebuild_state(game_state, observation, history, seed)
         backend._poker_hand_iteration_order = _sample_poker_hand_order(
             observation,
+            history,
             seed,
         )
         game_state["orbital_choices"] = {}
-        _set_most_played_hand(game_state, backend._poker_hand_iteration_order)
+        if observation.round.most_played_hand is None:
+            _set_most_played_hand(game_state, backend._poker_hand_iteration_order)
+        else:
+            # Vanilla freezes this value at the prior boss defeat.  It need not
+            # remain the maximum after Small/Big plays in the current ante.
+            game_state["current_round"]["most_played_poker_hand"] = (
+                observation.round.most_played_hand
+            )
         if observation.phase == Phase.BLIND_SELECT:
             backend._initialize_orbital_choices()
         backend._stale_shop_areas = None
@@ -289,9 +296,9 @@ def _require_supported_root(
             raise DeterminizationUnavailable(f"unknown blind kind {blind.kind!r}")
         if blind.status not in _BLIND_STATUS_FROM_PUBLIC:
             raise DeterminizationUnavailable(f"unknown blind status {blind.status!r}")
-        if blind.name in _UNSUPPORTED_BLIND_STATE:
+        if blind.name == "The Ox" and observation.round.most_played_hand is None:
             raise DeterminizationUnavailable(
-                f"blind {blind.name!r} needs state absent from the public contract"
+                "The Ox requires its visible most-played hand target"
             )
 
 
@@ -484,6 +491,72 @@ def _permanent_card_identity(card: VisiblePlayingCard) -> tuple[object, ...]:
     )
 
 
+def _pillar_played_identities(
+    observation: PublicObservation,
+    history: Sequence[PublicHistoryStep],
+) -> frozenset[tuple[object, ...]]:
+    """Recover exact per-card Pillar markers at safe public-history roots."""
+
+    from balatro_ai_v2.actions import PlayCards
+
+    current_deck = _deck_multiset(observation.full_deck)
+    relevant = tuple(step for step in history if step.before.ante == observation.ante)
+    selected: set[tuple[object, ...]] = set()
+    unsafe_reason: str | None = None
+    for step in relevant:
+        if (
+            _deck_multiset(step.before.full_deck) != current_deck
+            or _deck_multiset(step.after.full_deck) != current_deck
+        ):
+            unsafe_reason = "the permanent deck changed during the current ante"
+        if not isinstance(step.action, PlayCards):
+            continue
+        for slot in step.action.cards:
+            if not 0 <= slot.value < len(step.before.hand):
+                unsafe_reason = "a played card slot is outside its public hand"
+                continue
+            card = step.before.hand[slot.value]
+            if not isinstance(card, VisiblePlayingCard):
+                unsafe_reason = "a played card identity was hidden"
+                continue
+            selected.add(_permanent_card_identity(card))
+    if not selected:
+        return frozenset()
+
+    counts = {
+        _permanent_card_identity(entry.card): entry.count
+        for entry in observation.full_deck
+    }
+    for identity in selected:
+        if counts.get(identity) != 1:
+            unsafe_reason = "a played card identity is not unique in the public deck"
+    if unsafe_reason is None:
+        return frozenset(selected)
+
+    live_pillar = any(
+        blind.name == "The Pillar" and blind.status != "DEFEATED"
+        for blind in observation.blinds
+    )
+    boss_tag = any(
+        blind.status != "DEFEATED" and blind.tag_name == "Boss Tag"
+        for blind in observation.blinds
+    )
+    reroll_vouchers = {"v_directors_cut", "v_retcon"}
+    can_reroll = bool(reroll_vouchers.intersection(observation.used_vouchers))
+    offered_vouchers = observation.vouchers
+    if observation.phase == Phase.PACK:
+        pack_shop, _, _ = _current_pack_visit(observation, history)
+        offered_vouchers = pack_shop.vouchers
+    offered_reroll = any(
+        item.key in reroll_vouchers for item in offered_vouchers
+    )
+    if live_pillar or boss_tag or can_reroll or offered_reroll:
+        raise DeterminizationUnavailable(
+            f"The Pillar history is not exactly reconstructible: {unsafe_reason}"
+        )
+    return frozenset()
+
+
 def _rebuild_state(
     game_state: dict[str, Any],
     observation: PublicObservation,
@@ -587,13 +660,22 @@ def _rebuild_state(
         current_round["ancient_card"] = {"suit": suits[observation.round.ancient_suit]}
 
     _rebuild_hand_levels(game_state, observation)
+    played_this_ante = _pillar_played_identities(observation, history)
     if observation.phase == Phase.PACK:
-        deck, hand = _rebuild_pack_playing_cards(observation, seed)
+        deck, hand = _rebuild_pack_playing_cards(
+            observation,
+            seed,
+            played_this_ante,
+        )
         game_state["deck"] = deck
         game_state["hand"] = hand
         game_state["pack_hand"] = list(hand)
     else:
-        game_state["deck"] = _rebuild_deck(observation, seed)
+        game_state["deck"] = _rebuild_deck(
+            observation,
+            seed,
+            played_this_ante,
+        )
     game_state["playing_card_count"] = observation.deck_size
     game_state["playing_cards_count"] = observation.deck_size
     game_state["starting_deck_size"] = _starting_deck_size(observation, history)
@@ -779,13 +861,55 @@ def _rebuild_hand_levels(game_state: dict[str, Any], observation: PublicObservat
 
 def _sample_poker_hand_order(
     observation: PublicObservation,
+    history: Sequence[PublicHistoryStep],
     seed: str,
 ) -> tuple[str, ...]:
     names = [stat.name for stat in observation.hand_stats]
-    random.Random(
+    chooser = random.Random(
         int(hashlib.sha256(f"{seed}|lua-hand-order".encode()).hexdigest(), 16)
-    ).shuffle(names)
-    return tuple(names)
+    )
+    priorities = names[:]
+    chooser.shuffle(priorities)
+
+    # Each completed boss reveals only that the frozen target was the last Lua
+    # table entry among the hands tied for the maximum at that exact moment.
+    # Current counts cannot constrain the target because Small/Big plays happen
+    # after it was frozen for the ante.
+    predecessors: dict[str, set[str]] = {name: set() for name in names}
+    for step in history:
+        if step.after.ante <= step.before.ante:
+            continue
+        target = step.after.round.most_played_hand
+        played = {stat.name: stat.played for stat in step.after.hand_stats}
+        if target is None or target not in played or not played:
+            raise DeterminizationUnavailable(
+                "boss-defeat history lacks its frozen most-played hand"
+            )
+        maximum = max(played.values())
+        if played[target] != maximum:
+            raise DeterminizationUnavailable(
+                "boss-defeat target is inconsistent with its played counts"
+            )
+        predecessors[target].update(
+            name for name, count in played.items() if count == maximum and name != target
+        )
+
+    order: list[str] = []
+    remaining = set(names)
+    while remaining:
+        ready = [
+            name
+            for name in priorities
+            if name in remaining and predecessors[name].isdisjoint(remaining)
+        ]
+        if not ready:
+            raise DeterminizationUnavailable(
+                "boss-defeat targets imply an inconsistent hidden hand order"
+            )
+        chosen = ready[0]
+        order.append(chosen)
+        remaining.remove(chosen)
+    return tuple(order)
 
 
 def _set_most_played_hand(
@@ -803,23 +927,41 @@ def _set_most_played_hand(
     game_state["current_round"]["most_played_poker_hand"] = best
 
 
-def _rebuild_deck(observation: PublicObservation, seed: str) -> list[Any]:
-    return _rebuild_card_entries(observation.full_deck, seed, "")
+def _rebuild_deck(
+    observation: PublicObservation,
+    seed: str,
+    played_this_ante: frozenset[tuple[object, ...]],
+) -> list[Any]:
+    return _rebuild_card_entries(
+        observation.full_deck,
+        seed,
+        "",
+        played_this_ante,
+    )
 
 
 def _rebuild_pack_playing_cards(
     observation: PublicObservation,
     seed: str,
+    played_this_ante: frozenset[tuple[object, ...]],
 ) -> tuple[list[Any], list[Any]]:
-    deck = _rebuild_card_entries(observation.remaining_deck, seed, "pack-deck")
+    deck = _rebuild_card_entries(
+        observation.remaining_deck,
+        seed,
+        "pack-deck",
+        played_this_ante,
+    )
     chooser = random.Random(
         int(hashlib.sha256(f"{seed}|pack-hand-stone-base".encode()).hexdigest(), 16)
     )
-    hand = [
-        _rebuild_visible_playing_card(card, chooser)
-        for card in observation.hand
-        if isinstance(card, VisiblePlayingCard)
-    ]
+    hand = []
+    for public in observation.hand:
+        if not isinstance(public, VisiblePlayingCard):
+            continue
+        card = _rebuild_visible_playing_card(public, chooser)
+        if _permanent_card_identity(public) in played_this_ante:
+            card.ability["played_this_ante"] = True
+        hand.append(card)
     return deck, hand
 
 
@@ -827,6 +969,7 @@ def _rebuild_card_entries(
     entries: Sequence[Any],
     seed: str,
     stream: str,
+    played_this_ante: frozenset[tuple[object, ...]],
 ) -> list[Any]:
     from jackdaw.engine.card_factory import RANK_LETTER, SUIT_LETTER, create_playing_card
 
@@ -862,6 +1005,8 @@ def _rebuild_card_entries(
                 playing_card_index=len(cards) + 1,
             )
             card.ability["perma_bonus"] = public.permanent_bonus
+            if _permanent_card_identity(public) in played_this_ante:
+                card.ability["played_this_ante"] = True
             card.debuff = public.debuffed
             cards.append(card)
     random.Random(

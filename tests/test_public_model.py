@@ -118,6 +118,16 @@ def test_public_model_features_distinguish_disabled_current_boss() -> None:
     )
 
 
+def test_public_model_features_distinguish_frozen_ox_target() -> None:
+    high_card = to_public_observation(state())
+    pair = replace(
+        high_card,
+        round=replace(high_card.round, most_played_hand="Pair"),
+    )
+
+    assert _observation_features(high_card, 2048) != _observation_features(pair, 2048)
+
+
 def test_model_encodes_structured_shop_playing_card_and_ignores_prose() -> None:
     raw = state("SHOP", money=10)
     raw["shop"] = {

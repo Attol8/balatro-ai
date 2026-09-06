@@ -73,6 +73,27 @@ def test_public_observation_codec_rejects_unknown_and_missing_fields() -> None:
         public_observation_from_data(wrong_total)
 
 
+def test_round_codec_preserves_frozen_ox_target_and_reads_legacy_rows() -> None:
+    observation = to_public_observation(state())
+    data = public_observation_to_data(observation)
+
+    assert data["round"]["most_played_hand"] == "High Card"
+    assert public_observation_from_data(data) == observation
+
+    legacy = deepcopy(data)
+    legacy["round"].pop("most_played_hand")
+    decoded = public_observation_from_data(legacy)
+    assert decoded == replace(
+        observation,
+        round=replace(observation.round, most_played_hand=None),
+    )
+
+    malformed = deepcopy(data)
+    malformed["round"]["most_played_hand"] = "Royal Flush"
+    with pytest.raises(ValueError, match="unsupported most-played"):
+        public_observation_from_data(malformed)
+
+
 def test_public_observation_codec_rejects_boolean_integer() -> None:
     data = public_observation_to_data(to_public_observation(state()))
     data["ante"] = True

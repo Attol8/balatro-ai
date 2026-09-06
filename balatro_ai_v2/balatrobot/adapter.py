@@ -176,6 +176,10 @@ def to_public_observation(raw: Mapping[str, Any]) -> PublicObservation:
             reroll_cost=_required_int(round_raw, "reroll_cost"),
             boss_rerolled=_required_bool(round_raw, "boss_rerolled"),
             ancient_suit=_optional_key(round_raw, "ancient_suit"),
+            most_played_hand=_optional_key(
+                round_raw,
+                "most_played_poker_hand",
+            ),
         ),
         blinds=blinds,
         hand=hand,

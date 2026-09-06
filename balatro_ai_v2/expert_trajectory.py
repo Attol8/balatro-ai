@@ -16,7 +16,7 @@ import os
 import re
 import tempfile
 from collections import Counter
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from dataclasses import fields as dataclass_fields
 from enum import Enum
 from pathlib import Path
@@ -374,11 +374,13 @@ def trajectory_from_authority_trace(
     capture = _capture_from_manifest(manifest)
     max_antes_cleared = capture.max_antes_cleared
     canonicalizer = BalatroBotCanonicalizer()
-    current, current_canonical_digest = _verified_authority_public(
-        starts[0].get("authority"),
-        starts[0].get("public"),
-        canonicalizer,
-        max_settle_polls=capture.max_settle_polls,
+    current, current_canonical_digest, legacy_public_contract = (
+        _verified_authority_public(
+            starts[0].get("authority"),
+            starts[0].get("public"),
+            canonicalizer,
+            max_settle_polls=capture.max_settle_polls,
+        )
     )
     admitted: list[ExpertTransition] = []
     action_counts: Counter[str] = Counter()
@@ -400,12 +402,16 @@ def trajectory_from_authority_trace(
             row.get("rpc_params"), expected_params
         ):
             raise ValueError("expert source RPC does not match its public action")
-        after, current_canonical_digest = _verified_authority_public(
-            row.get("after"),
-            row.get("public_after"),
-            canonicalizer,
-            max_settle_polls=capture.max_settle_polls,
+        after, current_canonical_digest, after_legacy_contract = (
+            _verified_authority_public(
+                row.get("after"),
+                row.get("public_after"),
+                canonicalizer,
+                max_settle_polls=capture.max_settle_polls,
+            )
         )
+        if after_legacy_contract != legacy_public_contract:
+            raise ValueError("expert source mixes public observation contracts")
         candidates = exact_expert_candidates(current)
         candidate_total += len(candidates)
         if candidate_total > EXPERT_MAX_TRACE_CANDIDATES:
@@ -447,7 +453,10 @@ def trajectory_from_authority_trace(
         raise ValueError("expert source decision count is inconsistent")
     if accepted_decisions > capture.max_decisions:
         raise ValueError("expert source exceeds its declared decision limit")
-    if end.get("final_public_digest") != current.digest():
+    final_public_digest = (
+        _legacy_public_digest(current) if legacy_public_contract else current.digest()
+    )
+    if end.get("final_public_digest") != final_public_digest:
         raise ValueError("expert source final public digest is inconsistent")
     source_action_counts = _string_integer_counts(
         end.get("action_counts"), "action_counts"
@@ -841,7 +850,7 @@ def _verified_authority_public(
     canonicalizer: BalatroBotCanonicalizer,
     *,
     max_settle_polls: int,
-) -> tuple[PublicObservation, str]:
+) -> tuple[PublicObservation, str, bool]:
     fields = {
         "raw",
         "canonical",
@@ -869,9 +878,33 @@ def _verified_authority_public(
         raise ValueError("expert source authority projection is inconsistent")
     derived_public = to_public_observation(raw)
     stored_public = public_observation_from_data(public_data)
-    if derived_public != stored_public:
+    legacy_public_contract = (
+        isinstance(public_data, dict)
+        and isinstance(public_data.get("round"), dict)
+        and "most_played_hand" not in public_data["round"]
+    )
+    comparison = derived_public
+    if legacy_public_contract:
+        # Protocols before v14 omitted this already-public raw value.  Verify
+        # those immutable traces under their exact old projection, then return
+        # the complete authority-derived observation so new imports are
+        # upgraded instead of permanently discarding the field.
+        comparison = replace(
+            derived_public,
+            round=replace(derived_public.round, most_played_hand=None),
+        )
+    if comparison != stored_public:
         raise ValueError("expert source stored public state disagrees with authority")
-    return derived_public, verified.canonical_digest
+    return derived_public, verified.canonical_digest, legacy_public_contract
+
+
+def _legacy_public_digest(observation: PublicObservation) -> str:
+    data = public_observation_to_data(observation)
+    round_data = data.get("round")
+    if not isinstance(round_data, dict):
+        raise TypeError("public observation round is invalid")
+    round_data.pop("most_played_hand")
+    return hashlib.sha256(_canonical_json(data).encode("utf-8")).hexdigest()
 
 
 def _capture_to_data(
