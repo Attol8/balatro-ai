@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import json
 import os
+import time
 from pathlib import Path
 from threading import Thread
-import time
 
 import pytest
 
@@ -77,11 +77,23 @@ def test_codex_coach_uses_fixed_isolated_bounded_command(monkeypatch, tmp_path) 
     assert 'forced_login_method="chatgpt"' in args
     assert 'web_search="disabled"' in args
     for feature in (
-        "shell_tool", "unified_exec", "apps", "plugins", "multi_agent",
-        "browser_use", "image_generation", "memories", "hooks",
-        "skill_search", "view_image",
+        "shell_tool",
+        "unified_exec",
+        "apps",
+        "plugins",
+        "multi_agent",
+        "browser_use",
+        "image_generation",
+        "memories",
+        "hooks",
+        "skill_search",
+        "view_image",
     ):
-        assert ["--disable", feature] == args[args.index("--disable", 0 if feature == "shell_tool" else args.index(feature) - 1):args.index(feature) + 1]
+        assert ["--disable", feature] == args[
+            args.index(
+                "--disable", 0 if feature == "shell_tool" else args.index(feature) - 1
+            ) : args.index(feature) + 1
+        ]
     assert json.loads(invocation["stdin"]) == compact_packet(_packet())
     assert not invocation["has_openai_key"] and not invocation["has_anthropic_key"]
     assert invocation["cwd"] != os.getcwd()
@@ -196,15 +208,15 @@ def test_same_workspace_fresh_context_and_no_previous_response(monkeypatch, tmp_
     log = tmp_path / "calls.jsonl"
     monkeypatch.setenv("FAKE_CODEX_LOG", str(log))
     monkeypatch.setenv("FAKE_RESPONSE", json.dumps(_response()))
-    coach=CodexCoach(str(executable))
-    assert coach.choose(_packet(),2)==_response()
-    workspace=Path(coach._workspace.name)
-    assert not (workspace/'response.json').exists()
-    assert coach.choose(_packet(),2)==_response()
-    calls=[json.loads(l) for l in log.read_text().splitlines()]
-    assert len(calls)==3  # one cached auth preflight, two independent execs
-    assert calls[1]['cwd']==calls[2]['cwd']
-    assert all('--ephemeral' in call['argv'] for call in calls[1:])
-    assert all('resume' not in call['argv'] for call in calls[1:])
+    coach = CodexCoach(str(executable))
+    assert coach.choose(_packet(), 2) == _response()
+    workspace = Path(coach._workspace.name)
+    assert not (workspace / "response.json").exists()
+    assert coach.choose(_packet(), 2) == _response()
+    calls = [json.loads(line) for line in log.read_text().splitlines()]
+    assert len(calls) == 3  # one cached auth preflight, two independent execs
+    assert calls[1]["cwd"] == calls[2]["cwd"]
+    assert all("--ephemeral" in call["argv"] for call in calls[1:])
+    assert all("resume" not in call["argv"] for call in calls[1:])
     coach.close()
     assert not workspace.exists()

@@ -5,6 +5,7 @@ from dataclasses import replace
 from pathlib import Path
 
 import pytest
+from state_factory import hidden_joker_slot, playing_card, state
 
 from balatro_ai.game.adapter import to_public_observation
 from balatro_ai.game.codec import (
@@ -13,7 +14,6 @@ from balatro_ai.game.codec import (
     public_observation_to_data,
 )
 from balatro_ai.game.state import HiddenJokerSlot, PublicItem
-from state_factory import hidden_joker_slot, playing_card, state
 
 
 @pytest.mark.parametrize(
@@ -204,9 +204,7 @@ def test_public_observation_codec_round_trips_and_validates_forced_hand_slot() -
 def test_public_blind_disabled_contract_is_strict_and_round_trips() -> None:
     raw = state("SELECTING_HAND")
     raw["blinds"]["small"]["status"] = "DEFEATED"
-    raw["blinds"]["boss"].update(
-        name="Cerulean Bell", status="CURRENT", disabled=True
-    )
+    raw["blinds"]["boss"].update(name="Cerulean Bell", status="CURRENT", disabled=True)
 
     observation = to_public_observation(raw)
     data = public_observation_to_data(observation)
@@ -238,9 +236,7 @@ def test_public_blind_disabled_contract_is_strict_and_round_trips() -> None:
 def test_adapter_rejects_stale_forced_marker_after_cerulean_is_disabled() -> None:
     raw = state("SELECTING_HAND")
     raw["blinds"]["small"]["status"] = "DEFEATED"
-    raw["blinds"]["boss"].update(
-        name="Cerulean Bell", status="CURRENT", disabled=True
-    )
+    raw["blinds"]["boss"].update(name="Cerulean Bell", status="CURRENT", disabled=True)
     raw["hand"]["cards"][0]["state"] = {
         "highlight": True,
         "forced_selection": True,
@@ -416,9 +412,7 @@ def test_shop_playing_card_codec_rejects_legacy_and_malformed_shapes() -> None:
         ("FUTURE", "unsupported public item kind"),
     ],
 )
-def test_public_item_rejects_noncanonical_or_generic_kinds(
-    kind: str, message: str
-) -> None:
+def test_public_item_rejects_noncanonical_or_generic_kinds(kind: str, message: str) -> None:
     with pytest.raises(ValueError, match=message):
         PublicItem("test", "Test", kind)
 
@@ -436,9 +430,7 @@ def test_public_item_rejects_noncanonical_or_generic_kinds(
         ("opened_pack", "BOOSTER"),
     ],
 )
-def test_public_observation_rejects_item_kinds_in_the_wrong_zone(
-    zone: str, kind: str
-) -> None:
+def test_public_observation_rejects_item_kinds_in_the_wrong_zone(zone: str, kind: str) -> None:
     phase = "TAROT_PACK" if zone == "opened_pack" else "SHOP"
     observation = to_public_observation(state(phase))
     malformed = PublicItem("test", "Test", kind)

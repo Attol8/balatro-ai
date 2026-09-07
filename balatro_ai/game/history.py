@@ -41,9 +41,7 @@ def enrich_runtime(
         runtime = joker.runtime
         if remaining is None:
             if runtime is not None and runtime.loyalty_remaining is not None:
-                jokers[index] = replace(
-                    joker, runtime=replace(runtime, loyalty_remaining=None)
-                )
+                jokers[index] = replace(joker, runtime=replace(runtime, loyalty_remaining=None))
             continue
         jokers[index] = replace(
             joker,
@@ -69,11 +67,14 @@ def _loyalty_remaining(
         for joker in seen.jokers
     ):
         return None
-    if sum(
-        joker.key == "j_loyalty_card"
-        for joker in observation.jokers
-        if isinstance(joker, PublicItem)
-    ) != 1:
+    if (
+        sum(
+            joker.key == "j_loyalty_card"
+            for joker in observation.jokers
+            if isinstance(joker, PublicItem)
+        )
+        != 1
+    ):
         return None
     if not history or history[-1].after != observation:
         return None

@@ -177,10 +177,7 @@ def public_consumable_is_usable(
         return False
     if any(target < 0 or target >= len(observation.hand) for target in targets):
         return False
-    if any(
-        not _target_matches(observation.hand[target], rule.target_filter)
-        for target in targets
-    ):
+    if any(not _target_matches(observation.hand[target], rule.target_filter) for target in targets):
         return False
 
     requirement = rule.requirement
@@ -197,19 +194,14 @@ def public_consumable_is_usable(
         return len(observation.jokers) < observation.joker_limit
     if requirement == ConsumableRequirement.ELIGIBLE_JOKER:
         return any(
-            joker.edition is None
-            for joker in observation.jokers
-            if isinstance(joker, PublicItem)
+            joker.edition is None for joker in observation.jokers if isinstance(joker, PublicItem)
         )
     if requirement == ConsumableRequirement.HAND_CARDS:
         return len(observation.hand) > 1
     if requirement == ConsumableRequirement.ANKH:
         return (
             bool(observation.jokers)
-            and not any(
-                isinstance(joker, HiddenJokerSlot)
-                for joker in observation.jokers
-            )
+            and not any(isinstance(joker, HiddenJokerSlot) for joker in observation.jokers)
             and observation.joker_limit > 1
             and len(observation.jokers) < observation.joker_limit
         )

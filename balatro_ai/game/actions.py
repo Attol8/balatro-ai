@@ -230,15 +230,12 @@ PublicAction: TypeAlias = (
 
 _USE_PHASES = {Phase.SELECTING_HAND, Phase.SHOP}
 _REORDER_PHASES = {Phase.SELECTING_HAND, Phase.SHOP}
-_VANILLA_PACK_KINDS = frozenset(
-    {"ARCANA", "CELESTIAL", "SPECTRAL", "STANDARD", "BUFFOON"}
-)
+_VANILLA_PACK_KINDS = frozenset({"ARCANA", "CELESTIAL", "SPECTRAL", "STANDARD", "BUFFOON"})
 
 
 def _inventory_sale_phase_legal(observation: PublicObservation) -> bool:
     return observation.phase in _USE_PHASES or (
-        observation.phase == Phase.PACK
-        and observation.pack_kind in _VANILLA_PACK_KINDS
+        observation.phase == Phase.PACK and observation.pack_kind in _VANILLA_PACK_KINDS
     )
 
 
@@ -336,16 +333,12 @@ def iter_legal_actions(observation: PublicObservation) -> Iterator[PublicAction]
     if phase in _REORDER_PHASES:
         if _reorder_phase_legal(observation, "hand") and len(observation.hand) > 1:
             yield from (
-                ReorderHand(order)
-                for order in _adjacent_orders(HandSlot, len(observation.hand))
+                ReorderHand(order) for order in _adjacent_orders(HandSlot, len(observation.hand))
             )
         if (
             _reorder_phase_legal(observation, "jokers")
             and len(observation.jokers) > 1
-            and not any(
-                isinstance(joker, HiddenJokerSlot)
-                for joker in observation.jokers
-            )
+            and not any(isinstance(joker, HiddenJokerSlot) for joker in observation.jokers)
         ):
             yield from (
                 ReorderJokers(order)
@@ -361,7 +354,9 @@ def iter_legal_actions(observation: PublicObservation) -> Iterator[PublicAction]
 def is_legal(observation: PublicObservation, action: PublicAction) -> bool:
     phase = observation.phase
     if isinstance(action, SelectBlind):
-        return phase == Phase.BLIND_SELECT and any(blind.status == "SELECT" for blind in observation.blinds)
+        return phase == Phase.BLIND_SELECT and any(
+            blind.status == "SELECT" for blind in observation.blinds
+        )
     if isinstance(action, SkipBlind):
         return phase == Phase.BLIND_SELECT and any(
             blind.status == "SELECT" and blind.kind != "BOSS" for blind in observation.blinds
@@ -379,8 +374,7 @@ def is_legal(observation: PublicObservation, action: PublicAction) -> bool:
         )
         has_retcon = "v_retcon" in observation.used_vouchers
         has_unused_directors_cut = (
-            "v_directors_cut" in observation.used_vouchers
-            and not observation.round.boss_rerolled
+            "v_directors_cut" in observation.used_vouchers and not observation.round.boss_rerolled
         )
         return (
             phase == Phase.BLIND_SELECT
@@ -437,15 +431,13 @@ def is_legal(observation: PublicObservation, action: PublicAction) -> bool:
         return (
             _inventory_sale_phase_legal(observation)
             and action.joker.value < len(observation.jokers)
-            and not isinstance(
-                observation.jokers[action.joker.value], HiddenJokerSlot
-            )
+            and not isinstance(observation.jokers[action.joker.value], HiddenJokerSlot)
             and not observation.jokers[action.joker.value].eternal
         )
     if isinstance(action, SellConsumable):
-        return _inventory_sale_phase_legal(
-            observation
-        ) and action.consumable.value < len(observation.consumables)
+        return _inventory_sale_phase_legal(observation) and action.consumable.value < len(
+            observation.consumables
+        )
     if isinstance(action, UseConsumable):
         if phase not in _USE_PHASES or action.consumable.value >= len(observation.consumables):
             return False
@@ -479,10 +471,7 @@ def is_legal(observation: PublicObservation, action: PublicAction) -> bool:
     if isinstance(action, ReorderJokers):
         return (
             _reorder_phase_legal(observation, "jokers")
-            and not any(
-                isinstance(joker, HiddenJokerSlot)
-                for joker in observation.jokers
-            )
+            and not any(isinstance(joker, HiddenJokerSlot) for joker in observation.jokers)
             and _is_adjacent_order(action.order, len(observation.jokers))
         )
     if isinstance(action, ReorderConsumables):
@@ -501,8 +490,7 @@ def _pack_offer_legal(
         return not targets
     if item.kind.upper() == "JOKER":
         return not targets and (
-            item.edition == "NEGATIVE"
-            or len(observation.jokers) < observation.joker_limit
+            item.edition == "NEGATIVE" or len(observation.jokers) < observation.joker_limit
         )
     return public_consumable_is_usable(
         observation,
@@ -559,9 +547,7 @@ def _can_spend(observation: PublicObservation, cost: int | None) -> bool:
     return observation.money - cost >= floor
 
 
-def _has_room(
-    observation: PublicObservation, item: PublicItem | PublicShopPlayingCard
-) -> bool:
+def _has_room(observation: PublicObservation, item: PublicItem | PublicShopPlayingCard) -> bool:
     if isinstance(item, PublicShopPlayingCard):
         return True
     kind = item.kind.upper()
@@ -650,7 +636,9 @@ def action_from_data(data: Mapping[str, object]) -> PublicAction:
             _slots(data, "targets", HandSlot),
         )
     if kind == "choose_pack_card":
-        return ChoosePackCard(OpenedPackSlot(_integer(data, "card")), _slots(data, "targets", HandSlot))
+        return ChoosePackCard(
+            OpenedPackSlot(_integer(data, "card")), _slots(data, "targets", HandSlot)
+        )
     if kind == "reorder_hand":
         return ReorderHand(_slots(data, "order", HandSlot))
     if kind == "reorder_jokers":

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import json
 import gzip
+import json
 from pathlib import Path
 
 from balatro_ai.packet import compact_packet, encode_tables, expand_packet
@@ -12,9 +12,14 @@ def _latest_recorded_packets() -> list[dict[str, object]]:
     path = Path(__file__).resolve().parents[1] / "evidence/first-win/trajectory.jsonl.gz"
     with gzip.open(path, "rt", encoding="utf-8") as stream:
         events = [json.loads(line) for line in stream]
-    return [dict(instructions="Choose one legal action.",
-                 observation=event["observation"]["public_solver"])
-            for event in events if event["event"] == "decision"]
+    return [
+        dict(
+            instructions="Choose one legal action.",
+            observation=event["observation"]["public_solver"],
+        )
+        for event in events
+        if event["event"] == "decision"
+    ]
 
 
 def _size(value: object) -> int:
@@ -68,11 +73,16 @@ def test_compact_packet_adds_decoder_note_without_mutating_input() -> None:
 
 
 def test_unique_id_is_after_identical_prompt_prefix():
-    first={"request_id":"unique-A", "plan":"Retain chips", "instructions":"Rules", "observation":{"phase":"SHOP"}}
-    second=dict(first,request_id="unique-B")
-    wire_a=json.dumps(compact_packet(first),separators=(",", ":"))
-    wire_b=json.dumps(compact_packet(second),separators=(",", ":"))
+    first = {
+        "request_id": "unique-A",
+        "plan": "Retain chips",
+        "instructions": "Rules",
+        "observation": {"phase": "SHOP"},
+    }
+    second = dict(first, request_id="unique-B")
+    wire_a = json.dumps(compact_packet(first), separators=(",", ":"))
+    wire_b = json.dumps(compact_packet(second), separators=(",", ":"))
     assert wire_a.startswith('{"instructions":')
-    assert wire_a.split('"request_id":')[0]==wire_b.split('"request_id":')[0]
-    assert list(compact_packet(first))[-1]=='request_id'
-    assert expand_packet(compact_packet(first))['observation']==first['observation']
+    assert wire_a.split('"request_id":')[0] == wire_b.split('"request_id":')[0]
+    assert list(compact_packet(first))[-1] == "request_id"
+    assert expand_packet(compact_packet(first))["observation"] == first["observation"]

@@ -1,11 +1,9 @@
 from __future__ import annotations
 
-from dataclasses import replace
 import gzip
 import json
+from dataclasses import replace
 from pathlib import Path
-
-from tests.game.state_factory import hidden_joker_slot, item_card, state
 
 from balatro_ai.analysis import analyze
 from balatro_ai.game.adapter import to_public_observation
@@ -17,6 +15,7 @@ from balatro_ai.game.state import (
     PublicJokerRuntime,
     VisiblePlayingCard,
 )
+from tests.game.state_factory import hidden_joker_slot, item_card, state
 
 
 def _selecting_hand():
@@ -45,11 +44,7 @@ def test_keeps_lower_score_bus_safe_play_and_explains_card_roles() -> None:
     result = analyze(observation)
     candidates = result["play_candidates"]
     assert len(candidates) <= 16
-    safe = next(
-        row
-        for row in candidates
-        if row["action"] == {"type": "play_cards", "cards": [2]}
-    )
+    safe = next(row for row in candidates if row["action"] == {"type": "play_cards", "cards": [2]})
     assert safe["facts"]["ride_the_bus_reset_slots"] == []
     held = next(row for row in candidates if row["facts"]["held_steel_slots"] == [2])
     assert held["facts"]["held_blue_seal_slots"] == [2]
@@ -73,7 +68,10 @@ def test_pareidolia_face_fact_does_not_invent_bus_reset() -> None:
     assert facts["ride_the_bus_reset_slots"] == []
     assert facts["pareidolia_active"] is True
     assert facts["ride_the_bus_interaction_uncertain"] is True
-    assert "treat reset safety as uncertain" in analyze(observation)["play_candidates"][0]["approximation"]
+    assert (
+        "treat reset safety as uncertain"
+        in analyze(observation)["play_candidates"][0]["approximation"]
+    )
 
 
 def test_splash_facts_include_kickers_as_scoring_cards() -> None:
@@ -85,9 +83,7 @@ def test_splash_facts_include_kickers_as_scoring_cards() -> None:
     )
 
     candidate = next(
-        row
-        for row in analyze(observation)["play_candidates"]
-        if row["action"]["cards"] == [0, 1]
+        row for row in analyze(observation)["play_candidates"] if row["action"]["cards"] == [0, 1]
     )
     assert candidate["facts"]["scoring_slots"] == [0, 1]
     assert candidate["facts"]["harmless_kickers"] == []
@@ -108,11 +104,7 @@ def test_every_score_is_labeled_and_lucky_omission_is_explicit() -> None:
 def test_zero_score_boss_restriction_warns_that_legal_play_can_waste_hand() -> None:
     observation = replace(
         _selecting_hand(),
-        blinds=(
-            PublicBlind(
-                "BOSS", "CURRENT", "The Psychic", "Must play 5 cards", 300, False
-            ),
-        ),
+        blinds=(PublicBlind("BOSS", "CURRENT", "The Psychic", "Must play 5 cards", 300, False),),
     )
     candidates = analyze(observation)["play_candidates"]
     assert candidates
@@ -141,8 +133,7 @@ def test_hidden_jokers_suppress_scores_instead_of_faking_them() -> None:
 def test_shop_lists_only_affordable_legal_actions_and_reports_bound() -> None:
     raw = state("SHOP", money=4)
     raw["shop"]["cards"] = [
-        item_card("j_joker", card_id=40 + index, kind="JOKER", buy=2)
-        for index in range(30)
+        item_card("j_joker", card_id=40 + index, kind="JOKER", buy=2) for index in range(30)
     ]
     raw["shop"]["count"] = 30
     raw["vouchers"]["cards"][0]["cost"]["buy"] = 10
@@ -181,7 +172,11 @@ def test_adjacent_hand_reorder_remaps_the_same_physical_selection() -> None:
 
 
 def _recorded_observation(segment: str, event_index: int):
-    path = (Path(__file__).resolve().parents[1] / "evidence/astra-low-2K9H9HN/segments") / segment / "trajectory.jsonl.gz"
+    path = (
+        (Path(__file__).resolve().parents[1] / "evidence/astra-low-2K9H9HN/segments")
+        / segment
+        / "trajectory.jsonl.gz"
+    )
     with gzip.open(path, "rt", encoding="utf-8") as stream:
         events = [json.loads(line) for line in stream]
     return public_observation_from_data(events[event_index]["observation"])
@@ -213,6 +208,7 @@ def test_negative_mime_does_not_require_a_sale_with_full_slots() -> None:
     offers = list(observation.shop)
     offers[2] = replace(offers[2], edition="NEGATIVE")
     observation = replace(observation, shop=tuple(offers))
-    mime = next(row for row in analyze(observation)["engine_opportunities"]
-                if row["key"] == "j_mime")
+    mime = next(
+        row for row in analyze(observation)["engine_opportunities"] if row["key"] == "j_mime"
+    )
     assert "capacity" not in mime

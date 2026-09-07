@@ -12,9 +12,14 @@ def test_rpc_sends_one_json_rpc_request_and_returns_object_result() -> None:
 
     client = BalatroBotClient(transport=transport)
     assert client.gamestate() == {"state": "MENU"}
-    assert calls == [{
-        "jsonrpc": "2.0", "method": "gamestate", "params": {}, "id": 1,
-    }]
+    assert calls == [
+        {
+            "jsonrpc": "2.0",
+            "method": "gamestate",
+            "params": {},
+            "id": 1,
+        }
+    ]
 
 
 def test_rpc_surfaces_remote_error_without_retrying_mutation() -> None:

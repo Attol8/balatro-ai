@@ -140,15 +140,11 @@ _PLAYED_INDIVIDUAL_XMULT_JOKERS = frozenset(
 _PLAYED_INDIVIDUAL_EFFECT_JOKERS = (
     _PLAYED_INDIVIDUAL_ADDITIVE_JOKERS | _PLAYED_INDIVIDUAL_XMULT_JOKERS
 )
-_COPY_PLAYED_INDIVIDUAL_JOKERS = (
-    _PLAYED_INDIVIDUAL_EFFECT_JOKERS - {"j_bloodstone"}
-)
+_COPY_PLAYED_INDIVIDUAL_JOKERS = _PLAYED_INDIVIDUAL_EFFECT_JOKERS - {"j_bloodstone"}
 _COPY_PLAYED_RETRIGGER_JOKERS = frozenset(
     {"j_hack", "j_sock_and_buskin", "j_hanging_chad", "j_dusk", "j_selzer"}
 )
-_COPY_HELD_INDIVIDUAL_JOKERS = frozenset(
-    {"j_raised_fist", "j_shoot_the_moon", "j_baron"}
-)
+_COPY_HELD_INDIVIDUAL_JOKERS = frozenset({"j_raised_fist", "j_shoot_the_moon", "j_baron"})
 _COPY_HELD_RETRIGGER_JOKERS = frozenset({"j_mime"})
 
 
@@ -241,15 +237,10 @@ def _score_play_prepared(
             and len(selected) < current_boss.min_selected_cards
         ):
             return 0, hand_name
-        if (
-            current_boss.repeat_hand_restriction
-            and stat is not None
-            and stat.played_this_round > 0
-        ):
+        if current_boss.repeat_hand_restriction and stat is not None and stat.played_this_round > 0:
             return 0, hand_name
         if current_boss.single_hand_family and any(
-            hand.played_this_round > 0 and hand.name != hand_name
-            for hand in stats.values()
+            hand.played_this_round > 0 and hand.name != hand_name for hand in stats.values()
         ):
             return 0, hand_name
     scoring_cards = (
@@ -277,11 +268,7 @@ def _score_play_prepared(
     chips = base_chips
     mult: int | Fraction = base_mult
     first_face_index = next(
-        (
-            index
-            for index, card in enumerate(scoring_cards)
-            if _is_face(card, context.active_keys)
-        ),
+        (index for index, card in enumerate(scoring_cards) if _is_face(card, context.active_keys)),
         None,
     )
     for index, card in enumerate(scoring_cards):
@@ -325,11 +312,7 @@ def _score_play_prepared(
                         mult *= repeat_xmult
             hiker_bonus += 5 * context.hiker_count
     selected_slots = {slot.value for slot in selected}
-    held = tuple(
-        card
-        for index, card in enumerate(observation.hand)
-        if index not in selected_slots
-    )
+    held = tuple(card for index, card in enumerate(observation.hand) if index not in selected_slots)
     visible_held = tuple(card for card in held if isinstance(card, VisiblePlayingCard))
     held_known = len(visible_held) == len(held)
     lowest_held_index: int | None = None
@@ -337,9 +320,7 @@ def _score_play_prepared(
         for index, card in enumerate(visible_held):
             if card.enhancement == "STONE":
                 continue
-            if lowest_held_index is None or _RANK_ORDER.get(
-                card.rank, 0
-            ) <= _RANK_ORDER.get(
+            if lowest_held_index is None or _RANK_ORDER.get(card.rank, 0) <= _RANK_ORDER.get(
                 visible_held[lowest_held_index].rank,
                 0,
             ):
@@ -473,8 +454,7 @@ def _effective_jokers_for_pass(
     return tuple(
         effective
         for index in range(len(jokers))
-        if (effective := _effective_joker_for_pass(jokers, index, copyable_keys))
-        is not None
+        if (effective := _effective_joker_for_pass(jokers, index, copyable_keys)) is not None
         and effective.key in admitted_keys
     )
 
@@ -575,7 +555,8 @@ def _joker_main_effect(
     hand_name: str,
     stats: Mapping[str, HandStat],
     joker: PublicItem,
-    *, misprint_value: int | None = None,
+    *,
+    misprint_value: int | None = None,
 ) -> tuple[int, int | Fraction, int | Fraction]:
     key = joker.key
     runtime = joker.runtime
@@ -601,9 +582,7 @@ def _joker_main_effect(
             scoring = _scoring_cards(cards, hand_name)
             runtime_mult = (
                 0
-                if any(
-                    not card.debuffed and card.rank in _FACE_RANKS for card in scoring
-                )
+                if any(not card.debuffed and card.rank in _FACE_RANKS for card in scoring)
                 else runtime_mult + 1
             )
         elif key == "j_trousers" and hand_name in {
@@ -632,8 +611,7 @@ def _joker_main_effect(
             runtime_chips += 4
         elif key == "j_wee":
             runtime_chips += 8 * sum(
-                card.rank == "2" and not card.debuffed
-                for card in _scoring_cards(cards, hand_name)
+                card.rank == "2" and not card.debuffed for card in _scoring_cards(cards, hand_name)
             )
         chips += runtime_chips
     if runtime is not None and runtime.current_x_mult is not None:
@@ -679,25 +657,18 @@ def _joker_main_effect(
         chips += 4 * max(0, starting_size - observation.deck_size)
     elif key == "j_stencil" and runtime is None:
         stencil_count = sum(
-            item.key == "j_stencil" and not item.debuffed for item in observation.jokers
+            item.key == "j_stencil" and not item.debuffed
+            for item in observation.jokers
             if isinstance(item, PublicItem)
         )
-        xmult *= max(
-            1, observation.joker_limit - len(observation.jokers) + stencil_count
-        )
+        xmult *= max(1, observation.joker_limit - len(observation.jokers) + stencil_count)
     elif key == "j_swashbuckler" and runtime is None:
         mult += sum(
             item.sell_cost or 0
             for item in observation.jokers
-            if isinstance(item, PublicItem)
-            and item is not joker
-            and not item.debuffed
+            if isinstance(item, PublicItem) and item is not joker and not item.debuffed
         )
-    elif (
-        key == "j_runner"
-        and runtime is None
-        and _hand_matches(cards, hand_name, "Straight")
-    ):
+    elif key == "j_runner" and runtime is None and _hand_matches(cards, hand_name, "Straight"):
         chips += 15
     elif key == "j_square" and runtime is None and len(cards) == 4:
         chips += 4
@@ -710,42 +681,27 @@ def _joker_main_effect(
     elif key == "j_blackboard":
         selected_indexes = {slot.value for slot in selected}
         held = tuple(
-            card
-            for index, card in enumerate(observation.hand)
-            if index not in selected_indexes
+            card for index, card in enumerate(observation.hand) if index not in selected_indexes
         )
-        if all(
-            isinstance(card, VisiblePlayingCard) and card.suit in {"C", "S"}
-            for card in held
-        ):
+        if all(isinstance(card, VisiblePlayingCard) and card.suit in {"C", "S"} for card in held):
             xmult *= 3
     elif key == "j_flower_pot":
         scoring = _scoring_cards(cards, hand_name)
         suits = {card.suit for card in scoring if card.enhancement != "WILD"}
-        live_wilds = sum(
-            card.enhancement == "WILD" and not card.debuffed for card in scoring
-        )
+        live_wilds = sum(card.enhancement == "WILD" and not card.debuffed for card in scoring)
         if len(suits) + live_wilds >= 4:
             xmult *= 3
     elif key == "j_seeing_double":
-        suits = {
-            card.suit for card in _scoring_cards(cards, hand_name) if not card.debuffed
-        }
+        suits = {card.suit for card in _scoring_cards(cards, hand_name) if not card.debuffed}
         if "C" in suits and bool(suits - {"C"}):
             xmult *= 2
-    elif (
-        key == "j_drivers_license"
-        and runtime is not None
-        and (runtime.driver_tally or 0) >= 16
-    ):
+    elif key == "j_drivers_license" and runtime is not None and (runtime.driver_tally or 0) >= 16:
         xmult *= 3
-    elif (
-        key == "j_loyalty_card"
-        and runtime is not None
-        and runtime.loyalty_remaining == 0
-    ):
+    elif key == "j_loyalty_card" and runtime is not None and runtime.loyalty_remaining == 0:
         xmult *= 4
     return chips, mult, xmult
+
+
 def _current_boss_rule(observation: PublicObservation) -> BossRule | None:
     current = next(
         (blind for blind in observation.blinds if blind.status == "CURRENT"),
@@ -757,6 +713,8 @@ def _current_boss_rule(observation: PublicObservation) -> BossRule | None:
     if rule is None:
         raise RuntimeError(f"unknown current boss blind {current.name!r}")
     return rule
+
+
 def _classify(
     cards: tuple[VisiblePlayingCard | HiddenHandCard, ...],
     joker_keys: frozenset[str] = frozenset(),
@@ -857,9 +815,7 @@ def _scoring_cards(
         if not playing:
             return stones
         highest = max(_RANK_ORDER.get(card.rank, 0) for card in playing)
-        ranked = tuple(
-            card for card in playing if _RANK_ORDER.get(card.rank, 0) == highest
-        )
+        ranked = tuple(card for card in playing if _RANK_ORDER.get(card.rank, 0) == highest)
         return (*ranked, *stones)
     rank_counts = Counter(card.rank for card in playing)
     minimum = {

@@ -13,8 +13,9 @@ from balatro_ai.game.codec import public_observation_from_data
 from balatro_ai.game.scoring import score_play
 from balatro_ai.game.state import HiddenJokerSlot, PublicItem, PublicJokerRuntime
 
-
 EVIDENCE = Path(__file__).resolve().parents[1] / "evidence" / "astra-low-2K9H9HN"
+
+
 def _legacy_fortune_runtime(observation):
     """Hydrate evidence recorded before the adapter admitted this public value."""
 

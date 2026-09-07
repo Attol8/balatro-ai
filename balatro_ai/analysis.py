@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from balatro_ai.strategy import retrieve_examples
-
 from dataclasses import replace
 from fractions import Fraction
 
@@ -32,17 +30,27 @@ from balatro_ai.game.state import (
     PublicObservation,
     VisiblePlayingCard,
 )
+from balatro_ai.strategy import retrieve_examples
 
 _MAX_PLAY_CANDIDATES = 16  # Thirteen hand families plus three preservation views.
 _MAX_STRATEGIC_ACTIONS = 24
 _MAX_REORDER_SUGGESTIONS = 4
 _FACE_RANKS = frozenset({"J", "Q", "K"})
 _BLACK_SUITS = frozenset({"S", "C"})
-_COPY_ENGINE_KEYS = frozenset({
-    "j_card_sharp", "j_hologram", "j_constellation", "j_ramen",
-    "j_blackboard", "j_photograph", "j_hanging_chad", "j_stuntman",
-    "j_mime", "j_baron",
-})
+_COPY_ENGINE_KEYS = frozenset(
+    {
+        "j_card_sharp",
+        "j_hologram",
+        "j_constellation",
+        "j_ramen",
+        "j_blackboard",
+        "j_photograph",
+        "j_hanging_chad",
+        "j_stuntman",
+        "j_mime",
+        "j_baron",
+    }
+)
 
 
 def analyze(observation: PublicObservation) -> dict[str, object]:
@@ -94,16 +102,15 @@ def _play_advice(
     scored: list[tuple[PlayCards, int | Fraction, str]] = []
     for action in iter_legal_actions(observation):
         if isinstance(action, PlayCards):
-            score, family = _score_play_prepared(
-                observation, action.cards, None, context
-            )
+            score, family = _score_play_prepared(observation, action.cards, None, context)
             scored.append((action, score, family))
 
     by_family: dict[str, tuple[PlayCards, int | Fraction, str]] = {}
     for row in scored:
         previous = by_family.get(row[2])
         if previous is None or (row[1], _play_tiebreak(row[0])) > (
-            previous[1], _play_tiebreak(previous[0])
+            previous[1],
+            _play_tiebreak(previous[0]),
         ):
             by_family[row[2]] = row
 
@@ -151,8 +158,7 @@ def _play_entry(
     bus_reset = [
         slot
         for slot in scoring_slots
-        if not observation.hand[slot].debuffed
-        and observation.hand[slot].rank in _FACE_RANKS
+        if not observation.hand[slot].debuffed and observation.hand[slot].rank in _FACE_RANKS
     ]
     return {
         "action": action_to_data(action),
@@ -166,19 +172,14 @@ def _play_entry(
                 slot.value for slot in action.cards if slot.value not in scoring_set
             ],
             "ride_the_bus_reset_slots": bus_reset,
-            "ride_the_bus_interaction_uncertain": _active_joker(
-                observation, "j_ride_the_bus"
-            ) and (pareidolia or splash),
+            "ride_the_bus_interaction_uncertain": _active_joker(observation, "j_ride_the_bus")
+            and (pareidolia or splash),
             "pareidolia_active": pareidolia,
             "splash_active": splash,
             "held_blue_seal_slots": [i for i, card in held if card.seal == "BLUE"],
             "held_steel_slots": [i for i, card in held if card.enhancement == "STEEL"],
-            "held_cards_all_black": all(
-                card.suit in _BLACK_SUITS for _, card in held
-            ),
-            "boss_scoring_restriction": _boss_scoring_restriction(
-                observation, score
-            ),
+            "held_cards_all_black": all(card.suit in _BLACK_SUITS for _, card in held),
+            "boss_scoring_restriction": _boss_scoring_restriction(observation, score),
         },
     }
 
@@ -219,9 +220,13 @@ def _reorder_advice(
                 if not is_legal(observation, action):
                     continue
                 after = replace(observation, **{area: tuple(items[value] for value in order)})
-                mapped = physical if area == "jokers" else tuple(
-                    HandSlot(value)
-                    for value in sorted(order.index(slot.value) for slot in physical)
+                mapped = (
+                    physical
+                    if area == "jokers"
+                    else tuple(
+                        HandSlot(value)
+                        for value in sorted(order.index(slot.value) for slot in physical)
+                    )
                 )
                 try:
                     score, family = _score_play_prepared(
@@ -230,17 +235,19 @@ def _reorder_advice(
                 except ValueError:
                     continue
                 if score > baseline:
-                    suggestions.append({
-                        "action": action_to_data(action),
-                        "then_play": action_to_data(PlayCards(mapped)),
-                        "family": family,
-                        "baseline_score": _json_score(baseline),
-                        "reordered_score": _json_score(score),
-                        "approximation": _score_approximation(observation),
-                        "selected_before": [slot.value for slot in physical],
-                        "selected_after": [slot.value for slot in mapped],
-                        "note": "Optional adjacent reorder; reassess after it settles.",
-                    })
+                    suggestions.append(
+                        {
+                            "action": action_to_data(action),
+                            "then_play": action_to_data(PlayCards(mapped)),
+                            "family": family,
+                            "baseline_score": _json_score(baseline),
+                            "reordered_score": _json_score(score),
+                            "approximation": _score_approximation(observation),
+                            "selected_before": [slot.value for slot in physical],
+                            "selected_after": [slot.value for slot in mapped],
+                            "note": "Optional adjacent reorder; reassess after it settles.",
+                        }
+                    )
     suggestions.sort(key=lambda row: float(row["reordered_score"]), reverse=True)
     return suggestions[:_MAX_REORDER_SUGGESTIONS]
 
@@ -267,16 +274,30 @@ def _mechanism_reminders(observation: PublicObservation) -> list[str]:
     if "j_ride_the_bus" in keys:
         reminders.append("Ride the Bus resets only when a non-debuffed J/Q/K scores.")
     if "j_blueprint" in keys:
-        reminders.append("Blueprint copies the compatible Joker immediately to its right; recheck its target.")
+        reminders.append(
+            "Blueprint copies the compatible Joker immediately to its right; recheck its target."
+        )
     if "j_hologram" in keys:
         reminders.append("Hologram's displayed public runtime is included in numerical scores.")
     if "j_blackboard" in keys:
         reminders.append("Blackboard requires every held card to be Spades or Clubs.")
-    if any(isinstance(card, VisiblePlayingCard) and card.seal == "BLUE" for card in observation.hand):
+    if any(
+        isinstance(card, VisiblePlayingCard) and card.seal == "BLUE" for card in observation.hand
+    ):
         reminders.append("A Blue Seal held at round end can create the planet for the played hand.")
-    if any(isinstance(card, VisiblePlayingCard) and card.enhancement == "STEEL" for card in observation.hand):
+    if any(
+        isinstance(card, VisiblePlayingCard) and card.enhancement == "STEEL"
+        for card in observation.hand
+    ):
         reminders.append("A non-debuffed Steel card scores x1.5 Mult while held.")
-    boss = next((blind for blind in observation.blinds if blind.kind == "BOSS" and blind.status in {"UPCOMING", "SELECT"}), None)
+    boss = next(
+        (
+            blind
+            for blind in observation.blinds
+            if blind.kind == "BOSS" and blind.status in {"UPCOMING", "SELECT"}
+        ),
+        None,
+    )
     if boss is not None:
         reminders.append(f"Next visible boss: {boss.name}: {boss.effect}")
     return reminders
@@ -293,7 +314,8 @@ def _score_approximation(observation: PublicObservation) -> str:
     stochastic = {
         joker.key
         for joker in observation.jokers
-        if isinstance(joker, PublicItem) and not joker.debuffed
+        if isinstance(joker, PublicItem)
+        and not joker.debuffed
         and joker.key in {"j_misprint", "j_bloodstone"}
     }
     notes = [
@@ -301,10 +323,7 @@ def _score_approximation(observation: PublicObservation) -> str:
     ]
     if stochastic:
         names = ", ".join(
-            sorted(
-                key.removeprefix("j_").replace("_", " ").title()
-                for key in stochastic
-            )
+            sorted(key.removeprefix("j_").replace("_", " ").title() for key in stochastic)
         )
         notes.append(f"Uses expected values for stochastic {names} effects.")
     if any(
@@ -313,8 +332,7 @@ def _score_approximation(observation: PublicObservation) -> str:
     ):
         notes.append("Lucky Card random Mult and money triggers are omitted.")
     if _active_joker(observation, "j_ride_the_bus") and (
-        _active_joker(observation, "j_pareidolia")
-        or _active_joker(observation, "j_splash")
+        _active_joker(observation, "j_pareidolia") or _active_joker(observation, "j_splash")
     ):
         notes.append(
             "Ride the Bus with Pareidolia or Splash follows the retained scorer; treat reset safety as uncertain."
@@ -325,15 +343,15 @@ def _score_approximation(observation: PublicObservation) -> str:
 def _bus_safe(observation: PublicObservation, row: tuple[PlayCards, int | Fraction, str]) -> bool:
     if not _active_joker(observation, "j_ride_the_bus"):
         return False
-    if _active_joker(observation, "j_pareidolia") or _active_joker(
-        observation, "j_splash"
-    ):
+    if _active_joker(observation, "j_pareidolia") or _active_joker(observation, "j_splash"):
         return False
     entry = _play_entry(observation, *row)
     return not entry["facts"]["ride_the_bus_reset_slots"]
 
 
-def _holds_valuable_cards(observation: PublicObservation, row: tuple[PlayCards, int | Fraction, str]) -> bool:
+def _holds_valuable_cards(
+    observation: PublicObservation, row: tuple[PlayCards, int | Fraction, str]
+) -> bool:
     selected = {slot.value for slot in row[0].cards}
     return any(
         index not in selected
@@ -343,14 +361,14 @@ def _holds_valuable_cards(observation: PublicObservation, row: tuple[PlayCards, 
     )
 
 
-def _holds_black_hand(observation: PublicObservation, row: tuple[PlayCards, int | Fraction, str]) -> bool:
+def _holds_black_hand(
+    observation: PublicObservation, row: tuple[PlayCards, int | Fraction, str]
+) -> bool:
     if not _active_joker(observation, "j_blackboard"):
         return False
     selected = {slot.value for slot in row[0].cards}
     held = [card for index, card in enumerate(observation.hand) if index not in selected]
-    return all(
-        isinstance(card, VisiblePlayingCard) and card.suit in _BLACK_SUITS for card in held
-    )
+    return all(isinstance(card, VisiblePlayingCard) and card.suit in _BLACK_SUITS for card in held)
 
 
 def _play_tiebreak(action: PlayCards) -> tuple[int, tuple[int, ...]]:
@@ -362,12 +380,12 @@ def _scored_sort_key(row: tuple[PlayCards, int | Fraction, str]) -> tuple[object
 
 
 def _json_score(score: int | Fraction) -> int | float:
-    return score.numerator if isinstance(score, Fraction) and score.denominator == 1 else float(score)
+    return (
+        score.numerator if isinstance(score, Fraction) and score.denominator == 1 else float(score)
+    )
 
 
-def _boss_scoring_restriction(
-    observation: PublicObservation, score: int | Fraction
-) -> str | None:
+def _boss_scoring_restriction(observation: PublicObservation, score: int | Fraction) -> str | None:
     if score != 0:
         return None
     boss = next(
@@ -395,22 +413,24 @@ def _engine_opportunities(observation: PublicObservation) -> list[dict[str, obje
             steel += count if card.enhancement == "STEEL" else 0
             kings += count if card.rank == "K" else 0
             faces += count if card.rank in _FACE_RANKS else 0
-            enhanced += count if (
-                card.enhancement in {"BONUS", "MULT", "GLASS", "LUCKY"}
-                or card.edition is not None
-                or card.seal == "RED"
-            ) else 0
+            enhanced += (
+                count
+                if (
+                    card.enhancement in {"BONUS", "MULT", "GLASS", "LUCKY"}
+                    or card.edition is not None
+                    or card.seal == "RED"
+                )
+                else 0
+            )
     copy_targets = [
-        joker.key for joker in observation.jokers
-        if isinstance(joker, PublicItem)
-        and not joker.debuffed
-        and joker.key in _COPY_ENGINE_KEYS
+        joker.key
+        for joker in observation.jokers
+        if isinstance(joker, PublicItem) and not joker.debuffed and joker.key in _COPY_ENGINE_KEYS
     ]
     full = len(observation.jokers) >= observation.joker_limit
-    offers = (
-        [("shop", slot, item) for slot, item in enumerate(observation.shop)]
-        + [("opened_pack", slot, item) for slot, item in enumerate(observation.opened_pack)]
-    )
+    offers = [("shop", slot, item) for slot, item in enumerate(observation.shop)] + [
+        ("opened_pack", slot, item) for slot, item in enumerate(observation.opened_pack)
+    ]
     result: list[dict[str, object]] = []
     for zone, slot, item in offers:
         if not isinstance(item, PublicItem) or item.kind != "JOKER":
@@ -420,7 +440,9 @@ def _engine_opportunities(observation: PublicObservation) -> list[dict[str, obje
         tradeoff: str
         if item.key == "j_mime" and deck_known and steel:
             support = {"steel_cards_in_public_deck": steel}
-            mechanism = "Mime retriggers held-card abilities; drawn Steel cards can apply held XMult again."
+            mechanism = (
+                "Mime retriggers held-card abilities; drawn Steel cards can apply held XMult again."
+            )
             tradeoff = "Value depends on drawing and holding Steel instead of scoring it."
         elif item.key == "j_baron" and deck_known and kings:
             support = {"kings_in_public_deck": kings}
@@ -450,8 +472,12 @@ def _engine_opportunities(observation: PublicObservation) -> list[dict[str, obje
         else:
             continue
         row: dict[str, object] = {
-            "zone": zone, "slot": slot, "key": item.key,
-            "support": support, "mechanism": mechanism, "tradeoff": tradeoff,
+            "zone": zone,
+            "slot": slot,
+            "key": item.key,
+            "support": support,
+            "mechanism": mechanism,
+            "tradeoff": tradeoff,
         }
         if full and item.edition != "NEGATIVE":
             row["capacity"] = (

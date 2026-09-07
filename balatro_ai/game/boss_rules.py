@@ -8,7 +8,6 @@ make up a rule for an unknown blind.
 from dataclasses import dataclass
 from enum import Enum
 
-
 PINNED_GAME_MODEL = "Balatro-1.0.1o-model"
 
 
@@ -110,8 +109,13 @@ BOSS_RULES: tuple[BossRule, ...] = (
         joker_disruption=JokerDisruption.RANDOM_DEBUFF,
     ),
     _rule("Verdant Leaf", BossConstraint.SELL_TO_DISABLE, sell_to_disable=True),
-    _rule("Violet Vessel", BossConstraint.SCORE_MULTIPLIER, BossConstraint.HIGH_TARGET,
-          score_multiplier=6, high_target=True),
+    _rule(
+        "Violet Vessel",
+        BossConstraint.SCORE_MULTIPLIER,
+        BossConstraint.HIGH_TARGET,
+        score_multiplier=6,
+        high_target=True,
+    ),
     _rule(
         "The Fish",
         BossConstraint.FACE_DOWN,
@@ -158,8 +162,13 @@ BOSS_RULES: tuple[BossRule, ...] = (
         BossConstraint.PER_CARD_MONEY_PENALTY,
         money_per_card=1,
     ),
-    _rule("The Wall", BossConstraint.SCORE_MULTIPLIER, BossConstraint.HIGH_TARGET,
-          score_multiplier=4, high_target=True),
+    _rule(
+        "The Wall",
+        BossConstraint.SCORE_MULTIPLIER,
+        BossConstraint.HIGH_TARGET,
+        score_multiplier=4,
+        high_target=True,
+    ),
     _rule("The Water", BossConstraint.FORCED_DISCARDS, discards_forced=0),
     _rule(
         "The Wheel",

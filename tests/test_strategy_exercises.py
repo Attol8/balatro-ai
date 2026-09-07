@@ -7,12 +7,11 @@ from fractions import Fraction
 
 import pytest
 
-from tests.game.state_factory import state
-
 from balatro_ai.game.actions import HandSlot
 from balatro_ai.game.adapter import to_public_observation
 from balatro_ai.game.scoring import score_play
 from balatro_ai.game.state import HandStat, PublicItem, VisiblePlayingCard
+from tests.game.state_factory import state
 
 
 def _high_card_observation(base_mult: int, held: tuple[VisiblePlayingCard, ...]):
@@ -26,9 +25,7 @@ def _high_card_observation(base_mult: int, held: tuple[VisiblePlayingCard, ...])
 
 @pytest.mark.parametrize("base_mult", [1, 50])
 @pytest.mark.parametrize("steel_count", range(5))
-def test_mime_vs_holographic_cloud_9_grid(
-    base_mult: int, steel_count: int
-) -> None:
+def test_mime_vs_holographic_cloud_9_grid(base_mult: int, steel_count: int) -> None:
     """Compare hand score only; Cloud 9's end-of-round income is external."""
     held = tuple(
         VisiblePlayingCard(str(rank), "H", enhancement="STEEL")
@@ -43,9 +40,7 @@ def test_mime_vs_holographic_cloud_9_grid(
     cloud_score = score_play(replace(observation, jokers=(cloud,)), (HandSlot(0),))[0]
 
     assert mime_score == chips * base_mult * Fraction(3, 2) ** (2 * steel_count)
-    assert cloud_score == chips * (
-        base_mult * Fraction(3, 2) ** steel_count + 10
-    )
+    assert cloud_score == chips * (base_mult * Fraction(3, 2) ** steel_count + 10)
     assert (mime_score > cloud_score) is (
         base_mult * Fraction(3, 2) ** (2 * steel_count)
         > base_mult * Fraction(3, 2) ** steel_count + 10
@@ -58,12 +53,8 @@ def test_photograph_and_hanging_chad_retrigger_x8_instead_of_x2() -> None:
     photograph = PublicItem("j_photograph", "Photograph", "JOKER")
     chad = PublicItem("j_hanging_chad", "Hanging Chad", "JOKER")
 
-    photograph_score = score_play(
-        replace(observation, jokers=(photograph,)), (HandSlot(0),)
-    )[0]
-    chad_score = score_play(
-        replace(observation, jokers=(photograph, chad)), (HandSlot(0),)
-    )[0]
+    photograph_score = score_play(replace(observation, jokers=(photograph,)), (HandSlot(0),))[0]
+    chad_score = score_play(replace(observation, jokers=(photograph, chad)), (HandSlot(0),))[0]
 
     assert photograph_score == (5 + 10) * 2
     # Chad repeats both the King's +10 chips and Photograph twice more.
@@ -77,12 +68,10 @@ def test_blueprint_position_selects_mime_x8_or_baron_x9_arithmetic() -> None:
     mime = PublicItem("j_mime", "Mime", "JOKER")
     baron = PublicItem("j_baron", "Baron", "JOKER")
 
-    copy_mime = score_play(
-        replace(observation, jokers=(blueprint, mime, baron)), (HandSlot(0),)
-    )[0]
-    copy_baron = score_play(
-        replace(observation, jokers=(mime, blueprint, baron)), (HandSlot(0),)
-    )[0]
+    copy_mime = score_play(replace(observation, jokers=(blueprint, mime, baron)), (HandSlot(0),))[0]
+    copy_baron = score_play(replace(observation, jokers=(mime, blueprint, baron)), (HandSlot(0),))[
+        0
+    ]
 
     assert copy_mime == 7 * Fraction(3, 2) ** 8
     assert copy_baron == 7 * Fraction(3, 2) ** 9
@@ -94,24 +83,18 @@ def test_fibonacci_is_reapplied_when_hack_retriggers_a_two() -> None:
     fibonacci = PublicItem("j_fibonacci", "Fibonacci", "JOKER")
     hack = PublicItem("j_hack", "Hack", "JOKER")
 
-    score, family = score_play(
-        replace(observation, jokers=(fibonacci, hack)), (HandSlot(0),)
-    )
+    score, family = score_play(replace(observation, jokers=(fibonacci, hack)), (HandSlot(0),))
 
     assert family == "High Card"
     assert score == (5 + 2 * 2) * (1 + 2 * 8) == 153
 
 
 def test_sock_retrigger_reapplies_triboulet_to_a_king() -> None:
-    observation = replace(
-        _high_card_observation(1, ()), hand=(VisiblePlayingCard("K", "S"),)
-    )
+    observation = replace(_high_card_observation(1, ()), hand=(VisiblePlayingCard("K", "S"),))
     triboulet = PublicItem("j_triboulet", "Triboulet", "JOKER")
     sock = PublicItem("j_sock_and_buskin", "Sock and Buskin", "JOKER")
 
-    score, family = score_play(
-        replace(observation, jokers=(triboulet, sock)), (HandSlot(0),)
-    )
+    score, family = score_play(replace(observation, jokers=(triboulet, sock)), (HandSlot(0),))
 
     assert family == "High Card"
     assert score == (5 + 2 * 10) * 2**2 == 100

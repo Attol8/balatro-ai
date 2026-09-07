@@ -12,12 +12,9 @@ from dataclasses import asdict, dataclass
 from enum import Enum
 from typing import TypeAlias
 
-
 OBSCURED_CARD_ATTRIBUTE = "?"
 
-_PUBLIC_ITEM_KINDS = frozenset(
-    {"JOKER", "TAROT", "PLANET", "SPECTRAL", "VOUCHER", "BOOSTER"}
-)
+_PUBLIC_ITEM_KINDS = frozenset({"JOKER", "TAROT", "PLANET", "SPECTRAL", "VOUCHER", "BOOSTER"})
 _JOKER_KINDS = frozenset({"JOKER"})
 _CONSUMABLE_KINDS = frozenset({"TAROT", "PLANET", "SPECTRAL"})
 _VOUCHER_KINDS = frozenset({"VOUCHER"})
@@ -63,15 +60,9 @@ class VisiblePlayingCard:
     effect_text: str = ""
 
     def __post_init__(self) -> None:
-        obscured = (
-            self.rank == OBSCURED_CARD_ATTRIBUTE
-            or self.suit == OBSCURED_CARD_ATTRIBUTE
-        )
+        obscured = self.rank == OBSCURED_CARD_ATTRIBUTE or self.suit == OBSCURED_CARD_ATTRIBUTE
         if self.enhancement == "STONE":
-            if (
-                self.rank != OBSCURED_CARD_ATTRIBUTE
-                or self.suit != OBSCURED_CARD_ATTRIBUTE
-            ):
+            if self.rank != OBSCURED_CARD_ATTRIBUTE or self.suit != OBSCURED_CARD_ATTRIBUTE:
                 raise ValueError("Stone cards must obscure their base rank and suit")
         elif obscured:
             raise ValueError("only Stone cards may obscure rank and suit")
@@ -100,11 +91,7 @@ class DeckCardCount:
     count: int
 
     def __post_init__(self) -> None:
-        if (
-            isinstance(self.count, bool)
-            or not isinstance(self.count, int)
-            or self.count <= 0
-        ):
+        if isinstance(self.count, bool) or not isinstance(self.count, int) or self.count <= 0:
             raise ValueError("deck card count must be a positive integer")
 
 
@@ -209,16 +196,12 @@ class PublicItem:
         if self.kind != self.kind.upper():
             raise ValueError("public item kind must use canonical uppercase")
         if self.kind in {"DEFAULT", "ENHANCED"}:
-            raise ValueError(
-                "playing cards cannot use the generic public item representation"
-            )
+            raise ValueError("playing cards cannot use the generic public item representation")
         if self.kind not in _PUBLIC_ITEM_KINDS:
             raise ValueError(f"unsupported public item kind {self.kind!r}")
         if self.runtime is not None and self.kind != "JOKER":
             raise ValueError("only Jokers may carry Joker runtime")
-        has_card_target = (
-            self.runtime is not None and self.runtime.target_rank is not None
-        )
+        has_card_target = self.runtime is not None and self.runtime.target_rank is not None
         if has_card_target != (self.key == "j_idol"):
             raise ValueError("only a visible Idol may carry its required card target")
         if (
@@ -239,9 +222,7 @@ class PublicItem:
                 "Mail-In Rebate rank",
             ),
             (
-                self.runtime.current_hand_size_bonus
-                if self.runtime is not None
-                else None,
+                self.runtime.current_hand_size_bonus if self.runtime is not None else None,
                 "j_turtle_bean",
                 "Turtle Bean hand-size bonus",
             ),
@@ -323,10 +304,7 @@ class RoundObservation:
     def __post_init__(self) -> None:
         if not isinstance(self.boss_rerolled, bool):
             raise ValueError("boss_rerolled must be boolean")
-        if (
-            self.most_played_hand is not None
-            and self.most_played_hand not in _POKER_HAND_NAMES
-        ):
+        if self.most_played_hand is not None and self.most_played_hand not in _POKER_HAND_NAMES:
             raise ValueError("unsupported most-played poker hand")
 
 
@@ -371,41 +349,27 @@ class PublicObservation:
             raise ValueError("full deck composition cannot contain transient card state")
         if sum(entry.count for entry in self.full_deck) != self.deck_size:
             raise ValueError("full deck composition must equal the declared deck size")
-        visible_jokers = tuple(
-            joker for joker in self.jokers if isinstance(joker, PublicItem)
-        )
-        if any(
-            not isinstance(joker, (PublicItem, HiddenJokerSlot))
-            for joker in self.jokers
-        ):
+        visible_jokers = tuple(joker for joker in self.jokers if isinstance(joker, PublicItem))
+        if any(not isinstance(joker, (PublicItem, HiddenJokerSlot)) for joker in self.jokers):
             raise ValueError("jokers must contain visible items or anonymous slots")
         _validate_item_zone("jokers", visible_jokers, _JOKER_KINDS)
-        hidden_jokers = sum(
-            isinstance(joker, HiddenJokerSlot) for joker in self.jokers
-        )
+        hidden_jokers = sum(isinstance(joker, HiddenJokerSlot) for joker in self.jokers)
         if hidden_jokers:
-            amber_active = (
-                self.phase in {Phase.SELECTING_HAND, Phase.GAME_OVER}
-                and any(
-                    blind.kind == "BOSS"
-                    and blind.status == "CURRENT"
-                    and blind.name == "Amber Acorn"
-                    and not blind.disabled
-                    for blind in self.blinds
-                )
+            amber_active = self.phase in {Phase.SELECTING_HAND, Phase.GAME_OVER} and any(
+                blind.kind == "BOSS"
+                and blind.status == "CURRENT"
+                and blind.name == "Amber Acorn"
+                and not blind.disabled
+                for blind in self.blinds
             )
             if not amber_active or hidden_jokers != len(self.jokers):
                 raise ValueError(
-                    "anonymous Joker slots require every Joker to be hidden "
-                    "by active Amber Acorn"
+                    "anonymous Joker slots require every Joker to be hidden by active Amber Acorn"
                 )
         _validate_item_zone("consumables", self.consumables, _CONSUMABLE_KINDS)
         _validate_item_zone("vouchers", self.vouchers, _VOUCHER_KINDS)
         _validate_item_zone("packs", self.packs, _BOOSTER_KINDS)
-        if any(
-            not isinstance(offer, (PublicItem, PublicShopPlayingCard))
-            for offer in self.shop
-        ):
+        if any(not isinstance(offer, (PublicItem, PublicShopPlayingCard)) for offer in self.shop):
             raise ValueError("shop offers must use a recognized public representation")
         _validate_item_zone(
             "shop",
@@ -413,17 +377,12 @@ class PublicObservation:
             _SHOP_ITEM_KINDS,
         )
         if any(
-            not isinstance(offer, (PublicItem, VisiblePlayingCard))
-            for offer in self.opened_pack
+            not isinstance(offer, (PublicItem, VisiblePlayingCard)) for offer in self.opened_pack
         ):
-            raise ValueError(
-                "opened-pack offers must use a recognized public representation"
-            )
+            raise ValueError("opened-pack offers must use a recognized public representation")
         _validate_item_zone(
             "opened_pack",
-            tuple(
-                offer for offer in self.opened_pack if isinstance(offer, PublicItem)
-            ),
+            tuple(offer for offer in self.opened_pack if isinstance(offer, PublicItem)),
             _OPENED_PACK_ITEM_KINDS,
         )
         if tuple(sorted(set(self.required_hand_slots))) != self.required_hand_slots:
@@ -441,13 +400,9 @@ class PublicObservation:
                 for blind in self.blinds
             )
             if cerulean_enabled and len(self.required_hand_slots) != 1:
-                raise ValueError(
-                    "enabled current Cerulean Bell requires one forced hand slot"
-                )
+                raise ValueError("enabled current Cerulean Bell requires one forced hand slot")
             if not cerulean_enabled and self.required_hand_slots:
-                raise ValueError(
-                    "forced hand slots require an enabled current Cerulean Bell"
-                )
+                raise ValueError("forced hand slots require an enabled current Cerulean Bell")
         pack_kinds = {"ARCANA", "CELESTIAL", "SPECTRAL", "STANDARD", "BUFFOON", "SMODS"}
         if self.phase == Phase.PACK:
             if self.pack_kind not in pack_kinds or self.pack_choices_remaining <= 0:
@@ -466,7 +421,9 @@ class PublicObservation:
         return self.phase == Phase.GAME_OVER
 
     def canonical_json(self) -> str:
-        return json.dumps(_json_value(self), sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+        return json.dumps(
+            _json_value(self), sort_keys=True, separators=(",", ":"), ensure_ascii=False
+        )
 
     def digest(self) -> str:
         return hashlib.sha256(self.canonical_json().encode("utf-8")).hexdigest()

@@ -73,32 +73,22 @@ def public_observation_from_data(data: object) -> PublicObservation:
         remaining_deck=tuple(
             _deck_count(value) for value in _array(raw["remaining_deck"], "remaining_deck", 512)
         ),
-        full_deck=tuple(
-            _deck_count(value) for value in _array(raw["full_deck"], "full_deck", 512)
-        ),
+        full_deck=tuple(_deck_count(value) for value in _array(raw["full_deck"], "full_deck", 512)),
         draw_count=_integer(raw["draw_count"], "draw_count"),
         deck_size=_integer(raw["deck_size"], "deck_size"),
         hand_stats=tuple(
             _hand_stat(value) for value in _array(raw["hand_stats"], "hand_stats", 32)
         ),
-        jokers=tuple(
-            _joker_card(value) for value in _array(raw["jokers"], "jokers", 32)
-        ),
+        jokers=tuple(_joker_card(value) for value in _array(raw["jokers"], "jokers", 32)),
         joker_limit=_integer(raw["joker_limit"], "joker_limit"),
-        consumables=tuple(
-            _item(value) for value in _array(raw["consumables"], "consumables", 32)
-        ),
+        consumables=tuple(_item(value) for value in _array(raw["consumables"], "consumables", 32)),
         consumable_limit=_integer(raw["consumable_limit"], "consumable_limit"),
         shop=tuple(_shop_offer(value) for value in _array(raw["shop"], "shop", 64)),
         vouchers=tuple(_item(value) for value in _array(raw["vouchers"], "vouchers", 64)),
         packs=tuple(_item(value) for value in _array(raw["packs"], "packs", 64)),
-        opened_pack=tuple(
-            _offer(value) for value in _array(raw["opened_pack"], "opened_pack", 64)
-        ),
+        opened_pack=tuple(_offer(value) for value in _array(raw["opened_pack"], "opened_pack", 64)),
         pack_kind=_optional_string(raw["pack_kind"], "pack_kind"),
-        pack_choices_remaining=_integer(
-            raw["pack_choices_remaining"], "pack_choices_remaining"
-        ),
+        pack_choices_remaining=_integer(raw["pack_choices_remaining"], "pack_choices_remaining"),
         used_vouchers=tuple(
             _string(value, "used_vouchers item")
             for value in _array(raw["used_vouchers"], "used_vouchers", 128)
@@ -130,9 +120,7 @@ def _round(value: object) -> RoundObservation:
         reroll_cost=_integer(raw["reroll_cost"], "round.reroll_cost"),
         boss_rerolled=_boolean(raw["boss_rerolled"], "round.boss_rerolled"),
         ancient_suit=_optional_string(raw["ancient_suit"], "round.ancient_suit"),
-        most_played_hand=_optional_string(
-            raw.get("most_played_hand"), "round.most_played_hand"
-        ),
+        most_played_hand=_optional_string(raw.get("most_played_hand"), "round.most_played_hand"),
     )
 
 
@@ -215,9 +203,7 @@ def _item(value: object) -> PublicItem:
             effect_text=_string(raw["effect_text"], "item.effect_text"),
             edition=_optional_string(raw["edition"], "item.edition"),
             eternal=_boolean(raw["eternal"], "item.eternal"),
-            perishable_rounds=_optional_integer(
-                raw["perishable_rounds"], "item.perishable_rounds"
-            ),
+            perishable_rounds=_optional_integer(raw["perishable_rounds"], "item.perishable_rounds"),
             rental=_boolean(raw["rental"], "item.rental"),
             debuffed=_boolean(raw["debuffed"], "item.debuffed"),
             buy_cost=_optional_integer(raw["buy_cost"], "item.buy_cost"),
@@ -252,9 +238,7 @@ def _joker_runtime(value: object) -> PublicJokerRuntime | None:
             target_hand=_optional_string(raw["target_hand"], "runtime.target_hand"),
             target_rank=_optional_string(raw["target_rank"], "runtime.target_rank"),
             target_suit=_optional_string(raw["target_suit"], "runtime.target_suit"),
-            castle_suit=_optional_string(
-                raw.get("castle_suit"), "runtime.castle_suit"
-            ),
+            castle_suit=_optional_string(raw.get("castle_suit"), "runtime.castle_suit"),
             invisible_rounds=_optional_integer(
                 raw.get("invisible_rounds"), "runtime.invisible_rounds"
             ),
@@ -293,9 +277,7 @@ def _shop_offer(value: object) -> PublicItem | PublicShopPlayingCard:
     if set(raw) == _ITEM_FIELDS:
         item = _item(raw)
         if item.kind.upper() in {"DEFAULT", "ENHANCED"}:
-            raise PublicCodecError(
-                "shop playing card uses legacy generic item representation"
-            )
+            raise PublicCodecError("shop playing card uses legacy generic item representation")
         return item
     raise PublicCodecError("shop offer has unknown fields")
 

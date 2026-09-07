@@ -6,7 +6,7 @@ import json
 from typing import Any
 
 _TABLE_NOTE = (
-    "\nCompact tables use {\"$columns\":[keys],\"$rows\":[value rows]}; "
+    '\nCompact tables use {"$columns":[keys],"$rows":[value rows]}; '
     "read each row by matching values to columns."
 )
 
@@ -16,11 +16,18 @@ def compact_packet(packet: dict[str, object]) -> dict[str, object]:
 
     # Stable instructions lead the wire request; per-call IDs must not break
     # the shared prefix. This changes order only, never values or information.
-    order = ("instructions", "observation", "analysis", "recent_outcomes", "plan",
-             "validation_feedback")
+    order = (
+        "instructions",
+        "observation",
+        "analysis",
+        "recent_outcomes",
+        "plan",
+        "validation_feedback",
+    )
     prepared = {key: packet[key] for key in order if key in packet}
-    prepared.update((key, value) for key, value in packet.items()
-                    if key not in prepared and key != "request_id")
+    prepared.update(
+        (key, value) for key, value in packet.items() if key not in prepared and key != "request_id"
+    )
     if "request_id" in packet:
         prepared["request_id"] = packet["request_id"]
     instructions = prepared.get("instructions")

@@ -34,12 +34,12 @@ from balatro_ai.game.actions import (
 )
 from balatro_ai.game.mechanics import semantic_card_key
 from balatro_ai.game.state import (
+    OBSCURED_CARD_ATTRIBUTE,
     DeckCardCount,
     HandCard,
     HandStat,
     HiddenHandCard,
     HiddenJokerSlot,
-    OBSCURED_CARD_ATTRIBUTE,
     Phase,
     PublicBlind,
     PublicItem,
@@ -50,7 +50,6 @@ from balatro_ai.game.state import (
     RoundObservation,
     VisiblePlayingCard,
 )
-
 
 JsonObject = dict[str, Any]
 
@@ -159,9 +158,7 @@ def to_public_observation(raw: Mapping[str, Any]) -> PublicObservation:
     )
 
     used_vouchers = _string_tuple(raw.get("used_vouchers", ()), "used_vouchers")
-    ante_reductions = sum(
-        voucher in {"v_hieroglyph", "v_petroglyph"} for voucher in used_vouchers
-    )
+    ante_reductions = sum(voucher in {"v_hieroglyph", "v_petroglyph"} for voucher in used_vouchers)
 
     return PublicObservation(
         phase=phase,
@@ -191,7 +188,9 @@ def to_public_observation(raw: Mapping[str, Any]) -> PublicObservation:
         required_hand_slots=_required_hand_slots(hand_area, blinds, phase),
         remaining_deck=tuple(
             DeckCardCount(card=card, count=count)
-            for card, count in sorted(deck_counts.items(), key=lambda pair: _playing_card_sort_key(pair[0]))
+            for card, count in sorted(
+                deck_counts.items(), key=lambda pair: _playing_card_sort_key(pair[0])
+            )
         ),
         full_deck=tuple(
             DeckCardCount(card=card, count=count)
@@ -205,7 +204,10 @@ def to_public_observation(raw: Mapping[str, Any]) -> PublicObservation:
         # composition is the authoritative current deck size.
         deck_size=deck_size,
         hand_stats=tuple(
-            sorted((_hand_stat(name, value) for name, value in hands_raw.items()), key=lambda hand: hand.name)
+            sorted(
+                (_hand_stat(name, value) for name, value in hands_raw.items()),
+                key=lambda hand: hand.name,
+            )
         ),
         jokers=tuple(_joker_card(card) for card in joker_area["cards"]),
         joker_limit=_required_int(joker_area, "limit"),
@@ -333,9 +335,7 @@ def _shop_offers_from_optional_area(
                 )
             buy_cost = _required_int(cost, "buy")
             if buy_cost < 0:
-                raise ObservationError(
-                    "shop playing-card buy cost must be non-negative"
-                )
+                raise ObservationError("shop playing-card buy cost must be non-negative")
             offers.append(
                 PublicShopPlayingCard(
                     card=card,
@@ -360,16 +360,12 @@ def _hand_card(raw: Mapping[str, Any]) -> HandCard:
 
 def _joker_card(raw: Mapping[str, Any]) -> PublicItem | HiddenJokerSlot:
     state = raw.get("state")
-    if isinstance(state, Mapping) and "hidden" in state and not isinstance(
-        state["hidden"], bool
-    ):
+    if isinstance(state, Mapping) and "hidden" in state and not isinstance(state["hidden"], bool):
         raise ObservationError("Joker hidden state must be boolean")
     hidden = isinstance(state, Mapping) and state.get("hidden") is True
     if not hidden:
         return _item(raw)
-    if set(raw) != {"set", "state"} or raw.get("set") != "JOKER" or set(state) != {
-        "hidden"
-    }:
+    if set(raw) != {"set", "state"} or raw.get("set") != "JOKER" or set(state) != {"hidden"}:
         raise ObservationError("hidden Joker payload exposed private fields")
     return HiddenJokerSlot()
 
@@ -418,11 +414,7 @@ def _deck_composition(raw: Mapping[str, Any]) -> Counter[VisiblePlayingCard]:
     }
     required = {"rank", "suit", "permanent_bonus", "count"}
     for index, entry in enumerate(entries):
-        if (
-            not isinstance(entry, Mapping)
-            or set(entry) - fields
-            or required - set(entry)
-        ):
+        if not isinstance(entry, Mapping) or set(entry) - fields or required - set(entry):
             raise ObservationError(
                 f"deck_composition[{index}] fields differ from the public contract"
             )
@@ -476,7 +468,9 @@ def _item(raw: Mapping[str, Any]) -> PublicItem:
             raise ObservationError("hidden item identity reached public adapter")
     if not isinstance(eternal, bool) or not isinstance(rental, bool):
         raise ObservationError("joker eternal/rental modifiers must be boolean")
-    if perishable is not None and (isinstance(perishable, bool) or not isinstance(perishable, int) or perishable < 0):
+    if perishable is not None and (
+        isinstance(perishable, bool) or not isinstance(perishable, int) or perishable < 0
+    ):
         raise ObservationError("joker perishable modifier must be a non-negative integer")
     debuffed = state.get("debuff", False) if isinstance(state, Mapping) else False
     if not isinstance(debuffed, bool):
@@ -507,9 +501,7 @@ def _joker_runtime(key: str, kind: str, value: Mapping[str, Any]) -> PublicJoker
     ability = value.get("ability")
     if ability is not None and not isinstance(ability, Mapping):
         raise ObservationError("joker ability must be an object")
-    fortune_mult = (
-        _fortune_teller_mult(value) if key == "j_fortune_teller" else None
-    )
+    fortune_mult = _fortune_teller_mult(value) if key == "j_fortune_teller" else None
     if ability is None:
         if fortune_mult is None:
             return None
@@ -518,43 +510,33 @@ def _joker_runtime(key: str, kind: str, value: Mapping[str, Any]) -> PublicJoker
     try:
         runtime = PublicJokerRuntime(
             current_mult=(
-                _runtime_int(ability, "mult")
-                if key in _CURRENT_MULT_JOKERS
-                else fortune_mult
+                _runtime_int(ability, "mult") if key in _CURRENT_MULT_JOKERS else fortune_mult
             ),
             current_chips=_runtime_int(ability, "chips") if key in _CURRENT_CHIP_JOKERS else None,
-            current_x_mult=_runtime_number(ability, "x_mult") if key in _CURRENT_X_MULT_JOKERS else None,
+            current_x_mult=_runtime_number(ability, "x_mult")
+            if key in _CURRENT_X_MULT_JOKERS
+            else None,
             current_dollars=_runtime_int(ability, "dollars") if key == "j_rocket" else None,
             remaining_hands=_runtime_int(ability, "extra") if key == "j_selzer" else None,
-            loyalty_remaining=_runtime_int(ability, "loyalty_remaining") if key == "j_loyalty_card" else None,
-            driver_tally=_runtime_int(ability, "driver_tally") if key == "j_drivers_license" else None,
+            loyalty_remaining=_runtime_int(ability, "loyalty_remaining")
+            if key == "j_loyalty_card"
+            else None,
+            driver_tally=_runtime_int(ability, "driver_tally")
+            if key == "j_drivers_license"
+            else None,
             target_hand=_runtime_string(ability, "poker_hand") if key == "j_todo_list" else None,
             target_rank=_runtime_string(ability, "idol_rank") if key == "j_idol" else None,
             target_suit=_runtime_string(ability, "idol_suit") if key == "j_idol" else None,
-            castle_suit=(
-                _runtime_string(ability, "castle_suit")
-                if key == "j_castle"
-                else None
-            ),
+            castle_suit=(_runtime_string(ability, "castle_suit") if key == "j_castle" else None),
             invisible_rounds=(
-                _runtime_int(ability, "invisible_rounds")
-                if key == "j_invisible"
-                else None
+                _runtime_int(ability, "invisible_rounds") if key == "j_invisible" else None
             ),
-            mail_rank=(
-                _runtime_string(ability, "mail_rank")
-                if key == "j_mail"
-                else None
-            ),
+            mail_rank=(_runtime_string(ability, "mail_rank") if key == "j_mail" else None),
             current_hand_size_bonus=(
-                _runtime_int(ability, "h_size")
-                if key == "j_turtle_bean"
-                else None
+                _runtime_int(ability, "h_size") if key == "j_turtle_bean" else None
             ),
             remaining_discards=(
-                _runtime_int(ability, "remaining_discards")
-                if key == "j_yorick"
-                else None
+                _runtime_int(ability, "remaining_discards") if key == "j_yorick" else None
             ),
         )
     except ValueError as exc:
@@ -639,9 +621,7 @@ def _required_hand_slots(
     if phase != Phase.SELECTING_HAND:
         return ()
     cerulean_active = any(
-        blind.name == "Cerulean Bell"
-        and blind.status == "CURRENT"
-        and not blind.disabled
+        blind.name == "Cerulean Bell" and blind.status == "CURRENT" and not blind.disabled
         for blind in blinds
     )
     forced: list[int] = []
@@ -776,6 +756,10 @@ def _required_bool(raw: Mapping[str, Any], key: str) -> bool:
 def _string_tuple(value: object, path: str) -> tuple[str, ...]:
     if isinstance(value, Mapping) and all(isinstance(item, str) for item in value):
         return tuple(sorted(value))
-    if not isinstance(value, Sequence) or isinstance(value, str) or not all(isinstance(item, str) for item in value):
+    if (
+        not isinstance(value, Sequence)
+        or isinstance(value, str)
+        or not all(isinstance(item, str) for item in value)
+    ):
         raise ObservationError(f"{path} must be a string-keyed table")
     return tuple(sorted(value))

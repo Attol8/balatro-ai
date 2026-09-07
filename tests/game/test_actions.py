@@ -5,18 +5,20 @@ from dataclasses import replace
 from typing import Any
 
 import pytest
+from state_factory import item_card, playing_card, state
 
 from balatro_ai.game.actions import (
     BuyMode,
     BuyShopCard,
     CashOut,
     ChoosePackCard,
+    ConsumableSlot,
     DiscardCards,
     HandSlot,
     JokerSlot,
     LeaveShop,
-    PlayCards,
     OpenedPackSlot,
+    PlayCards,
     ReorderConsumables,
     ReorderHand,
     ReorderJokers,
@@ -26,7 +28,6 @@ from balatro_ai.game.actions import (
     SellJoker,
     ShopSlot,
     SkipPack,
-    ConsumableSlot,
     UseConsumable,
     action_from_data,
     action_to_data,
@@ -41,7 +42,6 @@ from balatro_ai.game.adapter import (
 )
 from balatro_ai.game.consumable_rules import iter_public_targets
 from balatro_ai.game.state import PublicObservation, VisiblePlayingCard
-from state_factory import item_card, playing_card, state
 
 
 @pytest.mark.parametrize(
@@ -123,9 +123,7 @@ def test_directors_cut_is_once_per_ante_but_retcon_is_not() -> None:
 def test_boss_reroll_honours_public_credit_card_floor() -> None:
     raw = state("BLIND_SELECT", money=-10)
     raw["used_vouchers"] = ["v_retcon"]
-    raw["jokers"]["cards"] = [
-        item_card("j_credit_card", card_id=30, kind="JOKER")
-    ]
+    raw["jokers"]["cards"] = [item_card("j_credit_card", card_id=30, kind="JOKER")]
     raw["jokers"]["count"] = 1
 
     assert is_legal(to_public_observation(raw), RerollBoss())
@@ -229,7 +227,8 @@ def test_cerulean_forced_slot_is_required_for_play_discard_and_consumable() -> N
     )
     assert all(
         not isinstance(action, (PlayCards, DiscardCards, UseConsumable))
-        or 1 in tuple(slot.value for slot in getattr(action, "cards", getattr(action, "targets", ())))
+        or 1
+        in tuple(slot.value for slot in getattr(action, "cards", getattr(action, "targets", ())))
         for action in iter_legal_actions(observation)
     )
 
@@ -330,9 +329,7 @@ def test_pack_generation_preserves_legacy_order_and_legality() -> None:
     raw["hand"] = {
         "cards": [
             playing_card(f"{suit}_{rank}", card_id=100 + index)
-            for index, (suit, rank) in enumerate(
-                zip("SHDCSHDC", "AKQJT987", strict=True)
-            )
+            for index, (suit, rank) in enumerate(zip("SHDCSHDC", "AKQJT987", strict=True))
         ],
         "count": 8,
         "highlighted_limit": 5,
@@ -395,9 +392,7 @@ def test_pack_generation_preserves_capacity_and_hidden_target_filters() -> None:
 
     actions = tuple(iter_legal_actions(observation))
     pack_actions = tuple(
-        action
-        for action in actions
-        if isinstance(action, (ChoosePackCard, SkipPack))
+        action for action in actions if isinstance(action, (ChoosePackCard, SkipPack))
     )
 
     assert tuple(action_to_data(action) for action in pack_actions) == tuple(
@@ -411,9 +406,7 @@ def _legacy_held_consumable_actions(
 ) -> tuple[UseConsumable, ...]:
     actions: list[UseConsumable] = []
     for index, item in enumerate(observation.consumables):
-        for target_indexes in iter_public_targets(
-            observation, item, from_pack=False
-        ):
+        for target_indexes in iter_public_targets(observation, item, from_pack=False):
             action = UseConsumable(
                 ConsumableSlot(index),
                 tuple(HandSlot(target) for target in target_indexes),
@@ -454,14 +447,11 @@ def test_held_consumable_generation_preserves_legacy_order_and_legality(
     observation = to_public_observation(raw)
 
     generated = tuple(
-        action
-        for action in iter_legal_actions(observation)
-        if isinstance(action, UseConsumable)
+        action for action in iter_legal_actions(observation) if isinstance(action, UseConsumable)
     )
 
     assert tuple(action_to_data(action) for action in generated) == tuple(
-        action_to_data(action)
-        for action in _legacy_held_consumable_actions(observation)
+        action_to_data(action) for action in _legacy_held_consumable_actions(observation)
     )
     assert all(is_legal(observation, action) for action in generated)
     if phase == "SHOP":
@@ -477,16 +467,12 @@ def test_held_consumable_generation_preserves_forced_slot_filter() -> None:
         "highlight": True,
         "forced_selection": True,
     }
-    raw["consumables"]["cards"] = [
-        item_card("c_death", card_id=200, kind="TAROT")
-    ]
+    raw["consumables"]["cards"] = [item_card("c_death", card_id=200, kind="TAROT")]
     raw["consumables"]["count"] = 1
     observation = to_public_observation(raw)
 
     generated = tuple(
-        action
-        for action in iter_legal_actions(observation)
-        if isinstance(action, UseConsumable)
+        action for action in iter_legal_actions(observation) if isinstance(action, UseConsumable)
     )
 
     assert generated == _legacy_held_consumable_actions(observation)
@@ -498,24 +484,17 @@ def test_held_consumable_generation_preserves_forced_slot_filter() -> None:
 @pytest.mark.parametrize("phase", ["SHOP", "SELECTING_HAND"])
 def test_unknown_held_consumable_still_fails_closed(phase: str) -> None:
     raw = state(phase)
-    raw["consumables"]["cards"] = [
-        item_card("c_modded_consumable", card_id=200, kind="TAROT")
-    ]
+    raw["consumables"]["cards"] = [item_card("c_modded_consumable", card_id=200, kind="TAROT")]
     raw["consumables"]["count"] = 1
     observation = to_public_observation(raw)
 
-    assert not any(
-        isinstance(action, UseConsumable)
-        for action in iter_legal_actions(observation)
-    )
+    assert not any(isinstance(action, UseConsumable) for action in iter_legal_actions(observation))
     assert _legacy_held_consumable_actions(observation) == ()
 
 
 def test_debuffed_credit_card_does_not_extend_purchase_floor() -> None:
     active_raw = state("SHOP", money=0)
-    active_raw["jokers"]["cards"] = [
-        item_card("j_credit_card", card_id=30, kind="JOKER")
-    ]
+    active_raw["jokers"]["cards"] = [item_card("j_credit_card", card_id=30, kind="JOKER")]
     active_raw["jokers"]["count"] = 1
     active_raw["shop"]["cards"][0]["cost"]["buy"] = 1
     debuffed_raw = deepcopy(active_raw)
@@ -562,9 +541,7 @@ def test_magic_trick_shop_card_purchase_uses_money_not_item_capacity() -> None:
 
     credit_raw = deepcopy(raw)
     credit_raw["money"] = -20
-    credit_raw["jokers"]["cards"] = [
-        item_card("j_credit_card", card_id=91, kind="JOKER")
-    ]
+    credit_raw["jokers"]["cards"] = [item_card("j_credit_card", card_id=91, kind="JOKER")]
     credit_raw["jokers"]["count"] = 1
     credit_raw["jokers"]["limit"] = 1
     credit_raw["shop"]["cards"][0]["cost"]["buy"] = 0
@@ -644,9 +621,7 @@ def test_negative_shop_consumable_can_be_stored_when_tray_is_nominally_full() ->
 def test_reorder_generator_exposes_only_adjacent_swaps() -> None:
     observation = to_public_observation(state("SELECTING_HAND"))
     reorders = [
-        action
-        for action in iter_legal_actions(observation)
-        if isinstance(action, ReorderHand)
+        action for action in iter_legal_actions(observation) if isinstance(action, ReorderHand)
     ]
 
     assert len(reorders) == len(observation.hand) - 1
@@ -722,11 +697,7 @@ def test_vanilla_pack_appends_owned_inventory_sales_after_pack_choices() -> None
     observation = to_public_observation(raw)
 
     actions = tuple(iter_legal_actions(observation))
-    sales = tuple(
-        action
-        for action in actions
-        if isinstance(action, (SellJoker, SellConsumable))
-    )
+    sales = tuple(action for action in actions if isinstance(action, (SellJoker, SellConsumable)))
 
     assert sales == (SellJoker(JokerSlot(0)), SellConsumable(ConsumableSlot(0)))
     assert actions[-2:] == sales
@@ -742,9 +713,7 @@ def test_smods_pack_inventory_sales_fail_closed() -> None:
     raw["state"] = "SMODS_BOOSTER_OPENED"
     raw["jokers"]["cards"] = [item_card("j_joker", card_id=40, kind="JOKER")]
     raw["jokers"]["count"] = 1
-    raw["consumables"]["cards"] = [
-        item_card("c_mercury", card_id=50, kind="PLANET")
-    ]
+    raw["consumables"]["cards"] = [item_card("c_mercury", card_id=50, kind="PLANET")]
     raw["consumables"]["count"] = 1
     observation = to_public_observation(raw)
     sales = (SellJoker(JokerSlot(0)), SellConsumable(ConsumableSlot(0)))

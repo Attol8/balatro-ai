@@ -11,7 +11,6 @@ from balatro_ai.game.codec import public_observation_from_data
 from balatro_ai.game.history import HistoryStep, enrich_runtime
 from balatro_ai.game.scoring import score_play
 
-
 ROOT = Path(__file__).resolve().parents[1]
 EVIDENCE = ROOT / "evidence" / "first-win"
 
@@ -59,17 +58,31 @@ def test_first_win_retains_public_scoring_and_result_evidence() -> None:
         history.append(HistoryStep(before, action, after))
 
     assert len(decisions) == len(transitions) == audit["decisions"] == 203
-    assert source_counts == audit["action_sources"] == {
-        "coach": 175,
-        "numerical_delegate": 5,
-        "automatic": 23,
-    }
+    assert (
+        source_counts
+        == audit["action_sources"]
+        == {
+            "coach": 175,
+            "numerical_delegate": 5,
+            "automatic": 23,
+        }
+    )
     assert len(prediction_differences) == audit["play_actions_scored"] == 54
-    assert max(prediction_differences) == audit["recorded_prediction_comparison"]["max_absolute_difference"] == 0
+    assert (
+        max(prediction_differences)
+        == audit["recorded_prediction_comparison"]["max_absolute_difference"]
+        == 0
+    )
     assert sum(difference != 0 for difference in prediction_differences) == 0
-    assert [index for index, _ in actual_differences] == audit["actual_game_comparison"]["discrepancy_indices"]
+    assert [index for index, _ in actual_differences] == audit["actual_game_comparison"][
+        "discrepancy_indices"
+    ]
     assert len(actual_differences) == audit["actual_game_comparison"]["discrepancy_count"] == 18
-    assert max(difference for _, difference in actual_differences) == audit["actual_game_comparison"]["max_absolute_difference"] == 0.875
+    assert (
+        max(difference for _, difference in actual_differences)
+        == audit["actual_game_comparison"]["max_absolute_difference"]
+        == 0.875
+    )
     assert result["won"] is audit["won"] is True
     assert result["status"] == audit["status"] == "won"
     assert result["reason"] == audit["result_reason"] == "ante_8_cleared"

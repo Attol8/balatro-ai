@@ -1,18 +1,20 @@
 from dataclasses import replace
 
 import pytest
+from state_factory import state
 
 from balatro_ai.game.actions import BuyShopCard, HandSlot, PlayCards, ShopSlot
 from balatro_ai.game.adapter import to_public_observation
 from balatro_ai.game.history import HistoryStep, enrich_runtime
 from balatro_ai.game.scoring import score_play
 from balatro_ai.game.state import PublicItem, PublicJokerRuntime
-from state_factory import state
 
 
 def _history(plays: int):
     loyalty = PublicItem(
-        "j_loyalty_card", "Loyalty Card", "JOKER",
+        "j_loyalty_card",
+        "Loyalty Card",
+        "JOKER",
         runtime=PublicJokerRuntime(loyalty_remaining=5),
     )
     owned = replace(to_public_observation(state("SELECTING_HAND")), jokers=(loyalty,))

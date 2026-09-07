@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from copy import deepcopy
 import sys
+from copy import deepcopy
 from pathlib import Path
 
 import pytest
@@ -41,7 +41,10 @@ def test_hidden_joker_identity_is_replaced_by_typed_sentinel() -> None:
     raw["blinds"]["small"]["status"] = "DEFEATED"
     raw["blinds"]["boss"].update(name="Amber Acorn", status="CURRENT")
     raw["jokers"] = {
-        "cards": [hidden_joker_slot()], "count": 1, "highlighted_limit": 1, "limit": 5,
+        "cards": [hidden_joker_slot()],
+        "count": 1,
+        "highlighted_limit": 1,
+        "limit": 5,
     }
 
     observation = to_public_observation(raw)
@@ -53,7 +56,10 @@ def test_hidden_joker_payload_fails_closed_if_identity_leaks() -> None:
     leaked = item_card("j_blueprint", card_id=99, kind="JOKER")
     leaked["state"] = {"hidden": True}
     raw["jokers"] = {
-        "cards": [leaked], "count": 1, "highlighted_limit": 1, "limit": 5,
+        "cards": [leaked],
+        "count": 1,
+        "highlighted_limit": 1,
+        "limit": 5,
     }
 
     with pytest.raises(ObservationError, match="exposed private fields"):

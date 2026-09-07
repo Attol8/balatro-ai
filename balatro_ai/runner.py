@@ -1,10 +1,11 @@
 """One bounded real game; no strategic fallback and no mutation retries."""
+
 from __future__ import annotations
 
-import json
 import fcntl
-import tempfile
+import json
 import math
+import tempfile
 import time
 import uuid
 from dataclasses import asdict, dataclass, replace
@@ -13,8 +14,8 @@ from pathlib import Path
 
 from .analysis import analyze
 from .client import BalatroBotClient
-from .game.actions import CashOut, canonical_action_from_data, action_to_data, is_legal
-from .game.adapter import to_public_observation, action_to_rpc
+from .game.actions import CashOut, action_to_data, canonical_action_from_data, is_legal
+from .game.adapter import action_to_rpc, to_public_observation
 from .game.codec import public_observation_to_data
 from .game.history import HistoryStep, enrich_runtime
 from .game.state import Phase, PublicObservation
@@ -39,6 +40,7 @@ class Limits:
 @dataclass(frozen=True)
 class Continuation:
     """Explicitly reviewed recovery state. Never replays the previous mutation."""
+
     observation: PublicObservation
     plan: str
     history: tuple[HistoryStep, ...]
@@ -94,47 +96,83 @@ def settle(client, raw, deadline):
             raise TimeoutError("game time limit reached while settling")
         if raw.get("state") == "MENU":
             raise RuntimeError("game unexpectedly returned to MENU")
-        if raw.get("state") in {"BLIND_SELECT", "SELECTING_HAND", "ROUND_EVAL", "SHOP", "PACK", "SMODS_BOOSTER_OPENED", "TAROT_PACK", "PLANET_PACK", "SPECTRAL_PACK", "STANDARD_PACK", "BUFFOON_PACK", "GAME_OVER"}:
+        if raw.get("state") in {
+            "BLIND_SELECT",
+            "SELECTING_HAND",
+            "ROUND_EVAL",
+            "SHOP",
+            "PACK",
+            "SMODS_BOOSTER_OPENED",
+            "TAROT_PACK",
+            "PLANET_PACK",
+            "SPECTRAL_PACK",
+            "STANDARD_PACK",
+            "BUFFOON_PACK",
+            "GAME_OVER",
+        }:
             state = public_state(raw)
             if state == previous:
                 return state
             previous = state
         else:
             previous = None
-        time.sleep(min(.1, max(0, deadline-time.monotonic())))
+        time.sleep(min(0.1, max(0, deadline - time.monotonic())))
         raw = game_rpc(client, "gamestate", None, deadline)
     raise TimeoutError("game did not settle")
 
 
-def run_game(client, coach, output: Path, *, limits=Limits(), seed=None, continuation: Continuation | None = None, endless: bool = False):
+def run_game(
+    client,
+    coach,
+    output: Path,
+    *,
+    limits=Limits(),
+    seed=None,
+    continuation: Continuation | None = None,
+    endless: bool = False,
+):
     output = Path(output)
     output.mkdir(parents=True, exist_ok=False)
     started = time.monotonic()
     prior_seconds = continuation.prior_seconds if continuation else 0
     deadline = started + limits.seconds - prior_seconds
-    result = dict(status="error", won=False, reason="not_started", decisions=0,
-                  coach_requests=0, ante_reached=0, peak_hand_score=0)
+    result = dict(
+        status="error",
+        won=False,
+        reason="not_started",
+        decisions=0,
+        coach_requests=0,
+        ante_reached=0,
+        peak_hand_score=0,
+    )
     lock = None
     history = []
     plan = ""
     if continuation:
         history = list(continuation.history)
         plan = continuation.plan
-        result.update(coach_requests=continuation.prior_calls,
-                      decisions=continuation.prior_actions,
-                      peak_hand_score=continuation.prior_peak)
+        result.update(
+            coach_requests=continuation.prior_calls,
+            decisions=continuation.prior_actions,
+            peak_hand_score=continuation.prior_peak,
+        )
     instructions = files("balatro_ai").joinpath("prompts/coach.md").read_text()
     if endless:
-        instructions = instructions.replace("Your objective is to clear Ante 8.",
+        instructions = instructions.replace(
+            "Your objective is to clear Ante 8.",
             "Your objective is to survive as far as possible in endless mode, beyond Ante 8. "
-            "Seek enough multiplicative scaling for rising targets; clearing Ante 8 is a milestone, not the stopping point.")
+            "Seek enough multiplicative scaling for rising targets; clearing Ante 8 is a milestone, not the stopping point.",
+        )
     trace = (output / "trajectory.jsonl").open("x")
+
     def record(event, **data):
         trace.write(json.dumps(dict(event=event, **data), allow_nan=False) + "\n")
         trace.flush()
+
     def budget():
         if time.monotonic() >= deadline:
             raise TimeoutError("game time limit reached")
+
     try:
         # BalatroBot ports do not isolate its save/profile: serialize all runners.
         lock = open(Path(tempfile.gettempdir()) / "balatro-ai-game.lock", "a")
@@ -142,19 +180,30 @@ def run_game(client, coach, output: Path, *, limits=Limits(), seed=None, continu
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
             raise RuntimeError("another Balatro runner owns the game")
-        write_json(output / "manifest.json", dict(model=getattr(coach, "model", None),
-            reasoning_effort=getattr(coach, "reasoning_effort", None),
-            requested_model="gpt-6-astra", requested_reasoning_effort="low",
-            transport=type(coach).__name__, limits=asdict(limits), seed=seed,
-            deck="RED", stake="WHITE", profile="all_unlocked", endless=endless,
-            continuation_of=continuation.source if continuation else None))
+        write_json(
+            output / "manifest.json",
+            dict(
+                model=getattr(coach, "model", None),
+                reasoning_effort=getattr(coach, "reasoning_effort", None),
+                requested_model="gpt-6-astra",
+                requested_reasoning_effort="low",
+                transport=type(coach).__name__,
+                limits=asdict(limits),
+                seed=seed,
+                deck="RED",
+                stake="WHITE",
+                profile="all_unlocked",
+                endless=endless,
+                continuation_of=continuation.source if continuation else None,
+            ),
+        )
         if game_rpc(client, "health", None, deadline).get("profile_mode") != "all_unlocked":
             raise RuntimeError("BalatroBot must use the all_unlocked profile")
         initial = game_rpc(client, "gamestate", None, deadline)
         if continuation is None and initial.get("state") != "MENU":
             raise RuntimeError("an idle game at MENU is required")
         if hasattr(coach, "preflight"):
-            coach.preflight(min(10, max(.001, deadline-time.monotonic())))
+            coach.preflight(min(10, max(0.001, deadline - time.monotonic())))
         budget()
         params = dict(deck="RED", stake="WHITE")
         if seed is not None:
@@ -179,8 +228,11 @@ def run_game(client, coach, output: Path, *, limits=Limits(), seed=None, continu
                 raise ValueError("live game differs from the reviewed continuation state")
             if history and history[-1].after != state:
                 raise ValueError("continuation history does not end at the current state")
-            record("continued", source=continuation.source,
-                   observation=public_observation_to_data(state))
+            record(
+                "continued",
+                source=continuation.source,
+                observation=public_observation_to_data(state),
+            )
         unchanged = 0
         rejected = 0
         validation_feedback = None
@@ -207,54 +259,90 @@ def run_game(client, coach, output: Path, *, limits=Limits(), seed=None, continu
                     break
                 preparation_started = time.monotonic()
                 request_id = uuid.uuid4().hex
-                packet = dict(request_id=request_id, instructions=instructions, plan=plan,
+                packet = dict(
+                    request_id=request_id,
+                    instructions=instructions,
+                    plan=plan,
                     validation_feedback=validation_feedback,
-                    observation=public_observation_to_data(observation), analysis=analyze(observation),
-                    recent_outcomes=[dict(action=action_to_data(h.action),
-                        before_round=h.before.round_no, after_round=h.after.round_no,
-                        before_chips=h.before.round.chips, after_chips=h.after.round.chips,
-                        before_money=h.before.money, after_money=h.after.money)
-                        for h in history[-3:]])
-                preparation_seconds = time.monotonic()-preparation_started
+                    observation=public_observation_to_data(observation),
+                    analysis=analyze(observation),
+                    recent_outcomes=[
+                        dict(
+                            action=action_to_data(h.action),
+                            before_round=h.before.round_no,
+                            after_round=h.after.round_no,
+                            before_chips=h.before.round.chips,
+                            after_chips=h.after.round.chips,
+                            before_money=h.before.money,
+                            after_money=h.after.money,
+                        )
+                        for h in history[-3:]
+                    ],
+                )
+                preparation_seconds = time.monotonic() - preparation_started
                 record("coach_request", **packet)
                 result["coach_requests"] += 1
                 budget()
                 call_started = time.monotonic()
-                response = coach.choose(packet, min(limits.call_seconds, deadline-time.monotonic()))
+                response = coach.choose(
+                    packet, min(limits.call_seconds, deadline - time.monotonic())
+                )
                 plan_unchanged = isinstance(response, dict) and response.get("plan") == "="
                 if plan_unchanged:
                     response = dict(response, plan=plan)
-                record("coach_response", response=response, plan_unchanged=plan_unchanged,
-                       seconds=round(time.monotonic()-call_started, 3),
-                       preparation_seconds=round(preparation_seconds, 6),
-                       transport_timings=getattr(coach, "last_timings", {}),
-                       sent_packet_bytes=getattr(coach, "last_request_bytes", None),
-                       public_packet_bytes=len(json.dumps(packet, separators=(",", ":")).encode()))
+                record(
+                    "coach_response",
+                    response=response,
+                    plan_unchanged=plan_unchanged,
+                    seconds=round(time.monotonic() - call_started, 3),
+                    preparation_seconds=round(preparation_seconds, 6),
+                    transport_timings=getattr(coach, "last_timings", {}),
+                    sent_packet_bytes=getattr(coach, "last_request_bytes", None),
+                    public_packet_bytes=len(json.dumps(packet, separators=(",", ":")).encode()),
+                )
                 try:
                     action, plan = validate_response(response, request_id, observation)
                 except ValueError as exc:
                     rejected += 1
-                    validation_feedback = dict(error=str(exc), rejected_response=response,
-                        instruction="No game action was executed. Correct your response using the legal contract.")
+                    validation_feedback = dict(
+                        error=str(exc),
+                        rejected_response=response,
+                        instruction="No game action was executed. Correct your response using the legal contract.",
+                    )
                     record("coach_rejected", **validation_feedback)
                     if rejected >= 3:
-                        raise ValueError("three consecutive coach responses failed validation") from exc
+                        raise ValueError(
+                            "three consecutive coach responses failed validation"
+                        ) from exc
                     continue
                 rejected = 0
                 validation_feedback = None
                 source = "coach"
             budget()
             method, params = action_to_rpc(action, observation)
-            record("rpc_attempt", method=method, params=params, source=source,
-                   observation=public_observation_to_data(observation), action=action_to_data(action))
+            record(
+                "rpc_attempt",
+                method=method,
+                params=params,
+                source=source,
+                observation=public_observation_to_data(observation),
+                action=action_to_data(action),
+            )
             # An uncertain mutation is never retried: stop and preserve evidence.
             after = settle(client, game_rpc(client, method, params, deadline), deadline)
-            record("transition", before=public_observation_to_data(state), action=action_to_data(action),
-                   after=public_observation_to_data(after), source=source)
+            record(
+                "transition",
+                before=public_observation_to_data(state),
+                action=action_to_data(action),
+                after=public_observation_to_data(after),
+                source=source,
+            )
             history.append(HistoryStep(state, action, after))
             result["decisions"] += 1
             if after.round_no == state.round_no:
-                result["peak_hand_score"] = max(result["peak_hand_score"], after.round.chips-state.round.chips)
+                result["peak_hand_score"] = max(
+                    result["peak_hand_score"], after.round.chips - state.round.chips
+                )
             unchanged = unchanged + 1 if after == state else 0
             state = after
             if unchanged >= 3:
@@ -266,7 +354,7 @@ def run_game(client, coach, output: Path, *, limits=Limits(), seed=None, continu
     except Exception as exc:
         result.update(status="error", reason=f"{type(exc).__name__}: {exc}")
     finally:
-        result["seconds"] = round(prior_seconds + time.monotonic()-started, 3)
+        result["seconds"] = round(prior_seconds + time.monotonic() - started, 3)
         trace.close()
         if lock is not None:
             lock.close()

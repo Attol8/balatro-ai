@@ -5,12 +5,12 @@ from __future__ import annotations
 import json
 import math
 import os
-from pathlib import Path
 import shutil
 import signal
 import subprocess
 import tempfile
 import time
+from pathlib import Path
 from typing import Any
 
 from .packet import compact_packet
@@ -96,7 +96,7 @@ class CodexCoach:
         prepare_started = time.monotonic()
         prompt = _encode_bounded(compact_packet(packet))
         self.last_request_bytes = len(prompt)
-        self.last_timings = {"packet_seconds": time.monotonic()-prepare_started}
+        self.last_timings = {"packet_seconds": time.monotonic() - prepare_started}
         executable = shutil.which(self.codex_executable)
         if executable is None:
             raise RuntimeError(f"Codex CLI is unavailable: {self.codex_executable}")
@@ -151,7 +151,7 @@ class CodexCoach:
                 timeout=_remaining(deadline),
                 stdin=prompt,
             )
-            self.last_timings["codex_seconds"] = time.monotonic()-execution_started
+            self.last_timings["codex_seconds"] = time.monotonic() - execution_started
             return _read_json_object(output_path)
 
         except BaseException:
@@ -264,11 +264,7 @@ def _kill_process_group(process: subprocess.Popen[Any]) -> None:
 
 
 def _sanitized_environment() -> dict[str, str]:
-    return {
-        key: value
-        for key, value in os.environ.items()
-        if "API_KEY" not in key.upper()
-    }
+    return {key: value for key, value in os.environ.items() if "API_KEY" not in key.upper()}
 
 
 def _encode_bounded(value: object, *, limit: int = _MAX_REQUEST_BYTES) -> bytes:

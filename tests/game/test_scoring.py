@@ -18,21 +18,28 @@ from balatro_ai.game.state import (
 
 
 @pytest.mark.parametrize("copy_key", ["j_blueprint", "j_brainstorm"])
-@pytest.mark.parametrize("key,runtime,expected", [
-    ("j_popcorn", PublicJokerRuntime(current_mult=20), 656),
-    ("j_blackboard", None, 144),
-    ("j_throwback", PublicJokerRuntime(current_x_mult=2), 64),
-    ("j_constellation", PublicJokerRuntime(current_x_mult=2), 64),
-    ("j_hologram", PublicJokerRuntime(current_x_mult=2), 64),
-    ("j_ice_cream", PublicJokerRuntime(current_chips=50), 116),
-])
+@pytest.mark.parametrize(
+    "key,runtime,expected",
+    [
+        ("j_popcorn", PublicJokerRuntime(current_mult=20), 656),
+        ("j_blackboard", None, 144),
+        ("j_throwback", PublicJokerRuntime(current_x_mult=2), 64),
+        ("j_constellation", PublicJokerRuntime(current_x_mult=2), 64),
+        ("j_hologram", PublicJokerRuntime(current_x_mult=2), 64),
+        ("j_ice_cream", PublicJokerRuntime(current_chips=50), 116),
+    ],
+)
 def test_verified_main_copy_targets_use_current_public_runtime(copy_key, key, runtime, expected):
-    observation = replace(to_public_observation(state("SELECTING_HAND")),
-                          hand=(VisiblePlayingCard("A", "S"),),
-                          hand_stats=(HandStat("High Card", 1, 5, 1, 0, 0),))
+    observation = replace(
+        to_public_observation(state("SELECTING_HAND")),
+        hand=(VisiblePlayingCard("A", "S"),),
+        hand_stats=(HandStat("High Card", 1, 5, 1, 0, 0),),
+    )
     target = PublicItem(key, key, "JOKER", runtime=runtime)
     copy = PublicItem(copy_key, copy_key, "JOKER")
-    observation = replace(observation, jokers=(copy, target) if copy_key == "j_blueprint" else (target, copy))
+    observation = replace(
+        observation, jokers=(copy, target) if copy_key == "j_blueprint" else (target, copy)
+    )
     assert public_scoring.score_play(observation, (HandSlot(0),))[0] == expected
     assert target.runtime == runtime
 
@@ -51,12 +58,21 @@ def test_new_runtime_copy_targets_require_known_field_and_reject_debuff(key, fie
 
 
 def test_new_copy_target_does_not_duplicate_edition():
-    observation = replace(to_public_observation(state("SELECTING_HAND")),
-                          hand=(VisiblePlayingCard("A", "S"),),
-                          hand_stats=(HandStat("High Card", 1, 5, 1, 0, 0),),
-                          jokers=(PublicItem("j_blueprint", "Blueprint", "JOKER"),
-                                  PublicItem("j_popcorn", "Popcorn", "JOKER", edition="HOLOGRAPHIC",
-                                             runtime=PublicJokerRuntime(current_mult=20))))
+    observation = replace(
+        to_public_observation(state("SELECTING_HAND")),
+        hand=(VisiblePlayingCard("A", "S"),),
+        hand_stats=(HandStat("High Card", 1, 5, 1, 0, 0),),
+        jokers=(
+            PublicItem("j_blueprint", "Blueprint", "JOKER"),
+            PublicItem(
+                "j_popcorn",
+                "Popcorn",
+                "JOKER",
+                edition="HOLOGRAPHIC",
+                runtime=PublicJokerRuntime(current_mult=20),
+            ),
+        ),
+    )
     # 1 base + twice20 Popcorn + only one target edition's10 Mult.
     assert public_scoring.score_play(observation, (HandSlot(0),))[0] == 816
 
@@ -67,8 +83,14 @@ def test_wee_does_not_grow_from_a_debuffed_two():
         observation,
         hand=(VisiblePlayingCard("2", "S"), VisiblePlayingCard("2", "H", debuffed=True)),
         hand_stats=(HandStat("Pair", 1, 10, 2, 0, 0),),
-        jokers=(PublicItem(key="j_wee", kind="JOKER", label="Wee Joker",
-                           runtime=PublicJokerRuntime(current_chips=32)),),
+        jokers=(
+            PublicItem(
+                key="j_wee",
+                kind="JOKER",
+                label="Wee Joker",
+                runtime=PublicJokerRuntime(current_chips=32),
+            ),
+        ),
     )
     score, family = score_play(observation, (HandSlot(0), HandSlot(1)))
     assert family == "Pair"
@@ -95,9 +117,7 @@ def test_exact_score_is_unavailable_for_amber_joker_order() -> None:
 def test_psychic_short_play_scores_zero_only_while_boss_is_active(disabled: bool) -> None:
     raw = state("SELECTING_HAND")
     raw["blinds"]["small"]["status"] = "DEFEATED"
-    raw["blinds"]["boss"].update(
-        name="The Psychic", status="CURRENT", disabled=disabled
-    )
+    raw["blinds"]["boss"].update(name="The Psychic", status="CURRENT", disabled=disabled)
     observation = to_public_observation(raw)
 
     score, _ = score_play(observation, (HandSlot(0),))
@@ -164,8 +184,20 @@ def test_mouth_other_family_scores_zero_only_while_boss_is_active(disabled: bool
         ("j_stuntman", (("A", "S"),), (0,), ("High Card", 5, 1, 0), 266),
         ("j_jolly", (("A", "C"), ("A", "S")), (0, 1), ("Pair", 10, 2, 0), 320),
         ("j_seeing_double", (("A", "C"), ("A", "S")), (0, 1), ("Pair", 10, 2, 0), 128),
-        ("j_mad", (("A", "C"), ("A", "S"), ("K", "H"), ("K", "D")), (0, 1, 2, 3), ("Two Pair", 20, 2, 0), 744),
-        ("j_clever", (("A", "C"), ("A", "S"), ("K", "H"), ("K", "D")), (0, 1, 2, 3), ("Two Pair", 20, 2, 0), 284),
+        (
+            "j_mad",
+            (("A", "C"), ("A", "S"), ("K", "H"), ("K", "D")),
+            (0, 1, 2, 3),
+            ("Two Pair", 20, 2, 0),
+            744,
+        ),
+        (
+            "j_clever",
+            (("A", "C"), ("A", "S"), ("K", "H"), ("K", "D")),
+            (0, 1, 2, 3),
+            ("Two Pair", 20, 2, 0),
+            284,
+        ),
     ],
 )
 def test_one_play_capacity_jokers_have_constructed_exact_scores(
@@ -195,14 +227,70 @@ def test_one_play_capacity_jokers_have_constructed_exact_scores(
 @pytest.mark.parametrize(
     ("key", "runtime", "hand", "selected", "stat", "expected"),
     [
-        ("j_green_joker", PublicJokerRuntime(current_mult=4), (("A", "S"),), (0,), ("High Card", 5, 1), 96),
-        ("j_ice_cream", PublicJokerRuntime(current_chips=75), (("A", "S"),), (0,), ("High Card", 5, 1), 91),
-        ("j_swashbuckler", PublicJokerRuntime(current_mult=7), (("A", "S"),), (0,), ("High Card", 5, 1), 128),
-        ("j_flash", PublicJokerRuntime(current_mult=8), (("A", "S"),), (0,), ("High Card", 5, 1), 144),
-        ("j_red_card", PublicJokerRuntime(current_mult=9), (("A", "S"),), (0,), ("High Card", 5, 1), 160),
-        ("j_ride_the_bus", PublicJokerRuntime(current_mult=5), (("A", "S"),), (0,), ("High Card", 5, 1), 112),
-        ("j_square", PublicJokerRuntime(current_chips=20), (("A", "S"), ("K", "H"), ("Q", "D"), ("J", "C")), (0, 1, 2, 3), ("High Card", 5, 1), 40),
-        ("j_trousers", PublicJokerRuntime(current_mult=6), (("A", "S"), ("A", "H"), ("K", "D"), ("K", "C")), (0, 1, 2, 3), ("Two Pair", 20, 2), 620),
+        (
+            "j_green_joker",
+            PublicJokerRuntime(current_mult=4),
+            (("A", "S"),),
+            (0,),
+            ("High Card", 5, 1),
+            96,
+        ),
+        (
+            "j_ice_cream",
+            PublicJokerRuntime(current_chips=75),
+            (("A", "S"),),
+            (0,),
+            ("High Card", 5, 1),
+            91,
+        ),
+        (
+            "j_swashbuckler",
+            PublicJokerRuntime(current_mult=7),
+            (("A", "S"),),
+            (0,),
+            ("High Card", 5, 1),
+            128,
+        ),
+        (
+            "j_flash",
+            PublicJokerRuntime(current_mult=8),
+            (("A", "S"),),
+            (0,),
+            ("High Card", 5, 1),
+            144,
+        ),
+        (
+            "j_red_card",
+            PublicJokerRuntime(current_mult=9),
+            (("A", "S"),),
+            (0,),
+            ("High Card", 5, 1),
+            160,
+        ),
+        (
+            "j_ride_the_bus",
+            PublicJokerRuntime(current_mult=5),
+            (("A", "S"),),
+            (0,),
+            ("High Card", 5, 1),
+            112,
+        ),
+        (
+            "j_square",
+            PublicJokerRuntime(current_chips=20),
+            (("A", "S"), ("K", "H"), ("Q", "D"), ("J", "C")),
+            (0, 1, 2, 3),
+            ("High Card", 5, 1),
+            40,
+        ),
+        (
+            "j_trousers",
+            PublicJokerRuntime(current_mult=6),
+            (("A", "S"), ("A", "H"), ("K", "D"), ("K", "C")),
+            (0, 1, 2, 3),
+            ("Two Pair", 20, 2),
+            620,
+        ),
     ],
 )
 def test_one_play_runtime_jokers_use_the_public_current_counter(

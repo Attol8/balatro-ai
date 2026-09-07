@@ -8,7 +8,6 @@ from typing import Any, Callable
 from urllib import request
 from urllib.error import URLError
 
-
 JsonObject = dict[str, Any]
 Transport = Callable[[JsonObject], object]
 MAX_RESPONSE_BYTES = 8 * 1024 * 1024
@@ -38,12 +37,16 @@ class BalatroBotClient:
         }
         # Every call gets exactly one transport attempt. In particular, mutation
         # requests are never replayed after an ambiguous failure.
-        response = self.transport(payload) if self.transport is not None else self._http_post(payload)
+        response = (
+            self.transport(payload) if self.transport is not None else self._http_post(payload)
+        )
         if not isinstance(response, dict):
             raise BalatroBotError(f"BalatroBot returned invalid JSON-RPC response: {response!r}")
         if "error" in response:
             error = response["error"]
-            message = error.get("message", "BalatroBot error") if isinstance(error, dict) else str(error)
+            message = (
+                error.get("message", "BalatroBot error") if isinstance(error, dict) else str(error)
+            )
             raise BalatroBotError(message)
         if "result" not in response:
             raise BalatroBotError(f"BalatroBot response for {method} has no result")
@@ -72,9 +75,7 @@ class BalatroBotClient:
         except (OSError, URLError) as exc:
             raise BalatroBotError(f"failed to connect to BalatroBot at {self.url}: {exc}") from exc
         if len(raw) > MAX_RESPONSE_BYTES:
-            raise BalatroBotError(
-                f"BalatroBot response exceeds {MAX_RESPONSE_BYTES} bytes"
-            )
+            raise BalatroBotError(f"BalatroBot response exceeds {MAX_RESPONSE_BYTES} bytes")
         try:
             decoded = json.loads(raw.decode("utf-8"))
         except (UnicodeDecodeError, json.JSONDecodeError) as exc:
