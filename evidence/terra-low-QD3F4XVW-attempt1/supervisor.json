@@ -1,0 +1,24 @@
+{
+  "root": "runs/terra-QD3F4XVW",
+  "seed": "QD3F4XVW",
+  "endless": true,
+  "max_restarts": 8,
+  "started_at": "2026-09-07T22:35:32+00:00",
+  "restarts": 0,
+  "restores": 0,
+  "segments": [
+    {
+      "index": 1,
+      "directory": "segment-01",
+      "resumed_from": "segment-00",
+      "started_at": "2026-09-07T22:35:32+00:00",
+      "ended_at": "2026-09-07T22:39:32+00:00",
+      "status": "lost",
+      "reason": "endless_game_over",
+      "disposition": "finished"
+    }
+  ],
+  "stopped": true,
+  "stop_reason": "the game finished: endless_game_over",
+  "updated_at": "2026-09-07T22:39:32+00:00"
+}
