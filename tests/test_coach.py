@@ -48,6 +48,11 @@ if sys.argv[1:3] == ["login", "status"]:
     raise SystemExit(int(os.environ.get("FAKE_AUTH_EXIT", "0")))
 if os.environ.get("FAKE_SLEEP"):
     time.sleep(float(os.environ["FAKE_SLEEP"]))
+if os.environ.get("FAKE_STALL_FIRST"):
+    flag = pathlib.Path(os.environ["FAKE_STALL_FIRST"])
+    if not flag.exists():
+        flag.touch()
+        time.sleep(30)
 args = sys.argv[1:]
 output = pathlib.Path(args[args.index("--output-last-message") + 1])
 output.write_text(os.environ["FAKE_RESPONSE"], encoding="utf-8")
@@ -271,3 +276,25 @@ def test_session_coach_passes_a_follow_up_chain_through(tmp_path) -> None:
     assert SessionCoach(public).choose(_packet(), timeout=2) == chained
     worker.join(timeout=2)
     assert not worker.is_alive() and not errors
+
+
+def test_codex_coach_hedges_a_stalled_call(monkeypatch, tmp_path) -> None:
+    executable = _fake_codex(tmp_path)
+    log = tmp_path / "calls.jsonl"
+    monkeypatch.setenv("FAKE_CODEX_LOG", str(log))
+    monkeypatch.setenv("FAKE_RESPONSE", json.dumps(_response()))
+    monkeypatch.setenv("FAKE_STALL_FIRST", str(tmp_path / "stalled-once"))
+    coach = CodexCoach(str(executable))
+    coach.preflight(timeout=10)
+    coach.hedge_after_seconds = 0.3
+
+    started = time.monotonic()
+    response = coach.choose(_packet(), timeout=20)
+    elapsed = time.monotonic() - started
+
+    assert response == _response()
+    assert elapsed < 10, "the hedge must answer long before the stalled first process"
+    assert coach.last_timings["hedged"] is True and coach.last_timings["winner"] == 1
+    calls = [json.loads(line) for line in log.read_text().splitlines()]
+    exec_calls = [c for c in calls if c["argv"][:1] == ["exec"]]
+    assert len(exec_calls) == 2 and exec_calls[0]["stdin"] == exec_calls[1]["stdin"]

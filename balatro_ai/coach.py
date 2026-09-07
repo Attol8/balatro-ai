@@ -5,10 +5,12 @@ from __future__ import annotations
 import json
 import math
 import os
+import queue
 import shutil
 import signal
 import subprocess
 import tempfile
+import threading
 import time
 from pathlib import Path
 from typing import Any
@@ -77,6 +79,10 @@ class CodexCoach:
     model = "gpt-6-astra"
     reasoning_effort = "low"
 
+    # A second identical process starts if the first has not answered by then; the
+    # first valid answer wins. Live calls take ~9 s; service stalls take minutes.
+    hedge_after_seconds = 20.0
+
     def __init__(self, codex_executable: str = "codex") -> None:
         self.codex_executable = codex_executable
         self._preflight_complete = False
@@ -132,12 +138,13 @@ class CodexCoach:
         workdir = Path(self._workspace.name)
         try:
             schema_path = workdir / "response.schema.json"
-            output_path = workdir / "response.json"
-            output_path.unlink(missing_ok=True)
+            for stale in workdir.glob("response.*.json"):
+                stale.unlink(missing_ok=True)
             schema_path.write_text(
                 json.dumps(_RESPONSE_SCHEMA, separators=(",", ":")),
                 encoding="utf-8",
             )
+            # --output-last-message and the trailing "-" are appended per attempt.
             command = [
                 executable,
                 "exec",
@@ -149,8 +156,6 @@ class CodexCoach:
                 "read-only",
                 "--output-schema",
                 str(schema_path),
-                "--output-last-message",
-                str(output_path),
                 "-m",
                 "gpt-6-astra",
                 "-c",
@@ -164,30 +169,26 @@ class CodexCoach:
             ]
             for feature in _DISABLED_FEATURES:
                 command.extend(("--disable", feature))
-            command.append("-")
             execution_started = time.monotonic()
-            log_path = workdir / "codex-output.log"
-            try:
-                _run_process(
-                    command,
-                    cwd=workdir,
-                    environment=environment,
-                    timeout=_remaining(deadline),
-                    stdin=prompt,
-                    captured_output=log_path,
-                )
-            except TimeoutError as exc:
-                # Keep the tail of the child's own output so a stalled call can be
-                # diagnosed from the trajectory instead of vanishing silently.
-                raise TimeoutError(f"{exc}; codex output tail: {_tail(log_path)}") from exc
+            response, hedged, winner = _run_hedged(
+                command,
+                cwd=workdir,
+                environment=environment,
+                deadline=deadline,
+                stdin=prompt,
+                hedge_after=self.hedge_after_seconds,
+            )
             self.last_timings["codex_seconds"] = time.monotonic() - execution_started
-            return _read_json_object(output_path)
+            self.last_timings["hedged"] = hedged
+            self.last_timings["winner"] = winner
+            return response
 
         except BaseException:
             self.close()
             raise
         finally:
-            (workdir / "response.json").unlink(missing_ok=True)
+            for stale in workdir.glob("response.*.json"):
+                stale.unlink(missing_ok=True)
 
 
 class SessionCoach:
@@ -240,6 +241,100 @@ def write_response(public_dir: Path, response: dict[str, object]) -> None:
     if response.get("request_id") != request.get("request_id"):
         raise ValueError("response request_id does not match the outstanding request")
     _atomic_write(target, _encode_bounded(response, limit=_MAX_RESPONSE_BYTES))
+
+
+def _run_hedged(
+    command: list[str],
+    *,
+    cwd: Path,
+    environment: dict[str, str],
+    deadline: float,
+    stdin: bytes,
+    hedge_after: float,
+) -> tuple[dict[str, object], bool, int]:
+    """Run one Codex call, starting a second identical process if the first stalls.
+
+    The first process that exits cleanly with a valid JSON reply wins and the other
+    is killed. Both processes receive byte-identical input, so either reply is a
+    valid answer to the same request. Nothing here touches the game.
+    """
+
+    finished: queue.Queue[tuple[int, int | None, BaseException | None]] = queue.Queue()
+    processes: list[subprocess.Popen[bytes]] = []
+    outputs: list[Path] = []
+    logs: list[Path] = []
+    handles: list[Any] = []
+
+    def start(index: int) -> None:
+        output_path = cwd / f"response.{index}.json"
+        log_path = cwd / f"codex-output.{index}.log"
+        output_path.unlink(missing_ok=True)
+        handle = log_path.open("wb")
+        handles.append(handle)
+        process = subprocess.Popen(
+            [*command, "--output-last-message", str(output_path), "-"],
+            cwd=cwd,
+            env=environment,
+            stdin=subprocess.PIPE,
+            stdout=handle,
+            stderr=subprocess.STDOUT,
+            start_new_session=True,
+        )
+        processes.append(process)
+        outputs.append(output_path)
+        logs.append(log_path)
+
+        def wait() -> None:
+            try:
+                process.communicate(stdin)
+                finished.put((index, process.returncode, None))
+            except BaseException as exc:  # noqa: BLE001 - reported to the caller
+                finished.put((index, None, exc))
+
+        threading.Thread(target=wait, name=f"codex-attempt-{index}", daemon=True).start()
+
+    def kill_all() -> None:
+        for process in processes:
+            _kill_process_group(process)
+        for handle in handles:
+            handle.close()
+
+    try:
+        start(0)
+        hedged = False
+        failures: list[str] = []
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError(f"Codex CLI timed out; codex output tail: {_tail(logs[0])}")
+            wait_for = remaining if hedged else min(remaining, hedge_after)
+            try:
+                index, return_code, error = finished.get(timeout=max(0.0, wait_for))
+            except queue.Empty:
+                if not hedged and deadline - time.monotonic() > 0:
+                    hedged = True
+                    start(1)
+                continue
+            if error is None and return_code == 0:
+                try:
+                    return _read_json_object(outputs[index]), hedged, index
+                except (OSError, ValueError) as exc:
+                    failures.append(f"attempt {index}: invalid reply: {exc}")
+            else:
+                failures.append(
+                    f"attempt {index}: {error if error is not None else f'status {return_code}'}"
+                )
+            live = [p for p in processes if p.poll() is None]
+            if not live:
+                if not hedged and deadline - time.monotonic() > 0:
+                    # The only process failed outright; one more try is cheaper than
+                    # surfacing a transport blip as a rejected decision.
+                    hedged = True
+                    start(1)
+                    continue
+                raise RuntimeError("Codex CLI failed: " + "; ".join(failures))
+    finally:
+        kill_all()
 
 
 def _tail(path: Path, limit: int = 1500) -> str:
@@ -304,7 +399,10 @@ def _kill_process_group(process: subprocess.Popen[Any]) -> None:
 
 
 def _sanitized_environment() -> dict[str, str]:
-    return {key: value for key, value in os.environ.items() if "API_KEY" not in key.upper()}
+    environment = {key: value for key, value in os.environ.items() if "API_KEY" not in key.upper()}
+    # Surface the CLI's own warnings (retries, rate limits) in the captured log tail.
+    environment.setdefault("RUST_LOG", "warn")
+    return environment
 
 
 def _encode_bounded(value: object, *, limit: int = _MAX_REQUEST_BYTES) -> bytes:
