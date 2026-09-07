@@ -32,27 +32,17 @@
       ]
     },
     {
-      "run": "astra-low-D0000000",
+      "run": "astra-low-QD3F4XVW",
       "segments": [
         {
-          "ante_end": 7,
+          "ante_end": 11,
           "ante_start": 1,
           "segment": "00"
         },
         {
-          "ante_end": 9,
-          "ante_start": 7,
+          "ante_end": 11,
+          "ante_start": 11,
           "segment": "01"
-        },
-        {
-          "ante_end": 10,
-          "ante_start": 9,
-          "segment": "02"
-        },
-        {
-          "ante_end": 10,
-          "ante_start": 10,
-          "segment": "03"
         }
       ]
     },
@@ -93,6 +83,31 @@
           "ante_end": 11,
           "ante_start": 9,
           "segment": "06"
+        }
+      ]
+    },
+    {
+      "run": "astra-low-D0000000",
+      "segments": [
+        {
+          "ante_end": 7,
+          "ante_start": 1,
+          "segment": "00"
+        },
+        {
+          "ante_end": 9,
+          "ante_start": 7,
+          "segment": "01"
+        },
+        {
+          "ante_end": 10,
+          "ante_start": 9,
+          "segment": "02"
+        },
+        {
+          "ante_end": 10,
+          "ante_start": 10,
+          "segment": "03"
         }
       ]
     }
@@ -373,11 +388,45 @@
         "policy": "Astra low (gpt-6-astra)",
         "reached_ante8_or_more": 1,
         "reasoning_effort": "low",
+        "recency": 2,
         "run_dir": "evidence/astra-low-TAF7DNTX",
         "seconds": 5882.708,
         "seed_panel": "TAF7DNTX",
         "sources": [
           "evidence/astra-low-TAF7DNTX"
+        ]
+      },
+      {
+        "ante8_clears": 1,
+        "calls_per_decision": "388/473 = 0.82",
+        "coach_requests": 388,
+        "coach_timeouts": 3,
+        "decisions": 473,
+        "display_name": "Astra low (gpt-6-astra), seed QD3F4XVW",
+        "followup_actions": 50,
+        "followups_forced_stalls": "50 / 6 / 3",
+        "forced_actions": 6,
+        "games_attempted": 1,
+        "games_completed": 1,
+        "games_requested": 1,
+        "kind": "coached",
+        "mean_ante": 11.0,
+        "median_ante": 11.0,
+        "model": "gpt-6-astra",
+        "notes": [
+          "supervised end to end, one automatic restart, game visible at speed 2, recorded"
+        ],
+        "panel_seed": false,
+        "peak_hand_score": 7052918.0,
+        "policy": "Astra low (gpt-6-astra)",
+        "reached_ante8_or_more": 1,
+        "reasoning_effort": "low",
+        "recency": 0,
+        "run_dir": "evidence/astra-low-QD3F4XVW",
+        "seconds": 6022.928,
+        "seed_panel": "QD3F4XVW",
+        "sources": [
+          "evidence/astra-low-QD3F4XVW"
         ]
       },
       {
@@ -405,6 +454,7 @@
         "policy": "Astra low (gpt-6-astra)",
         "reached_ante8_or_more": 1,
         "reasoning_effort": "low",
+        "recency": 3,
         "run_dir": "evidence/astra-low-2K9H9HN",
         "seconds": 3611.146,
         "seed_panel": "2K9H9HN",
@@ -437,6 +487,7 @@
         "policy": "Astra low (gpt-6-astra)",
         "reached_ante8_or_more": 1,
         "reasoning_effort": "low",
+        "recency": 1,
         "run_dir": "evidence/astra-low-D0000000",
         "seconds": 3211.615,
         "seed_panel": "D0000000",
@@ -446,8 +497,10 @@
       }
     ],
     "footnotes": [
-      "Each coached row is a single game: TAF7DNTX and 2K9H9HN are seeds outside the D0000000-D0000019 baseline panel, D0000000 is that panel's first seed. They are demonstrations, not win-rate estimates.",
+      "Each coached row is a single game: TAF7DNTX, QD3F4XVW, 2K9H9HN are seeds outside the D0000000-D0000019 baseline panel, D0000000 is that panel's first seed. They are demonstrations, not win-rate estimates.",
       "On seed D0000000 the best heuristic (search-v5) reached ante 6 with a 14,700 peak hand; the coached run reached ante 10 with 1,840,907.",
+      "Seed QD3F4XVW was played end to end by the supervisor: one automatic restart after the mod refused a boss reroll, no operator intervention, and 0 rejected replies. Hieroglyph and Petroglyph each lowered the ante by one, so blinds at antes 9 and 10 were played twice.",
+      "Coached rows are sorted by ante reached (descending); when two runs reached the same ante the later, cleaner game is listed first.",
       "The D0000000 run was restarted three times at safe moments and once restored from Balatro's autosave after an operating-system kill; no game state or trajectory was edited by hand. See evidence/astra-low-D0000000/README.md.",
       "Seed TAF7DNTX was played headless in endless mode. The runner process was stopped and resumed four times at safe moments (during model calls) to deploy runner fixes - request-id length, timeout retry, hedged calls. No game state or trajectory was edited; illegal replies were rejected and corrected in place.",
       "The Astra-low run was supervised: it was played with adapter fixes and reviewed continuations across 7 recorded segments, so it is not an unattended benchmark.",
@@ -634,6 +687,7 @@
           "SHOP": 241
         },
         "note": "The concatenated segments hold exactly the 456 decisions result.json reports.",
+        "recency": 2,
         "reported_decisions": 456,
         "run": "astra-low-TAF7DNTX",
         "seed": "TAF7DNTX",
@@ -646,6 +700,339 @@
         },
         "source": "evidence/astra-low-TAF7DNTX/segments/*/trajectory.jsonl.gz",
         "total_transitions": 456
+      },
+      {
+        "coach_calls": {
+          "hedged": 23,
+          "hedges_won": 16,
+          "recorded": true,
+          "recovered_transitions": 0,
+          "rejected_responses": 0,
+          "responses": 385,
+          "responses_with_hedge_data": 385,
+          "rpc_timeouts": 0,
+          "timeouts": 3
+        },
+        "decision_sources": {
+          "automatic": 33,
+          "coach": 384,
+          "coach_followup": 50,
+          "forced": 6
+        },
+        "decisions_per_action": [
+          {
+            "action": "reroll_shop",
+            "count": 66,
+            "sources": {
+              "coach": 56,
+              "coach_followup": 10
+            }
+          },
+          {
+            "action": "play_cards",
+            "count": 52,
+            "sources": {
+              "coach": 52
+            }
+          },
+          {
+            "action": "discard_cards",
+            "count": 51,
+            "sources": {
+              "coach": 51
+            }
+          },
+          {
+            "action": "buy_shop_card",
+            "count": 48,
+            "sources": {
+              "coach": 42,
+              "coach_followup": 6
+            }
+          },
+          {
+            "action": "use_consumable",
+            "count": 47,
+            "sources": {
+              "coach": 37,
+              "coach_followup": 10
+            }
+          },
+          {
+            "action": "buy_pack",
+            "count": 37,
+            "sources": {
+              "coach": 30,
+              "coach_followup": 7
+            }
+          },
+          {
+            "action": "select_blind",
+            "count": 34,
+            "sources": {
+              "coach": 28,
+              "forced": 6
+            }
+          },
+          {
+            "action": "cash_out",
+            "count": 33,
+            "sources": {
+              "automatic": 33
+            }
+          },
+          {
+            "action": "leave_shop",
+            "count": 33,
+            "sources": {
+              "coach": 17,
+              "coach_followup": 16
+            }
+          },
+          {
+            "action": "choose_pack_card",
+            "count": 30,
+            "sources": {
+              "coach": 30
+            }
+          },
+          {
+            "action": "reorder_hand",
+            "count": 10,
+            "sources": {
+              "coach": 10
+            }
+          },
+          {
+            "action": "sell_joker",
+            "count": 8,
+            "sources": {
+              "coach": 8
+            }
+          },
+          {
+            "action": "skip_pack",
+            "count": 8,
+            "sources": {
+              "coach": 8
+            }
+          },
+          {
+            "action": "buy_voucher",
+            "count": 7,
+            "sources": {
+              "coach": 7
+            }
+          },
+          {
+            "action": "skip_blind",
+            "count": 5,
+            "sources": {
+              "coach": 5
+            }
+          },
+          {
+            "action": "reroll_boss",
+            "count": 2,
+            "sources": {
+              "coach": 2
+            }
+          },
+          {
+            "action": "reorder_jokers",
+            "count": 1,
+            "sources": {
+              "coach": 1
+            }
+          },
+          {
+            "action": "sell_consumable",
+            "count": 1,
+            "sources": {
+              "coach_followup": 1
+            }
+          }
+        ],
+        "decisions_per_phase": {
+          "BLIND_SELECT": 41,
+          "PACK": 38,
+          "ROUND_EVAL": 33,
+          "SELECTING_HAND": 122,
+          "SHOP": 239
+        },
+        "note": "The concatenated segments hold exactly the 473 decisions result.json reports.",
+        "recency": 0,
+        "reported_decisions": 473,
+        "run": "astra-low-QD3F4XVW",
+        "seed": "QD3F4XVW",
+        "shop_visits": {
+          "actions_total": 239,
+          "max_actions_in_a_visit": 15,
+          "mean_actions_per_visit": 3.41,
+          "median_actions_per_visit": 2.0,
+          "visits": 70
+        },
+        "source": "evidence/astra-low-QD3F4XVW/segments/*/trajectory.jsonl.gz",
+        "total_transitions": 473
+      },
+      {
+        "coach_calls": {
+          "hedged": 0,
+          "hedges_won": 0,
+          "recorded": false,
+          "recovered_transitions": 0,
+          "rejected_responses": 0,
+          "responses": 355,
+          "responses_with_hedge_data": 0,
+          "rpc_timeouts": 0,
+          "timeouts": 0
+        },
+        "decision_sources": {
+          "automatic": 30,
+          "coach": 353
+        },
+        "decisions_per_action": [
+          {
+            "action": "reroll_shop",
+            "count": 72,
+            "sources": {
+              "coach": 72
+            }
+          },
+          {
+            "action": "play_cards",
+            "count": 49,
+            "sources": {
+              "coach": 49
+            }
+          },
+          {
+            "action": "buy_pack",
+            "count": 35,
+            "sources": {
+              "coach": 35
+            }
+          },
+          {
+            "action": "choose_pack_card",
+            "count": 33,
+            "sources": {
+              "coach": 33
+            }
+          },
+          {
+            "action": "use_consumable",
+            "count": 31,
+            "sources": {
+              "coach": 31
+            }
+          },
+          {
+            "action": "cash_out",
+            "count": 30,
+            "sources": {
+              "automatic": 30
+            }
+          },
+          {
+            "action": "leave_shop",
+            "count": 30,
+            "sources": {
+              "coach": 30
+            }
+          },
+          {
+            "action": "select_blind",
+            "count": 30,
+            "sources": {
+              "coach": 30
+            }
+          },
+          {
+            "action": "buy_shop_card",
+            "count": 27,
+            "sources": {
+              "coach": 27
+            }
+          },
+          {
+            "action": "reorder_jokers",
+            "count": 11,
+            "sources": {
+              "coach": 11
+            }
+          },
+          {
+            "action": "skip_pack",
+            "count": 9,
+            "sources": {
+              "coach": 9
+            }
+          },
+          {
+            "action": "discard_cards",
+            "count": 8,
+            "sources": {
+              "coach": 8
+            }
+          },
+          {
+            "action": "sell_joker",
+            "count": 8,
+            "sources": {
+              "coach": 8
+            }
+          },
+          {
+            "action": "buy_voucher",
+            "count": 5,
+            "sources": {
+              "coach": 5
+            }
+          },
+          {
+            "action": "sell_consumable",
+            "count": 3,
+            "sources": {
+              "coach": 3
+            }
+          },
+          {
+            "action": "reroll_boss",
+            "count": 1,
+            "sources": {
+              "coach": 1
+            }
+          },
+          {
+            "action": "skip_blind",
+            "count": 1,
+            "sources": {
+              "coach": 1
+            }
+          }
+        ],
+        "decisions_per_phase": {
+          "BLIND_SELECT": 32,
+          "PACK": 44,
+          "ROUND_EVAL": 30,
+          "SELECTING_HAND": 70,
+          "SHOP": 207
+        },
+        "note": "The concatenated segments hold 383 transitions while result.json reports 384 decisions: segment 00 ended on an errored action that was counted but never produced a transition record.",
+        "recency": 3,
+        "reported_decisions": 384,
+        "run": "astra-low-2K9H9HN",
+        "seed": "2K9H9HN",
+        "shop_visits": {
+          "actions_total": 207,
+          "max_actions_in_a_visit": 12,
+          "mean_actions_per_visit": 3.18,
+          "median_actions_per_visit": 2.0,
+          "visits": 65
+        },
+        "source": "evidence/astra-low-2K9H9HN/segments/*/trajectory.jsonl.gz",
+        "total_transitions": 383
       },
       {
         "coach_calls": {
@@ -794,6 +1181,7 @@
           "SHOP": 185
         },
         "note": "The concatenated segments hold exactly the 315 decisions result.json reports.",
+        "recency": 1,
         "reported_decisions": 315,
         "run": "astra-low-D0000000",
         "seed": "D0000000",
@@ -806,165 +1194,12 @@
         },
         "source": "evidence/astra-low-D0000000/segments/*/trajectory.jsonl.gz",
         "total_transitions": 315
-      },
-      {
-        "coach_calls": {
-          "hedged": 0,
-          "hedges_won": 0,
-          "recorded": false,
-          "recovered_transitions": 0,
-          "rejected_responses": 0,
-          "responses": 355,
-          "responses_with_hedge_data": 0,
-          "rpc_timeouts": 0,
-          "timeouts": 0
-        },
-        "decision_sources": {
-          "automatic": 30,
-          "coach": 353
-        },
-        "decisions_per_action": [
-          {
-            "action": "reroll_shop",
-            "count": 72,
-            "sources": {
-              "coach": 72
-            }
-          },
-          {
-            "action": "play_cards",
-            "count": 49,
-            "sources": {
-              "coach": 49
-            }
-          },
-          {
-            "action": "buy_pack",
-            "count": 35,
-            "sources": {
-              "coach": 35
-            }
-          },
-          {
-            "action": "choose_pack_card",
-            "count": 33,
-            "sources": {
-              "coach": 33
-            }
-          },
-          {
-            "action": "use_consumable",
-            "count": 31,
-            "sources": {
-              "coach": 31
-            }
-          },
-          {
-            "action": "cash_out",
-            "count": 30,
-            "sources": {
-              "automatic": 30
-            }
-          },
-          {
-            "action": "leave_shop",
-            "count": 30,
-            "sources": {
-              "coach": 30
-            }
-          },
-          {
-            "action": "select_blind",
-            "count": 30,
-            "sources": {
-              "coach": 30
-            }
-          },
-          {
-            "action": "buy_shop_card",
-            "count": 27,
-            "sources": {
-              "coach": 27
-            }
-          },
-          {
-            "action": "reorder_jokers",
-            "count": 11,
-            "sources": {
-              "coach": 11
-            }
-          },
-          {
-            "action": "skip_pack",
-            "count": 9,
-            "sources": {
-              "coach": 9
-            }
-          },
-          {
-            "action": "discard_cards",
-            "count": 8,
-            "sources": {
-              "coach": 8
-            }
-          },
-          {
-            "action": "sell_joker",
-            "count": 8,
-            "sources": {
-              "coach": 8
-            }
-          },
-          {
-            "action": "buy_voucher",
-            "count": 5,
-            "sources": {
-              "coach": 5
-            }
-          },
-          {
-            "action": "sell_consumable",
-            "count": 3,
-            "sources": {
-              "coach": 3
-            }
-          },
-          {
-            "action": "reroll_boss",
-            "count": 1,
-            "sources": {
-              "coach": 1
-            }
-          },
-          {
-            "action": "skip_blind",
-            "count": 1,
-            "sources": {
-              "coach": 1
-            }
-          }
-        ],
-        "decisions_per_phase": {
-          "BLIND_SELECT": 32,
-          "PACK": 44,
-          "ROUND_EVAL": 30,
-          "SELECTING_HAND": 70,
-          "SHOP": 207
-        },
-        "note": "The concatenated segments hold 383 transitions while result.json reports 384 decisions: segment 00 ended on an errored action that was counted but never produced a transition record.",
-        "reported_decisions": 384,
-        "run": "astra-low-2K9H9HN",
-        "seed": "2K9H9HN",
-        "shop_visits": {
-          "actions_total": 207,
-          "max_actions_in_a_visit": 12,
-          "mean_actions_per_visit": 3.18,
-          "median_actions_per_visit": 2.0,
-          "visits": 65
-        },
-        "source": "evidence/astra-low-2K9H9HN/segments/*/trajectory.jsonl.gz",
-        "total_transitions": 383
       }
+    ],
+    "note": "results.md writes out the two newest runs in full; every run's mix is in results.json under table_c.blocks.",
+    "rendered_runs": [
+      "astra-low-QD3F4XVW",
+      "astra-low-D0000000"
     ],
     "title": "Decision mix in the Astra-low runs"
   },

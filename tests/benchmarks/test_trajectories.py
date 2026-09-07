@@ -8,6 +8,7 @@ from benchmarks import EVIDENCE_ROOT
 from benchmarks.trajectories import (
     ASTRA_LOW_HEADLESS,
     ASTRA_LOW_PANEL_SEED,
+    ASTRA_LOW_RECORDED,
     SOURCE_AUTOMATIC,
     SOURCE_COACH,
     SOURCE_DELEGATE,
@@ -16,6 +17,7 @@ from benchmarks.trajectories import (
     load_astra_low,
     load_astra_low_headless,
     load_astra_low_panel_seed,
+    load_astra_low_recorded,
     load_first_win,
     load_segmented_run,
     run_segments,
@@ -281,3 +283,61 @@ def test_panel_seed_blind_requirements_stay_below_ten_million():
     assert not final.cleared
     assert max(blind.best_hand_score for blind in blinds) == 1840907.0
     _assert_requirements_increase(run)
+
+
+def test_recorded_run_has_473_transitions():
+    run = load_astra_low_recorded()
+    assert run.run_id == ASTRA_LOW_RECORDED
+    assert run.seed == "QD3F4XVW"
+    assert len(run.decisions) == 473
+    assert run.source_counts() == {
+        "automatic": 33,
+        "coach": 384,
+        "coach_followup": 50,
+        "forced": 6,
+    }
+    assert sum(run.source_counts().values()) == 473
+    assert segment_ante_bounds(run) == [("00", 1, 11), ("01", 11, 11)]
+
+
+def test_recorded_run_ante_series_is_not_monotone_but_ends_at_eleven():
+    run = load_astra_low_recorded()
+    antes = run.ante_series()
+    assert antes[0] == 1
+    assert max(antes) == 11
+    assert run.decisions[-1].ante_after == 11
+    assert not all(before <= after for before, after in itertools.pairwise(antes))
+    # Every drop is exactly one ante and follows an ante-lowering voucher purchase.
+    drops = run.ante_decreases()
+    assert len(drops) == 2
+    for record in drops:
+        assert record.ante - record.ante_after == 1
+        assert record.action == "buy_voucher"
+
+
+def test_recorded_run_blind_series_keeps_replayed_antes_apart():
+    run = load_astra_low_recorded()
+    blinds = run.blind_series()
+    assert len(blinds) == 34
+    keys = [(blind.ante, blind.blind) for blind in blinds]
+    # Hieroglyph and Petroglyph send the run back through antes 9 and 10.
+    assert keys.count((9, "BOSS")) == 2
+    assert keys.count((10, "BOSS")) == 2
+    assert len(set(keys)) < len(keys)
+    final = blinds[-1]
+    assert (final.ante, final.blind, final.requirement) == (11, "BOSS", 14_400_000)
+    assert final.hands_played == 5
+    assert final.total_chips_scored == 7394177.0
+    assert not final.cleared
+    assert max(blind.best_hand_score for blind in blinds) == 7052918.0
+
+
+def test_recorded_run_had_no_rejected_replies():
+    calls = load_astra_low_recorded().coach_calls
+    assert calls.recorded
+    assert calls.responses == 385
+    assert calls.hedged == 23
+    assert calls.hedges_won == 16
+    assert calls.timeouts == 3
+    assert calls.rejected_responses == 0
+    assert calls.rpc_timeouts == 0

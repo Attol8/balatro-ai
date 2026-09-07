@@ -7,6 +7,7 @@ Setting: Red Deck / White Stake / all unlocked. Every number is read from a file
 | Policy | Attempted | Completed | Ante-8 clears | Reached Ante >=8 | Median ante | Mean ante | Coach calls / decisions | Follow-ups / forced / stalls | Seed panel | Notes |
 |---|---|---|---|---|---|---|---|---|---|---|
 | **Astra low (gpt-6-astra), seed TAF7DNTX** | 1 | 1 | 1 | 1 | 13 | 13 | 404/456 = 0.89 | 31 / 13 / 15 | TAF7DNTX | single game, seed TAF7DNTX: headless, endless; cleared Ante 8, then lost at ante 13 |
+| **Astra low (gpt-6-astra), seed QD3F4XVW** | 1 | 1 | 1 | 1 | 11 | 11 | 388/473 = 0.82 | 50 / 6 / 3 | QD3F4XVW | supervised end to end, one automatic restart, game visible at speed 2, recorded |
 | **Astra low (gpt-6-astra), seed 2K9H9HN** | 1 | 1 | 1 | 1 | 11 | 11 | 357/384 = 0.93 | - | 2K9H9HN | single game, seed 2K9H9HN: cleared Ante 8 (303 decisions, ante 9), then continued in endless and lost at ante 11 |
 | **Astra low (gpt-6-astra), seed D0000000** | 1 | 1 | 1 | 1 | 10 | 10 | 265/315 = 0.84 | 34 / 5 / 5 | D0000000 | visible game, endless; on the baseline panel seed; cleared Ante 8, lost at ante 10 |
 | search-v4 | 20 | 20 | 3 | 7 | 6.5 | 6.3 | - | - | D0000000-D0000019 | - |
@@ -22,15 +23,17 @@ Setting: Red Deck / White Stake / all unlocked. Every number is read from a file
 | strategic (strategic-unlocked-001) | 20 | 20 | 0 | 0 | 5 | 4.7 | - | - | D0000000-D0000019 | - |
 | baseline-v1 | 11 | 10 | 0 | 0 | 4 | 3.4 | - | - | D0000000-D0000010 | partial panel: 11 of 20 seeds attempted; 1 game(s) errored and are excluded from ante statistics |
 
-1. Each coached row is a single game: TAF7DNTX and 2K9H9HN are seeds outside the D0000000-D0000019 baseline panel, D0000000 is that panel's first seed. They are demonstrations, not win-rate estimates.
+1. Each coached row is a single game: TAF7DNTX, QD3F4XVW, 2K9H9HN are seeds outside the D0000000-D0000019 baseline panel, D0000000 is that panel's first seed. They are demonstrations, not win-rate estimates.
 2. On seed D0000000 the best heuristic (search-v5) reached ante 6 with a 14,700 peak hand; the coached run reached ante 10 with 1,840,907.
-3. The D0000000 run was restarted three times at safe moments and once restored from Balatro's autosave after an operating-system kill; no game state or trajectory was edited by hand. See evidence/astra-low-D0000000/README.md.
-4. Seed TAF7DNTX was played headless in endless mode. The runner process was stopped and resumed four times at safe moments (during model calls) to deploy runner fixes - request-id length, timeout retry, hedged calls. No game state or trajectory was edited; illegal replies were rejected and corrected in place.
-5. The Astra-low run was supervised: it was played with adapter fixes and reviewed continuations across 7 recorded segments, so it is not an unattended benchmark.
-6. 'Coach calls / decisions' counts model requests against actions taken; the runner takes cash-outs itself, so the ratio is below one.
-7. 'Follow-ups / forced / stalls' counts chained follow-up actions, moves the runner forced when no legal reply arrived, and coach calls that timed out and were retried; only the current runner records them.
-8. Baselines are sorted by Ante-8 clears (descending), then median ante (descending).
-9. Games with status 'error' count as attempted but not completed and are excluded from the ante statistics.
+3. Seed QD3F4XVW was played end to end by the supervisor: one automatic restart after the mod refused a boss reroll, no operator intervention, and 0 rejected replies. Hieroglyph and Petroglyph each lowered the ante by one, so blinds at antes 9 and 10 were played twice.
+4. Coached rows are sorted by ante reached (descending); when two runs reached the same ante the later, cleaner game is listed first.
+5. The D0000000 run was restarted three times at safe moments and once restored from Balatro's autosave after an operating-system kill; no game state or trajectory was edited by hand. See evidence/astra-low-D0000000/README.md.
+6. Seed TAF7DNTX was played headless in endless mode. The runner process was stopped and resumed four times at safe moments (during model calls) to deploy runner fixes - request-id length, timeout retry, hedged calls. No game state or trajectory was edited; illegal replies were rejected and corrected in place.
+7. The Astra-low run was supervised: it was played with adapter fixes and reviewed continuations across 7 recorded segments, so it is not an unattended benchmark.
+8. 'Coach calls / decisions' counts model requests against actions taken; the runner takes cash-outs itself, so the ratio is below one.
+9. 'Follow-ups / forced / stalls' counts chained follow-up actions, moves the runner forced when no legal reply arrived, and coach calls that timed out and were retried; only the current runner records them.
+10. Baselines are sorted by Ante-8 clears (descending), then median ante (descending).
+11. Games with status 'error' count as attempted but not completed and are excluded from the ante statistics.
 
 ## Table B - Scoring-engine exactness
 
@@ -42,64 +45,67 @@ Setting: Red Deck / White Stake / all unlocked. Every number is read from a file
 
 ## Table C - Decision mix in the Astra-low runs
 
-### astra-low-TAF7DNTX (seed TAF7DNTX)
+results.md writes out the two newest runs in full; every run's mix is in results.json under table_c.blocks.
+
+### astra-low-QD3F4XVW (seed QD3F4XVW)
 
 Decision source, over the concatenated segments:
 
 | Decision source | Count |
 |---|---|
-| automatic | 34 |
-| coach | 378 |
-| coach_followup | 31 |
-| forced | 13 |
-| **total** | 456 |
+| automatic | 33 |
+| coach | 384 |
+| coach_followup | 50 |
+| forced | 6 |
+| **total** | 473 |
 
 Decisions per phase:
 
 | Phase | Decisions |
 |---|---|
-| BLIND_SELECT | 39 |
-| PACK | 47 |
-| ROUND_EVAL | 34 |
-| SELECTING_HAND | 95 |
-| SHOP | 241 |
+| BLIND_SELECT | 41 |
+| PACK | 38 |
+| ROUND_EVAL | 33 |
+| SELECTING_HAND | 122 |
+| SHOP | 239 |
 
 Decisions per action type:
 
 | Action | Count | Sources |
 |---|---|---|
-| reroll_shop | 73 | coach 68, coach_followup 5 |
-| use_consumable | 45 | coach 34, coach_followup 11 |
-| buy_pack | 44 | coach 37, coach_followup 7 |
-| choose_pack_card | 44 | coach 44 |
-| buy_shop_card | 40 | coach 37, coach_followup 3 |
-| play_cards | 40 | coach 40 |
-| select_blind | 35 | coach 22, forced 13 |
-| cash_out | 34 | automatic 34 |
-| leave_shop | 34 | coach 30, coach_followup 4 |
-| discard_cards | 33 | coach 33 |
-| buy_voucher | 8 | coach 7, coach_followup 1 |
-| reorder_jokers | 8 | coach 8 |
-| sell_joker | 6 | coach 6 |
-| sell_consumable | 4 | coach 4 |
-| skip_blind | 4 | coach 4 |
-| skip_pack | 3 | coach 3 |
-| reorder_hand | 1 | coach 1 |
+| reroll_shop | 66 | coach 56, coach_followup 10 |
+| play_cards | 52 | coach 52 |
+| discard_cards | 51 | coach 51 |
+| buy_shop_card | 48 | coach 42, coach_followup 6 |
+| use_consumable | 47 | coach 37, coach_followup 10 |
+| buy_pack | 37 | coach 30, coach_followup 7 |
+| select_blind | 34 | coach 28, forced 6 |
+| cash_out | 33 | automatic 33 |
+| leave_shop | 33 | coach 17, coach_followup 16 |
+| choose_pack_card | 30 | coach 30 |
+| reorder_hand | 10 | coach 10 |
+| sell_joker | 8 | coach 8 |
+| skip_pack | 8 | coach 8 |
+| buy_voucher | 7 | coach 7 |
+| skip_blind | 5 | coach 5 |
+| reroll_boss | 2 | coach 2 |
+| reorder_jokers | 1 | coach 1 |
+| sell_consumable | 1 | coach_followup 1 |
 
 Shop visits:
 
 | Visits | Shop actions | Median per visit | Mean per visit | Max in one visit |
 |---|---|---|---|---|
-| 78 | 241 | 2 | 3.09 | 13 |
+| 70 | 239 | 2 | 3.41 | 15 |
 
 Coach call health:
 
 | Responses | With hedge data | Hedged | Hedges won | Timeouts | Rejected | Game-reply timeouts recovered |
 |---|---|---|---|---|---|---|
-| 386 | 219 | 16 | 14 | 15 | 8 | 0 of 0 |
+| 385 | 385 | 23 | 16 | 3 | 0 | 0 of 0 |
 
-- The concatenated segments hold exactly the 456 decisions result.json reports.
-- Source: `evidence/astra-low-TAF7DNTX/segments/*/trajectory.jsonl.gz`
+- The concatenated segments hold exactly the 473 decisions result.json reports.
+- Source: `evidence/astra-low-QD3F4XVW/segments/*/trajectory.jsonl.gz`
 
 ### astra-low-D0000000 (seed D0000000)
 
@@ -159,60 +165,7 @@ Coach call health:
 - The concatenated segments hold exactly the 315 decisions result.json reports.
 - Source: `evidence/astra-low-D0000000/segments/*/trajectory.jsonl.gz`
 
-### astra-low-2K9H9HN (seed 2K9H9HN)
-
-Decision source, over the concatenated segments:
-
-| Decision source | Count |
-|---|---|
-| automatic | 30 |
-| coach | 353 |
-| **total** | 383 |
-
-Decisions per phase:
-
-| Phase | Decisions |
-|---|---|
-| BLIND_SELECT | 32 |
-| PACK | 44 |
-| ROUND_EVAL | 30 |
-| SELECTING_HAND | 70 |
-| SHOP | 207 |
-
-Decisions per action type:
-
-| Action | Count | Sources |
-|---|---|---|
-| reroll_shop | 72 | coach 72 |
-| play_cards | 49 | coach 49 |
-| buy_pack | 35 | coach 35 |
-| choose_pack_card | 33 | coach 33 |
-| use_consumable | 31 | coach 31 |
-| cash_out | 30 | automatic 30 |
-| leave_shop | 30 | coach 30 |
-| select_blind | 30 | coach 30 |
-| buy_shop_card | 27 | coach 27 |
-| reorder_jokers | 11 | coach 11 |
-| skip_pack | 9 | coach 9 |
-| discard_cards | 8 | coach 8 |
-| sell_joker | 8 | coach 8 |
-| buy_voucher | 5 | coach 5 |
-| sell_consumable | 3 | coach 3 |
-| reroll_boss | 1 | coach 1 |
-| skip_blind | 1 | coach 1 |
-
-Shop visits:
-
-| Visits | Shop actions | Median per visit | Mean per visit | Max in one visit |
-|---|---|---|---|---|
-| 65 | 207 | 2 | 3.18 | 12 |
-
-Coach call health:
-
-- 355 coach responses; this run predates the transport timings, so hedges, timeouts and rejections were never recorded.
-
-- The concatenated segments hold 383 transitions while result.json reports 384 decisions: segment 00 ended on an errored action that was counted but never produced a transition record.
-- Source: `evidence/astra-low-2K9H9HN/segments/*/trajectory.jsonl.gz`
+Not written out here: astra-low-TAF7DNTX (456 decisions), astra-low-2K9H9HN (383 decisions) - see `results.json`.
 
 ## Table D - Same seed, D0000000
 
@@ -247,14 +200,12 @@ Coach call health:
 | 03 | 6 | 6 |
 | 04 | 6 | 13 |
 
-### astra-low-D0000000
+### astra-low-QD3F4XVW
 
 | Segment | Ante at start | Ante at end |
 |---|---|---|
-| 00 | 1 | 7 |
-| 01 | 7 | 9 |
-| 02 | 9 | 10 |
-| 03 | 10 | 10 |
+| 00 | 1 | 11 |
+| 01 | 11 | 11 |
 
 ### astra-low-2K9H9HN
 
@@ -267,3 +218,12 @@ Coach call health:
 | 04 | 6 | 6 |
 | 05 | 6 | 9 |
 | 06 | 9 | 11 |
+
+### astra-low-D0000000
+
+| Segment | Ante at start | Ante at end |
+|---|---|---|
+| 00 | 1 | 7 |
+| 01 | 7 | 9 |
+| 02 | 9 | 10 |
+| 03 | 10 | 10 |

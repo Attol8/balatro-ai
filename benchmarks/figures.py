@@ -27,6 +27,7 @@ from .trajectories import (  # noqa: E402
     load_astra_low,
     load_astra_low_headless,
     load_astra_low_panel_seed,
+    load_astra_low_recorded,
 )
 
 SURFACE = "#fcfcfb"
@@ -232,7 +233,7 @@ def ante_reached_by_policy(
         1 - 0.82 / height,
         f"{total_baseline} completed heuristic games on seeds D0000000-D0000019; "
         f"{total_coached} coached game{'' if total_coached == 1 else 's'}, "
-        f"{on_panel_seed} of them on a panel seed",
+        f"{on_panel_seed} on a panel seed",
         ha="left",
         va="top",
         color=INK_SECONDARY,
@@ -332,18 +333,22 @@ def score_vs_requirement(runs: list[tuple[Trajectory, str]], path: Path) -> Path
             label="Best single hand in the blind",
             zorder=4,
         )
+        # Hieroglyph and Petroglyph can lower the ante, so a tick marks every ante
+        # change along the blind order rather than the first sight of each ante.
         ticks, labels = [], []
-        seen: set[int] = set()
+        previous: int | None = None
         for index, blind in enumerate(blinds):
-            if blind.ante not in seen:
-                seen.add(blind.ante)
+            if blind.ante != previous:
+                previous = blind.ante
                 ticks.append(index)
                 labels.append(f"A{blind.ante}")
         axes.set_xticks(ticks)
         axes.set_xticklabels(labels)
         final = blinds[-1]
+        annotated_boss = False
         for index, blind in enumerate(blinds):
-            if blind.ante == WIN_ANTE and blind.blind == "BOSS":
+            if blind.ante == WIN_ANTE and blind.blind == "BOSS" and not annotated_boss:
+                annotated_boss = True
                 axes.annotate(
                     "Ante 8 boss",
                     (index, blind.requirement),
@@ -410,12 +415,16 @@ def render_all(out_dir: Path, evidence_root: Path | None = None) -> list[Path]:
             "Astra low, seed TAF7DNTX - headless, cleared Ante 8, lost in endless Ante 13",
         ),
         (
-            load_astra_low_panel_seed(root),
-            "Astra low, seed D0000000 - panel seed, cleared Ante 8, lost in endless Ante 10",
+            load_astra_low_recorded(root),
+            "Astra low, seed QD3F4XVW - supervised, cleared Ante 8, lost in endless Ante 11",
         ),
         (
             load_astra_low(root),
             "Astra low, seed 2K9H9HN - cleared Ante 8, lost in endless Ante 11",
+        ),
+        (
+            load_astra_low_panel_seed(root),
+            "Astra low, seed D0000000 - panel seed, cleared Ante 8, lost in endless Ante 10",
         ),
     ]
     return [

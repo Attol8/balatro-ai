@@ -6,7 +6,8 @@ decision carries ``observation`` and ``predicted_score``; the matching transitio
 carries ``observed_score``.
 
 Any evidence directory holding a ``segments.json`` (``astra-low-2K9H9HN``,
-``astra-low-TAF7DNTX``, ``astra-low-D0000000``) uses the runner's segment shape:
+``astra-low-TAF7DNTX``, ``astra-low-D0000000``, ``astra-low-QD3F4XVW``) uses the
+runner's segment shape:
 ``rpc_attempt / coach_request / coach_response / transition``, plus ``continued``,
 ``coach_timeout``, ``coach_rejected`` and ``rpc_timeout`` in the current runner; a
 transition recovered after a game-reply timeout carries ``recovered``.  Unknown event
@@ -17,7 +18,9 @@ to be recovered as the round-chip delta.  ``transition.source`` is one of
 only when the chosen play appears in that request's advisory
 ``analysis.play_candidates`` shortlist, so it is recorded as an estimate with a
 coverage count rather than as a per-play guarantee.  Chip requirements reach the
-billions in endless antes and are kept as exact integers throughout.
+billions in endless antes and are kept as exact integers throughout.  The ante is not
+monotone: Hieroglyph and Petroglyph lower it by one, so a blind can be replayed and the
+blind series is indexed by position, never keyed by ante alone.
 """
 
 from __future__ import annotations
@@ -41,6 +44,7 @@ SOURCE_COACH_FOLLOWUP = "coach_followup"
 ASTRA_LOW_SUPERVISED = "astra-low-2K9H9HN"
 ASTRA_LOW_HEADLESS = "astra-low-TAF7DNTX"
 ASTRA_LOW_PANEL_SEED = "astra-low-D0000000"
+ASTRA_LOW_RECORDED = "astra-low-QD3F4XVW"
 
 
 @dataclass(frozen=True)
@@ -126,6 +130,11 @@ class Trajectory:
 
     def ante_series(self) -> tuple[int, ...]:
         return tuple(record.ante for record in self.decisions)
+
+    def ante_decreases(self) -> tuple[DecisionRecord, ...]:
+        """Decisions that lowered the ante - the ante-reducing voucher purchases."""
+
+        return tuple(record for record in self.decisions if record.ante_after < record.ante)
 
     def blind_series(self) -> tuple[BlindRecord, ...]:
         """Consecutive plays grouped into the blind they were played into."""
@@ -347,6 +356,12 @@ def load_astra_low_panel_seed(evidence_root: Path | None = None) -> Trajectory:
     """The visible astra-low run on the baseline panel seed D0000000."""
 
     return load_segmented_run((evidence_root or EVIDENCE_ROOT) / ASTRA_LOW_PANEL_SEED)
+
+
+def load_astra_low_recorded(evidence_root: Path | None = None) -> Trajectory:
+    """The supervised, recorded astra-low run, seed QD3F4XVW."""
+
+    return load_segmented_run((evidence_root or EVIDENCE_ROOT) / ASTRA_LOW_RECORDED)
 
 
 def segment_ante_bounds(trajectory: Trajectory) -> list[tuple[str, int, int]]:

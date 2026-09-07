@@ -24,11 +24,11 @@ from .baselines import BaselinePanel, load_panels, panel_seeds
 from .trajectories import (
     ASTRA_LOW_HEADLESS,
     ASTRA_LOW_PANEL_SEED,
+    ASTRA_LOW_RECORDED,
     ASTRA_LOW_SUPERVISED,
     Trajectory,
     load_astra_low,
-    load_astra_low_headless,
-    load_astra_low_panel_seed,
+    load_segmented_run,
     segment_ante_bounds,
 )
 
@@ -37,6 +37,26 @@ TABLE_B_TITLE = "Scoring-engine exactness"
 TABLE_C_TITLE = "Decision mix in the Astra-low runs"
 TABLE_D_TITLE = "Same seed, D0000000"
 PANEL_SEED = "D0000000"
+
+# Newest game first. The index breaks ties in Table A's ante ordering, so when two
+# runs reached the same ante the later, cleaner game is listed first.
+COACHED_RUNS: tuple[tuple[str, str], ...] = (
+    (
+        ASTRA_LOW_RECORDED,
+        "supervised end to end, one automatic restart, game visible at speed 2, recorded",
+    ),
+    (
+        ASTRA_LOW_PANEL_SEED,
+        "visible game, endless; on the baseline panel seed; cleared Ante 8, lost at ante 10",
+    ),
+    (
+        ASTRA_LOW_HEADLESS,
+        "single game, seed TAF7DNTX: headless, endless; cleared Ante 8, then lost at ante 13",
+    ),
+    (ASTRA_LOW_SUPERVISED, ""),
+)
+# Only the newest runs are written out in full in results.md; results.json keeps them all.
+RENDERED_MIXES = 2
 SHOP_PHASE = "SHOP"
 
 TRAJECTORY_REVIEW = "docs/trajectory-review.md"
@@ -63,6 +83,7 @@ class CoachedRow:
     forced_actions: int | None = None
     coach_timeouts: int | None = None
     panel_seed: bool = False
+    recency: int = 0
 
     @property
     def median_ante(self) -> float:
@@ -140,6 +161,7 @@ def _coached_row(row: CoachedRow) -> dict:
         "coach_timeouts": row.coach_timeouts,
         "followups_forced_stalls": row.intervention_label,
         "panel_seed": row.panel_seed,
+        "recency": row.recency,
         "seconds": row.seconds,
         "peak_hand_score": row.peak_hand_score,
         "notes": [row.note],
@@ -151,6 +173,7 @@ def _coached_row_from_result(
     run_dir: Path,
     note: str,
     known_panel_seeds: frozenset[str],
+    recency: int = 0,
 ) -> CoachedRow:
     """Build one coached row from a run directory's ``result.json``/``manifest.json``."""
 
@@ -175,6 +198,7 @@ def _coached_row_from_result(
         forced_actions=_optional_int(result, "forced_actions"),
         coach_timeouts=_optional_int(result, "coach_timeouts"),
         panel_seed=seed in known_panel_seeds,
+        recency=recency,
     )
 
 
@@ -184,32 +208,26 @@ def _optional_int(result: dict, key: str) -> int | None:
 
 
 def built_in_coached_rows(evidence_root: Path | None = None) -> list[CoachedRow]:
-    """The published coached runs, ordered by ante reached (descending)."""
+    """The published coached runs, by ante reached (descending), newest first on a tie."""
 
     root = evidence_root or EVIDENCE_ROOT
     known = panel_seeds(root)
-    supervised_dir = root / ASTRA_LOW_SUPERVISED
-    ante8 = json.loads((supervised_dir / "ante-8-result.json").read_text())
+    ante8 = json.loads((root / ASTRA_LOW_SUPERVISED / "ante-8-result.json").read_text())
+    supervised_note = (
+        "single game, seed 2K9H9HN: cleared Ante 8 "
+        f"({ante8['decisions']} decisions, ante {ante8['ante_reached']}), "
+        "then continued in endless and lost at ante 11"
+    )
     rows = [
         _coached_row_from_result(
-            root / ASTRA_LOW_HEADLESS,
-            "single game, seed TAF7DNTX: headless, endless; cleared Ante 8, then lost at ante 13",
+            root / directory,
+            note or supervised_note,
             known,
-        ),
-        _coached_row_from_result(
-            root / ASTRA_LOW_PANEL_SEED,
-            "visible game, endless; on the baseline panel seed; cleared Ante 8, lost at ante 10",
-            known,
-        ),
-        _coached_row_from_result(
-            supervised_dir,
-            "single game, seed 2K9H9HN: cleared Ante 8 "
-            f"({ante8['decisions']} decisions, ante {ante8['ante_reached']}), "
-            "then continued in endless and lost at ante 11",
-            known,
-        ),
+            recency=recency,
+        )
+        for recency, (directory, note) in enumerate(COACHED_RUNS)
     ]
-    rows.sort(key=lambda row: (-max(row.antes_reached), row.seed_label))
+    rows.sort(key=lambda row: (-max(row.antes_reached), row.recency))
     return rows
 
 
@@ -250,7 +268,12 @@ def load_extra_runs(run_dirs: list[Path]) -> list[CoachedRow]:
     return rows
 
 
-def _table_a(panels: list[BaselinePanel], coached: list[CoachedRow], table_d: dict) -> dict:
+def _table_a(
+    panels: list[BaselinePanel],
+    coached: list[CoachedRow],
+    table_d: dict,
+    table_c: dict,
+) -> dict:
     repeated = {
         policy for policy, count in Counter(panel.policy for panel in panels).items() if count > 1
     }
@@ -275,10 +298,11 @@ def _table_a(panels: list[BaselinePanel], coached: list[CoachedRow], table_d: di
         "baselines": baseline_rows,
         "coached": coached_rows,
         "footnotes": [
-            "Each coached row is a single game: TAF7DNTX and 2K9H9HN are seeds outside the "
-            "D0000000-D0000019 baseline panel, D0000000 is that panel's first seed. They are "
-            "demonstrations, not win-rate estimates.",
+            _coached_seeds_footnote(coached),
             _panel_seed_footnote(table_d),
+            _recorded_run_footnote(table_c),
+            "Coached rows are sorted by ante reached (descending); when two runs reached the "
+            "same ante the later, cleaner game is listed first.",
             f"The {PANEL_SEED} run was restarted three times at safe moments and once restored "
             "from Balatro's autosave after an operating-system kill; no game state or trajectory "
             f"was edited by hand. See evidence/astra-low-{PANEL_SEED}/README.md.",
@@ -357,7 +381,7 @@ def _shop_visits(trajectory: Trajectory) -> dict:
     }
 
 
-def _decision_mix(trajectory: Trajectory, result: dict) -> dict:
+def _decision_mix(trajectory: Trajectory, result: dict, recency: int = 0) -> dict:
     """One run's decision mix: sources, phases, action types, shop visits, call health."""
 
     phases = Counter(record.phase for record in trajectory.decisions)
@@ -377,6 +401,7 @@ def _decision_mix(trajectory: Trajectory, result: dict) -> dict:
     block = {
         "run": trajectory.run_id,
         "seed": trajectory.seed,
+        "recency": recency,
         "total_transitions": len(trajectory.decisions),
         "reported_decisions": int(result["decisions"]),
         "decision_sources": trajectory.source_counts(),
@@ -410,11 +435,41 @@ def _decision_mix(trajectory: Trajectory, result: dict) -> dict:
     return block
 
 
-def _table_c(runs: list[tuple[Trajectory, dict]]) -> dict:
+def _table_c(runs: list[tuple[Trajectory, dict, int]]) -> dict:
+    blocks = [_decision_mix(trajectory, result, recency) for trajectory, result, recency in runs]
+    rendered = [block["run"] for block in sorted(blocks, key=lambda block: block["recency"])][
+        :RENDERED_MIXES
+    ]
     return {
         "title": TABLE_C_TITLE,
-        "blocks": [_decision_mix(trajectory, result) for trajectory, result in runs],
+        "blocks": blocks,
+        "rendered_runs": rendered,
+        "note": (
+            "results.md writes out the two newest runs in full; every run's mix is in "
+            "results.json under table_c.blocks."
+        ),
     }
+
+
+def _coached_seeds_footnote(coached: list[CoachedRow]) -> str:
+    outside = [row.seed_label for row in coached if not row.panel_seed]
+    on_panel = [row.seed_label for row in coached if row.panel_seed]
+    return (
+        f"Each coached row is a single game: {', '.join(outside)} are seeds outside the "
+        f"D0000000-D0000019 baseline panel, {', '.join(on_panel)} is that panel's first seed. "
+        "They are demonstrations, not win-rate estimates."
+    )
+
+
+def _recorded_run_footnote(table_c: dict) -> str:
+    block = next(block for block in table_c["blocks"] if block["run"] == ASTRA_LOW_RECORDED)
+    rejected = block["coach_calls"]["rejected_responses"]
+    return (
+        "Seed QD3F4XVW was played end to end by the supervisor: one automatic restart after "
+        "the mod refused a boss reroll, no operator intervention, and "
+        f"{rejected} rejected replies. Hieroglyph and Petroglyph each lowered the ante by one, "
+        "so blinds at antes 9 and 10 were played twice."
+    )
 
 
 def _panel_seed_footnote(table_d: dict) -> str:
@@ -484,27 +539,26 @@ def build_results(
 
     root = evidence_root or EVIDENCE_ROOT
     panels = load_panels(root)
-    trajectories = [
-        load_astra_low_headless(root),
-        load_astra_low_panel_seed(root),
-        load_astra_low(root),
-    ]
-    low = trajectories[-1]
+    builtin = built_in_coached_rows(root)
+    trajectories = [load_segmented_run(root / row.sources[0].rsplit("/", 1)[-1]) for row in builtin]
+    low = load_astra_low(root)
     runs = [
         (
             trajectory,
             json.loads((root / trajectory.run_id / "result.json").read_text()),
+            row.recency,
         )
-        for trajectory in trajectories
+        for trajectory, row in zip(trajectories, builtin)
     ]
-    coached = built_in_coached_rows(root) + load_extra_runs(list(extra_runs or []))
+    coached = builtin + load_extra_runs(list(extra_runs or []))
+    table_c = _table_c(runs)
     table_d = _table_d(panels, coached)
     return {
         "setting": SETTING,
         "evidence_root": "evidence",
-        "table_a": _table_a(panels, coached, table_d),
+        "table_a": _table_a(panels, coached, table_d, table_c),
         "table_b": _table_b(low, root),
-        "table_c": _table_c(runs),
+        "table_c": table_c,
         "table_d": table_d,
         "segment_continuity": [
             {
@@ -609,7 +663,12 @@ def render_markdown(results: dict) -> str:
 
     table_c = results["table_c"]
     lines += [f"## Table C - {table_c['title']}", ""]
+    rendered = set(table_c["rendered_runs"])
+    lines.append(table_c["note"])
+    lines.append("")
     for block in table_c["blocks"]:
+        if block["run"] not in rendered:
+            continue
         lines.append(f"### {block['run']} (seed {block['seed']})")
         lines.append("")
         lines.append("Decision source, over the concatenated segments:")
@@ -691,6 +750,16 @@ def render_markdown(results: dict) -> str:
         lines.append("")
         lines.append(f"- {block['note']}")
         lines.append(f"- Source: `{block['source']}`")
+        lines.append("")
+    skipped = [block for block in table_c["blocks"] if block["run"] not in rendered]
+    if skipped:
+        lines.append(
+            "Not written out here: "
+            + ", ".join(
+                f"{block['run']} ({block['total_transitions']} decisions)" for block in skipped
+            )
+            + " - see `results.json`."
+        )
         lines.append("")
     table_d = results["table_d"]
     lines += [f"## Table D - {table_d['title']}", ""]
