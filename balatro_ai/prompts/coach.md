@@ -111,11 +111,17 @@ reorder_hand, reorder_jokers, reorder_consumables with order (full permutation t
 Use the numerical tool's canonical action examples to check field names.
 
 Follow-up chain: also return then, a list of at most 6 further actions carried by
-this one reply (return [] for none). Each entry is
+this one reply. Each entry is
 {"action_json": <canonical action>, "repeat": <1-6 or null>, "until": <object or null>}.
-Follow-ups run in order after the primary action settles, are re-validated against
-the fresh state, and the chain stops silently at the first problem; you are then
-asked again with the reason in recent_outcomes. A stopped chain is not an error.
+Every reply costs about ten seconds, so decide a whole shop visit at once whenever
+you already know the next steps: primary action plus follow-ups ending in
+leave_shop, or a reroll loop with an until condition. Return [] only when the next
+step depends on something not yet visible (a pack's contents, the next blind, a
+reroll you are not conditioning on). Follow-ups run in order after the primary
+action settles, are re-validated against the fresh state, and the chain stops
+silently at the first problem; you are then asked again with the reason in
+recent_outcomes. A stopped chain is not an error, so chaining is never riskier
+than asking one action at a time.
 In then only, an item may be addressed by key instead of slot index: replace the
 integer card, consumable, joker, voucher or pack field with {"key":"c_pluto"}. The
 runner resolves it against the fresh state; zero or several matches stop the chain.
