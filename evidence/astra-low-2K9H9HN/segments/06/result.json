@@ -1,0 +1,11 @@
+{
+  "status": "lost",
+  "won": true,
+  "reason": "endless_game_over",
+  "decisions": 384,
+  "coach_requests": 357,
+  "ante_reached": 11,
+  "peak_hand_score": 1239454,
+  "ante_8_cleared": true,
+  "seconds": 3611.146
+}

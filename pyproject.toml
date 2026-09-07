@@ -1,21 +1,27 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
 [project]
-name = "balatro-ai-v2"
-version = "0.1.0"
-description = "Clean-slate Balatro simulator and search agent experiments."
+name = "balatro-ai"
+version = "1.0.0"
+description = "Astra low with public numerical tools for real Balatro"
+readme = "README.md"
 requires-python = ">=3.11"
 dependencies = []
 
 [project.optional-dependencies]
-candidate = [
-  "jackdaw @ git+https://github.com/TylerFlar/jackdaw-balatro.git@dbedc66255fe594cce7b7cccc188c8a11649d9ec ; python_version >= '3.12'",
-]
-dev = [
-  "pytest>=8.0",
-]
+dev = ["pytest>=8"]
+
+[project.scripts]
+balatro = "balatro_ai.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["balatro_ai*"]
 
 [tool.setuptools.package-data]
-"balatro_ai_v2.solver" = ["candidate_data/jackdaw/*.json"]
+balatro_ai = ["prompts/*.md"]
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
 pythonpath = ["."]
+testpaths = ["tests"]

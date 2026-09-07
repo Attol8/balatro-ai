@@ -1,0 +1,41 @@
+{
+  "coach": {
+    "effort": "high",
+    "model": "gpt-6-astra",
+    "prompt_sha256": "5bee7e079bb3f92121a18d8a352dbcb68bf6102de0ee903b35b90a4973da900e",
+    "transport": "codex_or_claude_session_files"
+  },
+  "config": {
+    "deck": "RED",
+    "endless": false,
+    "expected_profile": "all_unlocked",
+    "max_ante": 16,
+    "max_decisions": 2000,
+    "policy": "search-v6",
+    "poll_interval": 0.1,
+    "settle_polls": 100,
+    "split": "dev",
+    "stable_reads": 2,
+    "stake": "WHITE"
+  },
+  "dirty": true,
+  "git_revision": "4010da98f604d835316c049da2db3d2fa3b7eb53",
+  "policy": "session-coach",
+  "python_source_sha256": "5736e877230842bb535d2883c347efd1d168e534b6e6531f971a16bc632a8c81",
+  "seeds": [
+    "D0001000",
+    "D0001001",
+    "D0001002",
+    "D0001003",
+    "D0001004"
+  ],
+  "server": {
+    "active_mods": [
+      "Lovely",
+      "Steamodded",
+      "balatrobot"
+    ],
+    "profile_mode": "all_unlocked",
+    "status": "ok"
+  }
+}

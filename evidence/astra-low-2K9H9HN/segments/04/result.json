@@ -1,0 +1,10 @@
+{
+  "status": "stopped",
+  "won": false,
+  "reason": "coach_call_limit",
+  "decisions": 214,
+  "coach_requests": 200,
+  "ante_reached": 6,
+  "peak_hand_score": 43193,
+  "seconds": 2190.74
+}

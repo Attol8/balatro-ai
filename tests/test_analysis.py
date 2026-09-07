@@ -1,0 +1,176 @@
+from __future__ import annotations
+
+from dataclasses import replace
+
+from tests.game.state_factory import hidden_joker_slot, item_card, state
+
+from balatro_ai.analysis import analyze
+from balatro_ai.game.adapter import to_public_observation
+from balatro_ai.game.state import (
+    HandStat,
+    PublicBlind,
+    PublicItem,
+    PublicJokerRuntime,
+    VisiblePlayingCard,
+)
+
+
+def _selecting_hand():
+    return to_public_observation(state("SELECTING_HAND"))
+
+
+def test_keeps_lower_score_bus_safe_play_and_explains_card_roles() -> None:
+    observation = replace(
+        _selecting_hand(),
+        hand=(
+            VisiblePlayingCard("K", "H"),
+            VisiblePlayingCard("2", "D"),
+            VisiblePlayingCard("9", "S", enhancement="STEEL", seal="BLUE"),
+        ),
+        hand_stats=(HandStat("High Card", 1, 5, 1, 0, 0),),
+        jokers=(
+            PublicItem(
+                "j_ride_the_bus",
+                "Ride the Bus",
+                "JOKER",
+                runtime=PublicJokerRuntime(current_mult=5),
+            ),
+        ),
+    )
+
+    result = analyze(observation)
+    candidates = result["play_candidates"]
+    assert len(candidates) <= 16
+    safe = next(
+        row
+        for row in candidates
+        if row["action"] == {"type": "play_cards", "cards": [2]}
+    )
+    assert safe["facts"]["ride_the_bus_reset_slots"] == []
+    held = next(row for row in candidates if row["facts"]["held_steel_slots"] == [2])
+    assert held["facts"]["held_blue_seal_slots"] == [2]
+    assert any("Ride the Bus" in note for note in result["mechanism_reminders"])
+    assert "model choice" in result["discard_note"]
+
+
+def test_pareidolia_face_fact_does_not_invent_bus_reset() -> None:
+    observation = replace(
+        _selecting_hand(),
+        hand=(VisiblePlayingCard("9", "S"),),
+        hand_stats=(HandStat("High Card", 1, 5, 1, 0, 0),),
+        jokers=(
+            PublicItem("j_pareidolia", "Pareidolia", "JOKER"),
+            PublicItem("j_ride_the_bus", "Ride the Bus", "JOKER"),
+        ),
+    )
+
+    facts = analyze(observation)["play_candidates"][0]["facts"]
+    assert facts["scoring_faces"] == [0]
+    assert facts["ride_the_bus_reset_slots"] == []
+    assert facts["pareidolia_active"] is True
+    assert facts["ride_the_bus_interaction_uncertain"] is True
+    assert "treat reset safety as uncertain" in analyze(observation)["play_candidates"][0]["approximation"]
+
+
+def test_splash_facts_include_kickers_as_scoring_cards() -> None:
+    observation = replace(
+        _selecting_hand(),
+        hand=(VisiblePlayingCard("K", "H"), VisiblePlayingCard("2", "D")),
+        hand_stats=(HandStat("High Card", 1, 5, 1, 0, 0),),
+        jokers=(PublicItem("j_splash", "Splash", "JOKER"),),
+    )
+
+    candidate = next(
+        row
+        for row in analyze(observation)["play_candidates"]
+        if row["action"]["cards"] == [0, 1]
+    )
+    assert candidate["facts"]["scoring_slots"] == [0, 1]
+    assert candidate["facts"]["harmless_kickers"] == []
+    assert candidate["facts"]["splash_active"] is True
+
+
+def test_every_score_is_labeled_and_lucky_omission_is_explicit() -> None:
+    observation = replace(
+        _selecting_hand(),
+        hand=(VisiblePlayingCard("9", "S", enhancement="LUCKY"),),
+        hand_stats=(HandStat("High Card", 1, 5, 1, 0, 0),),
+    )
+    approximation = analyze(observation)["play_candidates"][0]["approximation"]
+    assert "integer rounding" in approximation
+    assert "Lucky Card" in approximation
+
+
+def test_zero_score_boss_restriction_warns_that_legal_play_can_waste_hand() -> None:
+    observation = replace(
+        _selecting_hand(),
+        blinds=(
+            PublicBlind(
+                "BOSS", "CURRENT", "The Psychic", "Must play 5 cards", 300, False
+            ),
+        ),
+    )
+    candidates = analyze(observation)["play_candidates"]
+    assert candidates
+    assert all(row["estimated_score"] == 0 for row in candidates)
+    assert all(
+        "intentionally waste a hand" in row["facts"]["boss_scoring_restriction"]
+        for row in candidates
+    )
+
+
+def test_hidden_jokers_suppress_scores_instead_of_faking_them() -> None:
+    raw = state("SELECTING_HAND")
+    raw["blinds"]["small"].update(type="BOSS", name="Amber Acorn")
+    raw["jokers"] = {
+        "cards": [hidden_joker_slot()],
+        "count": 1,
+        "highlighted_limit": 1,
+        "limit": 5,
+    }
+
+    result = analyze(to_public_observation(raw))
+    assert result["play_candidates"] == []
+    assert result["reorder_suggestions"] == []
+
+
+def test_shop_lists_only_affordable_legal_actions_and_reports_bound() -> None:
+    raw = state("SHOP", money=4)
+    raw["shop"]["cards"] = [
+        item_card("j_joker", card_id=40 + index, kind="JOKER", buy=2)
+        for index in range(30)
+    ]
+    raw["shop"]["count"] = 30
+    raw["vouchers"]["cards"][0]["cost"]["buy"] = 10
+
+    result = analyze(to_public_observation(raw))
+    assert len(result["strategic_actions"]) == 24
+    assert result["strategic_actions_omitted"] > 0
+    assert result["shortlist_is_not_allowlist"] is True
+    assert all(action["type"] != "buy_voucher" for action in result["strategic_actions"])
+
+
+def test_adjacent_hand_reorder_remaps_the_same_physical_selection() -> None:
+    observation = replace(
+        _selecting_hand(),
+        hand=(
+            VisiblePlayingCard("Q", "C"),
+            VisiblePlayingCard("9", "C"),
+            VisiblePlayingCard("8", "C"),
+            VisiblePlayingCard("6", "C"),
+            VisiblePlayingCard("5", "C"),
+        ),
+        hand_stats=(HandStat("Flush", 1, 35, 4, 0, 0),),
+        jokers=(
+            PublicItem("j_photograph", "Photograph", "JOKER"),
+            PublicItem("j_wrathful_joker", "Wrathful Joker", "JOKER"),
+            PublicItem("j_onyx_agate", "Onyx Agate", "JOKER"),
+        ),
+        blinds=(PublicBlind("SMALL", "CURRENT", "Small Blind", "", 100_000, False),),
+    )
+
+    suggestions = analyze(observation)["reorder_suggestions"]
+    hand_swap = next(row for row in suggestions if row["action"]["type"] == "reorder_hand")
+    assert hand_swap["selected_before"] == [0, 1, 2, 3, 4]
+    assert hand_swap["selected_after"] == [0, 1, 2, 3, 4]
+    assert hand_swap["reordered_score"] > hand_swap["baseline_score"]

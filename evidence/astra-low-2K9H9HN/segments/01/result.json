@@ -1,0 +1,10 @@
+{
+  "status": "error",
+  "won": false,
+  "reason": "ValueError: coach selected an illegal action",
+  "decisions": 54,
+  "coach_requests": 48,
+  "ante_reached": 3,
+  "peak_hand_score": 2376,
+  "seconds": 551.538
+}

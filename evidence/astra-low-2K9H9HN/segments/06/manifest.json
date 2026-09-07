@@ -1,0 +1,19 @@
+{
+  "model": "gpt-6-astra",
+  "reasoning_effort": "low",
+  "requested_model": "gpt-6-astra",
+  "requested_reasoning_effort": "low",
+  "transport": "CodexCoach",
+  "limits": {
+    "max_calls": 600,
+    "max_actions": 900,
+    "seconds": 7200,
+    "call_seconds": 180
+  },
+  "seed": "2K9H9HN",
+  "deck": "RED",
+  "stake": "WHITE",
+  "profile": "all_unlocked",
+  "endless": true,
+  "continuation_of": "/Users/jacopo/orca/workspaces/balatro-ai-v2/seabass/runs/astra-low-visible-fast-2K9H9HN-extended"
+}

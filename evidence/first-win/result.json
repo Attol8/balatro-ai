@@ -1,0 +1,40 @@
+{
+  "ante_reached": 9,
+  "coach_requests": 175,
+  "decisions": 203,
+  "final_context": {
+    "blind": null,
+    "blind_type": null,
+    "jokers": [
+      "j_ride_the_bus",
+      "j_blueprint",
+      "j_hologram",
+      "j_blackboard",
+      "j_blue_joker"
+    ],
+    "money": 158,
+    "phase": "ROUND_EVAL",
+    "required_score": null,
+    "round": {
+      "ancient_suit": "D",
+      "boss_rerolled": false,
+      "chips": 415042,
+      "discards_left": 4,
+      "discards_used": 0,
+      "hands_left": 3,
+      "hands_played": 1,
+      "most_played_poker_hand": "High Card",
+      "reroll_cost": 3
+    }
+  },
+  "peak_blind_score": 446698.0,
+  "peak_hand_score": 446698.0,
+  "reason": "ante_8_cleared",
+  "round_reached": 24,
+  "seconds": 1689.681,
+  "seed": "D0001000",
+  "split": "dev",
+  "status": "won",
+  "trajectory": "0000-D0001000.jsonl",
+  "won": true
+}

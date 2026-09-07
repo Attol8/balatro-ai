@@ -1,0 +1,10 @@
+{
+  "status": "error",
+  "won": false,
+  "reason": "ValueError: full deck composition must equal the declared deck size",
+  "decisions": 34,
+  "coach_requests": 30,
+  "ante_reached": 2,
+  "peak_hand_score": 1925,
+  "seconds": 316.283
+}

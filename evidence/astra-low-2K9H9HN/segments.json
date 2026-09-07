@@ -1,0 +1,82 @@
+[
+  {
+    "segment": "00",
+    "original_directory": "astra-low-visible-fast-2K9H9HN",
+    "part_of_completed_game": true,
+    "sha256_uncompressed": {
+      "result.json": "a6677b349eba9f9520838e4eedb708cceebef6ad594dcdf3694bbced17844a16",
+      "trajectory.jsonl": "c5aa0542e3f1224bd849838d4583617eebcd578c95277acbfd2cdec1e6dc6fdd",
+      "manifest.json": "977c1ed65176ce1f06c15466064f0d151a32e61ec15b0ada55906c849353d272"
+    }
+  },
+  {
+    "segment": "01",
+    "original_directory": "astra-low-visible-fast-2K9H9HN-continued",
+    "part_of_completed_game": true,
+    "sha256_uncompressed": {
+      "result.json": "d95fd2dc4142aa71c4537c9afce2c02b0bf14bc8163d461bf3bae1b786185d9c",
+      "trajectory.jsonl": "03a2dab6f41e38a0b5d3bc3e2facb4ee6a2fadfc51db028382f962230cfdea10",
+      "manifest.json": "04a14c9117b84faf27d6d865da75360559b442c9bf80f7511a9b34c975b600fa"
+    }
+  },
+  {
+    "segment": "02",
+    "original_directory": "astra-low-visible-fast-2K9H9HN-continued-2",
+    "part_of_completed_game": true,
+    "sha256_uncompressed": {
+      "result.json": "88b0d2ce3c5a20b09dbef574cc53873d713a7c77c196068956dfb968a0e343a4",
+      "trajectory.jsonl": "d6b0ab1900e5bbab4f5e5c36d4b3774ebaa0d1c7bb9ff4069da208ad98fb396c",
+      "manifest.json": "a7c854558702298a95ac02e74b08c977a0c061b227e0dd2414834c61a7ca4475"
+    }
+  },
+  {
+    "segment": "03",
+    "original_directory": "astra-low-visible-fast-2K9H9HN-compact",
+    "part_of_completed_game": true,
+    "sha256_uncompressed": {
+      "result.json": "2e750f60ea2ebc5342be5ae677d34035eccf2be52750db9ecf07c35c616998f4",
+      "trajectory.jsonl": "4ffa9ee09aeaeb7ef62fe7cbc9c8c869e2ab9aa8d90aa2599a6bd5a9aa833098",
+      "manifest.json": "f180c522fd46b1e02ec10a60dc93b845d222d9877426f98d797ac5138945d216"
+    }
+  },
+  {
+    "segment": "04",
+    "original_directory": "astra-low-visible-fast-2K9H9HN-technical",
+    "part_of_completed_game": true,
+    "sha256_uncompressed": {
+      "result.json": "bfb54bcb61d196be24efdfd5affe9342e558483461656307b2c2ec3ccc36fa25",
+      "trajectory.jsonl": "f1d5ab8f78bee38cba5becf5465204ebccc710d7dbf42bb5ad8271f59760b1c3",
+      "manifest.json": "b1bd5f2d1aa219a6fc002def18363a8b89c7fb77334618bafd4bcc6eaafd4bdd"
+    }
+  },
+  {
+    "segment": "05",
+    "original_directory": "astra-low-visible-fast-2K9H9HN-extended",
+    "part_of_completed_game": true,
+    "sha256_uncompressed": {
+      "result.json": "8ade1294af3b50c5c379a3866563d6230c3574d377205d23d9598a93f09bc853",
+      "trajectory.jsonl": "64975333f351609cd3a50bff62ed435f64b3bea015a0894cf79dceba78058141",
+      "manifest.json": "7d58f2a4f086362331f83df4c43d65c6668349f509a4ddaddc79850524ecbd73"
+    }
+  },
+  {
+    "segment": "06",
+    "original_directory": "astra-low-visible-fast-2K9H9HN-endless",
+    "part_of_completed_game": true,
+    "sha256_uncompressed": {
+      "result.json": "f4d3ba9e8960818a3413d361109637ee508093602e1d5b3337a6c081ba9b59ca",
+      "trajectory.jsonl": "9115cc215cd62123c4fdc6be5ad6cbabb8585d597885530d4881ebf7881d9b6a",
+      "manifest.json": "fd4bbb3bd69472371156e050f5d8655aabf0f0b388274114018cc82629042d71"
+    }
+  },
+  {
+    "segment": "interrupted-slow-attempt",
+    "original_directory": "astra-low-visible-2K9H9HN",
+    "part_of_completed_game": false,
+    "sha256_uncompressed": {
+      "result.json": "26266f9cc038c8b0fe4abc2b51da2090961fdf7f9cc5fa278777694a03180420",
+      "trajectory.jsonl": "159659fe325853cd5e1282565af7e3e3631aab7773f50898eb14050fb7c314d8",
+      "manifest.json": "57e0593b24fc3c0e5610adf4c8219667ef297caca8e5d5a0b8ca132bea6b1ff8"
+    }
+  }
+]

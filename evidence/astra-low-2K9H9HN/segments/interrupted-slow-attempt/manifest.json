@@ -1,0 +1,17 @@
+{
+  "model": "gpt-6-astra",
+  "reasoning_effort": "low",
+  "requested_model": "gpt-6-astra",
+  "requested_reasoning_effort": "low",
+  "transport": "CodexCoach",
+  "limits": {
+    "max_calls": 200,
+    "max_actions": 400,
+    "seconds": 3600,
+    "call_seconds": 180.0
+  },
+  "seed": "2K9H9HN",
+  "deck": "RED",
+  "stake": "WHITE",
+  "profile": "all_unlocked"
+}

@@ -1,0 +1,25 @@
+{
+  "action_sources": {
+    "automatic": 23,
+    "coach": 175,
+    "numerical_delegate": 5
+  },
+  "actual_game_comparison": {
+    "discrepancy_count": 18,
+    "discrepancy_indices": [55, 57, 67, 68, 69, 78, 79, 81, 87, 88, 90, 111, 120, 148, 169, 176, 198, 202],
+    "max_absolute_difference": 0.875,
+    "reason": "The retained scorer preserves fractional intermediate totals; the game records the final score floored to an integer. These differences do not indicate migration drift."
+  },
+  "ante_reached": 9,
+  "decisions": 203,
+  "offline_only": true,
+  "play_actions_scored": 54,
+  "recorded_prediction_comparison": {
+    "max_absolute_difference": 0.0,
+    "mismatch_count": 0
+  },
+  "result_reason": "ante_8_cleared",
+  "seed": "D0001000",
+  "status": "won",
+  "won": true
+}
