@@ -1,0 +1,32 @@
+[
+ {
+  "segment": "00",
+  "original_directory": "runs/live-QD3F4XVW/segment-00",
+  "part_of_completed_game": true,
+  "status": "error",
+  "reason": "BalatroBotError: Boss reroll requires Retcon or unused Director's Cut",
+  "ante_reached": 11,
+  "decisions": 459,
+  "coach_requests": 375,
+  "sha256_uncompressed": {
+   "result.json": "b4057d20f1fbce0c017512f1133a324ebc5d10240087904043b223bc72b7213f",
+   "trajectory.jsonl": "f1acf440f306e765ad5287bdad662fb6a3898c83ffd836b1414a093853cf35c3",
+   "manifest.json": "e1ffa83a5dffd1e77b333b1bef3813a75532ba6f411cfdd1838aeb7595c0e2f2"
+  }
+ },
+ {
+  "segment": "01",
+  "original_directory": "runs/live-QD3F4XVW/segment-01",
+  "part_of_completed_game": true,
+  "status": "lost",
+  "reason": "endless_game_over",
+  "ante_reached": 11,
+  "decisions": 473,
+  "coach_requests": 388,
+  "sha256_uncompressed": {
+   "result.json": "96a1a5f242c22a8b92f215e0179812a2689ac6c5da61e362d2aba48232909b5b",
+   "trajectory.jsonl": "bbf0acdadd90179a12164063ab133b55baa8c2160c0736a564651abafa4c73ca",
+   "manifest.json": "de6b4ae6a300465e10c282eb22f8342e58d26d569c380c505bfb783df025692a"
+  }
+ }
+]

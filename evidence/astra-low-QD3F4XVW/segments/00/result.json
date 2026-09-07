@@ -1,0 +1,15 @@
+{
+  "status": "error",
+  "won": true,
+  "reason": "BalatroBotError: Boss reroll requires Retcon or unused Director's Cut",
+  "decisions": 459,
+  "coach_requests": 375,
+  "coach_timeouts": 3,
+  "forced_actions": 5,
+  "followup_actions": 50,
+  "rpc_timeouts_recovered": 0,
+  "ante_reached": 11,
+  "peak_hand_score": 5722272,
+  "ante_8_cleared": true,
+  "seconds": 5789.152
+}

@@ -1,0 +1,33 @@
+{
+  "root": "runs/live-QD3F4XVW",
+  "seed": "QD3F4XVW",
+  "endless": true,
+  "max_restarts": 8,
+  "started_at": "2026-09-07T20:19:07+00:00",
+  "restarts": 1,
+  "segments": [
+    {
+      "index": 0,
+      "directory": "segment-00",
+      "resumed_from": null,
+      "started_at": "2026-09-07T20:19:07+00:00",
+      "ended_at": "2026-09-07T21:55:37+00:00",
+      "status": "error",
+      "reason": "BalatroBotError: Boss reroll requires Retcon or unused Director's Cut",
+      "disposition": "recoverable"
+    },
+    {
+      "index": 1,
+      "directory": "segment-01",
+      "resumed_from": "segment-00",
+      "started_at": "2026-09-07T21:55:39+00:00",
+      "ended_at": "2026-09-07T21:59:33+00:00",
+      "status": "lost",
+      "reason": "endless_game_over",
+      "disposition": "finished"
+    }
+  ],
+  "stopped": true,
+  "stop_reason": "the game finished: endless_game_over",
+  "updated_at": "2026-09-07T21:59:33+00:00"
+}
