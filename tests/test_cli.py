@@ -38,3 +38,106 @@ def test_doctor_read_only(monkeypatch, capsys):
     assert calls == ["health", "gamestate"]
     assert commands == [["codex", "--version"], ["codex", "login", "status"]]
     assert json.loads(capsys.readouterr().out)["game"]["ok"]
+
+
+def _resume_dir(tmp_path, observation, seed, *, status="stopped"):
+    run = tmp_path / "previous"
+    run.mkdir(parents=True)
+    transition = dict(
+        event="transition",
+        before=observation,
+        action={"type": "select_blind"},
+        after=observation,
+        source="coach",
+    )
+    rows = [
+        dict(event="coach_response", response={"plan": "Carried plan."}, plan_unchanged=False),
+        transition,
+        transition,
+    ]
+    (run / "trajectory.jsonl").write_text("".join(json.dumps(row) + "\n" for row in rows))
+    (run / "result.json").write_text(
+        json.dumps(
+            dict(
+                status=status,
+                reason="Codex CLI timed out",
+                decisions=4,
+                coach_requests=7,
+                coach_timeouts=1,
+                forced_actions=2,
+                followup_actions=3,
+                seconds=120,
+                peak_hand_score=33,
+            )
+        )
+    )
+    (run / "manifest.json").write_text(json.dumps(dict(seed=seed)))
+    return run
+
+
+def _paused_game(monkeypatch):
+    from balatro_ai.game.codec import public_observation_to_data
+    from balatro_ai.runner import public_state
+    from tests.test_runner import Coach, Game
+
+    game = Game(active=True)
+    monkeypatch.setattr("balatro_ai.runner.time.sleep", lambda _: None)
+    monkeypatch.setattr("balatro_ai.runner.fcntl.flock", lambda *_: None)
+    monkeypatch.setattr("balatro_ai.cli.BalatroBotClient", lambda port: game)
+    monkeypatch.setattr("balatro_ai.coach.CodexCoach", Coach)
+    return game, public_observation_to_data(public_state(game.raw))
+
+
+def test_resume_carries_counters_and_plan_forward(tmp_path, monkeypatch):
+    game, observation = _paused_game(monkeypatch)
+    previous = _resume_dir(tmp_path, observation, game.raw["seed"])
+    assert main(["play", "--output", str(tmp_path / "run"), "--resume", str(previous)]) == 0
+    result = json.loads((tmp_path / "run/result.json").read_text())
+    assert result["status"] == "won"
+    assert result["decisions"] == 5 and result["coach_requests"] == 8
+    assert result["forced_actions"] == 2 and result["followup_actions"] == 3
+    assert result["coach_timeouts"] == 1 and result["seconds"] >= 120
+    manifest = json.loads((tmp_path / "run/manifest.json").read_text())
+    assert manifest["continuation_of"] == str(previous)
+    assert manifest["resume_adjusted"] is False and manifest["resume_diff"] == []
+    assert manifest["seed"] == game.raw["seed"]
+    assert "start" not in game.calls
+
+
+def test_resume_adopts_a_live_state_that_moved_on(tmp_path, monkeypatch):
+    game, observation = _paused_game(monkeypatch)
+    previous = _resume_dir(tmp_path, observation, game.raw["seed"])
+    game.raw["money"] += 1
+    assert main(["play", "--output", str(tmp_path / "run"), "--resume", str(previous)]) == 0
+    manifest = json.loads((tmp_path / "run/manifest.json").read_text())
+    assert manifest["resume_adjusted"] is True and manifest["resume_diff"] == ["money"]
+    assert json.loads((tmp_path / "run/result.json").read_text())["status"] == "won"
+
+
+def test_resume_refuses_a_menu_or_finished_game(tmp_path, monkeypatch):
+    game, observation = _paused_game(monkeypatch)
+    previous = _resume_dir(tmp_path, observation, game.raw["seed"], status="won")
+    with pytest.raises(SystemExit) as caught:
+        main(["play", "--output", str(tmp_path / "run"), "--resume", str(previous)])
+    assert caught.value.code == 1 and not (tmp_path / "run").exists()
+    game.active = False
+    finished = _resume_dir(tmp_path / "menu", observation, game.raw["seed"])
+    with pytest.raises(SystemExit) as caught:
+        main(["play", "--output", str(tmp_path / "run"), "--resume", str(finished)])
+    assert caught.value.code == 1 and not (tmp_path / "run").exists()
+
+
+def test_resume_and_seed_are_mutually_exclusive(tmp_path):
+    with pytest.raises(SystemExit) as caught:
+        main(
+            [
+                "play",
+                "--output",
+                str(tmp_path / "run"),
+                "--resume",
+                str(tmp_path),
+                "--seed",
+                "ABCD",
+            ]
+        )
+    assert caught.value.code == 1 and not (tmp_path / "run").exists()

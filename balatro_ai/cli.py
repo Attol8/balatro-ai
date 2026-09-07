@@ -7,7 +7,7 @@ import subprocess
 from pathlib import Path
 
 from .client import BalatroBotClient
-from .runner import Limits, run_game
+from .runner import Limits, load_resume, run_game
 
 
 def main(argv=None):
@@ -25,6 +25,9 @@ def main(argv=None):
         "--endless", action="store_true", help="continue beyond Ante 8 until loss or run limits"
     )
     play.add_argument("--seed", help="optional 1–8 alphanumeric characters; withheld from coach")
+    play.add_argument(
+        "--resume", type=Path, help="continue the paused game recorded in a run directory"
+    )
     play.add_argument("--max-calls", type=int, default=200)
     play.add_argument("--max-actions", type=int, default=400)
     play.add_argument("--seconds", type=float, default=3600)
@@ -75,14 +78,26 @@ def main(argv=None):
             auth["ok"] = auth["ok"] and "chatgpt" in auth["detail"].lower()
             print(json.dumps(checks, indent=2))
             return 0 if all(c["ok"] for c in checks.values()) else 1
+        if args.resume is not None and args.seed is not None:
+            raise ValueError("--resume takes its seed from the resumed run; drop --seed")
         if args.seed is not None and re.fullmatch(r"[A-Za-z0-9]{1,8}", args.seed) is None:
             raise ValueError("seed must be 1–8 ASCII letters or digits")
         limits = Limits(args.max_calls, args.max_actions, args.seconds, args.call_seconds)
         from .coach import CodexCoach, SessionCoach
 
         coach = CodexCoach() if args.coach == "codex" else SessionCoach(args.output / "public")
+        continuation, seed = None, args.seed
+        if args.resume is not None:
+            continuation = load_resume(client, args.resume)
+            seed = json.loads((args.resume / "manifest.json").read_text()).get("seed")
         result = run_game(
-            client, coach, args.output, limits=limits, seed=args.seed, endless=args.endless
+            client,
+            coach,
+            args.output,
+            limits=limits,
+            seed=seed,
+            continuation=continuation,
+            endless=args.endless,
         )
         print(json.dumps(result, indent=2))
         return 0 if result["status"] in {"won", "lost"} else 1

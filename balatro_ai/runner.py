@@ -8,7 +8,7 @@ import math
 import tempfile
 import time
 import uuid
-from dataclasses import asdict, dataclass, replace
+from dataclasses import asdict, dataclass, fields, replace
 from importlib.resources import files
 from itertools import islice
 from pathlib import Path
@@ -24,7 +24,7 @@ from .game.actions import (
     iter_legal_actions,
 )
 from .game.adapter import action_to_rpc, to_public_observation
-from .game.codec import public_observation_to_data
+from .game.codec import public_observation_from_data, public_observation_to_data
 from .game.history import HistoryStep, enrich_runtime
 from .game.state import Phase, PublicObservation
 
@@ -57,8 +57,75 @@ class Continuation:
     prior_seconds: float
     prior_peak: float
     source: str
+    prior_forced: int = 0
+    prior_followups: int = 0
+    prior_timeouts: int = 0
+    # Observation fields the live game had already moved on by when resuming.
+    adjusted_fields: tuple[str, ...] = ()
 
 
+def load_resume(client, directory) -> Continuation:
+    """Rebuild a continuation from a stopped run directory and the live game.
+
+    Delayed effects can settle after the last recorded transition, so the live
+    observation wins; the difference is reported instead of refusing to resume.
+    """
+
+    directory = Path(directory)
+    previous = json.loads((directory / "result.json").read_text())
+    if previous.get("status") in {"won", "lost"}:
+        raise ValueError(f"{directory} already finished: {previous.get('status')}")
+    history: list[HistoryStep] = []
+    plan = ""
+    for line in (directory / "trajectory.jsonl").read_text().splitlines():
+        event = json.loads(line)
+        if event.get("event") == "transition":
+            history.append(
+                HistoryStep(
+                    public_observation_from_data(event["before"]),
+                    canonical_action_from_data(event["action"]),
+                    public_observation_from_data(event["after"]),
+                )
+            )
+        elif event.get("event") == "coach_response":
+            response = event.get("response")
+            if isinstance(response, dict) and isinstance(response.get("plan"), str):
+                plan = response["plan"]
+    if not history:
+        raise ValueError(f"{directory} recorded no transition to resume from")
+    deadline = time.monotonic() + 60
+    raw = game_rpc(client, "gamestate", None, deadline)
+    if raw.get("state") == "MENU":
+        raise ValueError("cannot resume: the live game is at MENU")
+    live = settle(client, raw, deadline)
+    if live.phase == Phase.GAME_OVER:
+        raise ValueError("cannot resume: the live game is over")
+    adjusted = tuple(
+        field.name
+        for field in fields(live)
+        if getattr(history[-1].after, field.name) != getattr(live, field.name)
+    )
+    if adjusted:
+        history[-1] = replace(history[-1], after=live)
+    return Continuation(
+        observation=live,
+        plan=plan,
+        history=tuple(history),
+        prior_calls=previous.get("coach_requests", 0),
+        prior_actions=previous.get("decisions", 0),
+        prior_seconds=previous.get("seconds", 0),
+        prior_peak=previous.get("peak_hand_score", 0),
+        source=str(directory),
+        prior_forced=previous.get("forced_actions", 0),
+        prior_followups=previous.get("followup_actions", 0),
+        prior_timeouts=previous.get("coach_timeouts", 0),
+        adjusted_fields=adjusted,
+    )
+
+
+# A timed-out model call mutated nothing, so the same decision may be re-asked.
+COACH_ATTEMPTS = 3
+_COACH_RETRY_SECONDS = 30
 # One reply may carry a bounded chain of follow-up actions.  Every entry is
 # re-validated against the state the previous action settled into.
 MAX_FOLLOWUPS = 6
@@ -286,6 +353,7 @@ def run_game(
         reason="not_started",
         decisions=0,
         coach_requests=0,
+        coach_timeouts=0,
         forced_actions=0,
         followup_actions=0,
         ante_reached=0,
@@ -306,6 +374,9 @@ def run_game(
             coach_requests=continuation.prior_calls,
             decisions=continuation.prior_actions,
             peak_hand_score=continuation.prior_peak,
+            coach_timeouts=continuation.prior_timeouts,
+            forced_actions=continuation.prior_forced,
+            followup_actions=continuation.prior_followups,
         )
     instructions = files("balatro_ai").joinpath("prompts/coach.md").read_text()
     if endless:
@@ -346,6 +417,8 @@ def run_game(
                 profile="all_unlocked",
                 endless=endless,
                 continuation_of=continuation.source if continuation else None,
+                resume_adjusted=bool(continuation.adjusted_fields) if continuation else None,
+                resume_diff=list(continuation.adjusted_fields) if continuation else None,
             ),
         )
         if game_rpc(client, "health", None, deadline).get("profile_mode") != "all_unlocked":
@@ -512,13 +585,39 @@ def run_game(
                     ],
                 )
                 preparation_seconds = time.monotonic() - preparation_started
-                record("coach_request", **packet)
-                result["coach_requests"] += 1
-                budget()
-                call_started = time.monotonic()
-                response = coach.choose(
-                    packet, min(limits.call_seconds, deadline - time.monotonic())
-                )
+                attempt = 0
+                while True:
+                    attempt += 1
+                    if attempt > 1:
+                        # The packet is unchanged; only its request id is fresh.
+                        request_id = uuid.uuid4().hex[:8]
+                        packet["request_id"] = request_id
+                    record("coach_request", **packet)
+                    result["coach_requests"] += 1
+                    budget()
+                    call_started = time.monotonic()
+                    try:
+                        response = coach.choose(
+                            packet, min(limits.call_seconds, deadline - time.monotonic())
+                        )
+                        break
+                    except TimeoutError:
+                        result["coach_timeouts"] += 1
+                        record(
+                            "coach_timeout",
+                            request_id=request_id,
+                            seconds=round(time.monotonic() - call_started, 3),
+                            attempt=attempt,
+                        )
+                        # Only the model call is retried, and only while the run
+                        # budget still fits another one.
+                        if (
+                            attempt >= COACH_ATTEMPTS
+                            or result["coach_requests"] >= limits.max_calls
+                            or deadline - time.monotonic()
+                            < min(limits.call_seconds, _COACH_RETRY_SECONDS)
+                        ):
+                            raise
                 plan_unchanged = isinstance(response, dict) and response.get("plan") == "="
                 if plan_unchanged:
                     response = dict(response, plan=plan)

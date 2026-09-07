@@ -580,3 +580,65 @@ def test_chain_contract_is_validated_before_any_mutation():
         {"request_id": "a", "action_json": REROLL, "plan": "", "then": None}, "a", obs
     )
     assert followups == () and plan == ""
+
+
+class TimingOutCoach(Coach):
+    """Time out on the first ``timeouts`` calls, then answer normally."""
+
+    def __init__(self, timeouts=1):
+        super().__init__()
+        self.timeouts = timeouts
+
+    def choose(self, packet, timeout):
+        self.packets.append(packet)
+        if len(self.packets) <= self.timeouts:
+            raise TimeoutError("Codex CLI timed out")
+        return {
+            "request_id": packet["request_id"],
+            "action_json": '{"type":"select_blind"}',
+            "plan": "Grow safely.",
+        }
+
+
+def test_timed_out_model_call_is_re_asked_with_a_fresh_id(tmp_path):
+    game, coach = Game(), TimingOutCoach()
+    result = run_game(game, coach, tmp_path / "run")
+    assert result["status"] == "won" and result["decisions"] == 1
+    assert result["coach_timeouts"] == 1 and result["coach_requests"] == 2
+    rows = [
+        json.loads(line) for line in (tmp_path / "run/trajectory.jsonl").read_text().splitlines()
+    ]
+    timeouts = [row for row in rows if row["event"] == "coach_timeout"]
+    assert [row["attempt"] for row in timeouts] == [1]
+    sent = [row for row in rows if row["event"] == "coach_request"]
+    assert len({row["request_id"] for row in sent}) == 2
+    assert timeouts[0]["request_id"] == sent[0]["request_id"]
+    # The retry re-asks the same decision; only the request id is new.
+    assert {key: value for key, value in sent[0].items() if key != "request_id"} == {
+        key: value for key, value in sent[1].items() if key != "request_id"
+    }
+
+
+def test_three_coach_timeouts_stop_the_run_without_mutating(tmp_path):
+    game, coach = Game(), TimingOutCoach(timeouts=9)
+    result = run_game(game, coach, tmp_path / "run")
+    assert result["status"] == "stopped" and result["reason"] == "Codex CLI timed out"
+    assert result["coach_timeouts"] == 3 and result["coach_requests"] == 3
+    assert result["decisions"] == 0 and "select" not in game.calls
+
+
+def test_coach_timeout_is_not_retried_without_run_budget(tmp_path, monkeypatch):
+    clock = [0.0]
+    monkeypatch.setattr("balatro_ai.runner.time.monotonic", lambda: clock[0])
+
+    class Slow(Coach):
+        def choose(self, packet, timeout):
+            self.packets.append(packet)
+            clock[0] += 95
+            raise TimeoutError("Codex CLI timed out")
+
+    game, coach = Game(), Slow()
+    result = run_game(game, coach, tmp_path / "run", limits=Limits(seconds=100, call_seconds=180))
+    assert result["status"] == "stopped" and result["reason"] == "Codex CLI timed out"
+    assert result["coach_timeouts"] == 1 and result["coach_requests"] == 1
+    assert len(coach.packets) == 1 and "select" not in game.calls
