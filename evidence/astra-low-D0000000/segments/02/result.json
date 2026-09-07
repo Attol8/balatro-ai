@@ -1,0 +1,16 @@
+{
+  "status": "stopped",
+  "reason": "process ended without writing a result; reconstructed from the trajectory",
+  "reconstructed": true,
+  "won": true,
+  "ante_8_cleared": true,
+  "ante_reached": 10,
+  "decisions": 258,
+  "coach_requests": 215,
+  "followup_actions": 25,
+  "forced_actions": 5,
+  "coach_timeouts": 2,
+  "rpc_timeouts_recovered": 0,
+  "peak_hand_score": 1840907,
+  "seconds": 2359.597
+}

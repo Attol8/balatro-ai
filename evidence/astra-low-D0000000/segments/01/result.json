@@ -1,0 +1,14 @@
+{
+  "status": "error",
+  "won": true,
+  "reason": "BalatroBotError: failed to connect to BalatroBot at http://127.0.0.1:12346: timed out",
+  "decisions": 216,
+  "coach_requests": 178,
+  "coach_timeouts": 2,
+  "forced_actions": 5,
+  "followup_actions": 22,
+  "ante_reached": 9,
+  "peak_hand_score": 1840907,
+  "ante_8_cleared": true,
+  "seconds": 2359.597
+}

@@ -1,0 +1,31 @@
+{
+  "model": "gpt-6-astra",
+  "reasoning_effort": "low",
+  "requested_model": "gpt-6-astra",
+  "requested_reasoning_effort": "low",
+  "transport": "CodexCoach",
+  "limits": {
+    "max_calls": 450,
+    "max_actions": 750,
+    "seconds": 7200,
+    "call_seconds": 60
+  },
+  "seed": "D0000000",
+  "deck": "RED",
+  "stake": "WHITE",
+  "profile": "all_unlocked",
+  "endless": true,
+  "continuation_of": "runs/live-visible-D0000000-continued",
+  "resume_adjusted": true,
+  "resume_diff": [
+    "phase",
+    "remaining_deck",
+    "full_deck",
+    "draw_count",
+    "deck_size",
+    "jokers",
+    "opened_pack",
+    "pack_kind",
+    "pack_choices_remaining"
+  ]
+}

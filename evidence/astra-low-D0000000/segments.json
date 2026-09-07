@@ -1,0 +1,66 @@
+[
+ {
+  "segment": "00",
+  "original_directory": "live-visible-D0000000",
+  "part_of_completed_game": true,
+  "status": "error",
+  "reason": "BalatroBotError: failed to connect to BalatroBot at http://127.0.0.1:12346: timed out",
+  "reconstructed_result": false,
+  "ante_reached": 7,
+  "decisions": 181,
+  "coach_requests": 154,
+  "sha256_uncompressed": {
+   "result.json": "2fce964082d06d10a504bd61a4bdc7eeb756ab72933cf4e6cc0fb70f4e99b6bd",
+   "trajectory.jsonl": "289133b3a63890e4e4e55f158104991c26695f470d356a79777a2c3ebcbaf4f3",
+   "manifest.json": "31d24ddd8c72366b67f5fe127da4324c36cb58305f08bfb672cd32c0f6bd3a8b"
+  }
+ },
+ {
+  "segment": "01",
+  "original_directory": "live-visible-D0000000-continued",
+  "part_of_completed_game": true,
+  "status": "error",
+  "reason": "BalatroBotError: failed to connect to BalatroBot at http://127.0.0.1:12346: timed out",
+  "reconstructed_result": false,
+  "ante_reached": 9,
+  "decisions": 216,
+  "coach_requests": 178,
+  "sha256_uncompressed": {
+   "result.json": "48ac07601e7906861f1858621970affc57d3979a449108f3ac16b53dbd48dabb",
+   "trajectory.jsonl": "1e5c6ebc00f09a09afdc24c180e26c9c7a17ea0ed51649608303b4d6d4e71ef8",
+   "manifest.json": "d982c09193ca8f5fa0649e5f492a145311ebffe4f0af92654cdb471ac21aa2e7"
+  }
+ },
+ {
+  "segment": "02",
+  "original_directory": "live-visible-D0000000-continued-2",
+  "part_of_completed_game": true,
+  "status": "stopped",
+  "reason": "process ended without writing a result; reconstructed from the trajectory",
+  "reconstructed_result": true,
+  "ante_reached": 10,
+  "decisions": 258,
+  "coach_requests": 215,
+  "sha256_uncompressed": {
+   "result.json": "92f6356d15feae1a885d0af94ec2e4a2388b14517416e792aaa04ea6fde0d371",
+   "trajectory.jsonl": "a94c3ec3312a0f7b3bb89f05b0cb19afa77d0f9b3d27478c15871efa14ce8fac",
+   "manifest.json": "4a6cc854a032c56eef4ff051ce18447ac41267bcdf939080b0d628d9fed5b062"
+  }
+ },
+ {
+  "segment": "03",
+  "original_directory": "live-visible-D0000000-continued-3",
+  "part_of_completed_game": true,
+  "status": "lost",
+  "reason": "endless_game_over",
+  "reconstructed_result": false,
+  "ante_reached": 10,
+  "decisions": 315,
+  "coach_requests": 265,
+  "sha256_uncompressed": {
+   "result.json": "d02e4858b5f1d23504b6cc2f905085ca19c3d7bda650c1a484745fe8582d8a06",
+   "trajectory.jsonl": "3970e24fd2e0ddb9b1713b8891ab72ca7a268c1edf38a1314edcde6804196dca",
+   "manifest.json": "98dfa4c144bbd5f4d979064dc1c5c71bfa536ec5f88a20b48335652a363c32ce"
+  }
+ }
+]
