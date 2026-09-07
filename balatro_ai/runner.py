@@ -484,7 +484,9 @@ def run_game(
                     result.update(status="stopped", reason="coach_call_limit")
                     break
                 preparation_started = time.monotonic()
-                request_id = uuid.uuid4().hex
+                # Eight hex characters: long enough to never repeat within a run, short
+                # enough that the model copies it back without dropping characters.
+                request_id = uuid.uuid4().hex[:8]
                 packet = dict(
                     request_id=request_id,
                     instructions=instructions,
