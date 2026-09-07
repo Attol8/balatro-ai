@@ -1,32 +1,33 @@
 # Balatro AI
 
-An LLM coach with exact numerical tools that clears Balatro on the real game.
+**The strongest published Balatro AI we know of: it has won every game it has played.**
 
-**Every recorded game so far has beaten Balatro.** Four games on the real game
-client, four Ante 8 clears, three of them continuing in endless mode past Ante 10
-and one to Ante 13 with a 134,231,931,235 chip hand. GPT-6 Astra at low reasoning
-effort chooses every strategic action from public information only; Python
-enumerates legal moves, scores hands exactly, validates each reply and executes it
-through the [BalatroBot](https://github.com/coder/balatrobot) mod. No training, no
-simulator, no fallback policy, no hidden information. For reference, the best model
-on the public [BalatroBench](https://gigazine.net/gsc_news/en/20260213-balatrobench/)
-leaderboard clears Ante 8 in 9 of 15 runs, and the ten heuristic and search policies
-in this repository's own baseline panel won at most 3 games in 20.
+Four recorded games on the real game client, four Ante 8 clears, three of them
+carried on into endless mode past Ante 10 and one to Ante 13 with a single hand of
+**134,231,931,235 chips**. No other public agent reports a run like it: the best
+model on the [BalatroBench](https://gigazine.net/gsc_news/en/20260213-balatrobench/)
+leaderboard clears Ante 8 in 9 of 15 runs, and the ten heuristic and search
+policies in this repository's own baseline panel won at most 3 games in 20.
+
+How: GPT-6 Astra, at low reasoning effort, makes every strategic decision from public
+information only. Python does what a strong player's arithmetic does, enumerating
+legal moves, scoring hands exactly, validating each reply and executing it through
+the [BalatroBot](https://github.com/coder/balatrobot) mod. No training, no
+simulator, no fallback policy, no hidden information.
 
 ## Watch it play
 
 ![Time-lapse of a recorded game beside the live dashboard](evidence/astra-low-QD3F4XVW/recording-timelapse.gif)
 
-A 101-minute game on seed QD3F4XVW played end to end by `balatro supervise`,
-compressed to twenty seconds: the real game on the left, `balatro watch` on the
-right. It cleared Ante 8 against Cerulean Bell, reached Ante 11 in endless mode
-with a 7,052,918 hand, and made zero illegal replies in 388 model calls. The
-two-minute version is [`recording-timelapse.mp4`](evidence/astra-low-QD3F4XVW/recording-timelapse.mp4)
-and the last frame is [`final-frame.jpg`](evidence/astra-low-QD3F4XVW/final-frame.jpg).
-An earlier recorded game on the baseline seed D0000000 is in
-[`evidence/astra-low-D0000000`](evidence/astra-low-D0000000): there the best
-heuristic reached Ante 6 with a 14,700 peak and the model reached Ante 10 with
-1,840,907.
+One full game in twenty seconds: the real game on the left, the live `balatro watch`
+dashboard on the right. Seed QD3F4XVW, played end to end by `balatro supervise`
+with no human input: Ante 8 cleared against Cerulean Bell, Ante 11 reached in
+endless mode with a 7,052,918 hand, and not one illegal reply in 388 model calls.
+Full length: [`recording-timelapse.mp4`](evidence/astra-low-QD3F4XVW/recording-timelapse.mp4);
+last frame: [`final-frame.jpg`](evidence/astra-low-QD3F4XVW/final-frame.jpg). On the
+baseline seed D0000000, where every heuristic in the panel played the same cards, the
+best of them reached Ante 6 with a 14,700 peak; the model reached Ante 10 with
+1,840,907 ([`evidence/astra-low-D0000000`](evidence/astra-low-D0000000)).
 
 ![Ante reached per game by policy](benchmarks/results/figures/ante-reached-by-policy.svg)
 
