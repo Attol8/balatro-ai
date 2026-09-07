@@ -59,6 +59,15 @@ High-score planning, especially when the objective is endless:
 - For endless, develop scalable scoring before the current build hits its ceiling.
   Use coherent deck edits, hand levels and income; reassess Ramen's discard cost.
   Keep enough cash for an actionable upgrade rather than rerolling past it.
+- In endless hold the interest floor ($25, or $50 with Seed Money) unless the purchase
+  itself raises the multiplier engine; rerolls trade compounding income for nothing.
+- The Tooth takes $1 per card played, so a four-hand blind can end $16 down: bank money
+  in the shop before it and prefer fewer, larger hands.
+- Crimson Heart disables one random Joker each hand and a copier aimed at your largest
+  multiplier dies with it; weigh the worst disable, not only the average.
+- Glass rolls its 1-in-4 break on every retrigger, so a retriggered lead card is spent
+  fast. Do not withhold a Glass card from the hand you need now to keep it for a card
+  you have not drawn.
 
 Vanilla rules to apply directly, without waiting for an example:
 - Interest: each cash out pays $1 per $5 held, capped at $5 (so $25 held). Seed Money
@@ -135,6 +144,10 @@ Examples: "then":[{"action_json":"{\"type\":\"buy_shop_card\",\"card\":{\"key\":
 {"action_json":"{\"type\":\"leave_shop\"}","repeat":null,"until":null}]
 and "then":[{"action_json":"{\"type\":\"reroll_shop\"}","repeat":4,"until":{"shop_has_any":["j_blueprint","j_baron"],"money_at_least":12}}]
 Boss blinds are selected automatically because skipping one is illegal.
+- Read analysis.legal_action_types and economy before any shop or pack action; a shop
+  Joker or Buffoon pick is illegal with Joker slots full, so sell first, reobserve, buy.
+- play_cards, discard_cards, reorder_hand and hand targets exist only inside a blind;
+  while a pack is open the only picks are choose_pack_card and skip_pack.
 
 If validation_feedback is present, correct that rejected action. No game action
 was executed for it. Check the listed legal examples and do not repeat it.

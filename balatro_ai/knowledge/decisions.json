@@ -2096,5 +2096,305 @@
       "game:game.lua:610",
       "game:game.lua:627"
     ]
+  },
+  {
+    "id": "glass-lead-slot-recorded",
+    "family": "glass_lead_slot",
+    "trigger_keys": [
+      "j_photograph",
+      "j_hanging_chad",
+      "enhancement:GLASS"
+    ],
+    "required_keys": [
+      "j_photograph",
+      "j_hanging_chad",
+      "enhancement:GLASS"
+    ],
+    "phases": [
+      "SELECTING_HAND"
+    ],
+    "situation": "A Glass face card sits in hand with Photograph, Hanging Chad and a copier, and a safer non-Glass card could take the first slot instead.",
+    "options": [
+      "Hold the Glass card back and lead with a plain high card.",
+      "Lead with the Glass face and accept the break roll."
+    ],
+    "lesson": "Only the first played card is retriggered, so Glass and Photograph compound there: the recorded Ace-led Steel flush scored 764,127 where the same hand led by a face and holding the Glass Ten scores 1,222,760,448.",
+    "reversal": "Lead a plain face when the blind already falls to the safer hand and that Glass card is the last one the engine can still use.",
+    "provenance": "recorded",
+    "sources": [
+      "evidence:TAF7DNTX:04:948",
+      "evidence:TAF7DNTX:04:901"
+    ]
+  },
+  {
+    "id": "glass-attrition-recorded",
+    "family": "glass_attrition",
+    "trigger_keys": [
+      "enhancement:GLASS",
+      "j_hanging_chad",
+      "j_blueprint"
+    ],
+    "required_keys": [
+      "enhancement:GLASS",
+      "j_hanging_chad"
+    ],
+    "phases": [
+      "SHOP"
+    ],
+    "situation": "A Glass-led retrigger engine is carrying the run and the shop can still add or convert cards.",
+    "options": [
+      "Bank the money and keep rerolling for another Joker.",
+      "Spend on Glass supply: Justice, Strength on a Glass Ten, or a Standard pack."
+    ],
+    "lesson": "Every retrigger rolls the Glass one-in-four break, so the lead card is consumed fastest: the recorded deck fell from seven Glass cards to four across two blinds and lost both Glass faces before the boss.",
+    "reversal": "Stop buying Glass supply when the remaining blinds fall to held-card or XMult scaling that does not destroy its own cards.",
+    "provenance": "recorded",
+    "sources": [
+      "evidence:TAF7DNTX:04:875",
+      "evidence:TAF7DNTX:04:901",
+      "evidence:TAF7DNTX:04:948"
+    ]
+  },
+  {
+    "id": "strength-makes-a-glass-face-recorded",
+    "family": "tarot_glass_face",
+    "trigger_keys": [
+      "c_strength",
+      "c_justice",
+      "j_photograph"
+    ],
+    "required_keys": [
+      "c_strength",
+      "enhancement:GLASS"
+    ],
+    "phases": [
+      "SELECTING_HAND",
+      "SHOP",
+      "PACK"
+    ],
+    "situation": "Strength is held with a Glass Ten available while Photograph wants a Glass face card in the lead slot.",
+    "options": [
+      "Raise two low cards toward a Straight or a rank build.",
+      "Raise the Glass Ten to a Glass Jack for the lead slot."
+    ],
+    "lesson": "Strength changes rank without touching the enhancement, so a Glass Ten becomes a Glass face; the recorded run did exactly this and the next hand scored 2,853,107,712 against a 600,000,000 boss.",
+    "reversal": "Spend Strength elsewhere when a Glass face already exists or when the rank change breaks a Flush, Straight or held-King plan.",
+    "provenance": "recorded",
+    "sources": [
+      "evidence:TAF7DNTX:04:833",
+      "evidence:TAF7DNTX:04:841"
+    ]
+  },
+  {
+    "id": "boss-tooth-recorded",
+    "family": "boss_money_drain",
+    "trigger_keys": [
+      "boss:The Tooth"
+    ],
+    "required_keys": [
+      "boss:The Tooth"
+    ],
+    "phases": [
+      "BLIND_SELECT",
+      "SELECTING_HAND",
+      "SHOP"
+    ],
+    "situation": "The Tooth is the visible boss and the reserve is small.",
+    "options": [
+      "Enter on the current cash and play five cards every hand.",
+      "Bank money in the shop before it and plan fewer, larger hands."
+    ],
+    "lesson": "The Tooth takes $1 per card played, so four hands of five, five, five and one cost $16: the recorded run entered on $6, finished at -$10 and had no money left for the shop it never reached.",
+    "reversal": "Ignore the drain when the blind falls in one or two hands and the following shop is not part of the plan.",
+    "provenance": "recorded",
+    "sources": [
+      "evidence:TAF7DNTX:04:948",
+      "evidence:TAF7DNTX:04:960"
+    ]
+  },
+  {
+    "id": "boss-crimson-heart-recorded",
+    "family": "boss_joker_disable",
+    "trigger_keys": [
+      "boss:Crimson Heart"
+    ],
+    "required_keys": [
+      "boss:Crimson Heart"
+    ],
+    "phases": [
+      "BLIND_SELECT",
+      "SELECTING_HAND",
+      "SHOP"
+    ],
+    "situation": "Crimson Heart disables one random Joker every hand while a copier is pointed at the build's single largest multiplier.",
+    "options": [
+      "Keep the highest-expected order and accept the worst case.",
+      "Spread the multipliers so no single disable removes two of them."
+    ],
+    "lesson": "Concentration cuts both ways: with Brainstorm copying Photograph the recorded hand fell from 11,548,293 to 180,442 when Photograph was the Joker disabled, against 20x or less for every other slot.",
+    "reversal": "Keep the concentrated order when it maximises the expected score and the worst disable still clears the blind, as 180,442 did against 100,000 here.",
+    "provenance": "recorded",
+    "sources": [
+      "evidence:TAF7DNTX:04:287",
+      "evidence:TAF7DNTX:04:290"
+    ]
+  },
+  {
+    "id": "copier-placement-recorded",
+    "family": "copy_placement",
+    "trigger_keys": [
+      "j_blueprint",
+      "j_brainstorm"
+    ],
+    "required_keys": [
+      "j_blueprint",
+      "j_brainstorm"
+    ],
+    "phases": [
+      "SHOP",
+      "SELECTING_HAND"
+    ],
+    "situation": "Blueprint and Brainstorm are both owned over a played-card engine that has one retrigger Joker and one multiplier Joker.",
+    "options": [
+      "Point both copiers at the single largest multiplier.",
+      "Give Blueprint the retrigger and Brainstorm the multiplier."
+    ],
+    "lesson": "Blueprint copies its right neighbour and Brainstorm the leftmost Joker: the recorded run used five adjacent swaps to sit Blueprint left of Hanging Chad with Photograph leftmost, so retriggers and X2 compounded.",
+    "reversal": "Copy one Joker twice only when it out-scales the pair, and recheck after every sale because both targets move with the order.",
+    "provenance": "recorded",
+    "sources": [
+      "evidence:TAF7DNTX:04:440",
+      "evidence:TAF7DNTX:04:456"
+    ]
+  },
+  {
+    "id": "steel-joker-deck-recorded",
+    "family": "steel_deck_scaler",
+    "trigger_keys": [
+      "j_steel_joker"
+    ],
+    "required_keys": [
+      "j_steel_joker",
+      "enhancement:STEEL"
+    ],
+    "phases": [
+      "SHOP",
+      "SELECTING_HAND"
+    ],
+    "situation": "Steel Joker is offered or owned while the deck holds only a few Steel cards.",
+    "options": [
+      "Pass until the deck already holds many Steel cards.",
+      "Take it and grow the Steel count with Tarots and packs."
+    ],
+    "lesson": "Steel Joker counts Steel in the whole deck, not the hand: the recorded copy started at two Steel cards and reached nine by Ante 13, while playing a Steel card adds nothing because Steel only pays while held.",
+    "reversal": "Skip it when the deck cannot gain Steel cheaply, or when the slot is needed by a multiplier that is already larger.",
+    "provenance": "recorded",
+    "sources": [
+      "evidence:TAF7DNTX:04:176",
+      "evidence:TAF7DNTX:04:948"
+    ]
+  },
+  {
+    "id": "negative-tag-slot-recorded",
+    "family": "tag_negative_recorded",
+    "trigger_keys": [
+      "tag_negative"
+    ],
+    "required_keys": [
+      "tag_negative"
+    ],
+    "phases": [
+      "BLIND_SELECT"
+    ],
+    "situation": "A Negative Tag sits on a still-selectable blind while the Joker slots are already full.",
+    "options": [
+      "Play the blind for its cash and its shop.",
+      "Skip for the tag and take the free Negative Joker."
+    ],
+    "lesson": "The recorded Ante 7 skip turned the next base-edition shop Joker into a free Negative Steel Joker, which raised the Joker limit from six to seven instead of competing for a slot.",
+    "reversal": "Play the blind when its cash and shop matter more, or when no Joker worth a permanent slot is likely to appear in it.",
+    "provenance": "recorded",
+    "sources": [
+      "evidence:TAF7DNTX:04:152",
+      "evidence:TAF7DNTX:04:176"
+    ]
+  },
+  {
+    "id": "investment-tag-skip-recorded",
+    "family": "tag_investment_recorded",
+    "trigger_keys": [
+      "tag_investment"
+    ],
+    "required_keys": [
+      "tag_investment"
+    ],
+    "phases": [
+      "BLIND_SELECT"
+    ],
+    "situation": "An Investment Tag is on an early small blind whose own cash reward is only a few dollars.",
+    "options": [
+      "Play the small blind for its reward and its shop.",
+      "Skip for the tag and collect $25 after the boss."
+    ],
+    "lesson": "The recorded Ante 1 skip paid exactly $25 at the boss cash out, moving money from $5 to $39 in one step and funding the first real shop; the ante target was unchanged.",
+    "reversal": "Play the blind when the run needs that shop now, or when the boss looks unlikely to fall, because the tag pays nothing until it does.",
+    "provenance": "recorded",
+    "sources": [
+      "evidence:TAF7DNTX:00:4",
+      "evidence:TAF7DNTX:00:66"
+    ]
+  },
+  {
+    "id": "endless-interest-floor-recorded",
+    "family": "endless_economy",
+    "trigger_keys": [
+      "v_seed_money",
+      "v_money_tree"
+    ],
+    "required_keys": [
+      "v_seed_money"
+    ],
+    "phases": [
+      "SHOP"
+    ],
+    "situation": "Endless play continues past Ante 8 with Seed Money owned and a shop offering rerolls and small purchases.",
+    "options": [
+      "Spend down each shop hunting one more upgrade.",
+      "Hold $50 and buy only what raises the multiplier engine."
+    ],
+    "lesson": "Interest is the only compounding income: the recorded run let its $50 floor lapse after Ante 7, and its last eight cash outs paid $25 of a possible $80, arriving at Ante 13 with $2.",
+    "reversal": "Spend below the floor when the purchase is the engine upgrade the next blind actually needs; forgone interest is cheap next to a failed blind.",
+    "provenance": "recorded",
+    "sources": [
+      "evidence:TAF7DNTX:04:823",
+      "evidence:TAF7DNTX:04:843"
+    ]
+  },
+  {
+    "id": "observatory-held-jupiter-recorded",
+    "family": "voucher_observatory_recorded",
+    "trigger_keys": [
+      "v_observatory",
+      "c_jupiter"
+    ],
+    "required_keys": [
+      "v_observatory"
+    ],
+    "phases": [
+      "SHOP",
+      "SELECTING_HAND"
+    ],
+    "situation": "Observatory is bought late in endless while two copies of the played hand's Planet occupy both consumable slots.",
+    "options": [
+      "Use the Planets for permanent hand levels and free the slots.",
+      "Hold both and take X1.5 each on every hand of that family."
+    ],
+    "lesson": "The recorded run spent its last $10 on Observatory and held two Jupiters; the next two Flushes scored 125,384,579,763 and 134,231,931,235, but the full slots then blocked every Tarot in the final shops.",
+    "reversal": "Use the Planets when the extra levels clear the blind anyway, or when a slot is needed for a deck edit the engine depends on.",
+    "provenance": "recorded",
+    "sources": [
+      "evidence:TAF7DNTX:04:847",
+      "evidence:TAF7DNTX:04:881"
+    ]
   }
 ]

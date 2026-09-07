@@ -10,12 +10,21 @@ from balatro_ai.game.codec import public_observation_from_data
 from balatro_ai.game.state import HiddenJokerSlot, Phase, PublicBlind
 from balatro_ai.strategy import load_examples, retrieve_examples
 
-EVIDENCE = Path(__file__).resolve().parents[1] / "evidence/astra-low-2K9H9HN/segments"
+EVIDENCE = Path(__file__).resolve().parents[1] / "evidence"
+# The first run's references predate a second recorded run, so a bare
+# "evidence:05:95" still means seed 2K9H9HN; later runs name themselves.
+DEFAULT_RUN = "2K9H9HN"
 
 
-def recorded(segment, index):
-    with gzip.open(EVIDENCE / segment / "trajectory.jsonl.gz", "rt") as stream:
+def recorded(segment, index, run=DEFAULT_RUN):
+    path = EVIDENCE / f"astra-low-{run}/segments" / segment / "trajectory.jsonl.gz"
+    with gzip.open(path, "rt") as stream:
         return json.loads(list(stream)[index])
+
+
+def taf(index):
+    """A coach_request or transition from the headless TAF7DNTX segment 04."""
+    return recorded("04", index, run="TAF7DNTX")
 
 
 def test_library_has_reviewable_unique_sourced_examples():
@@ -61,8 +70,9 @@ def test_library_has_reviewable_unique_sourced_examples():
             assert 0 < len(row[key]) <= 230
         for source in row["sources"]:
             if source.startswith("evidence:"):
-                _, segment, index = source.split(":")
-                event = recorded(segment, int(index))
+                parts = source.split(":")[1:]
+                run, segment, index = parts if len(parts) == 3 else [DEFAULT_RUN, *parts]
+                event = recorded(segment, int(index), run=run)
                 assert "observation" in event or "before" in event
             else:
                 assert source.startswith(
@@ -276,3 +286,65 @@ def test_a_rich_shop_still_returns_at_most_three_distinct_families():
     examples = retrieve_examples(obs)
     assert len(examples) == 3
     assert len({row["id"] for row in examples}) == 3
+
+
+def test_recorded_tooth_hand_retrieves_the_glass_lead_and_copier_lessons():
+    """04:945 is the coach request before the first hand of the losing boss."""
+    obs = public_observation_from_data(taf(945)["observation"])
+    examples = retrieve_examples(obs)
+    ids = [row["id"] for row in examples]
+
+    assert obs.phase is Phase.SELECTING_HAND
+    assert 1 <= len(examples) <= 3
+    assert "glass-lead-slot-recorded" in ids
+    assert "copier-placement-recorded" in ids
+    assert analyze(obs)["strategy_examples"] == examples
+    wire = json.dumps(examples)
+    assert "TAF7DNTX" not in wire and "evidence:" not in wire
+    assert "sources" not in wire and "trigger_keys" not in wire
+    assert len(wire.encode()) <= 2600
+
+
+def test_recorded_investment_tag_skip_retrieves_the_payout_lesson():
+    """00:1 is the Ante 1 blind select whose small blind carries an Investment Tag."""
+    obs = public_observation_from_data(recorded("00", 1, run="TAF7DNTX")["observation"])
+    examples = retrieve_examples(obs)
+
+    assert obs.phase is Phase.BLIND_SELECT
+    assert "investment-tag-skip-recorded" in [row["id"] for row in examples]
+    assert any("$25" in row["lesson"] for row in examples)
+    assert len(json.dumps(examples).encode()) <= 2600
+
+
+def test_boss_lessons_are_bound_to_their_own_boss():
+    """Stripped of every other public fact, only the matching boss lesson matches."""
+    obs = public_observation_from_data(taf(945)["observation"])
+    bare = replace(
+        obs,
+        jokers=(),
+        consumables=(),
+        shop=(),
+        opened_pack=(),
+        hand=(),
+        full_deck=(),
+        deck_size=0,
+        vouchers=(),
+        used_vouchers=(),
+    )
+    for boss, expected in (
+        ("The Tooth", "boss-tooth-recorded"),
+        ("Crimson Heart", "boss-crimson-heart-recorded"),
+    ):
+        blinds = (
+            PublicBlind(
+                kind="BOSS",
+                status="CURRENT",
+                name=boss,
+                effect="",
+                score=1,
+                disabled=False,
+            ),
+        )
+        assert [row["id"] for row in retrieve_examples(replace(bare, blinds=blinds))] == [expected]
+    other = replace(bare, blinds=(PublicBlind("BOSS", "CURRENT", "The Ox", "", 1, False),))
+    assert retrieve_examples(other) == []

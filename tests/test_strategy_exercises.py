@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import replace
 from fractions import Fraction
 
@@ -10,7 +11,7 @@ import pytest
 from balatro_ai.game.actions import HandSlot
 from balatro_ai.game.adapter import to_public_observation
 from balatro_ai.game.scoring import score_play
-from balatro_ai.game.state import HandStat, PublicItem, VisiblePlayingCard
+from balatro_ai.game.state import DeckCardCount, HandStat, PublicItem, VisiblePlayingCard
 from tests.game.state_factory import state
 
 
@@ -172,3 +173,152 @@ def test_joker_editions_add_fifty_chips_ten_mult_or_multiply_by_one_and_a_half(
 
     assert family == "High Card"
     assert score == expected
+
+
+# --- Headless run TAF7DNTX -------------------------------------------------
+#
+# The engine that reached Ante 13 was Photograph, Blueprint, Hanging Chad,
+# Brainstorm in that order: Blueprint copies its right neighbour (Chad) and
+# Brainstorm copies the leftmost Joker (Photograph). Chad and its copy retrigger
+# the first played card twice each, so that one card scores five times and every
+# effect on it is applied five times.
+
+_TAF_ENGINE = (
+    PublicItem("j_photograph", "Photograph", "JOKER"),
+    PublicItem("j_blueprint", "Blueprint", "JOKER"),
+    PublicItem("j_hanging_chad", "Hanging Chad", "JOKER"),
+    PublicItem("j_brainstorm", "Brainstorm", "JOKER"),
+)
+
+
+def _taf_engine_observation(card: VisiblePlayingCard):
+    observation = _high_card_observation(1, ())
+    return replace(observation, hand=(card,), jokers=_TAF_ENGINE)
+
+
+@pytest.mark.parametrize(
+    ("lead", "expected", "factor_per_trigger"),
+    [
+        (VisiblePlayingCard("K", "S", enhancement="GLASS"), 1_802_240, 8),
+        (VisiblePlayingCard("K", "S"), 56_320, 4),
+        (VisiblePlayingCard("T", "S", enhancement="GLASS"), 1_760, 2),
+    ],
+)
+def test_only_a_glass_face_lead_gets_every_multiplier_five_times(
+    lead: VisiblePlayingCard, expected: int, factor_per_trigger: int
+) -> None:
+    """Glass X2, Photograph X2 and Brainstorm's copy of it X2 all ride slot 0."""
+    score, family = score_play(_taf_engine_observation(lead), (HandSlot(0),))
+
+    chips = 5 + 5 * 10  # High Card's 5 base chips plus five triggers of a 10-chip card.
+    assert family == "High Card"
+    assert score == chips * factor_per_trigger**5 == expected
+
+
+def test_a_glass_face_lead_beats_a_plain_face_by_thirty_two() -> None:
+    glass = _taf_engine_observation(VisiblePlayingCard("K", "S", enhancement="GLASS"))
+    plain = _taf_engine_observation(VisiblePlayingCard("K", "S"))
+
+    assert score_play(glass, (HandSlot(0),))[0] == 32 * score_play(plain, (HandSlot(0),))[0]
+
+
+@pytest.mark.parametrize(
+    ("disabled", "expected"),
+    [("j_photograph", 1_760), ("j_brainstorm", 56_320), ("j_blueprint", 17_920)],
+)
+def test_crimson_heart_costs_double_when_it_disables_the_copied_joker(
+    disabled: str, expected: int
+) -> None:
+    """Disabling Photograph also silences the Brainstorm copying it: X32 twice over."""
+    observation = _taf_engine_observation(VisiblePlayingCard("K", "S", enhancement="GLASS"))
+    jokers = tuple(
+        replace(joker, debuffed=True) if joker.key == disabled else joker
+        for joker in observation.jokers
+    )
+
+    score = score_play(replace(observation, jokers=jokers), (HandSlot(0),))[0]
+
+    assert score == expected
+    if disabled == "j_photograph":
+        assert score * 32 == 56_320  # the Brainstorm-only loss
+
+
+@pytest.mark.parametrize("steel", [0, 2, 4, 9])
+def test_steel_joker_reads_the_whole_deck_and_ignores_the_played_card(steel: int) -> None:
+    """The recorded copy went from two Steel cards at Ante 8 to nine at Ante 13."""
+    observation = _high_card_observation(1, ())
+    entries = tuple(
+        DeckCardCount(VisiblePlayingCard(rank, "H", enhancement="STEEL"), 1)
+        for rank in ("2", "3", "4", "5", "6", "7", "8", "9", "T")[:steel]
+    )
+    observation = replace(
+        observation,
+        hand=(VisiblePlayingCard("2", "C"),),
+        jokers=(PublicItem("j_steel_joker", "Steel Joker", "JOKER"),),
+        full_deck=(*entries, DeckCardCount(VisiblePlayingCard("2", "S"), 52 - steel)),
+        deck_size=52,
+    )
+
+    assert score_play(observation, (HandSlot(0),))[0] == 7 * (1 + Fraction(steel, 5))
+
+
+def test_the_tooth_charges_one_dollar_for_every_card_played() -> None:
+    """The recorded boss ran $6 to -$10 over hands of five, five, five and one."""
+    money = 6
+    for cards in (5, 5, 5, 1):
+        money -= cards
+    assert money == -10
+
+
+def test_the_recorded_endless_cash_outs_paid_a_quarter_of_the_seed_money_cap() -> None:
+    """Money held at the last eight cash outs of TAF7DNTX, Seed Money owned."""
+    held = (30, 14, 22, 40, 22, 2, 0, 6)
+    paid = [_interest(dollars, 50) for dollars in held]
+
+    assert paid == [6, 2, 4, 8, 4, 0, 0, 1]
+    assert sum(paid) == 25
+    assert len(held) * _interest(50, 50) == 80
+
+
+def _taf_recorded_observation(index: int):
+    """The public observation the coach saw before the transition at 04:index."""
+    from balatro_ai.game.codec import public_observation_from_data
+    from tests.test_strategy import recorded
+
+    for offset in range(0, 8):
+        event = recorded("04", index - offset, run="TAF7DNTX")
+        if event.get("event") == "rpc_attempt" and "observation" in event:
+            return public_observation_from_data(event["observation"])
+    raise AssertionError(f"no observation before 04:{index}")
+
+
+def test_the_recorded_tooth_hand_left_three_orders_of_magnitude_on_the_table() -> None:
+    """04:948 led a Steel Ace and left the red-seal Glass Ten out of the flush."""
+    observation = _taf_recorded_observation(948)
+    played = (0, 1, 3, 4, 7)  # AS Steel, KS Steel, 7S, 6S, 3S Steel
+    glass_led = (1, 0, 2, 3, 4)  # KS Steel first, with the Glass Ten scoring
+
+    as_played = score_play(observation, tuple(HandSlot(i) for i in played))
+    alternative = score_play(observation, tuple(HandSlot(i) for i in glass_led))
+
+    assert as_played == (764_127, "Flush")
+    assert alternative == (1_222_760_448, "Flush")
+    assert alternative[0] // as_played[0] == 1600
+
+
+def test_the_recorded_crimson_heart_disable_cost_sixty_four_times() -> None:
+    """04:290 cleared 100,000 with Photograph, and Brainstorm's copy of it, gone."""
+    observation = _taf_recorded_observation(290)
+    played = tuple(HandSlot(i) for i in (1, 2, 3, 4, 5))
+    undebuffed = replace(
+        observation, jokers=tuple(replace(j, debuffed=False) for j in observation.jokers)
+    )
+
+    disabled, family = score_play(observation, played)
+    intact = score_play(undebuffed, played)[0]
+
+    assert [j.key for j in observation.jokers if j.debuffed] == ["j_photograph"]
+    assert family == "Flush"
+    assert math.floor(disabled) == 180_442  # exactly the recorded chips
+    assert math.floor(intact) == 11_548_293
+    assert intact // disabled == 64  # Photograph and the Brainstorm copying it

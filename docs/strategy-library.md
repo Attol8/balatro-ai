@@ -1,7 +1,7 @@
 # Offline strategy learning
 
-The library covers 81 examples across 45 strategy families, including ones
-never encountered in the recorded run. The player retrieves at most three from
+The library covers 92 examples across 56 strategy families, including ones
+never encountered in either recorded run. 17 are recorded and 75 constructed. The player retrieves at most three from
 [`knowledge/decisions.json`](../balatro_ai/knowledge/decisions.json). Each example
 contains a situation, two options, a lesson, a condition that could reverse the
 choice, and source references. This is external knowledge for Astra low; no
@@ -9,9 +9,13 @@ model weights are trained and no extra model call is made during retrieval.
 
 ## What counts as evidence
 
-- **Recorded:** a decision opportunity actually visible in our saved run. The
-  counterfactual recommendation is reviewed judgment, not an observed winning
-  alternative. `evidence:05:95` means zero-based JSONL event 95 in segment 05.
+- **Recorded:** a decision opportunity actually visible in one of our saved
+  runs. The counterfactual recommendation is reviewed judgment, not an observed
+  winning alternative. `evidence:05:95` means zero-based JSONL event 95 in
+  segment 05 of seed 2K9H9HN, the first run. References to any later run name it
+  first: `evidence:TAF7DNTX:04:948` is event 948 in segment 04 of the headless
+  Ante 13 run. Where the scorer can check a recorded claim, the number in the
+  lesson is the scorer's own output on that recorded observation.
 - **Constructed:** a deliberately specified mechanics exercise. It does not
   claim that the entire build occurred in a game or can reliably be assembled.
 - **Game references:** `game:card.lua:N`, `game:game.lua:N` and `game:tag.lua:N`
@@ -35,6 +39,12 @@ decision to counterfactually review for any tag. Each statement was read out of
 the currently installed game source rather than a guide, and the entries stay
 conditional, naming the case where the option is wrong as well as the case where
 it is right.
+
+Two of those tag entries now have recorded counterparts. The headless TAF7DNTX
+run skipped four of its 34 blind selections, so `investment-tag-skip-recorded`
+and `negative-tag-slot-recorded` cite observed skips and their observed payouts
+(exactly $25 at 00:66, and a free Negative Steel Joker at 04:176) rather than
+rule text. The constructed entries stay; they cover tags that run never saw.
 
 Thirty-three entries were added: one general skip-timing lesson plus seven named
 tags (Negative, Rare, Charm, Double, Investment, Voucher, Coupon); seven Tarots
@@ -70,6 +80,19 @@ The grid covers n=0..4 and base Mult 1/50. At Mult 1, Mime first wins at four
 Steel; at Mult 50, it first wins at one. Cloud 9's income, purchase cost, future
 draws and other Jokers are excluded. These thresholds must not be applied to
 a different build without recomputing it.
+
+The TAF7DNTX engine has its own group. With Photograph, Blueprint, Hanging Chad
+and Brainstorm in the run's final order, Blueprint copies Chad and Brainstorm
+copies Photograph, so the first played card scores five times and every effect
+on it applies five times: a Glass face lead scores `(5 + 5x10) x 8^5`, a plain
+face `x 4^5`, a Glass Ten `x 2^5`. Disabling Photograph removes the Brainstorm
+copy with it, which is why one Crimson Heart disable costs 32x twice over.
+Steel Joker is checked as X(1 + steel/5) over the whole deck at 0, 2, 4 and 9
+Steel cards, and two exercises replay the recorded observations themselves:
+04:948 scores 764,127 as played against 1,222,760,448 for a Glass-inclusive
+ordering, and 04:290 scores 180,442 with Photograph disabled against 11,548,293
+intact. The Tooth's $1 per card and the run's forgone Seed Money interest are
+arithmetic checks over the recorded holdings.
 
 Five further exercises verify a scoring face under Photograph/Chad (three X2
 applications and repeated card chips), and Blueprint copying Mime versus Baron
@@ -136,6 +159,7 @@ while building this library.
 | Fibonacci / Hack, Triboulet / Sock | Deterministic examples have exact regression checks. |
 | Runner / Castle / Yorick / Hit the Road / Madness | Public current counters are used; future growth, destruction and draw outcomes are not simulated. |
 | Bloodstone | Expected value rather than exact random outcome. |
+| Glass / Lucky | The X2 and the chip effects score, but the 1-in-4 Glass break and Lucky's random Mult are never rolled, so a Glass-lead engine's own attrition is invisible to any single-hand estimate. |
 | Smeared | Flush classification covered; some Joker suit interactions are incomplete. |
 | Vampire / Midas | Same-play enhancement stripping/conversion and resulting growth are incomplete. |
 | Obelisk | Current multiplier is read; same-play history-dependent growth/reset is incomplete. |
@@ -157,6 +181,7 @@ line numbering:
 - `game.lua`: `f684681dd67ecf4ecb66857b129aa56b8bb8dae0f34745f73bb553c7eb84953e`
 - `tag.lua`: `7080dfcb080285fd6b18ed9c750401c0e0aec7a569226a29f12109ed3aefe58a`
 
-Offline retrieval check across 383 recorded decisions: 0.0232 seconds total;
-maximum 1170 bytes of example text, average 700 when matched.
+Offline retrieval check across the 766 recorded coach requests in both saved
+runs: 0.162 seconds total, 0.21 ms per decision, 697 matched; maximum 1561 bytes
+of example text, average 1195 when matched.
 This measures local retrieval only, not Codex inference or gameplay performance.
