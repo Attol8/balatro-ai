@@ -60,6 +60,46 @@ High-score planning, especially when the objective is endless:
   Use coherent deck edits, hand levels and income; reassess Ramen's discard cost.
   Keep enough cash for an actionable upgrade rather than rerolling past it.
 
+Vanilla rules to apply directly, without waiting for an example:
+- Interest: each cash out pays $1 per $5 held, capped at $5 (so $25 held). Seed Money
+  raises the cap to $10 ($50 held), Money Tree to $20 ($100 held). Spending below the
+  next $5 step costs future income; holding past the cap earns nothing.
+- Skipping a small or big blind forfeits only that blind's cash reward and the shop
+  after it, grants its tag at once, and leaves the ante target unchanged; it is best
+  on early small blinds and on big blinds whose shop you cannot use. Bosses cannot be
+  skipped. Tag values: Negative (next base-edition shop Joker becomes Negative and
+  free, and Negative adds a Joker slot), Rare/Uncommon (free Joker of that rarity in
+  the shop), Charm (free Mega Arcana: 5 Tarots choose 2), Meteor (free Mega Celestial:
+  5 Planets choose 2), Buffoon (free Mega Buffoon: 4 Jokers choose 2), Standard (free
+  Mega Standard: 5 cards choose 2), Ethereal (free Spectral pack: 2 choose 1), Double
+  (copies the next non-Double tag), Investment ($25 once the boss is beaten), Voucher
+  (extra voucher next shop), Coupon (every shop card and pack costs $0 that shop),
+  Juggle (+3 hand size for one round), Handy ($1 per hand played this run), Garbage
+  ($1 per unused discard), Economy (doubles money, max $40), Orbital (+3 levels to one
+  hand), D6 (rerolls start at $0), Boss (rerolls the boss).
+- Voucher priority for scaling: Telescope, then Observatory (a held Planet gives X1.5
+  to its own hand type); Hone then Glow Up make Foil/Holographic/Polychrome 2x/4x more
+  common; Overstock +1 shop card slot; Reroll Surplus/Glut -$2 per reroll each;
+  Grabber +1 hand per round; Paint Brush +1 hand size; Seed Money/Money Tree raise the
+  interest cap; Director's Cut buys one boss reroll per ante for $10. Blank has no
+  in-run effect; Antimatter adds a Joker slot.
+- Tarots: Death needs two selected cards and copies the rightmost onto the other;
+  Strength raises up to 2 cards one rank, Ace wrapping to 2; The Hanged Man destroys
+  up to 2 selected cards; Judgement creates a random Joker and needs a free slot; The
+  Fool copies the last Tarot or Planet used, never a Fool; The Hermit doubles money by
+  at most $20; Temperance pays your Jokers' total sell value, at most $50.
+- Spectrals: Ankh copies a random Joker and destroys the other non-eternal ones;
+  Cryptid makes 2 copies of one selected card; The Soul creates a Legendary Joker;
+  Black Hole levels every hand once; Wraith creates a random Rare Joker and sets money
+  to $0; Immolate destroys 5 random cards in hand for $20; Ectoplasm makes a random
+  editionless Joker Negative and permanently cuts hand size, by 1 then 2 then 3.
+- Editions: Foil +50 chips, Holographic +10 Mult, Polychrome X1.5, Negative +1 Joker
+  slot. At higher stakes only: eternal cannot be sold or destroyed, perishable is
+  debuffed after 5 rounds, rental costs $3 each round.
+- Packs cost $4/$6/$8 for normal/jumbo/mega. Buy Celestial when one hand family is
+  committed, Arcana when the deck still needs shaping and consumable slots are free,
+  Buffoon only with a Joker slot to fill; a Mega is worth $8 only if both picks help.
+
 Canonical actions: {"type":"play_cards","cards":[0]}, discard_cards with cards;
 select_blind, skip_blind, cash_out, leave_shop, reroll_shop, reroll_boss, skip_pack
 with only type; buy_shop_card with card and mode (store/use); mode use is ONLY for usable Planet

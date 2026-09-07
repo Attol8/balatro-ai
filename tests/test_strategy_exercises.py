@@ -119,3 +119,56 @@ def test_four_fingers_and_shortcut_make_a_four_card_gapped_straight() -> None:
 
     assert family == "Straight"
     assert score == (30 + 2 + 4 + 6 + 8) * 4 == 200
+
+
+def _interest(dollars: int, cap: int = 25) -> int:
+    """At cash out Balatro pays $1 per $5 held, up to cap/5 dollars."""
+    return min(dollars // 5, cap // 5)
+
+
+@pytest.mark.parametrize(
+    ("cap", "maximum", "held_for_maximum"),
+    [(25, 5, 25), (50, 10, 50), (100, 20, 100)],
+)
+def test_interest_caps_match_the_base_seed_money_and_money_tree_rules(
+    cap: int, maximum: int, held_for_maximum: int
+) -> None:
+    """Base cap $25, Seed Money $50, Money Tree $100; income is $1 per $5 held."""
+    assert _interest(held_for_maximum, cap) == maximum
+    assert _interest(held_for_maximum + 5, cap) == maximum
+    assert _interest(held_for_maximum - 5, cap) == maximum - 1
+    assert _interest(0, cap) == 0
+    assert _interest(4, cap) == 0
+
+
+def test_spending_across_a_five_dollar_step_costs_exactly_one_interest() -> None:
+    assert _interest(20) - _interest(19) == 1
+    assert _interest(24) == _interest(20) == 4
+
+
+def test_reroll_surplus_repays_its_ten_dollars_after_five_rerolls() -> None:
+    """Reroll Surplus lowers each reroll by $2; the $10 voucher is the break-even."""
+    saved_per_reroll = 2
+    assert 4 * saved_per_reroll < 10 <= 5 * saved_per_reroll
+
+
+@pytest.mark.parametrize(
+    ("edition", "expected"),
+    [
+        (None, Fraction(7 * 5)),
+        ("FOIL", Fraction((7 + 50) * 5)),
+        ("HOLO", Fraction(7 * (5 + 10))),
+        ("POLYCHROME", Fraction(7 * 5 * 3, 2)),
+    ],
+)
+def test_joker_editions_add_fifty_chips_ten_mult_or_multiply_by_one_and_a_half(
+    edition: str | None, expected: Fraction
+) -> None:
+    """A played 2 with High Card 5/1 and a +4 Mult Joker isolates the edition."""
+    observation = _high_card_observation(1, ())
+    joker = PublicItem("j_joker", "Joker", "JOKER", edition=edition)
+
+    score, family = score_play(replace(observation, jokers=(joker,)), (HandSlot(0),))
+
+    assert family == "High Card"
+    assert score == expected

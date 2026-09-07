@@ -1270,5 +1270,831 @@
       "game:card.lua:3185",
       "game:card.lua:3374"
     ]
+  },
+  {
+    "id": "skip-cost-versus-tag",
+    "family": "skip_timing",
+    "trigger_keys": [
+      "tag_uncommon",
+      "tag_rare",
+      "tag_negative",
+      "tag_foil",
+      "tag_holo",
+      "tag_polychrome",
+      "tag_investment",
+      "tag_voucher",
+      "tag_boss",
+      "tag_standard",
+      "tag_charm",
+      "tag_meteor",
+      "tag_buffoon",
+      "tag_handy",
+      "tag_garbage",
+      "tag_ethereal",
+      "tag_coupon",
+      "tag_double",
+      "tag_juggle",
+      "tag_d_six",
+      "tag_top_up",
+      "tag_skip",
+      "tag_orbital",
+      "tag_economy"
+    ],
+    "required_keys": [],
+    "phases": [
+      "BLIND_SELECT"
+    ],
+    "situation": "A small or big blind is selectable and carries a tag that only a skip can claim.",
+    "options": [
+      "Play the blind for its cash reward and the shop that follows.",
+      "Skip the blind and take the tag now."
+    ],
+    "lesson": "Skipping forfeits only that blind's cash reward and its shop; the ante target is unchanged, so skipping pays most on early small blinds and on big blinds you cannot profitably shop after.",
+    "reversal": "Play the blind when the reward plus shop is what the build needs, when money is short, or when a later blind will be harder without one more shop.",
+    "provenance": "constructed",
+    "sources": [
+      "game:game.lua:2193",
+      "game:tag.lua:131"
+    ]
+  },
+  {
+    "id": "tag-negative-free-slot",
+    "family": "blind_tag",
+    "trigger_keys": [
+      "tag_negative"
+    ],
+    "required_keys": [],
+    "phases": [
+      "BLIND_SELECT"
+    ],
+    "situation": "The selectable blind carries a Negative Tag.",
+    "options": [
+      "Play the blind and keep the reward.",
+      "Skip, then buy the first base-edition shop Joker."
+    ],
+    "lesson": "Negative Tag makes the next base-edition shop Joker Negative and free, and Negative adds a Joker slot, so its value is a permanent slot plus a free Joker, not the Joker itself.",
+    "reversal": "Skip it when no shop follows before the tag would be used, or when the likely shop Jokers are ones you would not keep in a permanent slot.",
+    "provenance": "constructed",
+    "sources": [
+      "game:game.lua:231",
+      "game:tag.lua:445",
+      "game:game.lua:666"
+    ]
+  },
+  {
+    "id": "tag-rare-free-joker",
+    "family": "blind_tag",
+    "trigger_keys": [
+      "tag_rare"
+    ],
+    "required_keys": [],
+    "phases": [
+      "BLIND_SELECT"
+    ],
+    "situation": "The selectable blind carries a Rare Tag.",
+    "options": [
+      "Play the blind for cash.",
+      "Skip and take a free Rare Joker in the next shop."
+    ],
+    "lesson": "Rare Tag adds a free Rare Joker to the next shop, which is strong when a Joker slot is free but wasted if every slot is committed and nothing is worth selling.",
+    "reversal": "Play the blind when slots are full of scaling Jokers, since a random Rare is not automatically better than a grown Joker.",
+    "provenance": "constructed",
+    "sources": [
+      "game:game.lua:230",
+      "game:tag.lua:360"
+    ]
+  },
+  {
+    "id": "tag-charm-mega-arcana",
+    "family": "blind_tag",
+    "trigger_keys": [
+      "tag_charm"
+    ],
+    "required_keys": [],
+    "phases": [
+      "BLIND_SELECT"
+    ],
+    "situation": "The selectable blind carries a Charm Tag.",
+    "options": [
+      "Play the blind and buy Tarots later.",
+      "Skip and open the free Mega Arcana pack."
+    ],
+    "lesson": "Charm Tag opens a free Mega Arcana pack, five Tarots choose two; it is worth most when the deck still needs shaping and consumable slots are free to hold what you pick.",
+    "reversal": "Prefer the blind when the deck is already shaped and money, not Tarots, is the constraint.",
+    "provenance": "constructed",
+    "sources": [
+      "game:game.lua:239",
+      "game:tag.lua:223",
+      "game:game.lua:675"
+    ]
+  },
+  {
+    "id": "tag-double-copy",
+    "family": "blind_tag",
+    "trigger_keys": [
+      "tag_double"
+    ],
+    "required_keys": [],
+    "phases": [
+      "BLIND_SELECT"
+    ],
+    "situation": "The selectable blind carries a Double Tag.",
+    "options": [
+      "Skip now and let Double copy whatever the next tag is.",
+      "Play this blind and wait for a better tag to double."
+    ],
+    "lesson": "Double Tag copies the next tag taken, unless that tag is another Double; its value is entirely the value of the tag you pair it with, so the pairing decides whether skipping is worth it.",
+    "reversal": "Take the blind instead when the next visible tags are weak, since a doubled weak tag is still weak.",
+    "provenance": "constructed",
+    "sources": [
+      "game:game.lua:246",
+      "game:tag.lua:334"
+    ]
+  },
+  {
+    "id": "tag-investment-boss-payout",
+    "family": "blind_tag",
+    "trigger_keys": [
+      "tag_investment"
+    ],
+    "required_keys": [],
+    "phases": [
+      "BLIND_SELECT"
+    ],
+    "situation": "The selectable blind carries an Investment Tag.",
+    "options": [
+      "Play the blind for its immediate reward.",
+      "Skip and collect $25 after the next boss is defeated."
+    ],
+    "lesson": "Investment Tag pays $25 only once the boss blind is defeated, so it is deferred income that also raises the interest base if the money is still held at cash out.",
+    "reversal": "Skip it when survival against the boss is doubtful, because a payout conditional on beating the boss is worth nothing if the run ends there.",
+    "provenance": "constructed",
+    "sources": [
+      "game:game.lua:235",
+      "game:tag.lua:132"
+    ]
+  },
+  {
+    "id": "tag-voucher-extra-offer",
+    "family": "blind_tag",
+    "trigger_keys": [
+      "tag_voucher"
+    ],
+    "required_keys": [],
+    "phases": [
+      "BLIND_SELECT"
+    ],
+    "situation": "The selectable blind carries a Voucher Tag.",
+    "options": [
+      "Play the blind and take the single shop voucher.",
+      "Skip so the next shop offers an extra voucher."
+    ],
+    "lesson": "Voucher Tag adds one more voucher to the next shop; it converts money into choice, so it pays when you can afford $10 vouchers and are hunting a specific one such as Telescope.",
+    "reversal": "Play the blind when money is too tight to buy any voucher, since a second unaffordable offer changes nothing.",
+    "provenance": "constructed",
+    "sources": [
+      "game:game.lua:236",
+      "game:tag.lua:317"
+    ]
+  },
+  {
+    "id": "tag-coupon-free-shop",
+    "family": "blind_tag",
+    "trigger_keys": [
+      "tag_coupon"
+    ],
+    "required_keys": [],
+    "phases": [
+      "BLIND_SELECT"
+    ],
+    "situation": "The selectable blind carries a Coupon Tag.",
+    "options": [
+      "Play the blind and pay normal shop prices.",
+      "Skip so every card and pack in the next shop is free."
+    ],
+    "lesson": "Coupon Tag sets every shop card and booster to $0 for that one shop, so its value scales with how many slots you can actually use and with keeping money for rerolls, which stay paid.",
+    "reversal": "Play the blind when Joker and consumable slots are full, because free items you cannot hold are worth little.",
+    "provenance": "constructed",
+    "sources": [
+      "game:game.lua:245",
+      "game:tag.lua:462"
+    ]
+  },
+  {
+    "id": "death-copy-rightmost",
+    "family": "tarot_deck_shape",
+    "trigger_keys": [
+      "c_death"
+    ],
+    "required_keys": [],
+    "phases": [
+      "SHOP",
+      "PACK",
+      "SELECTING_HAND"
+    ],
+    "situation": "Death is held and two hand cards could be selected.",
+    "options": [
+      "Convert a weak card into a copy of a key card.",
+      "Keep the deck as it is and save the slot."
+    ],
+    "lesson": "Death needs exactly two selected cards and copies the rightmost onto the other, so ordering decides which card survives; it duplicates enhancement, seal and edition along with rank and suit.",
+    "reversal": "Do not use it when the sacrificed card is a seal, Steel or suit the build still needs, or when narrowing the deck hurts a straight or flush plan.",
+    "provenance": "constructed",
+    "sources": [
+      "game:game.lua:550",
+      "game:card.lua:1252"
+    ]
+  },
+  {
+    "id": "strength-rank-up",
+    "family": "tarot_deck_shape",
+    "trigger_keys": [
+      "c_strength"
+    ],
+    "required_keys": [],
+    "phases": [
+      "SHOP",
+      "PACK",
+      "SELECTING_HAND"
+    ],
+    "situation": "Strength is held and low or off-plan ranks are visible in hand.",
+    "options": [
+      "Raise up to two cards one rank toward the build.",
+      "Save it for a later, more valuable target."
+    ],
+    "lesson": "Strength raises up to two selected cards by one rank and an Ace wraps back to 2, so it builds pairs and Kings for held-card engines but can break a straight it was meant to complete.",
+    "reversal": "Skip it when the current ranks already form the intended hand, or when wrapping an Ace would cost a high-card or straight line.",
+    "provenance": "constructed",
+    "sources": [
+      "game:game.lua:548",
+      "game:card.lua:1261"
+    ]
+  },
+  {
+    "id": "hanged-man-thinning",
+    "family": "tarot_deck_shape",
+    "trigger_keys": [
+      "c_hanged_man"
+    ],
+    "required_keys": [],
+    "phases": [
+      "SHOP",
+      "PACK",
+      "SELECTING_HAND"
+    ],
+    "situation": "The Hanged Man is held and the deck carries cards that never score.",
+    "options": [
+      "Destroy up to two dead cards to thin the deck.",
+      "Keep the deck size and preserve draw volume."
+    ],
+    "lesson": "The Hanged Man permanently destroys up to two selected cards, which raises the chance of drawing the cards that matter, but every removal also lowers the number of cards left for hand-size and held-card conditions.",
+    "reversal": "Keep the cards when the build needs bodies in hand, such as Blackboard or held-Steel plans, or when the removed suit is still part of a flush.",
+    "provenance": "constructed",
+    "sources": [
+      "game:game.lua:549",
+      "game:card.lua:1410"
+    ]
+  },
+  {
+    "id": "judgement-needs-slot",
+    "family": "tarot_generation",
+    "trigger_keys": [
+      "c_judgement"
+    ],
+    "required_keys": [],
+    "phases": [
+      "SHOP",
+      "PACK",
+      "SELECTING_HAND"
+    ],
+    "situation": "Judgement is held and Joker capacity is in question.",
+    "options": [
+      "Use it now while a Joker slot is free.",
+      "Hold it until the build knows which slot to spend."
+    ],
+    "lesson": "Judgement creates one random Joker and does nothing without a free Joker slot, so it is a lottery ticket whose value depends on having room and on how replaceable the current worst Joker is.",
+    "reversal": "Do not clear a working Joker to make space, because the created Joker is random and may be worse than what was sold.",
+    "provenance": "constructed",
+    "sources": [
+      "game:game.lua:557",
+      "game:card.lua:1554"
+    ]
+  },
+  {
+    "id": "fool-repeats-last-use",
+    "family": "tarot_generation",
+    "trigger_keys": [
+      "c_fool"
+    ],
+    "required_keys": [],
+    "phases": [
+      "SHOP",
+      "PACK",
+      "SELECTING_HAND"
+    ],
+    "situation": "The Fool is held after some Tarot or Planet has already been used this run.",
+    "options": [
+      "Use a high-value Tarot or Planet first, then The Fool.",
+      "Use The Fool immediately."
+    ],
+    "lesson": "The Fool copies the last Tarot or Planet used and never copies another Fool, so its value is set by the previous use; sequencing an expensive Planet or a build-defining Tarot first doubles that effect.",
+    "reversal": "It does nothing when a consumable slot is not free, and it is wasted right after a cheap or off-plan consumable.",
+    "provenance": "constructed",
+    "sources": [
+      "game:game.lua:537",
+      "game:card.lua:1512"
+    ]
+  },
+  {
+    "id": "hermit-doubles-held-cash",
+    "family": "tarot_money",
+    "trigger_keys": [
+      "c_hermit"
+    ],
+    "required_keys": [],
+    "phases": [
+      "SHOP",
+      "PACK",
+      "SELECTING_HAND"
+    ],
+    "situation": "The Hermit is held while money is being decided in the shop.",
+    "options": [
+      "Spend first and use The Hermit afterwards.",
+      "Use The Hermit before spending."
+    ],
+    "lesson": "The Hermit doubles current money but adds at most $20, so it pays in full only when at least $20 is held; using it before purchases and after reaching $20 is strictly better than using it while broke.",
+    "reversal": "It is worth nothing at $0 and gives less than its cap below $20, so it is not a reason to keep a consumable slot occupied indefinitely.",
+    "provenance": "constructed",
+    "sources": [
+      "game:game.lua:546",
+      "game:card.lua:1524"
+    ]
+  },
+  {
+    "id": "temperance-sell-value-payout",
+    "family": "tarot_money",
+    "trigger_keys": [
+      "c_temperance"
+    ],
+    "required_keys": [],
+    "phases": [
+      "SHOP",
+      "PACK",
+      "SELECTING_HAND"
+    ],
+    "situation": "Temperance is held alongside several bought Jokers.",
+    "options": [
+      "Cash it now for the current total sell value.",
+      "Hold it until the Joker line is more expensive."
+    ],
+    "lesson": "Temperance pays the combined sell value of all owned Jokers, capped at $50; it grows as expensive Jokers are added and pays nothing meaningful with a cheap or empty Joker line.",
+    "reversal": "Do not delay past the cap chasing more, and do not keep it over a Tarot the build actually needs.",
+    "provenance": "constructed",
+    "sources": [
+      "game:game.lua:551",
+      "game:card.lua:1532"
+    ]
+  },
+  {
+    "id": "cryptid-two-copies",
+    "family": "spectral_deck_shape",
+    "trigger_keys": [
+      "c_cryptid"
+    ],
+    "required_keys": [],
+    "phases": [
+      "SHOP",
+      "PACK",
+      "SELECTING_HAND"
+    ],
+    "situation": "Cryptid is held with one clearly best card in hand.",
+    "options": [
+      "Copy the best scoring or held card twice.",
+      "Save it until a better target exists."
+    ],
+    "lesson": "Cryptid adds two copies of one selected card, including its enhancement, seal and edition, so it multiplies an engine card rather than adding a random one; it also dilutes the deck by two cards.",
+    "reversal": "Hold it when no card is worth tripling yet, since the extra copies also make other draws less likely.",
+    "provenance": "constructed",
+    "sources": [
+      "game:game.lua:590",
+      "game:card.lua:1342"
+    ]
+  },
+  {
+    "id": "immolate-cash-for-cards",
+    "family": "spectral_deck_shape",
+    "trigger_keys": [
+      "c_immolate"
+    ],
+    "required_keys": [],
+    "phases": [
+      "SHOP",
+      "PACK",
+      "SELECTING_HAND"
+    ],
+    "situation": "Immolate is held while money is the immediate constraint.",
+    "options": [
+      "Take $20 and lose five random cards in hand.",
+      "Keep the deck intact and find money elsewhere."
+    ],
+    "lesson": "Immolate pays $20 and destroys five random cards from hand, not chosen ones, so it trades unpredictable deck loss for cash; seals, Steel and enhanced cards can be among the five.",
+    "reversal": "Refuse it when the build depends on specific held cards, or when $20 does not actually buy the missing piece.",
+    "provenance": "constructed",
+    "sources": [
+      "game:game.lua:584",
+      "game:card.lua:1481"
+    ]
+  },
+  {
+    "id": "ankh-copies-and-destroys",
+    "family": "spectral_joker",
+    "trigger_keys": [
+      "c_ankh"
+    ],
+    "required_keys": [],
+    "phases": [
+      "SHOP",
+      "PACK",
+      "SELECTING_HAND"
+    ],
+    "situation": "Ankh is held with more than one Joker owned.",
+    "options": [
+      "Use it to duplicate a Joker.",
+      "Keep the current Joker line intact."
+    ],
+    "lesson": "Ankh copies one random Joker and destroys every other non-eternal Joker, and the copy loses a Negative edition; with several useful Jokers it is far more likely to delete the build than to double it.",
+    "reversal": "It becomes reasonable only when the line is effectively one Joker that matters, so the random pick cannot miss.",
+    "provenance": "constructed",
+    "sources": [
+      "game:game.lua:585",
+      "game:card.lua:1565"
+    ]
+  },
+  {
+    "id": "wraith-rare-costs-all-money",
+    "family": "spectral_joker",
+    "trigger_keys": [
+      "c_wraith"
+    ],
+    "required_keys": [],
+    "phases": [
+      "SHOP",
+      "PACK",
+      "SELECTING_HAND"
+    ],
+    "situation": "Wraith is held and a Rare Joker would help the build.",
+    "options": [
+      "Use it while money is already spent.",
+      "Use it now and lose the current balance."
+    ],
+    "lesson": "Wraith creates a random Rare Joker and then sets money to $0, so its real price is everything held; using it just after spending, and before cash out rebuilds interest, is much cheaper than using it while rich.",
+    "reversal": "Do not use it when the held money is needed for a known purchase or for interest, and note the Rare Joker is random, not chosen.",
+    "provenance": "constructed",
+    "sources": [
+      "game:game.lua:580",
+      "game:card.lua:1593"
+    ]
+  },
+  {
+    "id": "ectoplasm-negative-costs-hand-size",
+    "family": "spectral_joker",
+    "trigger_keys": [
+      "c_ectoplasm"
+    ],
+    "required_keys": [],
+    "phases": [
+      "SHOP",
+      "PACK",
+      "SELECTING_HAND"
+    ],
+    "situation": "Ectoplasm is held and a Joker without an edition is owned.",
+    "options": [
+      "Take a Negative Joker and lose hand size.",
+      "Keep hand size and find the slot elsewhere."
+    ],
+    "lesson": "Ectoplasm makes a random editionless Joker Negative, gaining a Joker slot, and permanently reduces hand size; the penalty grows with each use in the run, at one, then two, then three cards.",
+    "reversal": "Avoid it when hand size carries the build, such as held-card, Blackboard or flush plans, and when the random target could be a Joker you would not want locked in.",
+    "provenance": "constructed",
+    "sources": [
+      "game:game.lua:583",
+      "game:card.lua:1618"
+    ]
+  },
+  {
+    "id": "soul-legendary-needs-room",
+    "family": "spectral_joker",
+    "trigger_keys": [
+      "c_soul"
+    ],
+    "required_keys": [],
+    "phases": [
+      "SHOP",
+      "PACK",
+      "SELECTING_HAND"
+    ],
+    "situation": "The Soul is available from a pack or already held.",
+    "options": [
+      "Make room and take the Legendary Joker.",
+      "Take another card from the pack."
+    ],
+    "lesson": "The Soul creates a Legendary Joker, which needs a free Joker slot to appear; the five Legendaries differ sharply, so it is a strong but not automatic upgrade over a grown scaling Joker.",
+    "reversal": "Pass when every slot holds a scaling engine and the Legendary would not beat what is sold to make room.",
+    "provenance": "constructed",
+    "sources": [
+      "game:game.lua:591",
+      "game:card.lua:1554"
+    ]
+  },
+  {
+    "id": "black-hole-levels-everything",
+    "family": "spectral_levels",
+    "trigger_keys": [
+      "c_black_hole"
+    ],
+    "required_keys": [],
+    "phases": [
+      "SHOP",
+      "PACK",
+      "SELECTING_HAND"
+    ],
+    "situation": "Black Hole is available while the played hand family is still moving.",
+    "options": [
+      "Level every poker hand once.",
+      "Prefer a Planet that levels one hand further."
+    ],
+    "lesson": "Black Hole raises every poker hand by one level, which is worth more than a single Planet only while the build still switches families or plays several hands; a committed one-hand plan gains more from repeated Planets.",
+    "reversal": "Prefer targeted Planets once the most-played hand is fixed, and remember Observatory rewards holding the matching Planet, not Black Hole.",
+    "provenance": "constructed",
+    "sources": [
+      "game:game.lua:592",
+      "game:card.lua:1294"
+    ]
+  },
+  {
+    "id": "voucher-priority-order",
+    "family": "voucher_priority",
+    "trigger_keys": [
+      "v_observatory",
+      "v_telescope",
+      "v_hone",
+      "v_glow_up",
+      "v_overstock_norm",
+      "v_reroll_surplus",
+      "v_grabber",
+      "v_blank",
+      "v_antimatter",
+      "v_paint_brush",
+      "v_money_tree",
+      "v_seed_money"
+    ],
+    "required_keys": [],
+    "phases": [
+      "SHOP"
+    ],
+    "situation": "A voucher is offered for $10 while money is also needed for Jokers.",
+    "options": [
+      "Buy the voucher for a permanent effect.",
+      "Keep the money for the shop and interest."
+    ],
+    "lesson": "Vouchers are permanent and one per shop, so scaling ones come first: Telescope then Observatory, then Hone or Glow Up, then shop width and reroll cost, then capacity, then economy; Blank does nothing this run.",
+    "reversal": "Skip the voucher when $10 breaks an interest step or blocks the Joker that keeps the run alive, since the offer usually returns in a later shop.",
+    "provenance": "constructed",
+    "sources": [
+      "game:game.lua:596",
+      "game:card.lua:2040"
+    ]
+  },
+  {
+    "id": "telescope-fixes-most-played",
+    "family": "voucher_scaling",
+    "trigger_keys": [
+      "v_telescope"
+    ],
+    "required_keys": [],
+    "phases": [
+      "SHOP"
+    ],
+    "situation": "Telescope is offered while one poker hand dominates the plan.",
+    "options": [
+      "Buy it and commit to that hand family.",
+      "Stay flexible across hand families."
+    ],
+    "lesson": "Telescope makes the first card of every Celestial pack the Planet for your most-played hand, so it converts pack luck into reliable levels only once one family is clearly most played.",
+    "reversal": "It is weak while hands are still split across families, and worthless if Celestial packs are not being opened.",
+    "provenance": "constructed",
+    "sources": [
+      "game:game.lua:601",
+      "game:card.lua:1896"
+    ]
+  },
+  {
+    "id": "observatory-upgrade-path",
+    "family": "voucher_scaling",
+    "trigger_keys": [
+      "v_observatory"
+    ],
+    "required_keys": [],
+    "phases": [
+      "SHOP"
+    ],
+    "situation": "Observatory is offered, which requires Telescope to have been redeemed.",
+    "options": [
+      "Buy it and keep matching Planets in hand.",
+      "Spend the money on scoring or economy instead."
+    ],
+    "lesson": "Observatory turns each held Planet into X1.5 Mult for its own hand type, so it pays only if consumable slots are kept free to hold those Planets rather than using them immediately for levels.",
+    "reversal": "It is poor when consumable slots are always full or when Planets are consumed on sight for hand levels.",
+    "provenance": "constructed",
+    "sources": [
+      "game:game.lua:620",
+      "game:card.lua:2065"
+    ]
+  },
+  {
+    "id": "hone-glow-up-edition-rate",
+    "family": "voucher_scaling",
+    "trigger_keys": [
+      "v_hone",
+      "v_glow_up"
+    ],
+    "required_keys": [],
+    "phases": [
+      "SHOP"
+    ],
+    "situation": "Hone or Glow Up is offered while Jokers are still being bought.",
+    "options": [
+      "Buy it to raise the edition rate.",
+      "Buy scoring or economy instead."
+    ],
+    "lesson": "Hone makes Foil, Holographic and Polychrome twice as common and Glow Up four times; the payoff is spread over every future shop card, so it needs enough remaining antes and shop volume to repay $10.",
+    "reversal": "Skip it late in the run, or when few further purchases are planned, because it changes nothing already owned.",
+    "provenance": "constructed",
+    "sources": [
+      "game:game.lua:598",
+      "game:card.lua:2055"
+    ]
+  },
+  {
+    "id": "overstock-widens-shop",
+    "family": "voucher_shop",
+    "trigger_keys": [
+      "v_overstock_norm"
+    ],
+    "required_keys": [],
+    "phases": [
+      "SHOP"
+    ],
+    "situation": "Overstock is offered while rerolls are being used to find a specific Joker.",
+    "options": [
+      "Buy Overstock for a wider shop.",
+      "Keep rerolling the current shop width."
+    ],
+    "lesson": "Overstock adds one card slot to every future shop, which raises the chance a given reroll shows what you want and so lowers the effective cost of searching.",
+    "reversal": "It is weak when money is too tight to buy from the shop at all, since more choices do not help without cash.",
+    "provenance": "constructed",
+    "sources": [
+      "game:game.lua:596",
+      "game:card.lua:2040"
+    ]
+  },
+  {
+    "id": "reroll-surplus-cheaper-search",
+    "family": "voucher_shop",
+    "trigger_keys": [
+      "v_reroll_surplus"
+    ],
+    "required_keys": [],
+    "phases": [
+      "SHOP"
+    ],
+    "situation": "Reroll Surplus is offered in a build that rerolls often.",
+    "options": [
+      "Buy it to cut every future reroll by $2.",
+      "Keep the $10 for purchases."
+    ],
+    "lesson": "Reroll Surplus lowers reroll cost by $2 for the rest of the run, so it repays $10 only after about five rerolls; it fits searching builds and is dead money in builds that leave shops early.",
+    "reversal": "Skip it when the plan is to buy the first workable option rather than search, or when the run is close to ending.",
+    "provenance": "constructed",
+    "sources": [
+      "game:game.lua:599",
+      "game:card.lua:2080"
+    ]
+  },
+  {
+    "id": "blank-versus-antimatter",
+    "family": "voucher_shop",
+    "trigger_keys": [
+      "v_blank",
+      "v_antimatter"
+    ],
+    "required_keys": [],
+    "phases": [
+      "SHOP"
+    ],
+    "situation": "Blank or Antimatter is offered for $10.",
+    "options": [
+      "Buy it as a permanent upgrade.",
+      "Treat Blank as a non-purchase."
+    ],
+    "lesson": "Antimatter permanently adds a Joker slot and is worth $10 whenever the build wants a sixth Joker; Blank has no in-run effect at all and only progresses the unlock for Antimatter in later runs.",
+    "reversal": "Even Antimatter is a poor buy when the current Jokers do not fill the slots already available.",
+    "provenance": "constructed",
+    "sources": [
+      "game:game.lua:607",
+      "game:card.lua:2105"
+    ]
+  },
+  {
+    "id": "seed-money-raises-interest-cap",
+    "family": "voucher_economy",
+    "trigger_keys": [
+      "v_seed_money"
+    ],
+    "required_keys": [],
+    "phases": [
+      "SHOP"
+    ],
+    "situation": "Seed Money is offered while money is regularly held above $25.",
+    "options": [
+      "Buy it and start banking past $25.",
+      "Keep spending at the $25 cap."
+    ],
+    "lesson": "Seed Money raises the interest cap from $5 to $10 per cash out, which needs $50 held to pay in full; it repays $10 in two capped rounds but only if the money is actually held rather than spent.",
+    "reversal": "It is wasted when money is spent down each shop, and near the last ante it cannot repay itself.",
+    "provenance": "constructed",
+    "sources": [
+      "game:game.lua:606",
+      "game:card.lua:2086"
+    ]
+  },
+  {
+    "id": "money-tree-late-economy",
+    "family": "voucher_economy",
+    "trigger_keys": [
+      "v_money_tree"
+    ],
+    "required_keys": [],
+    "phases": [
+      "SHOP"
+    ],
+    "situation": "Money Tree is offered after Seed Money has been redeemed.",
+    "options": [
+      "Buy it and bank toward $100.",
+      "Convert money into scoring now."
+    ],
+    "lesson": "Money Tree raises the interest cap to $20 per cash out, requiring $100 held for the full amount; it is an economy engine that only matters when the run will last several more antes.",
+    "reversal": "Prefer scoring when the next blind is already in doubt, because uncapped interest is worthless if the run ends first.",
+    "provenance": "constructed",
+    "sources": [
+      "game:game.lua:623",
+      "game:card.lua:2086"
+    ]
+  },
+  {
+    "id": "grabber-and-paint-brush-capacity",
+    "family": "voucher_capacity",
+    "trigger_keys": [
+      "v_grabber",
+      "v_paint_brush"
+    ],
+    "required_keys": [],
+    "phases": [
+      "SHOP"
+    ],
+    "situation": "Grabber or Paint Brush is offered while blinds are being cleared narrowly.",
+    "options": [
+      "Buy the permanent capacity increase.",
+      "Buy scoring or economy instead."
+    ],
+    "lesson": "Grabber adds a hand every round and Paint Brush adds a card to hand size; both directly raise survival, and Paint Brush also helps held-card engines and hand-size dependent Jokers.",
+    "reversal": "Skip Paint Brush when hand size was deliberately reduced for a build, and skip Grabber when hands are not the limiting resource.",
+    "provenance": "constructed",
+    "sources": [
+      "game:game.lua:602",
+      "game:card.lua:2095"
+    ]
+  },
+  {
+    "id": "directors-cut-boss-reroll",
+    "family": "voucher_boss",
+    "trigger_keys": [
+      "v_directors_cut"
+    ],
+    "required_keys": [],
+    "phases": [
+      "SHOP"
+    ],
+    "situation": "Director's Cut is offered while a hostile boss blind is upcoming.",
+    "options": [
+      "Buy the ability to reroll one boss per ante.",
+      "Adapt to whatever boss appears."
+    ],
+    "lesson": "Director's Cut allows one boss reroll per ante for $10 each time, so its real cost is $10 plus $10 per use; it is insurance against a boss that disables the single mechanism the build depends on.",
+    "reversal": "It is poor when the build survives most bosses, since the money buys nothing on the antes where no reroll is needed.",
+    "provenance": "constructed",
+    "sources": [
+      "game:game.lua:610",
+      "game:game.lua:627"
+    ]
   }
 ]

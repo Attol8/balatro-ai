@@ -20,7 +20,7 @@ def recorded(segment, index):
 
 def test_library_has_reviewable_unique_sourced_examples():
     examples = load_examples()
-    assert 30 <= len(examples) <= 50
+    assert 30 <= len(examples) <= 100
     assert len({row["id"] for row in examples}) == len(examples)
     assert len({row["lesson"] for row in examples}) == len(examples)
     assert len({row["family"] for row in examples}) >= 16
@@ -42,7 +42,18 @@ def test_library_has_reviewable_unique_sourced_examples():
         assert row["trigger_keys"] and row["sources"]
         for token in row["trigger_keys"] + row["required_keys"]:
             assert token.startswith(
-                ("j_", "c_", "v_", "enhancement:", "seal:", "rank:", "suit:", "kind:", "boss:")
+                (
+                    "j_",
+                    "c_",
+                    "v_",
+                    "tag_",
+                    "enhancement:",
+                    "seal:",
+                    "rank:",
+                    "suit:",
+                    "kind:",
+                    "boss:",
+                )
             )
         assert len(row["options"]) == 2
         assert set(row["phases"]) <= {"SHOP", "PACK", "SELECTING_HAND", "BLIND_SELECT"}
@@ -54,7 +65,9 @@ def test_library_has_reviewable_unique_sourced_examples():
                 event = recorded(segment, int(index))
                 assert "observation" in event or "before" in event
             else:
-                assert source.startswith(("game:card.lua:", "game:game.lua:", "https://"))
+                assert source.startswith(
+                    ("game:card.lua:", "game:game.lua:", "game:tag.lua:", "https://")
+                )
 
 
 def test_recorded_mime_offer_retrieves_bounded_conditional_lessons():
@@ -147,3 +160,119 @@ def test_observatory_can_match_owned_voucher_without_joker():
         consumables=(PublicItem("c_pluto", "Pluto", "PLANET"),),
     )
     assert any("Observatory" in row["lesson"] for row in retrieve_examples(obs))
+
+
+def _blind_select_observation(tag_name, status="SELECT"):
+    from balatro_ai.game.adapter import to_public_observation
+    from tests.game.state_factory import state
+
+    obs = to_public_observation(state("BLIND_SELECT"))
+    return replace(
+        obs,
+        jokers=(),
+        consumables=(),
+        shop=(),
+        opened_pack=(),
+        blinds=(
+            PublicBlind(
+                kind="SMALL",
+                status=status,
+                name="Small Blind",
+                effect="",
+                score=300,
+                disabled=False,
+                tag_name=tag_name,
+                tag_effect="",
+            ),
+        ),
+    )
+
+
+def test_selectable_negative_tag_retrieves_bounded_skip_lessons():
+    obs = _blind_select_observation("Negative Tag")
+    examples = retrieve_examples(obs)
+    assert 1 <= len(examples) <= 3
+    assert any("Negative Tag" in row["lesson"] for row in examples)
+    assert any("Skipping forfeits" in row["lesson"] for row in examples)
+    assert all(row["situation"].startswith("Example: ") for row in examples)
+    wire = json.dumps(examples)
+    assert "trigger_keys" not in wire and "sources" not in wire
+
+
+def test_tag_on_a_blind_that_cannot_be_skipped_retrieves_nothing():
+    assert retrieve_examples(_blind_select_observation("Negative Tag", "UPCOMING")) == []
+    assert retrieve_examples(_blind_select_observation("", "SELECT")) == []
+
+
+def test_displayed_tag_names_map_onto_the_game_tag_keys():
+    from balatro_ai.strategy import _tag_key
+
+    assert _tag_key("Negative Tag") == "tag_negative"
+    assert _tag_key("Investment Tag") == "tag_investment"
+    assert _tag_key("Top-up Tag") == "tag_top_up"
+    # Two displayed names do not slugify to the game's own key.
+    assert _tag_key("Holographic Tag") == "tag_holo"
+    assert _tag_key("D6 Tag") == "tag_d_six"
+
+
+def test_held_death_retrieves_a_death_lesson_within_the_cap():
+    from balatro_ai.game.adapter import to_public_observation
+    from balatro_ai.game.state import PublicItem
+    from tests.game.state_factory import state
+
+    obs = to_public_observation(state("SHOP"))
+    obs = replace(
+        obs,
+        jokers=(),
+        shop=(),
+        opened_pack=(),
+        consumables=(PublicItem("c_death", "Death", "TAROT"),),
+    )
+    examples = retrieve_examples(obs)
+    assert 1 <= len(examples) <= 3
+    assert any("Death" in row["lesson"] for row in examples)
+    assert len({row["id"] for row in examples}) == len(examples)
+
+
+def test_offered_observatory_retrieves_a_voucher_lesson_within_the_cap():
+    from balatro_ai.game.adapter import to_public_observation
+    from balatro_ai.game.state import PublicItem
+    from tests.game.state_factory import state
+
+    obs = to_public_observation(state("SHOP"))
+    obs = replace(
+        obs,
+        jokers=(),
+        shop=(),
+        opened_pack=(),
+        consumables=(),
+        used_vouchers=(),
+        vouchers=(PublicItem("v_observatory", "Observatory", "VOUCHER"),),
+    )
+    examples = retrieve_examples(obs)
+    assert 1 <= len(examples) <= 3
+    assert any("Observatory" in row["lesson"] for row in examples)
+
+
+def test_a_rich_shop_still_returns_at_most_three_distinct_families():
+    from balatro_ai.game.adapter import to_public_observation
+    from balatro_ai.game.state import PublicItem
+    from tests.game.state_factory import state
+
+    obs = to_public_observation(state("SHOP"))
+    obs = replace(
+        obs,
+        jokers=(),
+        opened_pack=(),
+        consumables=(
+            PublicItem("c_death", "Death", "TAROT"),
+            PublicItem("c_ankh", "Ankh", "SPECTRAL"),
+            PublicItem("c_hermit", "The Hermit", "TAROT"),
+            PublicItem("c_black_hole", "Black Hole", "SPECTRAL"),
+        ),
+        shop=(PublicItem("j_mime", "Mime", "JOKER"),),
+        vouchers=(PublicItem("v_telescope", "Telescope", "VOUCHER"),),
+    )
+    examples = retrieve_examples(obs)
+    assert len(examples) == 3
+    assert len({row["id"] for row in examples}) == 3

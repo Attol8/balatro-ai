@@ -1,6 +1,6 @@
 # Offline strategy learning
 
-The library covers 48 examples across 31 strategy families, including ones
+The library covers 81 examples across 45 strategy families, including ones
 never encountered in the recorded run. The player retrieves at most three from
 [`knowledge/decisions.json`](../balatro_ai/knowledge/decisions.json). Each example
 contains a situation, two options, a lesson, a condition that could reverse the
@@ -14,14 +14,48 @@ model weights are trained and no extra model call is made during retrieval.
   alternative. `evidence:05:95` means zero-based JSONL event 95 in segment 05.
 - **Constructed:** a deliberately specified mechanics exercise. It does not
   claim that the entire build occurred in a game or can reliably be assembled.
-- **Game references:** `game:card.lua:N` and `game:game.lua:N` refer to lines of
+- **Game references:** `game:card.lua:N`, `game:game.lua:N` and `game:tag.lua:N`
+  refer to lines of
   the locally installed Balatro source used for verification. These references
   support mechanics, not the strategic recommendation. Game source is not
-  distributed. Recheck them when the game version changes.
+  distributed. Recheck them when the game version changes; the two snapshots
+  recorded below do not share line numbering, so a reference is only meaningful
+  against the snapshot the entry was written from.
 
 The original trace is immutable. New lessons are stored separately, with no
 future seed routes passed to the player. The complete corpus is inspectable
 JSON; gameplay receives only situation/lesson/reversal text and an example ID.
+
+## Tags, vouchers and consumables
+
+Tag, voucher, Tarot and Spectral coverage was added as rule-derived material and
+is therefore all `provenance: constructed`. None of it is recorded evidence: the
+saved run skipped a blind once in 32 blind selections, so there is no observed
+decision to counterfactually review for any tag. Each statement was read out of
+the currently installed game source rather than a guide, and the entries stay
+conditional, naming the case where the option is wrong as well as the case where
+it is right.
+
+Thirty-three entries were added: one general skip-timing lesson plus seven named
+tags (Negative, Rare, Charm, Double, Investment, Voucher, Coupon); seven Tarots
+(Death, Strength, The Hanged Man, Judgement, The Fool, The Hermit, Temperance);
+seven Spectrals (Ankh, Cryptid, The Soul, Black Hole, Wraith, Immolate,
+Ectoplasm); and eleven voucher lessons covering the scaling, shop, economy,
+capacity and boss-reroll groups.
+
+Tag retrieval is a new fact source. `retrieve_examples` now slugifies
+`PublicBlind.tag_name` into a `tag_*` key, but only for a small or big blind whose
+status is still `SELECT`, because that is the only state in which skipping can
+claim the tag. Two displayed names do not slugify to the game's own key, so
+Holographic Tag and D6 Tag are mapped explicitly. The tag key counts as an offer
+for ranking, the same way a shop item does. Blind tags are still public state; no
+hidden or future tag is read.
+
+The economy claims that appear in the prompt (the interest steps and caps, the
+Reroll Surplus break-even) and the edition values have exercises in
+`tests/test_strategy_exercises.py`. Claims that the scorer cannot check, such as
+what a tag places in the next shop, are asserted only as text and carry a source
+reference instead.
 
 ## Numerical exercises
 
@@ -51,8 +85,8 @@ python -m pytest -q
 
 ## Retrieval
 
-Matching uses the current phase, visible owned/offered items and public
-hand/deck features. Every required feature must match. Offered items receive
+Matching uses the current phase, visible owned/offered items, the tag on a
+still-selectable small or big blind, and public hand/deck features. Every required feature must match. Offered items receive
 priority, then more specific contexts; at most one example per family is sent.
 No network, embedding service, model call, hidden card identity or seed lookup
 is used. A feature match is not a purchase recommendation or proof of legality.
@@ -112,10 +146,16 @@ The prompt exposes these limitations. Broad strategy knowledge is useful without
 pretending that every numerical comparison is already exact. This change does
 not add unverified numerical implementations for every new family.
 
-Source snapshots used for mechanics review (SHA256, not distributed):
+Source snapshots used for mechanics review (SHA256, not distributed). The
+original 48 entries were verified against the first snapshot; the tag, voucher,
+Tarot and Spectral entries were verified against the second, which has different
+line numbering:
 
 - `card.lua`: `5073d834e08119da9516f1795a8c3d93110669aeb409c29ad1b308e0eb0be453`
 - `game.lua`: `bbc67bd3fbadd1ea3f3f0aba07ef8596118d89ff1e9758718f9e17c07a96e912`
+- `card.lua`: `77738b7ddb02576fa525410e79218f44fb744b0e365b0fb3a45f67809ac15677`
+- `game.lua`: `f684681dd67ecf4ecb66857b129aa56b8bb8dae0f34745f73bb553c7eb84953e`
+- `tag.lua`: `7080dfcb080285fd6b18ed9c750401c0e0aec7a569226a29f12109ed3aefe58a`
 
 Offline retrieval check across 383 recorded decisions: 0.0232 seconds total;
 maximum 1170 bytes of example text, average 700 when matched.
