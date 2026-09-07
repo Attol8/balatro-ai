@@ -48,6 +48,7 @@ class DecisionRecord:
     observed_score: float | None = None
     predicted_score: float | None = None
     predicted_is_estimate: bool = False
+    phase: str = ""
 
     @property
     def is_play(self) -> bool:
@@ -256,6 +257,7 @@ def load_astra_low(evidence_root: Path | None = None) -> Trajectory:
                     observed_score=observed,
                     predicted_score=estimate,
                     predicted_is_estimate=estimate is not None,
+                    phase=str(before.get("phase", "")),
                 )
             )
             index += 1

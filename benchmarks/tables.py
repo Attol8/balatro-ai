@@ -1,10 +1,11 @@
 """Build the benchmark tables and render them deterministically.
 
 Table A pairs the twelve recorded baseline panels (``evidence/baselines``) with the
-two coached runs (``evidence/first-win`` and ``evidence/astra-low-2K9H9HN``).
-Table B reports scoring-engine exactness from ``evidence/first-win/scoring-audit.json``
-plus what the astra-low trajectory itself supports.  Table C splits the Astra-high
-win by decision source and by ante, recomputed from the trajectory.
+published coached run (``evidence/astra-low-2K9H9HN``).  Table B reports scoring-engine
+exactness for that run: the headline figure is quoted from ``docs/trajectory-review.md``
+because the trajectory stores no per-play prediction, and the recoverable shortlist
+estimates are reported beside it.  Table C splits the same run by decision source,
+phase, action type and shop visit, all recomputed from the concatenated segments.
 
 Rendering is pure: the same evidence always produces the same bytes, so
 ``results.json`` and ``results.md`` are safe to commit.
@@ -20,17 +21,12 @@ from pathlib import Path
 
 from . import EVIDENCE_ROOT, SETTING
 from .baselines import BaselinePanel, load_panels
-from .trajectories import (
-    SOURCE_DELEGATE,
-    Trajectory,
-    load_astra_low,
-    load_first_win,
-    segment_ante_bounds,
-)
+from .trajectories import Trajectory, load_astra_low, segment_ante_bounds
 
 TABLE_A_TITLE = f"Real-game results, {SETTING}"
 TABLE_B_TITLE = "Scoring-engine exactness"
-TABLE_C_TITLE = "Decision sources in the Astra-high win"
+TABLE_C_TITLE = "Decision mix in the Astra-low run"
+SHOP_PHASE = "SHOP"
 
 TRAJECTORY_REVIEW = "docs/trajectory-review.md"
 
@@ -65,6 +61,15 @@ class CoachedRow:
     def seed_label(self) -> str:
         return ", ".join(self.seeds)
 
+    @property
+    def calls_per_decision(self) -> str:
+        """Coach calls against decisions taken, e.g. ``357/384 = 0.93``."""
+
+        if not self.decisions:
+            return "-"
+        ratio = self.coach_requests / self.decisions
+        return f"{self.coach_requests}/{self.decisions} = {ratio:.2f}"
+
 
 def _panel_row(panel: BaselinePanel) -> dict:
     return {
@@ -80,6 +85,7 @@ def _panel_row(panel: BaselinePanel) -> dict:
         "mean_ante": panel.mean_ante,
         "seed_panel": panel.seeds_label,
         "partial": panel.partial,
+        "calls_per_decision": "-",
         "git_revision": panel.git_revision,
         "profile_mode": panel.profile_mode,
         "notes": list(panel.notes),
@@ -103,6 +109,7 @@ def _coached_row(row: CoachedRow) -> dict:
         "seed_panel": row.seed_label,
         "decisions": row.decisions,
         "coach_requests": row.coach_requests,
+        "calls_per_decision": row.calls_per_decision,
         "seconds": row.seconds,
         "peak_hand_score": row.peak_hand_score,
         "notes": [row.note],
@@ -111,33 +118,13 @@ def _coached_row(row: CoachedRow) -> dict:
 
 
 def built_in_coached_rows(evidence_root: Path | None = None) -> list[CoachedRow]:
-    """The two coached runs stored under ``evidence/``."""
+    """The published coached run: Astra low on seed 2K9H9HN."""
 
-    root = evidence_root or EVIDENCE_ROOT
-    high = json.loads((root / "first-win" / "result.json").read_text())
-    high_manifest = json.loads((root / "first-win" / "manifest.json").read_text())
-    low = json.loads((root / "astra-low-2K9H9HN" / "result.json").read_text())
-    low_ante8 = json.loads((root / "astra-low-2K9H9HN" / "ante-8-result.json").read_text())
-    low_manifest = json.loads((root / "astra-low-2K9H9HN" / "manifest.json").read_text())
+    root = (evidence_root or EVIDENCE_ROOT) / "astra-low-2K9H9HN"
+    low = json.loads((root / "result.json").read_text())
+    low_ante8 = json.loads((root / "ante-8-result.json").read_text())
+    low_manifest = json.loads((root / "manifest.json").read_text())
     return [
-        CoachedRow(
-            label=f"Astra high ({high_manifest['coach']['model']})",
-            model=high_manifest["coach"]["model"],
-            reasoning_effort=high_manifest["coach"]["effort"],
-            seeds=[high["seed"]],
-            games=1,
-            ante8_clears=1 if high["won"] else 0,
-            antes_reached=[int(high["ante_reached"])],
-            decisions=int(high["decisions"]),
-            coach_requests=int(high["coach_requests"]),
-            seconds=float(high["seconds"]),
-            peak_hand_score=float(high["peak_hand_score"]),
-            note=(
-                f"single game, seed {high['seed']}: {high['reason']}, "
-                f"ante {high['ante_reached']} reached"
-            ),
-            sources=["evidence/first-win"],
-        ),
         CoachedRow(
             label=f"Astra low ({low_manifest['requested_model']})",
             model=low_manifest["requested_model"],
@@ -219,12 +206,12 @@ def _table_a(panels: list[BaselinePanel], coached: list[CoachedRow]) -> dict:
         "baselines": baseline_rows,
         "coached": coached_rows,
         "footnotes": [
-            "Coached games are single games on seeds outside the D0000000-D0000019 baseline "
-            "panel; they are demonstrations, not win-rate estimates.",
-            "The Astra-high win delegated 5 of its 203 decisions to the search-v6 numerical "
-            "policy and took 23 automatic cashouts; 175 decisions came from the coach.",
+            "The coached row is a single game on a seed outside the D0000000-D0000019 baseline "
+            "panel; it is a demonstration, not a win-rate estimate.",
             "The Astra-low run was supervised: it was played with adapter fixes and reviewed "
             "continuations across 7 recorded segments, so it is not an unattended benchmark.",
+            "'Coach calls / decisions' counts model requests against actions taken; the runner "
+            "takes cash-outs itself, so the ratio is below one.",
             "Baselines are sorted by Ante-8 clears (descending), then median ante (descending).",
             "Games with status 'error' count as attempted but not completed and are excluded "
             "from the ante statistics.",
@@ -232,52 +219,28 @@ def _table_a(panels: list[BaselinePanel], coached: list[CoachedRow]) -> dict:
     }
 
 
-def _table_b(high: Trajectory, low: Trajectory, evidence_root: Path | None = None) -> dict:
-    root = evidence_root or EVIDENCE_ROOT
-    audit = json.loads((root / "first-win" / "scoring-audit.json").read_text())
-    recorded = audit["recorded_prediction_comparison"]
-    versus_game = audit["actual_game_comparison"]
-    high_plays = high.plays
-    high_diffs = [
-        abs((play.observed_score or 0.0) - (play.predicted_score or 0.0)) for play in high_plays
-    ]
-    low_plays = low.plays
-    low_with_estimate = [play for play in low_plays if play.predicted_is_estimate]
-    low_exact = [
+def _table_b(low: Trajectory, evidence_root: Path | None = None) -> dict:
+    del evidence_root
+    plays = low.plays
+    with_estimate = [play for play in plays if play.predicted_is_estimate]
+    within_chip = [
         play
-        for play in low_with_estimate
+        for play in with_estimate
         if abs((play.observed_score or 0.0) - (play.predicted_score or 0.0)) < 1.0
     ]
     return {
         "title": TABLE_B_TITLE,
         "rows": [
             {
-                "run": high.run_id,
-                "plays_scored": audit["play_actions_scored"],
-                "prediction_mismatches": recorded["mismatch_count"],
-                "max_abs_prediction_difference": recorded["max_absolute_difference"],
-                "sub_chip_floor_differences_vs_game": versus_game["discrepancy_count"],
-                "max_abs_difference_vs_game": versus_game["max_absolute_difference"],
-                "derivation": "computed",
-                "source": "evidence/first-win/scoring-audit.json",
-                "cross_check": {
-                    "plays_in_trajectory": len(high_plays),
-                    "plays_differing_from_prediction": sum(1 for diff in high_diffs if diff > 0),
-                    "max_abs_difference": max(high_diffs) if high_diffs else 0.0,
-                    "source": "evidence/first-win/trajectory.jsonl.gz",
-                },
-                "note": versus_game["reason"],
-            },
-            {
                 "run": low.run_id,
-                "plays_scored": len(low_plays),
+                "plays_scored": len(plays),
                 "exact_after_public_correction": 46,
                 "plays_with_visible_joker_identities": 47,
                 "derivation": "cited",
                 "source": TRAJECTORY_REVIEW,
                 "cross_check": {
-                    "plays_with_shortlist_estimate": len(low_with_estimate),
-                    "shortlist_estimates_within_1_chip": len(low_exact),
+                    "plays_with_shortlist_estimate": len(with_estimate),
+                    "shortlist_estimates_within_1_chip": len(within_chip),
                     "source": "evidence/astra-low-2K9H9HN/segments/*/trajectory.jsonl.gz",
                 },
                 "note": (
@@ -286,26 +249,65 @@ def _table_b(high: Trajectory, low: Trajectory, evidence_root: Path | None = Non
                     f"Fortune Teller adapter fix. The exactness figure is quoted from "
                     f"{TRAJECTORY_REVIEW}."
                 ),
-            },
+            }
         ],
     }
 
 
-def _table_c(high: Trajectory) -> dict:
-    sources = high.source_counts()
-    per_ante = high.decisions_per_ante()
+def _shop_visits(low: Trajectory) -> dict:
+    """Consecutive SHOP-phase decisions grouped into one shop visit each."""
+
+    visits: list[int] = []
+    current = 0
+    for record in low.decisions:
+        if record.phase == SHOP_PHASE:
+            current += 1
+        elif current:
+            visits.append(current)
+            current = 0
+    if current:
+        visits.append(current)
+    return {
+        "visits": len(visits),
+        "actions_total": sum(visits),
+        "median_actions_per_visit": float(statistics.median(visits)),
+        "mean_actions_per_visit": round(statistics.fmean(visits), 2),
+        "max_actions_in_a_visit": max(visits),
+    }
+
+
+def _table_c(low: Trajectory, evidence_root: Path | None = None) -> dict:
+    root = evidence_root or EVIDENCE_ROOT
+    result = json.loads((root / "astra-low-2K9H9HN" / "result.json").read_text())
+    sources = low.source_counts()
+    phases = Counter(record.phase for record in low.decisions)
+    by_action: dict[str, Counter] = {}
+    for record in low.decisions:
+        by_action.setdefault(record.action, Counter())[record.source] += 1
+    actions = [
+        {
+            "action": action,
+            "count": sum(counts.values()),
+            "sources": {source: counts[source] for source in sorted(counts)},
+        }
+        for action, counts in by_action.items()
+    ]
+    actions.sort(key=lambda entry: (-entry["count"], entry["action"]))
     return {
         "title": TABLE_C_TITLE,
-        "run": high.run_id,
-        "seed": high.seed,
-        "total_decisions": len(high.decisions),
+        "run": low.run_id,
+        "seed": low.seed,
+        "total_transitions": len(low.decisions),
+        "reported_decisions": int(result["decisions"]),
         "decision_sources": sources,
-        "decisions_per_ante": {str(ante): count for ante, count in per_ante.items()},
-        "source": "evidence/first-win/trajectory.jsonl.gz",
+        "decisions_per_phase": {phase: phases[phase] for phase in sorted(phases)},
+        "decisions_per_action": actions,
+        "shop_visits": _shop_visits(low),
+        "source": "evidence/astra-low-2K9H9HN/segments/*/trajectory.jsonl.gz",
         "note": (
-            f"{sources.get(SOURCE_DELEGATE, 0)} decisions were delegated to the search-v6 "
-            "numerical policy; the automatic decisions are cash-outs the runner takes without "
-            "asking the coach."
+            f"The concatenated segments hold {len(low.decisions)} transitions while "
+            f"result.json reports {result['decisions']} decisions: segment 00 ended on an "
+            "errored action that was counted but never produced a transition record."
         ),
     }
 
@@ -318,15 +320,14 @@ def build_results(
 
     root = evidence_root or EVIDENCE_ROOT
     panels = load_panels(root)
-    high = load_first_win(root)
     low = load_astra_low(root)
     coached = built_in_coached_rows(root) + load_extra_runs(list(extra_runs or []))
     return {
         "setting": SETTING,
         "evidence_root": "evidence",
         "table_a": _table_a(panels, coached),
-        "table_b": _table_b(high, low, root),
-        "table_c": _table_c(high),
+        "table_b": _table_b(low, root),
+        "table_c": _table_c(low, root),
         "astra_low_segments": [
             {"segment": segment, "ante_start": start, "ante_end": end}
             for segment, start, end in segment_ante_bounds(low)
@@ -375,6 +376,7 @@ def render_markdown(results: dict) -> str:
         "Reached Ante >=8",
         "Median ante",
         "Mean ante",
+        "Coach calls / decisions",
         "Seed panel",
         "Notes",
     ]
@@ -389,6 +391,7 @@ def render_markdown(results: dict) -> str:
                 str(row["reached_ante8_or_more"]),
                 _fmt(row["median_ante"]),
                 _fmt(row["mean_ante"]),
+                row.get("calls_per_decision") or "-",
                 row["seed_panel"],
                 "; ".join(row["notes"]) or "-",
             ]
@@ -403,21 +406,14 @@ def render_markdown(results: dict) -> str:
     lines += [f"## Table B - {table_b['title']}", ""]
     b_rows = []
     for row in table_b["rows"]:
-        if row["derivation"] == "computed":
-            figure = (
-                f"{row['plays_scored']} plays scored, {row['prediction_mismatches']} prediction "
-                f"mismatches, {row['sub_chip_floor_differences_vs_game']} sub-1-chip floor "
-                f"differences vs the game (max {row['max_abs_difference_vs_game']})"
-            )
-        else:
-            cross = row["cross_check"]
-            figure = (
-                f"{row['exact_after_public_correction']} of "
-                f"{row['plays_with_visible_joker_identities']} plays exact after the public "
-                f"Fortune Teller correction; {cross['plays_with_shortlist_estimate']} of "
-                f"{row['plays_scored']} recorded plays carry a shortlist estimate, "
-                f"{cross['shortlist_estimates_within_1_chip']} of those within 1 chip"
-            )
+        cross = row["cross_check"]
+        figure = (
+            f"{row['exact_after_public_correction']} of "
+            f"{row['plays_with_visible_joker_identities']} plays exact after the public "
+            f"Fortune Teller correction; {cross['plays_with_shortlist_estimate']} of "
+            f"{row['plays_scored']} recorded plays carry a shortlist estimate, "
+            f"{cross['shortlist_estimates_within_1_chip']} of those within 1 chip"
+        )
         b_rows.append([row["run"], figure, row["derivation"], f"`{row['source']}`"])
     lines += _md_table(["Run", "Result", "Derivation", "Source"], b_rows)
     lines.append("")
@@ -427,15 +423,49 @@ def render_markdown(results: dict) -> str:
 
     table_c = results["table_c"]
     lines += [f"## Table C - {table_c['title']}", ""]
+    lines.append("Decision source, over the concatenated segments 00-06:")
+    lines.append("")
     lines += _md_table(
         ["Decision source", "Count"],
         [[name, str(count)] for name, count in table_c["decision_sources"].items()]
-        + [["**total**", str(table_c["total_decisions"])]],
+        + [["**total**", str(table_c["total_transitions"])]],
     )
     lines.append("")
+    lines.append("Decisions per phase:")
+    lines.append("")
     lines += _md_table(
-        ["Ante", "Decisions"],
-        [[ante, str(count)] for ante, count in table_c["decisions_per_ante"].items()],
+        ["Phase", "Decisions"],
+        [[phase, str(count)] for phase, count in table_c["decisions_per_phase"].items()],
+    )
+    lines.append("")
+    lines.append("Decisions per action type:")
+    lines.append("")
+    lines += _md_table(
+        ["Action", "Count", "Sources"],
+        [
+            [
+                entry["action"],
+                str(entry["count"]),
+                ", ".join(f"{name} {count}" for name, count in entry["sources"].items()),
+            ]
+            for entry in table_c["decisions_per_action"]
+        ],
+    )
+    lines.append("")
+    shop = table_c["shop_visits"]
+    lines.append("Shop visits:")
+    lines.append("")
+    lines += _md_table(
+        ["Visits", "Shop actions", "Median per visit", "Mean per visit", "Max in one visit"],
+        [
+            [
+                str(shop["visits"]),
+                str(shop["actions_total"]),
+                _fmt(shop["median_actions_per_visit"]),
+                _fmt(shop["mean_actions_per_visit"]),
+                str(shop["max_actions_in_a_visit"]),
+            ]
+        ],
     )
     lines.append("")
     lines.append(f"- {table_c['note']}")

@@ -4,26 +4,25 @@ Setting: Red Deck / White Stake / all unlocked. Every number is read from a file
 
 ## Table A - Real-game results, Red Deck / White Stake / all unlocked
 
-| Policy | Attempted | Completed | Ante-8 clears | Reached Ante >=8 | Median ante | Mean ante | Seed panel | Notes |
-|---|---|---|---|---|---|---|---|---|
-| **Astra high (gpt-6-astra)** | 1 | 1 | 1 | 1 | 9 | 9 | D0001000 | single game, seed D0001000: ante_8_cleared, ante 9 reached |
-| **Astra low (gpt-6-astra)** | 1 | 1 | 1 | 1 | 11 | 11 | 2K9H9HN | single game, seed 2K9H9HN: cleared Ante 8 (303 decisions, ante 9), then continued in endless and lost at ante 11 |
-| search-v4 | 20 | 20 | 3 | 7 | 6.5 | 6.3 | D0000000-D0000019 | - |
-| search-v5 | 20 | 20 | 3 | 6 | 6.5 | 6.3 | D0000000-D0000019 | - |
-| search-v6 | 20 | 20 | 3 | 7 | 6.5 | 6.3 | D0000000-D0000019 | - |
-| search-v7 | 20 | 20 | 2 | 5 | 7 | 6.4 | D0000000-D0000019 | - |
-| search-v3 | 20 | 20 | 2 | 5 | 6 | 5.9 | D0000000-D0000019 | - |
-| search | 20 | 20 | 1 | 4 | 6.5 | 6.15 | D0000000-D0000019 | - |
-| search-planets | 20 | 20 | 1 | 4 | 6 | 6.1 | D0000000-D0000019 | - |
-| search-v2 | 20 | 20 | 1 | 2 | 6 | 5.25 | D0000000-D0000019 | - |
-| build-first | 20 | 20 | 1 | 3 | 5 | 5.6 | D0000000-D0000019 | - |
-| strategic (strategic-001) | 10 | 10 | 0 | 0 | 5 | 4.5 | D0000000-D0000009 | short panel: 10 seeds, not the 20-seed panel; profile_mode 'career', not all_unlocked |
-| strategic (strategic-unlocked-001) | 20 | 20 | 0 | 0 | 5 | 4.7 | D0000000-D0000019 | - |
-| baseline-v1 | 11 | 10 | 0 | 0 | 4 | 3.4 | D0000000-D0000010 | partial panel: 11 of 20 seeds attempted; 1 game(s) errored and are excluded from ante statistics |
+| Policy | Attempted | Completed | Ante-8 clears | Reached Ante >=8 | Median ante | Mean ante | Coach calls / decisions | Seed panel | Notes |
+|---|---|---|---|---|---|---|---|---|---|
+| **Astra low (gpt-6-astra)** | 1 | 1 | 1 | 1 | 11 | 11 | 357/384 = 0.93 | 2K9H9HN | single game, seed 2K9H9HN: cleared Ante 8 (303 decisions, ante 9), then continued in endless and lost at ante 11 |
+| search-v4 | 20 | 20 | 3 | 7 | 6.5 | 6.3 | - | D0000000-D0000019 | - |
+| search-v5 | 20 | 20 | 3 | 6 | 6.5 | 6.3 | - | D0000000-D0000019 | - |
+| search-v6 | 20 | 20 | 3 | 7 | 6.5 | 6.3 | - | D0000000-D0000019 | - |
+| search-v7 | 20 | 20 | 2 | 5 | 7 | 6.4 | - | D0000000-D0000019 | - |
+| search-v3 | 20 | 20 | 2 | 5 | 6 | 5.9 | - | D0000000-D0000019 | - |
+| search | 20 | 20 | 1 | 4 | 6.5 | 6.15 | - | D0000000-D0000019 | - |
+| search-planets | 20 | 20 | 1 | 4 | 6 | 6.1 | - | D0000000-D0000019 | - |
+| search-v2 | 20 | 20 | 1 | 2 | 6 | 5.25 | - | D0000000-D0000019 | - |
+| build-first | 20 | 20 | 1 | 3 | 5 | 5.6 | - | D0000000-D0000019 | - |
+| strategic (strategic-001) | 10 | 10 | 0 | 0 | 5 | 4.5 | - | D0000000-D0000009 | short panel: 10 seeds, not the 20-seed panel; profile_mode 'career', not all_unlocked |
+| strategic (strategic-unlocked-001) | 20 | 20 | 0 | 0 | 5 | 4.7 | - | D0000000-D0000019 | - |
+| baseline-v1 | 11 | 10 | 0 | 0 | 4 | 3.4 | - | D0000000-D0000010 | partial panel: 11 of 20 seeds attempted; 1 game(s) errored and are excluded from ante statistics |
 
-1. Coached games are single games on seeds outside the D0000000-D0000019 baseline panel; they are demonstrations, not win-rate estimates.
-2. The Astra-high win delegated 5 of its 203 decisions to the search-v6 numerical policy and took 23 automatic cashouts; 175 decisions came from the coach.
-3. The Astra-low run was supervised: it was played with adapter fixes and reviewed continuations across 7 recorded segments, so it is not an unattended benchmark.
+1. The coached row is a single game on a seed outside the D0000000-D0000019 baseline panel; it is a demonstration, not a win-rate estimate.
+2. The Astra-low run was supervised: it was played with adapter fixes and reviewed continuations across 7 recorded segments, so it is not an unattended benchmark.
+3. 'Coach calls / decisions' counts model requests against actions taken; the runner takes cash-outs itself, so the ratio is below one.
 4. Baselines are sorted by Ante-8 clears (descending), then median ante (descending).
 5. Games with status 'error' count as attempted but not completed and are excluded from the ante statistics.
 
@@ -31,34 +30,60 @@ Setting: Red Deck / White Stake / all unlocked. Every number is read from a file
 
 | Run | Result | Derivation | Source |
 |---|---|---|---|
-| astra-high-D0001000 | 54 plays scored, 0 prediction mismatches, 18 sub-1-chip floor differences vs the game (max 0.875) | computed | `evidence/first-win/scoring-audit.json` |
 | astra-low-2K9H9HN | 46 of 47 plays exact after the public Fortune Teller correction; 27 of 49 recorded plays carry a shortlist estimate, 15 of those within 1 chip | cited | `docs/trajectory-review.md` |
 
-- astra-high-D0001000: The retained scorer preserves fractional intermediate totals; the game records the final score floored to an integer. These differences do not indicate migration drift.
 - astra-low-2K9H9HN: The astra-low trajectory stores no per-play prediction; only the advisory shortlist estimate for the chosen play is recoverable, and it predates the Fortune Teller adapter fix. The exactness figure is quoted from docs/trajectory-review.md.
 
-## Table C - Decision sources in the Astra-high win
+## Table C - Decision mix in the Astra-low run
+
+Decision source, over the concatenated segments 00-06:
 
 | Decision source | Count |
 |---|---|
-| automatic | 23 |
-| coach | 175 |
-| numerical_delegate | 5 |
-| **total** | 203 |
+| automatic | 30 |
+| coach | 353 |
+| **total** | 383 |
 
-| Ante | Decisions |
+Decisions per phase:
+
+| Phase | Decisions |
 |---|---|
-| 1 | 15 |
-| 2 | 20 |
-| 3 | 35 |
-| 4 | 33 |
-| 5 | 30 |
-| 6 | 29 |
-| 7 | 24 |
-| 8 | 17 |
+| BLIND_SELECT | 32 |
+| PACK | 44 |
+| ROUND_EVAL | 30 |
+| SELECTING_HAND | 70 |
+| SHOP | 207 |
 
-- 5 decisions were delegated to the search-v6 numerical policy; the automatic decisions are cash-outs the runner takes without asking the coach.
-- Source: `evidence/first-win/trajectory.jsonl.gz`
+Decisions per action type:
+
+| Action | Count | Sources |
+|---|---|---|
+| reroll_shop | 72 | coach 72 |
+| play_cards | 49 | coach 49 |
+| buy_pack | 35 | coach 35 |
+| choose_pack_card | 33 | coach 33 |
+| use_consumable | 31 | coach 31 |
+| cash_out | 30 | automatic 30 |
+| leave_shop | 30 | coach 30 |
+| select_blind | 30 | coach 30 |
+| buy_shop_card | 27 | coach 27 |
+| reorder_jokers | 11 | coach 11 |
+| skip_pack | 9 | coach 9 |
+| discard_cards | 8 | coach 8 |
+| sell_joker | 8 | coach 8 |
+| buy_voucher | 5 | coach 5 |
+| sell_consumable | 3 | coach 3 |
+| reroll_boss | 1 | coach 1 |
+| skip_blind | 1 | coach 1 |
+
+Shop visits:
+
+| Visits | Shop actions | Median per visit | Mean per visit | Max in one visit |
+|---|---|---|---|---|
+| 65 | 207 | 2 | 3.18 | 12 |
+
+- The concatenated segments hold 383 transitions while result.json reports 384 decisions: segment 00 ended on an errored action that was counted but never produced a transition record.
+- Source: `evidence/astra-low-2K9H9HN/segments/*/trajectory.jsonl.gz`
 
 ## Astra-low segment continuity
 

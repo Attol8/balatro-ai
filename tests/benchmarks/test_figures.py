@@ -13,11 +13,10 @@ from benchmarks.figures import render_all  # noqa: E402
 EXPECTED = {
     "ante-reached-by-policy.svg",
     "score-vs-requirement.svg",
-    "hand-score-parity.svg",
 }
 
 
-def test_render_all_writes_three_svgs(tmp_path: Path):
+def test_render_all_writes_two_svgs(tmp_path: Path):
     paths = render_all(tmp_path)
     assert {path.name for path in paths} == EXPECTED
     for path in paths:
