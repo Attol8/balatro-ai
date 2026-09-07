@@ -62,6 +62,14 @@ flowchart LR
   ends the run rather than risk a double action.
 - **Bounded work.** Calls, actions, wall-clock and per-call time are capped
   before any model or game action is taken.
+- **No consumables while a pack is open.** The real game lets a held Tarot,
+  Planet or Spectral be used while a booster pack is on screen, but the
+  BalatroBot transport declares `requires_state = { G.STATES.SELECTING_HAND,
+  G.STATES.SHOP }` for its `use` endpoint (`src/lua/endpoints/use.lua:39`), so a
+  `use` call in any pack state is rejected with `INVALID_STATE` before it reaches
+  the game. Legality therefore offers only pack choices, skips and inventory
+  sales in `Phase.PACK`, and a held consumable has to wait until the pack is
+  resolved.
 - **Session mode.** `balatro play --coach session` replaces the Codex child with a
   request/response file exchange, so a human or a different model can answer the
   same packets. The bridge cannot verify which model answered.
@@ -69,9 +77,15 @@ flowchart LR
 ## What the numerical tools are not
 
 They are advice. The model can choose any validated legal move, including ones
-the tools rank poorly. Scoring uses approximations for random effects and
-declines to advise when hidden cards or hidden Jokers make the estimate unsound.
-There is no Monte Carlo discard search and no game simulator in this repository.
+the tools rank poorly. Scoring rules exist for the 102 Jokers that touch chips,
+Mult or XMult; the other 48 are money, hand-size or shop effects and are listed as
+such, so every Joker is in exactly one set and any active Joker without a rule is
+named in the analysis rather than silently ignored. Blueprint and Brainstorm can
+copy any Joker with a rule. Scoring uses expected values for Misprint and
+Bloodstone and omits Lucky-card randomness, says so, and declines to advise when
+hidden cards or hidden Jokers make the estimate unsound. The analysis also states
+the interest earned at cashout and the next threshold. There is no Monte Carlo
+discard search and no game simulator in this repository.
 
 ## Records
 
