@@ -21,7 +21,9 @@ class BalatroBotError(RuntimeError):
 class BalatroBotClient:
     host: str = "127.0.0.1"
     port: int = 12346
-    timeout: float = 5.0
+    # The mod replies once an action has settled; visible-mode animations can take
+    # several seconds, and a timed-out mutation ends the run, so allow a wide margin.
+    timeout: float = 30.0
     transport: Transport | None = None
 
     @property
