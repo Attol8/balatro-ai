@@ -1,0 +1,42 @@
+{
+  "config": {
+    "deck": "RED",
+    "endless": false,
+    "max_ante": 16,
+    "max_decisions": 2000,
+    "policy": "strategic",
+    "poll_interval": 0.1,
+    "settle_polls": 100,
+    "split": "dev",
+    "stake": "WHITE"
+  },
+  "created_at": "2026-09-06T18:09:23.568418+00:00",
+  "dirty": true,
+  "git_revision": "a413126c82a104a656acd0592f60f7f593213ceb",
+  "information": "public observations only; no oracle or checkpoint search",
+  "policy": "strategic",
+  "python": "3.11.5",
+  "python_source_sha256": "9694f32d1587cf922351adc691b4a684e7ca08428e63107bc871f305d4d9f2f0",
+  "schema_version": 1,
+  "seeds": [
+    "D0000000",
+    "D0000001",
+    "D0000002",
+    "D0000003",
+    "D0000004",
+    "D0000005",
+    "D0000006",
+    "D0000007",
+    "D0000008",
+    "D0000009"
+  ],
+  "server": {
+    "active_mods": [
+      "Lovely",
+      "Steamodded",
+      "balatrobot"
+    ],
+    "profile_mode": "career",
+    "status": "ok"
+  }
+}

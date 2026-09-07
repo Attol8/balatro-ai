@@ -1,0 +1,54 @@
+{
+  "config": {
+    "deck": "RED",
+    "endless": false,
+    "expected_profile": "all_unlocked",
+    "max_ante": 16,
+    "max_decisions": 2000,
+    "policy": "search-v7",
+    "poll_interval": 0.1,
+    "settle_polls": 100,
+    "split": "dev",
+    "stable_reads": 2,
+    "stake": "WHITE"
+  },
+  "created_at": "2026-09-06T20:48:36.807305+00:00",
+  "dirty": false,
+  "git_revision": "d90b034c5bcb560af9084cd8843fff940eb9ed92",
+  "information": "public observations only; no oracle or checkpoint search",
+  "policy": "search-v7",
+  "python": "3.11.5",
+  "python_source_sha256": "4f47750d73c268f0efc791a26b2ae2485b82a55c8348f73f03ec35d1cb1280c5",
+  "schema_version": 1,
+  "seeds": [
+    "D0000000",
+    "D0000001",
+    "D0000002",
+    "D0000003",
+    "D0000004",
+    "D0000005",
+    "D0000006",
+    "D0000007",
+    "D0000008",
+    "D0000009",
+    "D0000010",
+    "D0000011",
+    "D0000012",
+    "D0000013",
+    "D0000014",
+    "D0000015",
+    "D0000016",
+    "D0000017",
+    "D0000018",
+    "D0000019"
+  ],
+  "server": {
+    "active_mods": [
+      "Lovely",
+      "Steamodded",
+      "balatrobot"
+    ],
+    "profile_mode": "all_unlocked",
+    "status": "ok"
+  }
+}

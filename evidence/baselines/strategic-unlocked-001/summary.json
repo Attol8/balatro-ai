@@ -1,0 +1,821 @@
+{
+  "ante_8_wins": 0,
+  "ante_reached_counts": {
+    "3": 3,
+    "4": 6,
+    "5": 6,
+    "6": 4,
+    "7": 1
+  },
+  "attempted": 20,
+  "completed_peak_hand_score": {
+    "count": 20,
+    "max": 19380.0,
+    "median": 7305.5,
+    "p90": 14654.700000000003
+  },
+  "losses_by_blind": {
+    "Big Blind": 4,
+    "Small Blind": 1,
+    "The Arm": 2,
+    "The Club": 1,
+    "The Goad": 1,
+    "The Head": 1,
+    "The House": 1,
+    "The Mark": 3,
+    "The Mouth": 1,
+    "The Tooth": 1,
+    "The Wall": 3,
+    "The Wheel": 1
+  },
+  "not_attempted": 0,
+  "requested": 20,
+  "runs": [
+    {
+      "ante_reached": 5,
+      "decisions": 113,
+      "final_context": {
+        "blind": "Big Blind",
+        "blind_type": "BIG",
+        "jokers": [
+          "j_raised_fist",
+          "j_bloodstone",
+          "j_wily",
+          "j_throwback",
+          "j_wrathful_joker"
+        ],
+        "money": 24,
+        "phase": "GAME_OVER",
+        "required_score": 16500,
+        "round": {
+          "ancient_suit": "C",
+          "boss_rerolled": false,
+          "chips": 11405,
+          "discards_left": 0,
+          "discards_used": 4,
+          "hands_left": 0,
+          "hands_played": 4,
+          "most_played_poker_hand": "Pair",
+          "reroll_cost": 3
+        }
+      },
+      "peak_blind_score": 13506.0,
+      "peak_hand_score": 6162.0,
+      "reason": "game_over",
+      "round_reached": 13,
+      "seconds": 8.858,
+      "seed": "D0000000",
+      "split": "dev",
+      "status": "lost",
+      "trajectory": "0000-D0000000.jsonl",
+      "won": false
+    },
+    {
+      "ante_reached": 3,
+      "decisions": 67,
+      "final_context": {
+        "blind": "The Arm",
+        "blind_type": "BOSS",
+        "jokers": [
+          "j_stencil",
+          "j_hanging_chad",
+          "j_duo",
+          "j_juggler",
+          "j_drivers_license"
+        ],
+        "money": 13,
+        "phase": "GAME_OVER",
+        "required_score": 4000,
+        "round": {
+          "ancient_suit": "D",
+          "boss_rerolled": false,
+          "chips": 2000,
+          "discards_left": 0,
+          "discards_used": 4,
+          "hands_left": 0,
+          "hands_played": 4,
+          "most_played_poker_hand": "Pair",
+          "reroll_cost": 3
+        }
+      },
+      "peak_blind_score": 4312.0,
+      "peak_hand_score": 2784.0,
+      "reason": "game_over",
+      "round_reached": 9,
+      "seconds": 5.621,
+      "seed": "D0000001",
+      "split": "dev",
+      "status": "lost",
+      "trajectory": "0001-D0000001.jsonl",
+      "won": false
+    },
+    {
+      "ante_reached": 5,
+      "decisions": 142,
+      "final_context": {
+        "blind": "The Wheel",
+        "blind_type": "BOSS",
+        "jokers": [
+          "j_scary_face",
+          "j_even_steven",
+          "j_trousers",
+          "j_acrobat",
+          "j_photograph"
+        ],
+        "money": 24,
+        "phase": "GAME_OVER",
+        "required_score": 22000,
+        "round": {
+          "ancient_suit": "H",
+          "boss_rerolled": false,
+          "chips": 18686,
+          "discards_left": 0,
+          "discards_used": 4,
+          "hands_left": 0,
+          "hands_played": 4,
+          "most_played_poker_hand": "Pair",
+          "reroll_cost": 5
+        }
+      },
+      "peak_blind_score": 18686.0,
+      "peak_hand_score": 6156.0,
+      "reason": "game_over",
+      "round_reached": 15,
+      "seconds": 11.609,
+      "seed": "D0000002",
+      "split": "dev",
+      "status": "lost",
+      "trajectory": "0002-D0000002.jsonl",
+      "won": false
+    },
+    {
+      "ante_reached": 4,
+      "decisions": 89,
+      "final_context": {
+        "blind": "The Mark",
+        "blind_type": "BOSS",
+        "jokers": [
+          "j_photograph",
+          "j_sly",
+          "j_onyx_agate",
+          "j_wily",
+          "j_acrobat"
+        ],
+        "money": 19,
+        "phase": "GAME_OVER",
+        "required_score": 10000,
+        "round": {
+          "ancient_suit": "S",
+          "boss_rerolled": false,
+          "chips": 9118,
+          "discards_left": 0,
+          "discards_used": 5,
+          "hands_left": 0,
+          "hands_played": 4,
+          "most_played_poker_hand": "Two Pair",
+          "reroll_cost": 3
+        }
+      },
+      "peak_blind_score": 9118.0,
+      "peak_hand_score": 7000.0,
+      "reason": "game_over",
+      "round_reached": 12,
+      "seconds": 7.015,
+      "seed": "D0000003",
+      "split": "dev",
+      "status": "lost",
+      "trajectory": "0003-D0000003.jsonl",
+      "won": false
+    },
+    {
+      "ante_reached": 5,
+      "decisions": 108,
+      "final_context": {
+        "blind": "Big Blind",
+        "blind_type": "BIG",
+        "jokers": [
+          "j_clever",
+          "j_half",
+          "j_supernova",
+          "j_walkie_talkie"
+        ],
+        "money": 31,
+        "phase": "GAME_OVER",
+        "required_score": 16500,
+        "round": {
+          "ancient_suit": "D",
+          "boss_rerolled": false,
+          "chips": 7260,
+          "discards_left": 0,
+          "discards_used": 4,
+          "hands_left": 0,
+          "hands_played": 4,
+          "most_played_poker_hand": "Two Pair",
+          "reroll_cost": 5
+        }
+      },
+      "peak_blind_score": 13976.0,
+      "peak_hand_score": 7524.0,
+      "reason": "game_over",
+      "round_reached": 14,
+      "seconds": 8.571,
+      "seed": "D0000004",
+      "split": "dev",
+      "status": "lost",
+      "trajectory": "0004-D0000004.jsonl",
+      "won": false
+    },
+    {
+      "ante_reached": 5,
+      "decisions": 130,
+      "final_context": {
+        "blind": "Big Blind",
+        "blind_type": "BIG",
+        "jokers": [
+          "j_madness",
+          "j_wily",
+          "j_juggler",
+          "j_swashbuckler"
+        ],
+        "money": 21,
+        "phase": "GAME_OVER",
+        "required_score": 16500,
+        "round": {
+          "ancient_suit": "C",
+          "boss_rerolled": false,
+          "chips": 14222,
+          "discards_left": 0,
+          "discards_used": 4,
+          "hands_left": 0,
+          "hands_played": 4,
+          "most_played_poker_hand": "Two Pair",
+          "reroll_cost": 5
+        }
+      },
+      "peak_blind_score": 14222.0,
+      "peak_hand_score": 11880.0,
+      "reason": "game_over",
+      "round_reached": 17,
+      "seconds": 10.662,
+      "seed": "D0000005",
+      "split": "dev",
+      "status": "lost",
+      "trajectory": "0005-D0000005.jsonl",
+      "won": false
+    },
+    {
+      "ante_reached": 6,
+      "decisions": 166,
+      "final_context": {
+        "blind": "The Arm",
+        "blind_type": "BOSS",
+        "jokers": [
+          "j_mime",
+          "j_trousers",
+          "j_supernova",
+          "j_photograph",
+          "j_even_steven"
+        ],
+        "money": 27,
+        "phase": "GAME_OVER",
+        "required_score": 40000,
+        "round": {
+          "ancient_suit": "D",
+          "boss_rerolled": false,
+          "chips": 28963,
+          "discards_left": 0,
+          "discards_used": 4,
+          "hands_left": 0,
+          "hands_played": 4,
+          "most_played_poker_hand": "Two Pair",
+          "reroll_cost": 5
+        }
+      },
+      "peak_blind_score": 39078.0,
+      "peak_hand_score": 14420.0,
+      "reason": "game_over",
+      "round_reached": 18,
+      "seconds": 12.943,
+      "seed": "D0000006",
+      "split": "dev",
+      "status": "lost",
+      "trajectory": "0006-D0000006.jsonl",
+      "won": false
+    },
+    {
+      "ante_reached": 7,
+      "decisions": 169,
+      "final_context": {
+        "blind": "Big Blind",
+        "blind_type": "BIG",
+        "jokers": [
+          "j_shoot_the_moon",
+          "j_green_joker",
+          "j_joker",
+          "j_seeing_double",
+          "j_drivers_license"
+        ],
+        "money": 28,
+        "phase": "GAME_OVER",
+        "required_score": 52500,
+        "round": {
+          "ancient_suit": "C",
+          "boss_rerolled": false,
+          "chips": 39085,
+          "discards_left": 0,
+          "discards_used": 4,
+          "hands_left": 0,
+          "hands_played": 4,
+          "most_played_poker_hand": "Two Pair",
+          "reroll_cost": 5
+        }
+      },
+      "peak_blind_score": 48594.0,
+      "peak_hand_score": 19380.0,
+      "reason": "game_over",
+      "round_reached": 20,
+      "seconds": 15.056,
+      "seed": "D0000007",
+      "split": "dev",
+      "status": "lost",
+      "trajectory": "0007-D0000007.jsonl",
+      "won": false
+    },
+    {
+      "ante_reached": 3,
+      "decisions": 73,
+      "final_context": {
+        "blind": "The Wall",
+        "blind_type": "BOSS",
+        "jokers": [
+          "j_swashbuckler",
+          "j_mystic_summit",
+          "j_square",
+          "j_greedy_joker",
+          "j_scary_face"
+        ],
+        "money": 16,
+        "phase": "GAME_OVER",
+        "required_score": 8000,
+        "round": {
+          "ancient_suit": "H",
+          "boss_rerolled": false,
+          "chips": 5898,
+          "discards_left": 0,
+          "discards_used": 4,
+          "hands_left": 0,
+          "hands_played": 4,
+          "most_played_poker_hand": "Straight",
+          "reroll_cost": 5
+        }
+      },
+      "peak_blind_score": 5898.0,
+      "peak_hand_score": 3258.0,
+      "reason": "game_over",
+      "round_reached": 9,
+      "seconds": 5.568,
+      "seed": "D0000008",
+      "split": "dev",
+      "status": "lost",
+      "trajectory": "0008-D0000008.jsonl",
+      "won": false
+    },
+    {
+      "ante_reached": 4,
+      "decisions": 95,
+      "final_context": {
+        "blind": "The Wall",
+        "blind_type": "BOSS",
+        "jokers": [
+          "j_greedy_joker",
+          "j_smiley",
+          "j_dusk",
+          "j_blue_joker",
+          "j_zany"
+        ],
+        "money": 28,
+        "phase": "GAME_OVER",
+        "required_score": 20000,
+        "round": {
+          "ancient_suit": "C",
+          "boss_rerolled": false,
+          "chips": 14171,
+          "discards_left": 0,
+          "discards_used": 4,
+          "hands_left": 0,
+          "hands_played": 4,
+          "most_played_poker_hand": "Two Pair",
+          "reroll_cost": 3
+        }
+      },
+      "peak_blind_score": 14171.0,
+      "peak_hand_score": 7614.0,
+      "reason": "game_over",
+      "round_reached": 12,
+      "seconds": 8.119,
+      "seed": "D0000009",
+      "split": "dev",
+      "status": "lost",
+      "trajectory": "0009-D0000009.jsonl",
+      "won": false
+    },
+    {
+      "ante_reached": 4,
+      "decisions": 94,
+      "final_context": {
+        "blind": "The House",
+        "blind_type": "BOSS",
+        "jokers": [
+          "j_red_card",
+          "j_scary_face",
+          "j_misprint",
+          "j_square",
+          "j_clever"
+        ],
+        "money": 26,
+        "phase": "GAME_OVER",
+        "required_score": 10000,
+        "round": {
+          "ancient_suit": "S",
+          "boss_rerolled": false,
+          "chips": 9396,
+          "discards_left": 0,
+          "discards_used": 4,
+          "hands_left": 0,
+          "hands_played": 4,
+          "most_played_poker_hand": "Two Pair",
+          "reroll_cost": 5
+        }
+      },
+      "peak_blind_score": 9396.0,
+      "peak_hand_score": 4774.0,
+      "reason": "game_over",
+      "round_reached": 12,
+      "seconds": 8.162,
+      "seed": "D0000010",
+      "split": "dev",
+      "status": "lost",
+      "trajectory": "0010-D0000010.jsonl",
+      "won": false
+    },
+    {
+      "ante_reached": 6,
+      "decisions": 155,
+      "final_context": {
+        "blind": "The Wall",
+        "blind_type": "BOSS",
+        "jokers": [
+          "j_zany",
+          "j_wee",
+          "j_jolly",
+          "j_red_card",
+          "j_trousers"
+        ],
+        "money": 21,
+        "phase": "GAME_OVER",
+        "required_score": 80000,
+        "round": {
+          "ancient_suit": "S",
+          "boss_rerolled": false,
+          "chips": 69165,
+          "discards_left": 0,
+          "discards_used": 4,
+          "hands_left": 0,
+          "hands_played": 5,
+          "most_played_poker_hand": "Pair",
+          "reroll_cost": 5
+        }
+      },
+      "peak_blind_score": 69165.0,
+      "peak_hand_score": 15975.0,
+      "reason": "game_over",
+      "round_reached": 18,
+      "seconds": 14.728,
+      "seed": "D0000011",
+      "split": "dev",
+      "status": "lost",
+      "trajectory": "0011-D0000011.jsonl",
+      "won": false
+    },
+    {
+      "ante_reached": 3,
+      "decisions": 90,
+      "final_context": {
+        "blind": "The Mark",
+        "blind_type": "BOSS",
+        "jokers": [
+          "j_juggler",
+          "j_golden",
+          "j_zany",
+          "j_merry_andy",
+          "j_walkie_talkie"
+        ],
+        "money": 14,
+        "phase": "GAME_OVER",
+        "required_score": 4000,
+        "round": {
+          "ancient_suit": "S",
+          "boss_rerolled": false,
+          "chips": 1828,
+          "discards_left": 0,
+          "discards_used": 7,
+          "hands_left": 0,
+          "hands_played": 5,
+          "most_played_poker_hand": "Two Pair",
+          "reroll_cost": 5
+        }
+      },
+      "peak_blind_score": 4128.0,
+      "peak_hand_score": 3136.0,
+      "reason": "game_over",
+      "round_reached": 9,
+      "seconds": 6.732,
+      "seed": "D0000012",
+      "split": "dev",
+      "status": "lost",
+      "trajectory": "0012-D0000012.jsonl",
+      "won": false
+    },
+    {
+      "ante_reached": 4,
+      "decisions": 88,
+      "final_context": {
+        "blind": "The Head",
+        "blind_type": "BOSS",
+        "jokers": [
+          "j_card_sharp",
+          "j_baseball",
+          "j_popcorn",
+          "j_dusk",
+          "j_blackboard"
+        ],
+        "money": 27,
+        "phase": "GAME_OVER",
+        "required_score": 10000,
+        "round": {
+          "ancient_suit": "H",
+          "boss_rerolled": false,
+          "chips": 8553,
+          "discards_left": 0,
+          "discards_used": 4,
+          "hands_left": 0,
+          "hands_played": 4,
+          "most_played_poker_hand": "Two Pair",
+          "reroll_cost": 5
+        }
+      },
+      "peak_blind_score": 8909.0,
+      "peak_hand_score": 7087.0,
+      "reason": "game_over",
+      "round_reached": 12,
+      "seconds": 7.333,
+      "seed": "D0000013",
+      "split": "dev",
+      "status": "lost",
+      "trajectory": "0013-D0000013.jsonl",
+      "won": false
+    },
+    {
+      "ante_reached": 6,
+      "decisions": 154,
+      "final_context": {
+        "blind": "The Mark",
+        "blind_type": "BOSS",
+        "jokers": [
+          "j_wrathful_joker",
+          "j_constellation",
+          "j_blue_joker",
+          "j_jolly",
+          "j_acrobat"
+        ],
+        "money": 26,
+        "phase": "GAME_OVER",
+        "required_score": 40000,
+        "round": {
+          "ancient_suit": "H",
+          "boss_rerolled": false,
+          "chips": 37083,
+          "discards_left": 0,
+          "discards_used": 5,
+          "hands_left": 0,
+          "hands_played": 6,
+          "most_played_poker_hand": "Pair",
+          "reroll_cost": 5
+        }
+      },
+      "peak_blind_score": 37083.0,
+      "peak_hand_score": 13824.0,
+      "reason": "game_over",
+      "round_reached": 18,
+      "seconds": 13.966,
+      "seed": "D0000014",
+      "split": "dev",
+      "status": "lost",
+      "trajectory": "0014-D0000014.jsonl",
+      "won": false
+    },
+    {
+      "ante_reached": 6,
+      "decisions": 170,
+      "final_context": {
+        "blind": "Small Blind",
+        "blind_type": "SMALL",
+        "jokers": [
+          "j_wily",
+          "j_jolly",
+          "j_zany",
+          "j_walkie_talkie",
+          "j_seeing_double"
+        ],
+        "money": 28,
+        "phase": "GAME_OVER",
+        "required_score": 20000,
+        "round": {
+          "ancient_suit": "C",
+          "boss_rerolled": false,
+          "chips": 13056,
+          "discards_left": 0,
+          "discards_used": 5,
+          "hands_left": 0,
+          "hands_played": 5,
+          "most_played_poker_hand": "Pair",
+          "reroll_cost": 5
+        }
+      },
+      "peak_blind_score": 25332.0,
+      "peak_hand_score": 12232.0,
+      "reason": "game_over",
+      "round_reached": 16,
+      "seconds": 14.337,
+      "seed": "D0000015",
+      "split": "dev",
+      "status": "lost",
+      "trajectory": "0015-D0000015.jsonl",
+      "won": false
+    },
+    {
+      "ante_reached": 4,
+      "decisions": 96,
+      "final_context": {
+        "blind": "The Mouth",
+        "blind_type": "BOSS",
+        "jokers": [
+          "j_scholar",
+          "j_onyx_agate",
+          "j_odd_todd",
+          "j_greedy_joker"
+        ],
+        "money": 26,
+        "phase": "GAME_OVER",
+        "required_score": 10000,
+        "round": {
+          "ancient_suit": "C",
+          "boss_rerolled": false,
+          "chips": 5280,
+          "discards_left": 0,
+          "discards_used": 4,
+          "hands_left": 0,
+          "hands_played": 4,
+          "most_played_poker_hand": "Two Pair",
+          "reroll_cost": 5
+        }
+      },
+      "peak_blind_score": 10285.0,
+      "peak_hand_score": 10285.0,
+      "reason": "game_over",
+      "round_reached": 12,
+      "seconds": 7.917,
+      "seed": "D0000016",
+      "split": "dev",
+      "status": "lost",
+      "trajectory": "0016-D0000016.jsonl",
+      "won": false
+    },
+    {
+      "ante_reached": 5,
+      "decisions": 127,
+      "final_context": {
+        "blind": "The Club",
+        "blind_type": "BOSS",
+        "jokers": [
+          "j_ride_the_bus",
+          "j_raised_fist",
+          "j_bootstraps",
+          "j_hiker",
+          "j_zany"
+        ],
+        "money": 25,
+        "phase": "GAME_OVER",
+        "required_score": 22000,
+        "round": {
+          "ancient_suit": "H",
+          "boss_rerolled": false,
+          "chips": 17932,
+          "discards_left": 0,
+          "discards_used": 4,
+          "hands_left": 0,
+          "hands_played": 5,
+          "most_played_poker_hand": "Pair",
+          "reroll_cost": 5
+        }
+      },
+      "peak_blind_score": 17932.0,
+      "peak_hand_score": 4400.0,
+      "reason": "game_over",
+      "round_reached": 15,
+      "seconds": 10.003,
+      "seed": "D0000017",
+      "split": "dev",
+      "status": "lost",
+      "trajectory": "0017-D0000017.jsonl",
+      "won": false
+    },
+    {
+      "ante_reached": 4,
+      "decisions": 111,
+      "final_context": {
+        "blind": "The Tooth",
+        "blind_type": "BOSS",
+        "jokers": [
+          "j_drunkard",
+          "j_mystic_summit",
+          "j_photograph",
+          "j_scary_face",
+          "j_bloodstone"
+        ],
+        "money": 5,
+        "phase": "GAME_OVER",
+        "required_score": 10000,
+        "round": {
+          "ancient_suit": "D",
+          "boss_rerolled": false,
+          "chips": 7071,
+          "discards_left": 0,
+          "discards_used": 5,
+          "hands_left": 0,
+          "hands_played": 4,
+          "most_played_poker_hand": "Two Pair",
+          "reroll_cost": 5
+        }
+      },
+      "peak_blind_score": 7632.0,
+      "peak_hand_score": 4488.0,
+      "reason": "game_over",
+      "round_reached": 12,
+      "seconds": 8.584,
+      "seed": "D0000018",
+      "split": "dev",
+      "status": "lost",
+      "trajectory": "0018-D0000018.jsonl",
+      "won": false
+    },
+    {
+      "ante_reached": 5,
+      "decisions": 107,
+      "final_context": {
+        "blind": "The Goad",
+        "blind_type": "BOSS",
+        "jokers": [
+          "j_mystic_summit",
+          "j_clever",
+          "j_supernova",
+          "j_jolly",
+          "j_flower_pot"
+        ],
+        "money": 25,
+        "phase": "GAME_OVER",
+        "required_score": 22000,
+        "round": {
+          "ancient_suit": "D",
+          "boss_rerolled": false,
+          "chips": 19205,
+          "discards_left": 0,
+          "discards_used": 4,
+          "hands_left": 0,
+          "hands_played": 4,
+          "most_played_poker_hand": "Two Pair",
+          "reroll_cost": 5
+        }
+      },
+      "peak_blind_score": 22015.0,
+      "peak_hand_score": 14508.0,
+      "reason": "game_over",
+      "round_reached": 15,
+      "seconds": 8.777,
+      "seed": "D0000019",
+      "split": "dev",
+      "status": "lost",
+      "trajectory": "0019-D0000019.jsonl",
+      "won": false
+    }
+  ],
+  "status_counts": {
+    "lost": 20
+  },
+  "win_rate_95pct_wilson": [
+    0,
+    0.1611301254949332
+  ],
+  "win_rate_attempted": 0.0,
+  "win_rate_completed": 0.0
+}
