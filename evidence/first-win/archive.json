@@ -1,4 +1,3 @@
 {
-  "historical_archive": "/Users/jacopo/Desktop/projects/balatro-ai-v2-history/seabass-before-product-20260907-002033",
-  "note": "Full earlier experiments and pre-rewrite source kept outside the working repository. Interrupted pilot game2 is not a completed result."
+  "note": "The source that produced this run, including the V6 numerical policy and the earlier real-game experiments, is in this repository's git history before commit 99cf692 (the rewrite that removed the simulator and heuristic policies). A private archive of the pre-rewrite working tree and raw experiment outputs is kept offline; it is not required to read or reproduce anything in this directory. The interrupted pilot game that followed this win is not a completed result and is not reported."
 }

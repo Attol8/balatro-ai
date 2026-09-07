@@ -1,124 +1,138 @@
 # Balatro AI
 
-One real game, one Astra coach, public numerical tools. The model chooses strategy
-and actions; Python exposes legal moves, estimates hand scores, validates replies,
-and executes through local BalatroBot. Cashout is the only automatic decision.
+An LLM coach with exact numerical tools that clears Balatro on the real game.
 
-**Default: `gpt-6-astra`, low reasoning effort, through Codex signed into ChatGPT.**
-No direct model API client or API-key billing path. No training, simulator,
-policy variants, batch evaluator, or fallback player.
+GPT-6 Astra chooses every meaningful action from public information only. Python
+enumerates legal moves, scores hands exactly, validates each reply and executes it
+through the [BalatroBot](https://github.com/coder/balatrobot) mod. No training, no
+simulator, no fallback policy, no hidden information. The recorded runs cleared
+Ante 8 on Red Deck / White Stake, where ten earlier heuristic and search policies
+won at most 3 games in 20.
 
-The earlier Astra **high** system cleared Ante 8: 415,042 chips against Violet
-Vessel's 300,000 requirement. [Recorded proof](docs/coached-win.md) includes the
-original prompt and full compressed trace. Astra low also cleared Ante 8 on [seed 2K9H9HN](evidence/astra-low-2K9H9HN)
-during a supervised development run with recovery fixes, then reached Ante 11
-in endless mode with a peak hand of 1,239,454. Its unattended win rate is unmeasured.
-The [trajectory review](docs/trajectory-review.md) documents missed scaling offers,
-the Fortune Teller scoring fix, and offline-tested improvements for future runs.
-The [strategy library](docs/strategy-library.md) adds 48 conditional decision examples
-across diverse builds, with at most three retrieved per public decision.
+![Ante reached per game by policy](benchmarks/results/figures/ante-reached-by-policy.svg)
 
-## Install and check
+## Results
 
-Requires Python 3.11+, macOS/Linux, Codex CLI supporting `--ignore-user-config`
-and `--ignore-rules` (developed against 0.153.4), and an installed real Balatro
-with BalatroBot. Runtime Python dependencies: none.
+| System | Games | Ante 8 cleared | Notes |
+|---|---|---|---|
+| Astra high + tools | 1 | 1 | Seed D0001000. 415,042 chips against 300,000. 175 of 203 decisions by the model, 5 delegated to search-v6, 23 automatic cashouts. |
+| Astra low + tools | 1 | 1 | Seed 2K9H9HN. Won, then reached Ante 11 in endless with a 1,239,454 hand. Supervised run with fixes between segments. |
+| search-v6 (best heuristic) | 20 | 3 | Bounded public-information search, the strongest of ten non-model policies. |
+| Ten heuristic and search policies | 200 | 0 to 3 each | Same game, same settings, seeds D0000000 to D0000019. |
+
+The coached games are single games on seeds outside the baseline panel. They show
+the system can beat the game; they do not estimate a win rate, and the unattended
+win rate is unmeasured. Full tables, figures and every caveat: [docs/results.md](docs/results.md).
+How the numbers are produced and what is disclosed: [docs/methodology.md](docs/methodology.md).
+
+![Chips scored against the blind requirement](benchmarks/results/figures/score-vs-requirement.svg)
+
+## How it works
+
+```mermaid
+flowchart LR
+    Game[Real Balatro via BalatroBot] --> Public[Typed public state]
+    Public --> Tools[Legal actions and exact scoring]
+    Tools --> Coach[GPT-6 Astra in Codex]
+    Coach --> Validate[Validate one action]
+    Validate --> Game
+    Coach --> Plan[Persistent build plan]
+    Plan --> Coach
+```
+
+- **Information firewall.** The model receives typed public observations and
+  unordered deck counts. Seeds, draw order, hidden Joker identities and future shop
+  contents never reach it. Tests assert the boundary.
+- **Exact tools, advisory only.** Candidate plays come with exact scores where the
+  outcome is deterministic. On the winning run all 54 scored plays matched the
+  recorded predictions. The model may choose any validated legal move.
+- **One action, no retries.** Each decision runs in a fresh sandboxed Codex process
+  with a compact persistent plan. Invalid replies get at most two corrections. An
+  uncertain game mutation is never replayed.
+- **Bounded work.** Calls, actions, wall-clock and per-call time are capped before
+  anything runs. Cashout is the only automatic decision.
+
+Details: [docs/architecture.md](docs/architecture.md). The coach instructions are
+in [`balatro_ai/prompts/coach.md`](balatro_ai/prompts/coach.md); the offline
+strategy library and its retrieval rules are described in
+[docs/strategy-library.md](docs/strategy-library.md).
+
+## Reproduce the benchmarks
+
+Everything in `benchmarks/results/` is rebuilt from `evidence/` without a game or
+a model:
 
 ```sh
-python3 -m venv .venv
-. .venv/bin/activate
-pip install -e '.[dev]'
+python3 -m venv .venv && . .venv/bin/activate
+pip install -e '.[dev,bench]'
+python -m benchmarks        # writes benchmarks/results/{results.json,results.md,figures/}
+pytest -q                   # recorded observations and fake transports only
+```
+
+CI rebuilds the tables and fails if they change. New real-game results are added by
+pointing the builder at run directories: `python -m benchmarks --runs runs/*`.
+
+## Play a game
+
+Requires Python 3.11+, macOS or Linux, the Codex CLI signed into ChatGPT (developed
+against 0.153.4), and your own copy of Balatro with BalatroBot installed. The runner
+does not install or launch the game and ships no game assets.
+
+```sh
+pip install -e .
 codex login
-balatro --help
-balatro doctor
-```
-
-Start your BalatroBot installation with `BALATROBOT_ALL_UNLOCKED=1`, listening on
-localhost port 12346, and leave the game at MENU. With the installed launcher:
-
-```sh
-BALATROBOT_ALL_UNLOCKED=1 uvx balatrobot serve --fast --headless
-```
-
-`doctor` checks readiness without
-model inference. The runner requires Red Deck, White Stake and the all-unlocked
-profile. It does not install or launch the game. Use one game instance: separate
-BalatroBot ports do not isolate the shared save/profile.
-
-## Play when ready
-
-This command starts a real game and makes model calls; it is never part of tests.
-
-```sh
+BALATROBOT_ALL_UNLOCKED=1 uvx balatrobot serve --fast --headless   # game side
+balatro doctor                     # read-only readiness check, no model calls
 balatro play --output runs/game-001
-# Continue past Ante 8 until loss or the configured limits:
 balatro play --endless --output runs/endless-001
 ```
 
-Defaults cap the run at 200 coach calls, 400 actions, 3600 seconds, and 180 seconds
-per call. Override with `--max-calls`, `--max-actions`, `--seconds`, and
-`--call-seconds`. These bound work, not a monetary price. Invalid action responses receive validation feedback for up to two corrections,
-counted within the same coach-call limit. No rejected action reaches the game.
-Transport failures and uncertain game actions are never retried. A timeout,
-three consecutive invalid replies or stalled game stops the run and records a reason. Ctrl-C records an
-interruption and terminates an active Codex child. The game is left for inspection.
-Existing output directories and active games are never overwritten.
+The product is fixed to `gpt-6-astra` at low reasoning effort. Defaults cap a run
+at 200 coach calls, 400 actions, 3600 seconds and 180 seconds per call
+(`--max-calls`, `--max-actions`, `--seconds`, `--call-seconds`). `--seed` selects a
+reproducible seed that stays in the manifest. Ctrl-C records an interruption and
+stops the Codex child; the game is left for inspection. Use one game instance:
+separate BalatroBot ports do not isolate the shared profile.
 
-`--seed ABC123` optionally selects a reproducible seed. Seeds stay in the runner
-manifest; the coach receives typed public observations and unordered deck counts,
-not hidden identities, draw order or future shop information. Every decision uses
-an isolated Codex context with a compact persistent strategy and recent outcomes.
-Repeated public-state records use lossless column/row tables to reduce request
-size. Coach response logs include call duration and packet byte counts; smaller
-packets have not yet been benchmarked for live latency.
-
-For an existing Codex/Claude session, run:
+To answer the packets yourself or from another model, use session mode:
 
 ```sh
 balatro play --coach session --output runs/session-001 --call-seconds 600
-balatro next runs/session-001/public
+balatro next runs/session-001/public            # read the outstanding request
 balatro reply runs/session-001/public response.json
 ```
 
-The session reads only the public packet and submits:
+Each run writes `manifest.json`, `trajectory.jsonl` and `result.json`. Read them
+with `balatro inspect DIR`, for example `balatro inspect evidence/first-win`.
 
-```json
-{"request_id":"COPY_CURRENT_ID","action_json":"{\"type\":\"select_blind\"}","plan":"Compact strategy for subsequent decisions."}
-```
+## Evidence
 
-The session model/effort is controlled by your client; the file bridge cannot
-verify it. Select Astra low in Codex to match the intended configuration. Claude
-is compatible with the exchange protocol but is not Astra. No session gameplay
-agent is automatically spawned.
+- [`evidence/first-win/`](evidence/first-win): the Astra-high win. Prompt, manifest,
+  result, compressed public trajectory, scoring audit.
+- [`evidence/astra-low-2K9H9HN/`](evidence/astra-low-2K9H9HN): the Astra-low win
+  and endless continuation, in hash-chained segments with the interrupted first
+  attempt kept separately.
+- [`evidence/baselines/`](evidence/baselines): twelve real-game panels of the earlier
+  non-model policies, with [provenance](evidence/baselines/PROVENANCE.md).
+- [docs/coached-win.md](docs/coached-win.md) and
+  [docs/trajectory-review.md](docs/trajectory-review.md): what the runs did, what
+  they got wrong, and what was fixed afterwards.
 
-## Tools and records
+## Limitations
 
-`balatro_ai/game` contains the tested public adapter, legal actions and scoring
-mechanics. `analysis.py` offers bounded candidates across hand families, growth
-preservation options, useful held-card facts and reorder suggestions. The
-[coach instructions](balatro_ai/prompts/coach.md) preserve the successful run's
-lessons about Bus, Blue seals, Steel, Blackboard and changing copy targets.
-Candidates are advice; the model can choose any validated legal move.
+- Two coached wins on two seeds. No win rate, no same-seed ablation of model versus
+  tools, no model-without-tools control.
+- The low-effort win was a supervised development run with adapter fixes and
+  reviewed continuations between segments.
+- Scoring approximates random effects and withholds advice when hidden cards or
+  Jokers make an estimate unsound.
+- Model access is your own Codex CLI and ChatGPT account. There is no API client
+  and no token or cost accounting in the evidence.
 
-Scoring includes approximations for random/unsupported effects. Hidden cards and
-hidden Jokers disable numerical play advice. Discard selection is model reasoning;
-there is no Monte Carlo discard search. The original win used five V6-delegated
-actions; the new product asks Astra for all meaningful choices.
+## License
 
-Each output has `manifest.json`, `trajectory.jsonl`, and `result.json`. Requests,
-responses, mutation attempts and settled outcomes are logged. The coach receives
-only its packet, not the manifest or historical evidence. Inspect results offline:
-
-```sh
-balatro inspect evidence/first-win
-balatro inspect runs/game-001
-python -m pytest -q
-```
-
-Tests use recorded observations and fake transports only. They cover scoring,
-public-state boundaries, legality, fixed model configuration, budgets, failure
-handling, and migration parity against the winning trace.
-
-In endless mode, `ante_8_cleared` and `won` preserve the Ante8 milestone even
-if the later final status is `lost`. Limits still apply; configure longer runs
-explicitly with the existing call/action/time options.
+Code is licensed under the GNU Affero General Public License v3.0 or later
+([LICENSE](LICENSE)). Documentation, evidence and generated results are CC BY 4.0
+([LICENSE-DOCS](LICENSE-DOCS)). Balatro is a game by LocalThunk, published by
+Playstack; this project is unaffiliated and includes no game assets. BalatroBot is
+MIT licensed by Coder. See [NOTICE](NOTICE). To cite, use [CITATION.cff](CITATION.cff).

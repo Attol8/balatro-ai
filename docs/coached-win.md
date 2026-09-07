@@ -1,7 +1,7 @@
 # Confirmed Balatro win: Astra with numerical tools
 
-Recorded 2026-09-07. Jacopo accepted this as the convincing milestone that the
-coached system beat the game. Further evaluation is paused at his request.
+Recorded 2026-09-07. This is the run that established that the coached system
+beats the game. No further evaluation of the high-effort configuration has been run.
 
 ## Verified result
 
@@ -10,16 +10,17 @@ coached system beat the game. Further evaluation is paused at his request.
 - Confirmed Ante-8 clear: runner observed Ante 9, not just the game's victory flag.
 - Violet Vessel required 300,000 chips; final hand scored 415,042 with three hands
   and four discards unused. Peak hand across the run: 446,698.
-- 203 executed decisions: 175 selected by Astra, 5 delegated to V6, 23 automatic
-  cashouts. Runtime: 1,689.681 seconds. No execution error.
+- 203 executed decisions: 175 selected by Astra, 5 delegated to V6 (the `search-v6`
+  public numerical policy, the strongest heuristic baseline in [results](results.md)),
+  23 automatic cashouts. Runtime: 1,689.681 seconds. No execution error.
 - Model: gpt-6-astra, high reasoning effort, through a fresh built-in Codex agent.
 - No project-specific model training, direct model API client, hidden deck order,
   future shop access, or checkpoint search.
 
 Evidence is tracked in [`evidence/first-win`](../evidence/first-win): the original
-manifest, prompt, completed result and compressed public trajectory. The complete
-old source and experiment outputs are retained in the external archive recorded
-in `evidence/first-win/archive.json`.
+manifest, prompt, completed result and compressed public trajectory. The pre-rewrite
+source that produced it, including V6, is in this repository's history before commit
+`99cf692`; see `evidence/first-win/archive.json`.
 
 The offline migration audit recomputed all 54 played-hand predictions with zero
 change. Eighteen actual integer game scores differ from the fractional predictions
