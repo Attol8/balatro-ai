@@ -44,6 +44,26 @@ def main(argv=None):
         default=60,
         help="per-call cap; a timed-out call is retried, not charged as progress",
     )
+    keep = sub.add_parser(
+        "supervise", help="keep one real game going across runner restarts (uses model calls)"
+    )
+    keep.add_argument("--output", type=Path, required=True, help="game root holding the segments")
+    keep.add_argument("--port", type=int, default=12346)
+    keep.add_argument("--endless", action="store_true", help="continue beyond Ante 8")
+    keep.add_argument("--seed", help="optional 1–8 alphanumeric characters; withheld from coach")
+    keep.add_argument("--max-calls", type=int, default=450, help="model calls per segment")
+    keep.add_argument("--max-actions", type=int, default=750, help="game actions per segment")
+    keep.add_argument("--seconds", type=float, default=7200, help="wall-clock budget per segment")
+    keep.add_argument("--call-seconds", type=float, default=60, help="per-call cap")
+    keep.add_argument(
+        "--max-restarts", type=int, default=8, help="recoverable runner exits to absorb"
+    )
+    keep.add_argument(
+        "--server-command", help="shell command that starts BalatroBot when it is unreachable"
+    )
+    keep.add_argument(
+        "--save-file", type=Path, help="Balatro autosave to load when the game process died"
+    )
     inspect = sub.add_parser("inspect", help="read a result without running anything")
     inspect.add_argument("run", type=Path)
     watch = sub.add_parser("watch", help="live dashboard for a run directory (no model calls)")
@@ -74,6 +94,22 @@ def main(argv=None):
             else:
                 write_response(args.public, json.loads(args.response.read_text()))
             return 0
+        if args.command == "supervise":
+            from .supervise import supervise, validate_seed
+
+            validate_seed(args.seed)
+            summary = supervise(
+                args.output,
+                seed=args.seed,
+                endless=args.endless,
+                port=args.port,
+                limits=Limits(args.max_calls, args.max_actions, args.seconds, args.call_seconds),
+                max_restarts=args.max_restarts,
+                server_command=args.server_command,
+                save_file=args.save_file,
+            )
+            print(json.dumps(summary, indent=2))
+            return 0 if summary.get("status") in {"won", "lost"} else 1
         client = BalatroBotClient(port=args.port)
         if args.command == "doctor":
             checks = {}

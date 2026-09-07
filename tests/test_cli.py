@@ -158,3 +158,63 @@ def test_resume_and_seed_are_mutually_exclusive(tmp_path, capsys):
         )
     assert caught.value.code == 1 and not (tmp_path / "run").exists()
     assert "drop --seed" in capsys.readouterr().err
+
+
+def test_supervise_help_lists_the_operator_options(capsys):
+    with pytest.raises(SystemExit) as caught:
+        main(["supervise", "--help"])
+    assert caught.value.code == 0
+    help_text = capsys.readouterr().out
+    for option in (
+        "--output",
+        "--seed",
+        "--endless",
+        "--port",
+        "--max-calls",
+        "--max-actions",
+        "--seconds",
+        "--call-seconds",
+        "--max-restarts",
+        "--server-command",
+        "--save-file",
+    ):
+        assert option in help_text
+
+
+def test_supervise_validates_the_seed_before_touching_anything(tmp_path):
+    with pytest.raises(SystemExit) as caught:
+        main(["supervise", "--output", str(tmp_path / "game"), "--seed", "not valid"])
+    assert caught.value.code == 1 and not (tmp_path / "game").exists()
+
+
+def test_supervise_passes_the_operator_settings_through(tmp_path, monkeypatch):
+    captured = {}
+
+    def supervise(output, **kwargs):
+        captured.update(kwargs, output=output)
+        return dict(status="won", segments=[], restarts=2)
+
+    monkeypatch.setattr("balatro_ai.supervise.supervise", supervise)
+    assert (
+        main(
+            [
+                "supervise",
+                "--output",
+                str(tmp_path / "game"),
+                "--seed",
+                "ABCD1234",
+                "--endless",
+                "--max-restarts",
+                "3",
+                "--server-command",
+                "start-balatro",
+                "--save-file",
+                str(tmp_path / "save.jkr"),
+            ]
+        )
+        == 0
+    )
+    assert captured["seed"] == "ABCD1234" and captured["endless"] is True
+    assert captured["max_restarts"] == 3 and captured["server_command"] == "start-balatro"
+    assert captured["save_file"] == tmp_path / "save.jkr"
+    assert (captured["limits"].max_calls, captured["limits"].max_actions) == (450, 750)
