@@ -31,6 +31,7 @@ from balatro_ai.game.state import (
     PublicObservation,
     VisiblePlayingCard,
 )
+from balatro_ai.production import copier_timing, round_production
 from balatro_ai.strategy import retrieve_examples
 
 _MAX_PLAY_CANDIDATES = 16  # Thirteen hand families plus three preservation views.
@@ -87,6 +88,12 @@ def analyze(observation: PublicObservation) -> dict[str, object]:
         "economy": _economy(observation),
     }
     examples = retrieve_examples(observation)
+    production = round_production(observation, plays)
+    if production:
+        result["round_production"] = production
+    timing = copier_timing(observation)
+    if timing:
+        result["copier_timing"] = timing
     if examples:
         result["strategy_examples"] = examples
     opportunities = _engine_opportunities(observation)
@@ -190,6 +197,13 @@ def _play_advice(
             if candidate not in chosen:
                 chosen.append(candidate)
     chosen = sorted(chosen, key=_scored_sort_key, reverse=True)[:_MAX_PLAY_CANDIDATES]
+    # A stronger High Card with kickers can hide DNA's singleton setup option.
+    if _active_joker(observation, "j_dna") and observation.round.hands_played == 0:
+        singles = [row for row in scored if len(row[0].cards) == 1]
+        if singles:
+            single = max(singles, key=_scored_sort_key)
+            if single not in chosen:
+                chosen = chosen[: _MAX_PLAY_CANDIDATES - 1] + [single]
     candidates = [_play_entry(observation, *row) for row in chosen]
     reorder = _reorder_advice(observation, chosen[:3])
     return candidates, reorder

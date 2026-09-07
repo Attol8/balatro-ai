@@ -41,6 +41,15 @@ are incomplete, and Bloodstone is an expectation. Do not treat estimates as
 exact comparisons for those builds.
 
 High-score planning, especially when the objective is endless:
+- Read analysis.round_production: immediate-score candidates are not a full round
+  policy. Compare money, Tarots, planets and copies from setup against a scoring
+  finish, accounting for spent hands/discards, lost cashout income and boss costs.
+  Preserve the required scoring cards and legal actions to finish; future draws
+  are uncertain. Reobserve after each setup action and stop farming if margin falls.
+- Read analysis.copier_timing for event-specific targets: DNA before a qualifying
+  first hand, income effects before their trigger, scoring effects before the
+  finish, and Perkeo before leaving the shop. Set end-of-round targets before the
+  terminal play: automatic cashout may leave no intervening reorder window.
 - Before rerolling, inspect engine_opportunities even with full Joker slots.
   Compare a sell-then-buy replacement: lost chips, additive Mult, income, rarity
   synergies and reliability versus the new engine. Reobserve after any sale.
@@ -59,15 +68,16 @@ High-score planning, especially when the objective is endless:
 - For endless, develop scalable scoring before the current build hits its ceiling.
   Use coherent deck edits, hand levels and income; reassess Ramen's discard cost.
   Keep enough cash for an actionable upgrade rather than rerolling past it.
-- In endless hold the interest floor ($25, or $50 with Seed Money) unless the purchase
-  itself raises the multiplier engine; rerolls trade compounding income for nothing.
+- Treat forgone interest as an investment cost. Supported income, generation,
+  deck edits or scoring can repay it; weigh payoff and survival against speculative
+  rerolls, and keep cash for actual offers rather than enforcing a rigid floor.
 - The Tooth takes $1 per card played, so a four-hand blind can end $16 down: bank money
   in the shop before it and prefer fewer, larger hands.
 - Crimson Heart disables one random Joker each hand and a copier aimed at your largest
   multiplier dies with it; weigh the worst disable, not only the average.
-- Glass rolls its 1-in-4 break on every retrigger, so a retriggered lead card is spent
-  fast. Do not withhold a Glass card from the hand you need now to keep it for a card
-  you have not drawn.
+- Glass normally rolls one 1-in-4 break chance per scored card, not per retrigger.
+  Maintain useful replacements, but do not withhold Glass needed to survive now
+  for a hypothetical future draw.
 
 Vanilla rules to apply directly, without waiting for an example:
 - Interest: each cash out pays $1 per $5 held, capped at $5 (so $25 held). Seed Money
@@ -102,8 +112,9 @@ Vanilla rules to apply directly, without waiting for an example:
   Black Hole levels every hand once; Wraith creates a random Rare Joker and sets money
   to $0; Immolate destroys 5 random cards in hand for $20; Ectoplasm makes a random
   editionless Joker Negative and permanently cuts hand size, by 1 then 2 then 3.
-- Editions: Foil +50 chips, Holographic +10 Mult, Polychrome X1.5, Negative +1 Joker
-  slot. At higher stakes only: eternal cannot be sold or destroyed, perishable is
+- Editions: Foil +50 chips, Holographic +10 Mult, Polychrome X1.5, Negative +1 slot
+  in its own area; Negative consumables can exceed ordinary consumable capacity.
+  At higher stakes only: eternal cannot be sold or destroyed, perishable is
   debuffed after 5 rounds, rental costs $3 each round.
 - Packs cost $4/$6/$8 for normal/jumbo/mega. Buy Celestial when one hand family is
   committed, Arcana when the deck still needs shaping and consumable slots are free,
@@ -143,7 +154,7 @@ Examples: "then":[{"action_json":"{\"type\":\"buy_shop_card\",\"card\":{\"key\":
 {"action_json":"{\"type\":\"use_consumable\",\"consumable\":{\"key\":\"c_pluto\"},\"targets\":[]}","repeat":null,"until":null},
 {"action_json":"{\"type\":\"leave_shop\"}","repeat":null,"until":null}]
 and "then":[{"action_json":"{\"type\":\"reroll_shop\"}","repeat":4,"until":{"shop_has_any":["j_blueprint","j_baron"],"money_at_least":12}}]
-Boss blinds are selected automatically because skipping one is illegal.
+Bosses cannot be skipped; consider reroll_boss when legal before selecting one.
 - Read analysis.legal_action_types and economy before any shop or pack action; a shop
   Joker or Buffoon pick is illegal with Joker slots full, so sell first, reobserve, buy.
 - play_cards, discard_cards, reorder_hand and hand targets exist only inside a blind;
