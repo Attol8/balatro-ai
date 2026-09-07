@@ -1,0 +1,389 @@
+{
+  "astra_low_segments": [
+    {
+      "ante_end": 2,
+      "ante_start": 1,
+      "segment": "00"
+    },
+    {
+      "ante_end": 3,
+      "ante_start": 2,
+      "segment": "01"
+    },
+    {
+      "ante_end": 4,
+      "ante_start": 3,
+      "segment": "02"
+    },
+    {
+      "ante_end": 6,
+      "ante_start": 4,
+      "segment": "03"
+    },
+    {
+      "ante_end": 6,
+      "ante_start": 6,
+      "segment": "04"
+    },
+    {
+      "ante_end": 9,
+      "ante_start": 6,
+      "segment": "05"
+    },
+    {
+      "ante_end": 11,
+      "ante_start": 9,
+      "segment": "06"
+    }
+  ],
+  "evidence_root": "evidence",
+  "setting": "Red Deck / White Stake / all unlocked",
+  "table_a": {
+    "baselines": [
+      {
+        "ante8_clears": 3,
+        "display_name": "search-v4",
+        "games_attempted": 20,
+        "games_completed": 20,
+        "games_requested": 20,
+        "git_revision": "14a36963fe1148aefd6d955dea05750ce6de1631",
+        "kind": "baseline",
+        "mean_ante": 6.3,
+        "median_ante": 6.5,
+        "notes": [],
+        "partial": false,
+        "policy": "search-v4",
+        "profile_mode": "all_unlocked",
+        "reached_ante8_or_more": 7,
+        "run_dir": "search-v4-001",
+        "seed_panel": "D0000000-D0000019"
+      },
+      {
+        "ante8_clears": 3,
+        "display_name": "search-v5",
+        "games_attempted": 20,
+        "games_completed": 20,
+        "games_requested": 20,
+        "git_revision": "09f943cfe01ade2129fd3fc03f03afb723279d08",
+        "kind": "baseline",
+        "mean_ante": 6.3,
+        "median_ante": 6.5,
+        "notes": [],
+        "partial": false,
+        "policy": "search-v5",
+        "profile_mode": "all_unlocked",
+        "reached_ante8_or_more": 6,
+        "run_dir": "search-v5-001",
+        "seed_panel": "D0000000-D0000019"
+      },
+      {
+        "ante8_clears": 3,
+        "display_name": "search-v6",
+        "games_attempted": 20,
+        "games_completed": 20,
+        "games_requested": 20,
+        "git_revision": "8407cdd6b671035542d754a1321845e86096d279",
+        "kind": "baseline",
+        "mean_ante": 6.3,
+        "median_ante": 6.5,
+        "notes": [],
+        "partial": false,
+        "policy": "search-v6",
+        "profile_mode": "all_unlocked",
+        "reached_ante8_or_more": 7,
+        "run_dir": "search-v6-001",
+        "seed_panel": "D0000000-D0000019"
+      },
+      {
+        "ante8_clears": 2,
+        "display_name": "search-v7",
+        "games_attempted": 20,
+        "games_completed": 20,
+        "games_requested": 20,
+        "git_revision": "d90b034c5bcb560af9084cd8843fff940eb9ed92",
+        "kind": "baseline",
+        "mean_ante": 6.4,
+        "median_ante": 7.0,
+        "notes": [],
+        "partial": false,
+        "policy": "search-v7",
+        "profile_mode": "all_unlocked",
+        "reached_ante8_or_more": 5,
+        "run_dir": "search-v7-002",
+        "seed_panel": "D0000000-D0000019"
+      },
+      {
+        "ante8_clears": 2,
+        "display_name": "search-v3",
+        "games_attempted": 20,
+        "games_completed": 20,
+        "games_requested": 20,
+        "git_revision": "bb2c77a218b247888cbb4713252591f1a4cb4375",
+        "kind": "baseline",
+        "mean_ante": 5.9,
+        "median_ante": 6.0,
+        "notes": [],
+        "partial": false,
+        "policy": "search-v3",
+        "profile_mode": "all_unlocked",
+        "reached_ante8_or_more": 5,
+        "run_dir": "search-v3-001",
+        "seed_panel": "D0000000-D0000019"
+      },
+      {
+        "ante8_clears": 1,
+        "display_name": "search",
+        "games_attempted": 20,
+        "games_completed": 20,
+        "games_requested": 20,
+        "git_revision": "4f6bc968f370c7581ba80d4af9d906a3545a56d7",
+        "kind": "baseline",
+        "mean_ante": 6.15,
+        "median_ante": 6.5,
+        "notes": [],
+        "partial": false,
+        "policy": "search",
+        "profile_mode": "all_unlocked",
+        "reached_ante8_or_more": 4,
+        "run_dir": "search-stable-001",
+        "seed_panel": "D0000000-D0000019"
+      },
+      {
+        "ante8_clears": 1,
+        "display_name": "search-planets",
+        "games_attempted": 20,
+        "games_completed": 20,
+        "games_requested": 20,
+        "git_revision": "f272fbc36744056b0a5696a1aae4d10a78c5bcad",
+        "kind": "baseline",
+        "mean_ante": 6.1,
+        "median_ante": 6.0,
+        "notes": [],
+        "partial": false,
+        "policy": "search-planets",
+        "profile_mode": "all_unlocked",
+        "reached_ante8_or_more": 4,
+        "run_dir": "search-planets-001",
+        "seed_panel": "D0000000-D0000019"
+      },
+      {
+        "ante8_clears": 1,
+        "display_name": "search-v2",
+        "games_attempted": 20,
+        "games_completed": 20,
+        "games_requested": 20,
+        "git_revision": "a619afc76985ff12545c332bdc9a89e5ff677acb",
+        "kind": "baseline",
+        "mean_ante": 5.25,
+        "median_ante": 6.0,
+        "notes": [],
+        "partial": false,
+        "policy": "search-v2",
+        "profile_mode": "all_unlocked",
+        "reached_ante8_or_more": 2,
+        "run_dir": "search-v2-001",
+        "seed_panel": "D0000000-D0000019"
+      },
+      {
+        "ante8_clears": 1,
+        "display_name": "build-first",
+        "games_attempted": 20,
+        "games_completed": 20,
+        "games_requested": 20,
+        "git_revision": "dcba69ce60293618c54f001f2d52a5ce72846c5c",
+        "kind": "baseline",
+        "mean_ante": 5.6,
+        "median_ante": 5.0,
+        "notes": [],
+        "partial": false,
+        "policy": "build-first",
+        "profile_mode": "all_unlocked",
+        "reached_ante8_or_more": 3,
+        "run_dir": "build-first-001",
+        "seed_panel": "D0000000-D0000019"
+      },
+      {
+        "ante8_clears": 0,
+        "display_name": "strategic (strategic-001)",
+        "games_attempted": 10,
+        "games_completed": 10,
+        "games_requested": 10,
+        "git_revision": "a413126c82a104a656acd0592f60f7f593213ceb",
+        "kind": "baseline",
+        "mean_ante": 4.5,
+        "median_ante": 5.0,
+        "notes": [
+          "short panel: 10 seeds, not the 20-seed panel",
+          "profile_mode 'career', not all_unlocked"
+        ],
+        "partial": true,
+        "policy": "strategic",
+        "profile_mode": "career",
+        "reached_ante8_or_more": 0,
+        "run_dir": "strategic-001",
+        "seed_panel": "D0000000-D0000009"
+      },
+      {
+        "ante8_clears": 0,
+        "display_name": "strategic (strategic-unlocked-001)",
+        "games_attempted": 20,
+        "games_completed": 20,
+        "games_requested": 20,
+        "git_revision": "a413126c82a104a656acd0592f60f7f593213ceb",
+        "kind": "baseline",
+        "mean_ante": 4.7,
+        "median_ante": 5.0,
+        "notes": [],
+        "partial": false,
+        "policy": "strategic",
+        "profile_mode": "all_unlocked",
+        "reached_ante8_or_more": 0,
+        "run_dir": "strategic-unlocked-001",
+        "seed_panel": "D0000000-D0000019"
+      },
+      {
+        "ante8_clears": 0,
+        "display_name": "baseline-v1",
+        "games_attempted": 11,
+        "games_completed": 10,
+        "games_requested": 20,
+        "git_revision": "a413126c82a104a656acd0592f60f7f593213ceb",
+        "kind": "baseline",
+        "mean_ante": 3.4,
+        "median_ante": 4.0,
+        "notes": [
+          "partial panel: 11 of 20 seeds attempted",
+          "1 game(s) errored and are excluded from ante statistics"
+        ],
+        "partial": true,
+        "policy": "baseline-v1",
+        "profile_mode": "all_unlocked",
+        "reached_ante8_or_more": 0,
+        "run_dir": "live-validation-001",
+        "seed_panel": "D0000000-D0000010"
+      }
+    ],
+    "coached": [
+      {
+        "ante8_clears": 1,
+        "coach_requests": 175,
+        "decisions": 203,
+        "display_name": "Astra high (gpt-6-astra)",
+        "games_attempted": 1,
+        "games_completed": 1,
+        "games_requested": 1,
+        "kind": "coached",
+        "mean_ante": 9.0,
+        "median_ante": 9.0,
+        "model": "gpt-6-astra",
+        "notes": [
+          "single game, seed D0001000: ante_8_cleared, ante 9 reached"
+        ],
+        "peak_hand_score": 446698.0,
+        "policy": "Astra high (gpt-6-astra)",
+        "reached_ante8_or_more": 1,
+        "reasoning_effort": "high",
+        "run_dir": "evidence/first-win",
+        "seconds": 1689.681,
+        "seed_panel": "D0001000",
+        "sources": [
+          "evidence/first-win"
+        ]
+      },
+      {
+        "ante8_clears": 1,
+        "coach_requests": 357,
+        "decisions": 384,
+        "display_name": "Astra low (gpt-6-astra)",
+        "games_attempted": 1,
+        "games_completed": 1,
+        "games_requested": 1,
+        "kind": "coached",
+        "mean_ante": 11.0,
+        "median_ante": 11.0,
+        "model": "gpt-6-astra",
+        "notes": [
+          "single game, seed 2K9H9HN: cleared Ante 8 (303 decisions, ante 9), then continued in endless and lost at ante 11"
+        ],
+        "peak_hand_score": 1239454.0,
+        "policy": "Astra low (gpt-6-astra)",
+        "reached_ante8_or_more": 1,
+        "reasoning_effort": "low",
+        "run_dir": "evidence/astra-low-2K9H9HN",
+        "seconds": 3611.146,
+        "seed_panel": "2K9H9HN",
+        "sources": [
+          "evidence/astra-low-2K9H9HN"
+        ]
+      }
+    ],
+    "footnotes": [
+      "Coached games are single games on seeds outside the D0000000-D0000019 baseline panel; they are demonstrations, not win-rate estimates.",
+      "The Astra-high win delegated 5 of its 203 decisions to the search-v6 numerical policy and took 23 automatic cashouts; 175 decisions came from the coach.",
+      "The Astra-low run was supervised: it was played with adapter fixes and reviewed continuations across 7 recorded segments, so it is not an unattended benchmark.",
+      "Baselines are sorted by Ante-8 clears (descending), then median ante (descending).",
+      "Games with status 'error' count as attempted but not completed and are excluded from the ante statistics."
+    ],
+    "setting": "Red Deck / White Stake / all unlocked",
+    "title": "Real-game results, Red Deck / White Stake / all unlocked"
+  },
+  "table_b": {
+    "rows": [
+      {
+        "cross_check": {
+          "max_abs_difference": 0.875,
+          "plays_differing_from_prediction": 18,
+          "plays_in_trajectory": 54,
+          "source": "evidence/first-win/trajectory.jsonl.gz"
+        },
+        "derivation": "computed",
+        "max_abs_difference_vs_game": 0.875,
+        "max_abs_prediction_difference": 0.0,
+        "note": "The retained scorer preserves fractional intermediate totals; the game records the final score floored to an integer. These differences do not indicate migration drift.",
+        "plays_scored": 54,
+        "prediction_mismatches": 0,
+        "run": "astra-high-D0001000",
+        "source": "evidence/first-win/scoring-audit.json",
+        "sub_chip_floor_differences_vs_game": 18
+      },
+      {
+        "cross_check": {
+          "plays_with_shortlist_estimate": 27,
+          "shortlist_estimates_within_1_chip": 15,
+          "source": "evidence/astra-low-2K9H9HN/segments/*/trajectory.jsonl.gz"
+        },
+        "derivation": "cited",
+        "exact_after_public_correction": 46,
+        "note": "The astra-low trajectory stores no per-play prediction; only the advisory shortlist estimate for the chosen play is recoverable, and it predates the Fortune Teller adapter fix. The exactness figure is quoted from docs/trajectory-review.md.",
+        "plays_scored": 49,
+        "plays_with_visible_joker_identities": 47,
+        "run": "astra-low-2K9H9HN",
+        "source": "docs/trajectory-review.md"
+      }
+    ],
+    "title": "Scoring-engine exactness"
+  },
+  "table_c": {
+    "decision_sources": {
+      "automatic": 23,
+      "coach": 175,
+      "numerical_delegate": 5
+    },
+    "decisions_per_ante": {
+      "1": 15,
+      "2": 20,
+      "3": 35,
+      "4": 33,
+      "5": 30,
+      "6": 29,
+      "7": 24,
+      "8": 17
+    },
+    "note": "5 decisions were delegated to the search-v6 numerical policy; the automatic decisions are cash-outs the runner takes without asking the coach.",
+    "run": "astra-high-D0001000",
+    "seed": "D0001000",
+    "source": "evidence/first-win/trajectory.jsonl.gz",
+    "title": "Decision sources in the Astra-high win",
+    "total_decisions": 203
+  }
+}
