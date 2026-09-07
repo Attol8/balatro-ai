@@ -692,3 +692,43 @@ def test_reply_timeout_with_changed_state_continues_without_resending(tmp_path):
     assert [r for r in rows if r["event"] == "transition"][0]["recovered"].startswith(
         "reply timed out"
     )
+
+
+def test_reconstruct_result_from_trajectory_and_previous_segment(tmp_path):
+    first = tmp_path / "first"
+    second = tmp_path / "second"
+    first.mkdir()
+    second.mkdir()
+    (first / "result.json").write_text(
+        json.dumps(
+            {
+                "decisions": 10,
+                "coach_requests": 8,
+                "won": False,
+                "ante_reached": 3,
+                "peak_hand_score": 500,
+                "seconds": 100.0,
+                "followup_actions": 1,
+                "forced_actions": 1,
+                "coach_timeouts": 0,
+            }
+        )
+    )
+    (second / "manifest.json").write_text(json.dumps({"continuation_of": str(first)}))
+    before = {"round_no": 5, "ante": 4, "round": {"chips": 0}, "won": False}
+    after = {"round_no": 5, "ante": 4, "round": {"chips": 900}, "won": True}
+    lines = [
+        json.dumps({"event": "coach_request"}),
+        json.dumps({"event": "transition", "before": before, "after": after, "source": "coach"}),
+        json.dumps({"event": "transition", "before": after, "after": after, "source": "forced"}),
+        json.dumps({"event": "coach_timeout"}),
+    ]
+    (second / "trajectory.jsonl").write_text("\n".join(lines) + "\n")
+    from balatro_ai.runner import reconstruct_result
+
+    result = reconstruct_result(second)
+    assert result["reconstructed"] is True and result["status"] == "stopped"
+    assert result["decisions"] == 12 and result["coach_requests"] == 9
+    assert result["forced_actions"] == 2 and result["coach_timeouts"] == 1
+    assert result["won"] is True and result["ante_reached"] == 4
+    assert result["peak_hand_score"] == 900 and result["seconds"] == 100.0

@@ -72,7 +72,15 @@ def load_resume(client, directory) -> Continuation:
     """
 
     directory = Path(directory)
-    previous = json.loads((directory / "result.json").read_text())
+    result_path = directory / "result.json"
+    if result_path.exists():
+        previous = json.loads(result_path.read_text())
+    else:
+        # The process died without its finally block (for example killed by the
+        # operating system). Rebuild the counters from the trajectory and the run it
+        # continued, and leave that reconstruction on disk, clearly marked.
+        previous = reconstruct_result(directory)
+        write_json(result_path, previous)
     if previous.get("status") in {"won", "lost"}:
         raise ValueError(f"{directory} already finished: {previous.get('status')}")
     history: list[HistoryStep] = []
@@ -121,6 +129,74 @@ def load_resume(client, directory) -> Continuation:
         prior_timeouts=previous.get("coach_timeouts", 0),
         adjusted_fields=adjusted,
     )
+
+
+def reconstruct_result(directory: Path) -> dict[str, object]:
+    """Derive a result record for a run that never wrote one.
+
+    Counters are the previous segment's cumulative counters (found through the
+    manifest's continuation_of) plus this segment's own events. Wall-clock seconds
+    cannot be recovered and stay at the previous segment's value.
+    """
+
+    manifest_path = directory / "manifest.json"
+    prior: dict[str, object] = {}
+    if manifest_path.exists():
+        source = json.loads(manifest_path.read_text()).get("continuation_of")
+        if source:
+            for candidate in (Path(source), directory.parent / Path(source).name):
+                if (candidate / "result.json").exists():
+                    prior = json.loads((candidate / "result.json").read_text())
+                    break
+    counts = dict(
+        decisions=0, coach_requests=0, followup_actions=0, forced_actions=0, coach_timeouts=0
+    )
+    peak = 0
+    won = bool(prior.get("won", False))
+    ante = prior.get("ante_reached", 0)
+    trajectory = directory / "trajectory.jsonl"
+    if trajectory.exists():
+        for line in trajectory.read_text().splitlines():
+            try:
+                event = json.loads(line)
+            except ValueError:
+                continue
+            kind = event.get("event")
+            if kind == "coach_request":
+                counts["coach_requests"] += 1
+            elif kind == "coach_timeout":
+                counts["coach_timeouts"] += 1
+            elif kind == "transition":
+                counts["decisions"] += 1
+                source = event.get("source")
+                if source == "coach_followup":
+                    counts["followup_actions"] += 1
+                elif source == "forced":
+                    counts["forced_actions"] += 1
+                before, after = event.get("before", {}), event.get("after", {})
+                if after.get("round_no") == before.get("round_no"):
+                    gained = (after.get("round") or {}).get("chips", 0) - (
+                        (before.get("round") or {}).get("chips", 0)
+                    )
+                    peak = max(peak, gained)
+                won = won or bool(after.get("won"))
+                ante = max(ante or 0, after.get("ante") or 0)
+    return {
+        "status": "stopped",
+        "reason": "process ended without writing a result; reconstructed from the trajectory",
+        "reconstructed": True,
+        "won": won,
+        "ante_8_cleared": won,
+        "ante_reached": ante,
+        "decisions": int(prior.get("decisions", 0)) + counts["decisions"],
+        "coach_requests": int(prior.get("coach_requests", 0)) + counts["coach_requests"],
+        "followup_actions": int(prior.get("followup_actions", 0)) + counts["followup_actions"],
+        "forced_actions": int(prior.get("forced_actions", 0)) + counts["forced_actions"],
+        "coach_timeouts": int(prior.get("coach_timeouts", 0)) + counts["coach_timeouts"],
+        "rpc_timeouts_recovered": int(prior.get("rpc_timeouts_recovered", 0)),
+        "peak_hand_score": max(int(prior.get("peak_hand_score", 0)), peak),
+        "seconds": prior.get("seconds", 0),
+    }
 
 
 # A timed-out model call mutated nothing, so the same decision may be re-asked.
