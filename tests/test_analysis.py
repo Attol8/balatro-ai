@@ -308,3 +308,18 @@ def test_negative_money_previews_no_interest() -> None:
     economy = analyze(observation)["economy"]
     assert (economy["money"], economy["interest_at_cashout"]) == (-3, 0)
     assert economy["next_interest_threshold"] == 5
+
+
+def test_analysis_names_the_phase_and_legal_action_types() -> None:
+    path = Path("evidence/astra-low-2K9H9HN/segments/03/trajectory.jsonl.gz")
+    with gzip.open(path, "rt", encoding="utf-8") as stream:
+        for line in stream:
+            record = json.loads(line)
+            if record.get("event") == "transition" and record["before"].get("phase") == "SHOP":
+                observation = public_observation_from_data(record["before"])
+                break
+    analysis = analyze(observation)
+    assert analysis["phase"] == "SHOP"
+    assert "leave_shop" in analysis["legal_action_types"]
+    assert "play_cards" not in analysis["legal_action_types"]
+    assert "choose_pack_card" not in analysis["legal_action_types"]

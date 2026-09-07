@@ -68,7 +68,14 @@ def analyze(observation: PublicObservation) -> dict[str, object]:
 
     plays, reorder = _play_advice(observation)
     strategic, omitted = _strategic_actions(observation)
+    legal_types = sorted(
+        {action_to_data(action)["type"] for action in iter_legal_actions(observation)}
+    )
     result: dict[str, object] = {
+        "phase": observation.phase.value
+        if hasattr(observation.phase, "value")
+        else str(observation.phase),
+        "legal_action_types": legal_types,
         "play_candidates": plays,
         "reorder_suggestions": reorder,
         "strategic_actions": strategic,
