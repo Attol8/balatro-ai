@@ -1,0 +1,77 @@
+[
+ {
+  "segment": "00",
+  "original_directory": "live-headless-001",
+  "part_of_completed_game": true,
+  "status": "stopped",
+  "reason": "Codex CLI timed out",
+  "ante_reached": 2,
+  "decisions": 44,
+  "coach_requests": 41,
+  "sha256_uncompressed": {
+   "result.json": "94ec895d787a56ca1a7ab28825e842cfa8f460f36899935f2d566a11e7a3dc60",
+   "trajectory.jsonl": "0ec110c9d0befc16e1ddff91a26e6e56df8d2423edf7bf7820443400fd8e0b76",
+   "manifest.json": "57bd0d30399eff3af3caa3c7b75a7244271ac5e9430b643619dbbbe7294be56f"
+  }
+ },
+ {
+  "segment": "01",
+  "original_directory": "live-headless-001-continued",
+  "part_of_completed_game": true,
+  "status": "stopped",
+  "reason": "interrupted",
+  "ante_reached": 5,
+  "decisions": 157,
+  "coach_requests": 135,
+  "sha256_uncompressed": {
+   "result.json": "0696f4e8927201e5e62b4ef36184d34d9db8c8ce2513299e22d6e9fe8d4fcfb6",
+   "trajectory.jsonl": "7fe8319952855a7e74e2f5423ad7c5c338d01d3768f80a25d6b4de5938d027ab",
+   "manifest.json": "e55e76e9d0e6371e02530c0f1a65ea1212e1904beba96acf05abc2c30a41af98"
+  }
+ },
+ {
+  "segment": "02",
+  "original_directory": "live-headless-001-continued-2",
+  "part_of_completed_game": true,
+  "status": "stopped",
+  "reason": "Codex CLI timed out; codex output tail: etrigger-core\",\"Exam",
+  "ante_reached": 6,
+  "decisions": 169,
+  "coach_requests": 147,
+  "sha256_uncompressed": {
+   "result.json": "c7749561ec5151adf4e1579e575aa5594f2d300c21c4ea135deb1ff52c76244b",
+   "trajectory.jsonl": "93f83a3cc8a11fadfa37dcb3b37c9b6c15ffa789531d4f2fd2243adcbd1a9edf",
+   "manifest.json": "7c79bf9fcbe9983656937146789ce6be9d2b918fb5031a2e3f608798ac95b473"
+  }
+ },
+ {
+  "segment": "03",
+  "original_directory": "live-headless-001-continued-3",
+  "part_of_completed_game": true,
+  "status": "stopped",
+  "reason": "interrupted",
+  "ante_reached": 6,
+  "decisions": 200,
+  "coach_requests": 183,
+  "sha256_uncompressed": {
+   "result.json": "9b490d03424d9c890bfde4f3a72924b7e1e65a5e2782577e8619759a5ad551a1",
+   "trajectory.jsonl": "ebb7aecef4469272b5dad89488054d3974d9ee7b32e83798d2935c2cccd05d38",
+   "manifest.json": "dcfdcf67d76347ab2ce276b1fff68f008900765a58ff6f935a3dd430c8246721"
+  }
+ },
+ {
+  "segment": "04",
+  "original_directory": "live-headless-001-continued-4",
+  "part_of_completed_game": true,
+  "status": "lost",
+  "reason": "endless_game_over",
+  "ante_reached": 13,
+  "decisions": 456,
+  "coach_requests": 404,
+  "sha256_uncompressed": {
+   "result.json": "cc1c470d079ef96d4bbea23af23844c96f19029bbf22542e4273267c648dfd7b",
+   "trajectory.jsonl": "855d07bf1ca5aba91aed8c94a7872441e07ddc2ee708318e102b8e94ff182eef",
+   "manifest.json": "b4ebc2766e57721e4fbbcb0210e826f44204526852366f6f50aa67ae63877a6d"
+  }
+ }
+]

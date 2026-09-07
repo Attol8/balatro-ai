@@ -1,0 +1,14 @@
+{
+  "status": "stopped",
+  "won": false,
+  "reason": "Codex CLI timed out; codex output tail: etrigger-core\",\"Example: Face cards can score with Triboulet, Sock and Buskin, or Photograph visible.\",\"Triboulet gives scoring Kings and Queens X2; Sock retriggers faces; Photograph rewards the first scoring face.\",\"Pivot when face density is low or face debuffs disable the engine; hidden cards add uncertainty rather than automatically disabling it.\"],[\"hand-level-concentrate\",\"Example: A Planet matches the hand repeatedly used by Card Sharp and the current plan.\",\"Concentrating levels in the hand actually played improves its base before later multiplier effects.\",\"Diversify when a boss blocks the main family or the deck has clearly transitioned to another hand.\"]]}},\"recent_outcomes\":{\"$columns\":[\"action\",\"source\",\"chain\",\"before_round\",\"after_round\",\"before_chips\",\"after_chips\",\"before_money\",\"after_money\"],\"$rows\":[[{\"type\":\"choose_pack_card\",\"card\":2,\"targets\":[]},\"coach\",null,13,13,0,0,100,100],[{\"type\":\"use_consumable\",\"consumable\":1,\"targets\":[]},\"coach\",null,13,13,0,0,100,113],[{\"type\":\"buy_pack\",\"pack\":0},\"coach_followup\",\"1 follow-up actions ran from one reply; chain complete\",13,13,0,0,113,109]]},\"plan\":\"Preserve $50 interest floor. Build Photograph\u2013Chad with Spade flushes and Jupiter; seek copiers or scalable multipliers to replace Wrathful. Favor Glass Spade faces for Chad plus Photograph, and duplicate red-seal Glass when useful. Hold Steel 3C when available; improve consistency for rising endless targets.\",\"validation_feedback\":null,\"request_id\":\"4f347236\"}",
+  "decisions": 169,
+  "coach_requests": 147,
+  "coach_timeouts": 8,
+  "forced_actions": 5,
+  "followup_actions": 15,
+  "ante_reached": 6,
+  "peak_hand_score": 49794,
+  "ante_8_cleared": false,
+  "seconds": 2587.847
+}

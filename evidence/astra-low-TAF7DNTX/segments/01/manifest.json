@@ -1,0 +1,21 @@
+{
+  "model": "gpt-6-astra",
+  "reasoning_effort": "low",
+  "requested_model": "gpt-6-astra",
+  "requested_reasoning_effort": "low",
+  "transport": "CodexCoach",
+  "limits": {
+    "max_calls": 350,
+    "max_actions": 600,
+    "seconds": 7200.0,
+    "call_seconds": 180.0
+  },
+  "seed": "TAF7DNTX",
+  "deck": "RED",
+  "stake": "WHITE",
+  "profile": "all_unlocked",
+  "endless": true,
+  "continuation_of": "runs/live-headless-001",
+  "resume_adjusted": false,
+  "resume_diff": []
+}

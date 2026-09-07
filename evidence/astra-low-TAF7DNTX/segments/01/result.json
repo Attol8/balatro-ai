@@ -1,0 +1,14 @@
+{
+  "status": "stopped",
+  "won": false,
+  "reason": "interrupted",
+  "decisions": 157,
+  "coach_requests": 135,
+  "coach_timeouts": 5,
+  "forced_actions": 4,
+  "followup_actions": 14,
+  "ante_reached": 5,
+  "peak_hand_score": 17688,
+  "ante_8_cleared": false,
+  "seconds": 2299.885
+}

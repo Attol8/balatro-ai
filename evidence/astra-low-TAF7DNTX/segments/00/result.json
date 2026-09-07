@@ -1,0 +1,13 @@
+{
+  "status": "stopped",
+  "won": false,
+  "reason": "Codex CLI timed out",
+  "decisions": 44,
+  "coach_requests": 41,
+  "forced_actions": 1,
+  "followup_actions": 0,
+  "ante_reached": 2,
+  "peak_hand_score": 7360,
+  "ante_8_cleared": false,
+  "seconds": 549.139
+}
