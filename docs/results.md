@@ -31,6 +31,7 @@ win rate of the coached system is unmeasured.
 | Astra low + tools, supervised | 1 | 1 | 1 | 11 (endless) | QD3F4XVW |
 | Astra low + tools, on a panel seed | 1 | 1 | 1 | 10 (endless) | D0000000 |
 | Astra low + tools | 1 | 1 | 1 | 11 (endless) | 2K9H9HN |
+| Terra low + tools, supervised | 2 | 0 | 0 | 2 | QD3F4XVW |
 | search-v4 | 20 | 3 | 7 | 6.5 | D0000000-19 |
 | search-v5 | 20 | 3 | 6 | 6.5 | D0000000-19 |
 | search-v6 | 20 | 3 | 7 | 6.5 | D0000000-19 |
@@ -86,6 +87,19 @@ Disclosures that belong with this table:
   applied between the seven recorded segments. No uncertain mutation was replayed.
   The segments and their SHA-256 hashes are in
   `evidence/astra-low-2K9H9HN/segments.json`.
+- **Terra low, QD3F4XVW** (`gpt-5.6-terra`, low effort, game visible at speed 2,
+  `balatro supervise`, same tools, prompts and limits as the astra game on this
+  seed): two games, both lost at the Ante 2 boss The Mouth, which allows one hand
+  type per round. The clean game took The Soul from the Ante 1 skip tag's pack,
+  turned it into Triboulet, then opened the boss with a single King and locked the
+  round to High Card: 356 of 1,600 after 36 decisions from 30 calls, zero rejected
+  replies, median 10.9 seconds per call. The first attempt lost 496 to 1,600 after
+  skipping four of the first five blinds; a runner fault, since fixed, selected the
+  boss while a skip tag's Mega Buffoon Pack was opening, so that pack was never
+  offered. A third attempt was stopped at Ante 1 by another runner fault and has no
+  outcome. Details: `evidence/terra-low-QD3F4XVW/README.md` and
+  `evidence/terra-low-QD3F4XVW-attempt1/README.md`. These rows are not in the
+  generated tables and figures, which cover the astra runs and the baselines.
 - **Baselines**: ten complete 20-game panels plus two partial ones. One
   `baseline-v1` game ended with an error status and is excluded from ante
   statistics. The `strategic-001` pilot ran on the career profile, not
@@ -147,12 +161,16 @@ generated tables keep the earlier run's mix as a second block.
 ## What is not shown, and why
 
 - No win rate for the coached system. Four games cannot support one.
+- No model comparison. Two terra games and one astra game on one seed at one
+  effort level say which model lost that seed, not which model is better.
 - No same-seed comparison between the coached system and search-v6, and no
   model-without-tools control. Neither was run.
 - No token or cost figures. The evidence run did not record them.
 - Latency only as whole-run totals and per-call seconds inside the trajectories:
   the headless run took 5,883 active seconds for 404 calls, about 14.6 seconds
-  each including stalls; calls the service answered promptly took about nine.
+  each including stalls; calls the service answered promptly took about nine. The
+  terra game on QD3F4XVW took a median 10.9 seconds per call against about 10 for
+  astra on the same seed: the model swap did not change per-call latency.
 
 New games can be added to every table and figure with
 `python -m benchmarks --runs DIR...`; see [methodology.md](methodology.md).
