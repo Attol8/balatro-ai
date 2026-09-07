@@ -619,11 +619,12 @@ def test_timed_out_model_call_is_re_asked_with_a_fresh_id(tmp_path):
     }
 
 
-def test_three_coach_timeouts_stop_the_run_without_mutating(tmp_path):
+def test_six_coach_timeouts_stop_the_run_without_mutating(tmp_path, monkeypatch):
+    monkeypatch.setattr("balatro_ai.runner.COACH_RETRY_PAUSE_SECONDS", 0.0)
     game, coach = Game(), TimingOutCoach(timeouts=9)
     result = run_game(game, coach, tmp_path / "run")
     assert result["status"] == "stopped" and result["reason"] == "Codex CLI timed out"
-    assert result["coach_timeouts"] == 3 and result["coach_requests"] == 3
+    assert result["coach_timeouts"] == 6 and result["coach_requests"] == 6
     assert result["decisions"] == 0 and "select" not in game.calls
 
 

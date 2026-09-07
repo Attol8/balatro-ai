@@ -124,7 +124,9 @@ def load_resume(client, directory) -> Continuation:
 
 
 # A timed-out model call mutated nothing, so the same decision may be re-asked.
-COACH_ATTEMPTS = 3
+COACH_ATTEMPTS = 6
+# Service stalls arrive in patches; pause before the third and later attempts.
+COACH_RETRY_PAUSE_SECONDS = 20.0
 _COACH_RETRY_SECONDS = 30
 # One reply may carry a bounded chain of follow-up actions.  Every entry is
 # re-validated against the state the previous action settled into.
@@ -619,6 +621,16 @@ def run_game(
                             < min(limits.call_seconds, _COACH_RETRY_SECONDS)
                         ):
                             raise
+                        if attempt >= 2:
+                            time.sleep(
+                                max(
+                                    0.0,
+                                    min(
+                                        COACH_RETRY_PAUSE_SECONDS,
+                                        deadline - time.monotonic() - limits.call_seconds,
+                                    ),
+                                )
+                            )
                 plan_unchanged = isinstance(response, dict) and response.get("plan") == "="
                 if plan_unchanged:
                     response = dict(response, plan=plan)
