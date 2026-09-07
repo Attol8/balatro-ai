@@ -15,6 +15,8 @@ during a supervised development run with recovery fixes, then reached Ante 11
 in endless mode with a peak hand of 1,239,454. Its unattended win rate is unmeasured.
 The [trajectory review](docs/trajectory-review.md) documents missed scaling offers,
 the Fortune Teller scoring fix, and offline-tested improvements for future runs.
+The [strategy library](docs/strategy-library.md) adds 48 conditional decision examples
+across diverse builds, with at most three retrieved per public decision.
 
 ## Install and check
 

@@ -20,7 +20,7 @@ balatro = "balatro_ai.cli:main"
 include = ["balatro_ai*"]
 
 [tool.setuptools.package-data]
-balatro_ai = ["prompts/*.md"]
+balatro_ai = ["prompts/*.md", "knowledge/*.json"]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]

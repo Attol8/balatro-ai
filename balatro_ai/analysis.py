@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from balatro_ai.strategy import retrieve_examples
+
 from dataclasses import replace
 from fractions import Fraction
 
@@ -60,6 +62,9 @@ def analyze(observation: PublicObservation) -> dict[str, object]:
         "shortlist_is_not_allowlist": True,
         "mechanism_reminders": _mechanism_reminders(observation),
     }
+    examples = retrieve_examples(observation)
+    if examples:
+        result["strategy_examples"] = examples
     opportunities = _engine_opportunities(observation)
     if opportunities:
         result["engine_opportunities"] = opportunities

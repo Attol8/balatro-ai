@@ -253,3 +253,41 @@ Conditional engine offers now survive full slots, with Negative capacity handled
 coach guidance covers replacements, scoring phases and retrigger/deck development.
 232 offline tests pass; wheel built and reinstalled locally. No gameplay/model
 calls. Detailed findings and online sources: docs/trajectory-review.md.
+
+## Offline strategy learning library
+
+Outcome: Astra receives a few relevant reviewed decision examples without more
+model calls or a live rerun. Smallest example: a visible Mime offer plus Steel
+cards retrieves a replacement lesson explaining lost income/Mult and draw risk.
+Reuse typed public observations, the existing scorer and analysis packet.
+
+Design: 48 packaged JSON examples across at least16 strategy families, each with id, family, trigger_keys (any visible
+owned/offered key), required_keys (all owned/offered keys), phases, situation,
+options, lesson, reversal, provenance and sources. Sources distinguish recorded
+observations from constructed mechanics exercises and external hypotheses.
+Deterministic retrieval returns at most3 distinct-family examples, compact text,
+no seed/future offers or online access in gameplay. Numerical exercise tests vary
+held-card count and base Mult, and verify supported retrigger/copier arithmetic.
+No new service, model training, seed finder installation, or game run.
+
+Acceptance: 30–50 unique sourced examples, schema/source validation, recorded
+shop retrieval, unrelated/hidden-state nonmatches, packet size bound, arithmetic
+checks across alternative setups, full offline tests and installed package data.
+Commit only after review. Online references are learning material, not authority
+for unverified mechanics or evidence that a counterfactual wins.
+
+User correction: cover many strategies beyond the last run. Expand to48 examples
+including straights, flush/suit, face/retrigger, discard scaling, consumable and
+economy engines, legendaries and deck construction. Recorded run is one input,
+not the boundary. Explicitly distinguish partial scorer coverage from verified
+mechanics so advice does not imply precise numerical support.
+
+Completed:48 examples across31 topics (6 recorded,42 constructed), including
+unseen straights/flushes, legendary/consumable, discard and conversion engines.
+Retrieval requires public matches, favors offers, and returns at most3 distinct
+families without sources/seed routes.15 arithmetic exercises plus integrity,
+hidden-state and unseen-engine retrieval tests;253 tests pass. Offline retrieval
+across383 saved decisions took0.0232s total, max1170bytes; no inference benchmark.
+Wheel built/reinstalled and its48 packaged examples verified from /tmp.
+No live game or gameplay model call. Scorer coverage limits documented and sent
+to the coach. User correction about strategy breadth preserved in this design.

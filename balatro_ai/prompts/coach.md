@@ -32,6 +32,14 @@ Lessons from a successful run, conditional on the actual cards:
   cards can damage or strengthen the whole build. Telescope rewards a coherent
   most-played-hand plan. Do not force any particular Joker combination.
 
+strategy_examples are conditional offline lessons, not instructions to copy a
+past action. Check the situation and reversal against this observation; matching
+card names alone does not prove a purchase is affordable or an upgrade.
+The library covers more mechanics than the scorer. Future generation/growth is
+not simulated; same-play Vampire/Obelisk changes and some Smeared interactions
+are incomplete, and Bloodstone is an expectation. Do not treat estimates as
+exact comparisons for those builds.
+
 High-score planning, especially when the objective is endless:
 - Before rerolling, inspect engine_opportunities even with full Joker slots.
   Compare a sell-then-buy replacement: lost chips, additive Mult, income, rarity

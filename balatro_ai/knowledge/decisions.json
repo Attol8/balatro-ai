@@ -1,0 +1,1274 @@
+[
+  {
+    "id": "held-mime-recorded",
+    "family": "held_card",
+    "trigger_keys": [
+      "j_mime"
+    ],
+    "required_keys": [
+      "j_mime",
+      "enhancement:STEEL"
+    ],
+    "phases": [
+      "SHOP"
+    ],
+    "situation": "Mime is offered with five public Steel cards and full Joker slots.",
+    "options": [
+      "Reroll and keep the current five Jokers.",
+      "Sell a replaceable Joker, reobserve, then consider Mime."
+    ],
+    "lesson": "Mime can retrigger held Steel effects; surface the engine even when capacity makes purchase a separate later action.",
+    "reversal": "Keep the current build when reliable output or economy matters more than draw-dependent held Steel.",
+    "provenance": "recorded",
+    "sources": [
+      "evidence:05:95",
+      "game:card.lua:2879",
+      "game:game.lua:652"
+    ]
+  },
+  {
+    "id": "played-chad-recorded",
+    "family": "played_retrigger",
+    "trigger_keys": [
+      "j_hanging_chad"
+    ],
+    "required_keys": [
+      "j_hanging_chad"
+    ],
+    "phases": [
+      "PACK"
+    ],
+    "situation": "A free Hanging Chad is offered while Justice and enhanced scoring cards are public.",
+    "options": [
+      "Skip and preserve the mature Joker lineup.",
+      "Sell, reobserve, and consider Chad for a first-card retrigger line."
+    ],
+    "lesson": "Chad retriggers the first scoring card twice, so supported Glass or other scoring-card effects can justify a build transition.",
+    "reversal": "Skip when no suitable first scoring card is available or the displaced Joker is essential for survival.",
+    "provenance": "recorded",
+    "sources": [
+      "evidence:06:43",
+      "game:card.lua:3352",
+      "game:game.lua:651"
+    ]
+  },
+  {
+    "id": "held-baron-recorded",
+    "family": "held_card",
+    "trigger_keys": [
+      "j_baron"
+    ],
+    "required_keys": [
+      "j_baron"
+    ],
+    "phases": [
+      "SHOP"
+    ],
+    "situation": "Baron is offered with five public Kings, including a red-seal Steel King.",
+    "options": [
+      "Reroll for a less draw-dependent upgrade.",
+      "Sell, reobserve, and consider Baron as held-card scaling."
+    ],
+    "lesson": "Count public Kings and relevant seals before presenting Baron; multiple Kings make its held XMult route plausible, not guaranteed.",
+    "reversal": "Decline when hand size, draw reliability, or a strong additive Joker makes holding Kings impractical.",
+    "provenance": "recorded",
+    "sources": [
+      "evidence:06:107",
+      "game:card.lua:3287",
+      "game:game.lua:443"
+    ]
+  },
+  {
+    "id": "baseball-constellation-recorded",
+    "family": "scaling",
+    "trigger_keys": [
+      "j_constellation",
+      "j_baseball"
+    ],
+    "required_keys": [
+      "j_constellation",
+      "j_baseball"
+    ],
+    "phases": [
+      "SHOP"
+    ],
+    "situation": "Constellation at X1 is offered beside an established Baseball engine and visible Planet plans.",
+    "options": [
+      "Keep current flat Mult and interest.",
+      "Transition to an uncommon scaler and fund future Planet use."
+    ],
+    "lesson": "Constellation starts weak but is uncommon for Baseball and grows on Planet use; treat it as a conditional investment.",
+    "reversal": "Pass when there is no Planet budget or immediate scoring cannot absorb an X1 scaler.",
+    "provenance": "recorded",
+    "sources": [
+      "evidence:03:231",
+      "game:card.lua:2727",
+      "game:card.lua:3397"
+    ]
+  },
+  {
+    "id": "baseball-hologram-recorded",
+    "family": "scaling",
+    "trigger_keys": [
+      "j_hologram",
+      "j_baseball"
+    ],
+    "required_keys": [
+      "j_hologram",
+      "j_baseball"
+    ],
+    "phases": [
+      "SHOP"
+    ],
+    "situation": "Hologram at X1 is offered with Baseball and a visible pattern of opening card-adding packs.",
+    "options": [
+      "Reroll and retain current scoring.",
+      "Replace a flat Joker and commit to adding useful cards."
+    ],
+    "lesson": "Hologram is an uncommon Baseball target and grows when cards are added, but X1 alone is not an immediate scoring upgrade.",
+    "reversal": "Pass when added cards would dilute the deck or there is no budget to grow Hologram.",
+    "provenance": "recorded",
+    "sources": [
+      "evidence:04:27",
+      "game:card.lua:2457",
+      "game:card.lua:3397"
+    ]
+  },
+  {
+    "id": "ramen-recorded",
+    "family": "transition",
+    "trigger_keys": [
+      "j_ramen"
+    ],
+    "required_keys": [
+      "j_ramen"
+    ],
+    "phases": [
+      "SHOP"
+    ],
+    "situation": "Ramen is offered after the build has stabilized and can reduce discretionary discards.",
+    "options": [
+      "Keep Cloud 9 income and Holographic Mult.",
+      "Sell Cloud 9, reobserve, then buy Ramen for XMult."
+    ],
+    "lesson": "Ramen begins at X2 and loses X0.01 per discarded card; buying it should change later discard discipline.",
+    "reversal": "Keep economy when survival still depends on frequent discards or the lost income funds stronger upgrades.",
+    "provenance": "recorded",
+    "sources": [
+      "evidence:05:257",
+      "game:card.lua:2757",
+      "game:game.lua:473"
+    ]
+  },
+  {
+    "id": "mime-red-seal-steel",
+    "family": "held_card",
+    "trigger_keys": [
+      "j_mime"
+    ],
+    "required_keys": [
+      "j_mime",
+      "enhancement:STEEL"
+    ],
+    "phases": [
+      "SHOP",
+      "PACK"
+    ],
+    "situation": "A red-seal Steel card is public when Mime is offered.",
+    "options": [
+      "Build around holding the sealed Steel card.",
+      "Keep playing it when its rank or hand shape is more valuable."
+    ],
+    "lesson": "Mime retriggers held-card abilities and a red seal adds a card repetition; confirm the card can remain held.",
+    "reversal": "Abandon the line when forced selection, debuff, or hand-size pressure prevents holding it.",
+    "provenance": "constructed",
+    "sources": [
+      "game:card.lua:2879",
+      "game:game.lua:652"
+    ]
+  },
+  {
+    "id": "baron-low-king-density",
+    "family": "held_card",
+    "trigger_keys": [
+      "j_baron"
+    ],
+    "required_keys": [
+      "j_baron"
+    ],
+    "phases": [
+      "SHOP",
+      "PACK"
+    ],
+    "situation": "Baron is offered with only the normal or low public King count.",
+    "options": [
+      "Buy and begin a King-duplication plan.",
+      "Prefer a reliable multiplier already supported by the deck."
+    ],
+    "lesson": "Baron gives X1.5 for each held King, but low King density makes the payoff draw-dependent.",
+    "reversal": "Take Baron when duplication, hand size, or a held-card retrigger already makes the direction coherent.",
+    "provenance": "constructed",
+    "sources": [
+      "game:card.lua:3287",
+      "game:game.lua:443"
+    ]
+  },
+  {
+    "id": "baron-mime-balance",
+    "family": "copy_balance",
+    "trigger_keys": [
+      "j_baron",
+      "j_mime"
+    ],
+    "required_keys": [
+      "j_baron",
+      "j_mime"
+    ],
+    "phases": [
+      "SELECTING_HAND",
+      "SHOP"
+    ],
+    "situation": "Baron and Mime share a held-King or Steel plan.",
+    "options": [
+      "Add more Baron-style held XMult.",
+      "Add more held-card repetitions through Mime or a copier."
+    ],
+    "lesson": "Balance effect count against retrigger count using the cards actually held; neither Joker is universally the better copy target.",
+    "reversal": "Favor the side that is currently scarcer after counting held effects, seals, and copy placement.",
+    "provenance": "constructed",
+    "sources": [
+      "game:card.lua:2879",
+      "game:card.lua:3287"
+    ]
+  },
+  {
+    "id": "stuntman-held-cost",
+    "family": "held_card",
+    "trigger_keys": [
+      "j_stuntman",
+      "j_baron",
+      "j_mime"
+    ],
+    "required_keys": [
+      "j_stuntman"
+    ],
+    "phases": [
+      "SHOP",
+      "SELECTING_HAND"
+    ],
+    "situation": "Stuntman supplies chips while a held-card engine needs room for Kings or Steel.",
+    "options": [
+      "Keep Stuntman for reliable chips.",
+      "Replace it to restore hand size for more held effects."
+    ],
+    "lesson": "A held-card build should price Stuntman's hand-size reduction against its dependable chip contribution.",
+    "reversal": "Keep Stuntman when chips are the bottleneck or the deck cannot reliably fill added held slots.",
+    "provenance": "constructed",
+    "sources": [
+      "game:game.lua:457",
+      "game:game.lua:443",
+      "game:card.lua:3287"
+    ]
+  },
+  {
+    "id": "glass-photo-chad",
+    "family": "played_retrigger",
+    "trigger_keys": [
+      "j_photograph",
+      "j_hanging_chad"
+    ],
+    "required_keys": [
+      "enhancement:GLASS",
+      "j_hanging_chad"
+    ],
+    "phases": [
+      "SELECTING_HAND"
+    ],
+    "situation": "A Glass face can be placed first among scoring cards with Photograph and Chad active.",
+    "options": [
+      "Lead with the Glass face for repeated effects.",
+      "Preserve Glass and use a safer scoring card."
+    ],
+    "lesson": "Glass gives X2, Photograph can give X2 on the first scoring face, and Chad repeats the first scoring card twice.",
+    "reversal": "Avoid the line when the score is already sufficient or losing Glass would damage future survival.",
+    "provenance": "constructed",
+    "sources": [
+      "game:card.lua:1285",
+      "game:card.lua:3093",
+      "game:card.lua:3352"
+    ]
+  },
+  {
+    "id": "chad-first-card-order",
+    "family": "played_retrigger",
+    "trigger_keys": [
+      "j_hanging_chad"
+    ],
+    "required_keys": [
+      "j_hanging_chad"
+    ],
+    "phases": [
+      "SELECTING_HAND"
+    ],
+    "situation": "Several selected cards score, but only one has a strong enhancement or edition.",
+    "options": [
+      "Place the supported card first physically.",
+      "Keep current order when another first-card effect dominates."
+    ],
+    "lesson": "Chad repeats the first scoring card. Reordering the same physical cards can change the score; remap selected slots after the reorder.",
+    "reversal": "Do not reorder when the candidate scorer shows no gain or a boss/order effect makes the result uncertain.",
+    "provenance": "constructed",
+    "sources": [
+      "game:card.lua:3352"
+    ]
+  },
+  {
+    "id": "photo-no-face",
+    "family": "played_retrigger",
+    "trigger_keys": [
+      "j_photograph"
+    ],
+    "required_keys": [
+      "j_photograph"
+    ],
+    "phases": [
+      "SHOP",
+      "PACK"
+    ],
+    "situation": "Photograph is offered but the public deck has few or no face cards.",
+    "options": [
+      "Buy and plan to add faces.",
+      "Pass for an engine supported by current cards."
+    ],
+    "lesson": "Photograph needs the first played face card to score; its label alone is not evidence of reliable XMult.",
+    "reversal": "Take it when face density, copying, or retriggers make a deliberate face-scoring plan credible.",
+    "provenance": "constructed",
+    "sources": [
+      "game:card.lua:3093",
+      "game:game.lua:450"
+    ]
+  },
+  {
+    "id": "blueprint-chad",
+    "family": "copy_balance",
+    "trigger_keys": [
+      "j_blueprint",
+      "j_hanging_chad"
+    ],
+    "required_keys": [
+      "j_blueprint",
+      "j_hanging_chad"
+    ],
+    "phases": [
+      "SELECTING_HAND",
+      "SHOP"
+    ],
+    "situation": "Blueprint can be positioned to copy Hanging Chad in a played-card engine.",
+    "options": [
+      "Copy Chad for more first-card repetitions.",
+      "Copy a main multiplier instead."
+    ],
+    "lesson": "Copy placement should follow the current scoring card and multiplier chain, not a fixed target rule.",
+    "reversal": "Copy the main multiplier when first-card effects are weak, debuffed, or absent from the play.",
+    "provenance": "constructed",
+    "sources": [
+      "game:card.lua:3352",
+      "game:card.lua:4225"
+    ]
+  },
+  {
+    "id": "brainstorm-leftmost",
+    "family": "copy_balance",
+    "trigger_keys": [
+      "j_brainstorm"
+    ],
+    "required_keys": [
+      "j_brainstorm"
+    ],
+    "phases": [
+      "SELECTING_HAND",
+      "SHOP"
+    ],
+    "situation": "Brainstorm is owned with several compatible engines in different Joker positions.",
+    "options": [
+      "Move the desired target to the leftmost slot.",
+      "Leave order when the current target is better."
+    ],
+    "lesson": "Brainstorm copies the leftmost Joker if that Joker is compatible; it does not search onward for a compatible target.",
+    "reversal": "Do not reorder when hidden Jokers or a boss prevents a reliable public comparison.",
+    "provenance": "constructed",
+    "sources": [
+      "game:card.lua:4225"
+    ]
+  },
+  {
+    "id": "blueprint-right-target",
+    "family": "copy_balance",
+    "trigger_keys": [
+      "j_blueprint"
+    ],
+    "required_keys": [
+      "j_blueprint"
+    ],
+    "phases": [
+      "SELECTING_HAND",
+      "SHOP"
+    ],
+    "situation": "Blueprint's immediate right neighbor changed after a purchase or boss shuffle.",
+    "options": [
+      "Reorder toward the intended compatible target.",
+      "Keep order and accept the current target."
+    ],
+    "lesson": "Blueprint copies the compatible Joker to its right; purchases and shuffles require a fresh target check.",
+    "reversal": "Skip automatic reordering when the target is hidden or scorer coverage is unavailable.",
+    "provenance": "constructed",
+    "sources": [
+      "game:card.lua:4225"
+    ]
+  },
+  {
+    "id": "bus-safe-kicker",
+    "family": "growth_preservation",
+    "trigger_keys": [
+      "j_ride_the_bus"
+    ],
+    "required_keys": [
+      "j_ride_the_bus"
+    ],
+    "phases": [
+      "SELECTING_HAND"
+    ],
+    "situation": "A face card can be selected as a non-scoring kicker while a numbered card forms the scoring hand.",
+    "options": [
+      "Use the face only as a harmless kicker.",
+      "Choose a play where the face scores."
+    ],
+    "lesson": "Ride the Bus resets on a scoring face; distinguish scoring cards from selected kickers.",
+    "reversal": "Treat safety as uncertain with unsupported interactions or when Splash makes every selected card score.",
+    "provenance": "constructed",
+    "sources": [
+      "game:card.lua:3525",
+      "game:card.lua:3992"
+    ]
+  },
+  {
+    "id": "straight-consistency-tools",
+    "family": "straight_consistency",
+    "trigger_keys": [
+      "j_shortcut",
+      "j_four_fingers"
+    ],
+    "required_keys": [],
+    "phases": [
+      "SHOP",
+      "PACK",
+      "SELECTING_HAND"
+    ],
+    "situation": "Shortcut or Four Fingers can make a Straight plan easier to draw.",
+    "options": [
+      "Buy consistency and invest in Straight levels.",
+      "Keep a more reliable small-hand engine."
+    ],
+    "lesson": "Shortcut permits rank gaps; Four Fingers reduces the required Straight length to four. Check the actual rank spread before committing.",
+    "reversal": "Pass when the deck still cannot draw Straights reliably or the slot must supply immediate score.",
+    "provenance": "constructed",
+    "sources": [
+      "game:game.lua:386",
+      "game:game.lua:440"
+    ]
+  },
+  {
+    "id": "blackboard-held-black",
+    "family": "held_condition",
+    "trigger_keys": [
+      "j_blackboard"
+    ],
+    "required_keys": [
+      "j_blackboard"
+    ],
+    "phases": [
+      "SELECTING_HAND"
+    ],
+    "situation": "A play leaves only Spades and Clubs in hand.",
+    "options": [
+      "Play off-colour cards to activate Blackboard.",
+      "Keep a valuable red-suit held card and lose Blackboard."
+    ],
+    "lesson": "Blackboard gives X3 when every held card is a Spade or Club; evaluate the actual cards left behind.",
+    "reversal": "Keep the red-suit card when its Steel, seal, or future value outweighs current Blackboard XMult.",
+    "provenance": "constructed",
+    "sources": [
+      "game:card.lua:3951",
+      "game:game.lua:418"
+    ]
+  },
+  {
+    "id": "blackboard-deck-edit",
+    "family": "deck_edit",
+    "trigger_keys": [
+      "j_blackboard",
+      "c_world",
+      "c_moon"
+    ],
+    "required_keys": [
+      "j_blackboard"
+    ],
+    "phases": [
+      "SHOP",
+      "PACK",
+      "SELECTING_HAND"
+    ],
+    "situation": "A suit-changing consumable can turn red-suit cards into Spades or Clubs for Blackboard.",
+    "options": [
+      "Edit suits toward a more reliable held-black condition.",
+      "Use the consumable for another hand or save it."
+    ],
+    "lesson": "Deck edits can improve Blackboard reliability, but a visible target and legal phase are required.",
+    "reversal": "Avoid the edit when it breaks a stronger flush, suit, or boss plan.",
+    "provenance": "constructed",
+    "sources": [
+      "game:card.lua:3951"
+    ]
+  },
+  {
+    "id": "runner-bank-or-pivot",
+    "family": "straight_scaling",
+    "trigger_keys": [
+      "j_runner"
+    ],
+    "required_keys": [
+      "j_runner"
+    ],
+    "phases": [
+      "SELECTING_HAND",
+      "SHOP"
+    ],
+    "situation": "Runner has accumulated chips, but the deck is becoming less reliable at making Straights.",
+    "options": [
+      "Keep playing Straights to continue growth.",
+      "Preserve the banked chips and pivot the hand plan."
+    ],
+    "lesson": "Runner keeps its accumulated chips; future growth requires playing another Straight.",
+    "reversal": "Keep committing when Straight consistency and hand levels remain the best route.",
+    "provenance": "constructed",
+    "sources": [
+      "game:card.lua:3435"
+    ]
+  },
+  {
+    "id": "ancient-current-suit",
+    "family": "rotating_suit",
+    "trigger_keys": [
+      "j_ancient"
+    ],
+    "required_keys": [
+      "j_ancient"
+    ],
+    "phases": [
+      "SELECTING_HAND",
+      "SHOP"
+    ],
+    "situation": "Ancient Joker names a suit that the current public hand or deck may not support.",
+    "options": [
+      "Build the scoring hand around the named suit.",
+      "Use a reliable hand and forgo its trigger."
+    ],
+    "lesson": "Ancient Joker rewards scoring cards of its current suit, so judge the visible suit rather than generic Flush strength.",
+    "reversal": "Follow the target when enough scoring cards of that suit are available without breaking the hand.",
+    "provenance": "constructed",
+    "sources": [
+      "game:card.lua:3255"
+    ]
+  },
+  {
+    "id": "bloodstone-heart-variance",
+    "family": "heart_variance",
+    "trigger_keys": [
+      "j_bloodstone"
+    ],
+    "required_keys": [
+      "j_bloodstone",
+      "suit:H"
+    ],
+    "phases": [
+      "SELECTING_HAND",
+      "SHOP"
+    ],
+    "situation": "Bloodstone is supported by visible Hearts, but its scoring-card triggers are random.",
+    "options": [
+      "Play a Heart-heavy scoring hand.",
+      "Choose the steadier available line."
+    ],
+    "lesson": "Bloodstone gives scoring Hearts a chance to add X1.5 Mult; treat the payoff as stochastic rather than guaranteed.",
+    "reversal": "Prefer the steady line when the blind cannot tolerate a missed trigger.",
+    "provenance": "constructed",
+    "sources": [
+      "game:card.lua:3247"
+    ]
+  },
+  {
+    "id": "hologram-add-vs-dilute",
+    "family": "scaling",
+    "trigger_keys": [
+      "j_hologram"
+    ],
+    "required_keys": [
+      "j_hologram"
+    ],
+    "phases": [
+      "SHOP",
+      "PACK"
+    ],
+    "situation": "A Standard Pack can add a card while Hologram is owned.",
+    "options": [
+      "Add a useful card and grow Hologram.",
+      "Skip a weak card to protect deck consistency."
+    ],
+    "lesson": "Hologram grows when a playing card is added, but growth does not make every offered card a good deck edit.",
+    "reversal": "Add the card when its rank, enhancement, seal, or edition supports the main engine.",
+    "provenance": "constructed",
+    "sources": [
+      "game:card.lua:2457",
+      "game:game.lua:441"
+    ]
+  },
+  {
+    "id": "constellation-planet-choice",
+    "family": "scaling",
+    "trigger_keys": [
+      "j_constellation",
+      "kind:PLANET"
+    ],
+    "required_keys": [
+      "j_constellation"
+    ],
+    "phases": [
+      "SHOP",
+      "PACK"
+    ],
+    "situation": "A Planet for the main hand is available while Constellation is owned.",
+    "options": [
+      "Use it for both hand level and Constellation growth.",
+      "Save money or choose a different pack card."
+    ],
+    "lesson": "Planet use grows Constellation by X0.1 and can also level the relevant hand; verify the Planet matches the actual build.",
+    "reversal": "Skip when economy or a stronger pack choice outweighs the combined incremental growth.",
+    "provenance": "constructed",
+    "sources": [
+      "game:card.lua:2727",
+      "game:card.lua:1266"
+    ]
+  },
+  {
+    "id": "burnt-first-discard",
+    "family": "discard_leveling",
+    "trigger_keys": [
+      "j_burnt"
+    ],
+    "required_keys": [
+      "j_burnt"
+    ],
+    "phases": [
+      "SELECTING_HAND"
+    ],
+    "situation": "No discard has been used this round and Burnt Joker can level the first discarded poker hand.",
+    "options": [
+      "Discard the hand family intended for leveling.",
+      "Save the discard for draw quality."
+    ],
+    "lesson": "Burnt Joker levels only the first discarded poker hand each round, so the first discard determines its growth target.",
+    "reversal": "Use the discard for survival when shaping the named hand would make the round unsafe.",
+    "provenance": "constructed",
+    "sources": [
+      "game:card.lua:2749"
+    ]
+  },
+  {
+    "id": "blue-seal-main-hand",
+    "family": "hand_levels",
+    "trigger_keys": [
+      "seal:BLUE"
+    ],
+    "required_keys": [
+      "seal:BLUE"
+    ],
+    "phases": [
+      "SELECTING_HAND"
+    ],
+    "situation": "Several legal plays clear, but only one names the hand intended for long-term leveling.",
+    "options": [
+      "Play the target family and hold the Blue Seal.",
+      "Take the higher immediate score from another family."
+    ],
+    "lesson": "Blue Seal value depends on the hand actually played; align it with the build rather than any sufficient hand.",
+    "reversal": "Choose immediate score when the target-family line risks losing the blind.",
+    "provenance": "constructed",
+    "sources": [
+      "game:card.lua:1040",
+      "game:card.lua:1266"
+    ]
+  },
+  {
+    "id": "card-sharp-repeat",
+    "family": "transition",
+    "trigger_keys": [
+      "j_card_sharp"
+    ],
+    "required_keys": [
+      "j_card_sharp"
+    ],
+    "phases": [
+      "SELECTING_HAND"
+    ],
+    "situation": "Card Sharp is active after the same poker hand has already been played this round.",
+    "options": [
+      "Repeat the family for X3 Mult.",
+      "Change family for a stronger base hand or boss constraint."
+    ],
+    "lesson": "Card Sharp gives X3 only after that poker hand was already played this round; first-hand and repeat-hand scores differ.",
+    "reversal": "Change families when the repeated hand is illegal, debuffed, or cannot meet the target.",
+    "provenance": "constructed",
+    "sources": [
+      "game:card.lua:4040",
+      "game:game.lua:433"
+    ]
+  },
+  {
+    "id": "yorick-discard-progress",
+    "family": "discard_counter",
+    "trigger_keys": [
+      "j_yorick"
+    ],
+    "required_keys": [
+      "j_yorick"
+    ],
+    "phases": [
+      "SELECTING_HAND"
+    ],
+    "situation": "A discard advances Yorick toward its next permanent XMult increase, but also spends draw control.",
+    "options": [
+      "Advance Yorick with a safe discard.",
+      "Keep the discard for hand completion."
+    ],
+    "lesson": "Yorick rewards a cumulative number of discarded cards; progress can be deferred when the current round needs draw control.",
+    "reversal": "Spend the discard when the remaining hands and deck make the clear secure.",
+    "provenance": "constructed",
+    "sources": [
+      "game:card.lua:2788"
+    ]
+  },
+  {
+    "id": "ramen-discard-cost",
+    "family": "transition",
+    "trigger_keys": [
+      "j_ramen"
+    ],
+    "required_keys": [
+      "j_ramen"
+    ],
+    "phases": [
+      "SELECTING_HAND"
+    ],
+    "situation": "Ramen is active and a discard could improve the next hand.",
+    "options": [
+      "Avoid the discard and preserve XMult.",
+      "Discard because draw quality or survival is worth X0.01."
+    ],
+    "lesson": "Ramen loses X0.01 per discarded card, so discard value must exceed a visible persistent scoring cost.",
+    "reversal": "Discard freely when the current hand cannot clear or the better draw protects the run.",
+    "provenance": "constructed",
+    "sources": [
+      "game:card.lua:2757",
+      "game:game.lua:473"
+    ]
+  },
+  {
+    "id": "economy-full-slot-transition",
+    "family": "economy",
+    "trigger_keys": [
+      "j_mime",
+      "j_baron",
+      "j_hologram",
+      "j_constellation",
+      "j_photograph",
+      "j_hanging_chad"
+    ],
+    "required_keys": [],
+    "phases": [
+      "SHOP"
+    ],
+    "situation": "A relevant Joker is visible but all normal Joker slots are occupied.",
+    "options": [
+      "Sell a chosen Joker, settle, then reassess the offer.",
+      "Keep the lineup and preserve money."
+    ],
+    "lesson": "A full slot hides an immediate buy action, not the strategic offer; selling and buying are separate decisions with a fresh observation.",
+    "reversal": "Do not sell when the offer may disappear, capacity is uncertain, or the current Joker is needed for the next blind.",
+    "provenance": "constructed",
+    "sources": [
+      "game:card.lua:2879",
+      "game:card.lua:3287",
+      "game:card.lua:2457",
+      "game:card.lua:2727",
+      "game:card.lua:3093",
+      "game:card.lua:3352"
+    ]
+  },
+  {
+    "id": "hit-road-round-window",
+    "family": "jack_discard",
+    "trigger_keys": [
+      "j_hit_the_road"
+    ],
+    "required_keys": [
+      "j_hit_the_road",
+      "rank:J"
+    ],
+    "phases": [
+      "SELECTING_HAND"
+    ],
+    "situation": "A visible Jack can be discarded for Hit the Road during the current round.",
+    "options": [
+      "Discard the Jack for temporary XMult.",
+      "Keep it for the scoring hand or future draw shape."
+    ],
+    "lesson": "Hit the Road gains XMult for discarded Jacks and resets after the round, so this is a current-round payoff.",
+    "reversal": "Keep the Jack when it is essential to the scoring hand or the temporary gain is unnecessary.",
+    "provenance": "constructed",
+    "sources": [
+      "game:card.lua:2835",
+      "game:card.lua:3011"
+    ]
+  },
+  {
+    "id": "economy-interest-vs-scaler",
+    "family": "economy",
+    "trigger_keys": [
+      "j_hologram",
+      "j_constellation",
+      "j_baron",
+      "j_mime"
+    ],
+    "required_keys": [],
+    "phases": [
+      "SHOP"
+    ],
+    "situation": "Buying a supported scaler would cross an interest threshold.",
+    "options": [
+      "Preserve the economy floor.",
+      "Spend now for a coherent scoring transition."
+    ],
+    "lesson": "Compare known interest loss with the engine's conditions and next-blind need; neither saving nor spending is universally correct.",
+    "reversal": "Preserve cash when the offer starts inactive or the current build already clears comfortably.",
+    "provenance": "constructed",
+    "sources": [
+      "game:card.lua:2879",
+      "game:card.lua:3287",
+      "game:card.lua:2457",
+      "game:card.lua:2727"
+    ]
+  },
+  {
+    "id": "blind-boss-face-conflict",
+    "family": "boss_adaptation",
+    "trigger_keys": [
+      "j_photograph",
+      "j_baron",
+      "boss:The Plant"
+    ],
+    "required_keys": [],
+    "phases": [
+      "BLIND_SELECT",
+      "SELECTING_HAND"
+    ],
+    "situation": "The visible Plant debuffs face cards while the build uses Photograph or held Kings.",
+    "options": [
+      "Reroll or adapt away from faces.",
+      "Proceed if non-face engines still clear."
+    ],
+    "lesson": "The Plant can suppress a face engine; evaluate Photograph or Baron with the visible boss rather than deck counts alone.",
+    "reversal": "Keep the engine when the boss is disabled or other scoring layers make the blind safe.",
+    "provenance": "constructed",
+    "sources": [
+      "game:card.lua:3093",
+      "game:card.lua:3287"
+    ]
+  },
+  {
+    "id": "hand-level-concentrate",
+    "family": "hand_levels",
+    "trigger_keys": [
+      "kind:PLANET"
+    ],
+    "required_keys": [],
+    "phases": [
+      "SHOP",
+      "PACK"
+    ],
+    "situation": "A Planet matches the hand repeatedly used by Card Sharp and the current plan.",
+    "options": [
+      "Level the established hand.",
+      "Choose economy, deck editing, or a speculative family."
+    ],
+    "lesson": "Concentrating levels in the hand actually played improves its base before later multiplier effects.",
+    "reversal": "Diversify when a boss blocks the main family or the deck has clearly transitioned to another hand.",
+    "provenance": "constructed",
+    "sources": [
+      "game:card.lua:1266",
+      "game:card.lua:1174"
+    ]
+  },
+  {
+    "id": "smeared-flush-consistency",
+    "family": "flush_consistency",
+    "trigger_keys": [
+      "j_smeared"
+    ],
+    "required_keys": [
+      "j_smeared"
+    ],
+    "phases": [
+      "SHOP",
+      "PACK",
+      "SELECTING_HAND"
+    ],
+    "situation": "Smeared Joker can make red or black cards cooperate in Flush hands.",
+    "options": [
+      "Build around easier Flush draws.",
+      "Keep the slot for score and pursue another hand."
+    ],
+    "lesson": "Smeared treats Hearts and Diamonds as one suit, and Spades and Clubs as one suit. Consistency alone does not supply scaling.",
+    "reversal": "Pass when Flush levels and scoring support are weak or a visible suit-debuff boss undermines the plan.",
+    "provenance": "constructed",
+    "sources": [
+      "game:card.lua:4072"
+    ]
+  },
+  {
+    "id": "castle-current-suit",
+    "family": "suit_discard_scaling",
+    "trigger_keys": [
+      "j_castle"
+    ],
+    "required_keys": [
+      "j_castle"
+    ],
+    "phases": [
+      "SELECTING_HAND"
+    ],
+    "situation": "Castle names a discard suit, and cards of that suit are visible.",
+    "options": [
+      "Discard matching cards to add chips.",
+      "Save them for the scoring hand."
+    ],
+    "lesson": "Castle gains chips only from discarded cards of its current suit; check the visible target before spending a discard.",
+    "reversal": "Keep matching cards when they are needed to form the winning hand.",
+    "provenance": "constructed",
+    "sources": [
+      "game:card.lua:2814"
+    ]
+  },
+  {
+    "id": "perkeo-negative-copy",
+    "family": "consumable_copy",
+    "trigger_keys": [
+      "j_perkeo"
+    ],
+    "required_keys": [
+      "j_perkeo"
+    ],
+    "phases": [
+      "BLIND_SELECT",
+      "SHOP"
+    ],
+    "situation": "Perkeo can copy a held consumable when leaving the shop.",
+    "options": [
+      "Hold the consumable and leave to copy it.",
+      "Use or sell it before leaving."
+    ],
+    "lesson": "On leaving the shop, Perkeo randomly copies one held consumable as Negative; manage the possible targets. Negative copies bypass normal capacity.",
+    "reversal": "Use the original first when its immediate effect is more valuable than another copy.",
+    "provenance": "constructed",
+    "sources": [
+      "game:card.lua:2413"
+    ]
+  },
+  {
+    "id": "five-kind-duplication",
+    "family": "rank_duplication",
+    "trigger_keys": [
+      "j_dna",
+      "c_death"
+    ],
+    "required_keys": [],
+    "phases": [
+      "SHOP",
+      "PACK",
+      "SELECTING_HAND"
+    ],
+    "situation": "DNA or Death can duplicate a rank already central to a Five of a Kind plan.",
+    "options": [
+      "Copy the supported rank or enhanced card.",
+      "Preserve hand economy and current consistency."
+    ],
+    "lesson": "DNA copies a single-card first hand; Death converts one selected card into another, so target identity and order matter.",
+    "reversal": "Do not force duplication when the setup hand risks the blind or the target cannot be selected legally.",
+    "provenance": "constructed",
+    "sources": [
+      "game:card.lua:1111",
+      "game:card.lua:2483",
+      "game:card.lua:3501"
+    ]
+  },
+  {
+    "id": "face-retrigger-core",
+    "family": "face_build",
+    "trigger_keys": [
+      "j_triboulet",
+      "j_sock_and_buskin",
+      "j_photograph"
+    ],
+    "required_keys": [],
+    "phases": [
+      "SHOP",
+      "PACK",
+      "SELECTING_HAND"
+    ],
+    "situation": "Face cards can score with Triboulet, Sock and Buskin, or Photograph visible.",
+    "options": [
+      "Build a face-scoring retrigger chain.",
+      "Retain a non-face engine resistant to face debuffs."
+    ],
+    "lesson": "Triboulet gives scoring Kings and Queens X2; Sock retriggers faces; Photograph rewards the first scoring face.",
+    "reversal": "Pivot when face density is low or face debuffs disable the engine; hidden cards add uncertainty rather than automatically disabling it.",
+    "provenance": "constructed",
+    "sources": [
+      "game:card.lua:3093",
+      "game:card.lua:3262",
+      "game:card.lua:3344"
+    ]
+  },
+  {
+    "id": "vagabond-money-threshold",
+    "family": "low_cash_tarot",
+    "trigger_keys": [
+      "j_vagabond"
+    ],
+    "required_keys": [
+      "j_vagabond"
+    ],
+    "phases": [
+      "SELECTING_HAND",
+      "SHOP"
+    ],
+    "situation": "Money is near Vagabond\u2019s threshold before a scoring hand.",
+    "options": [
+      "Stay at or below the threshold to create Tarot.",
+      "Keep or earn more money for shop economy."
+    ],
+    "lesson": "Vagabond creates a Tarot after a scoring hand only when money is at or below its threshold and capacity allows.",
+    "reversal": "Favor economy when deliberately staying poor costs more than the Tarot generation is worth.",
+    "provenance": "constructed",
+    "sources": [
+      "game:card.lua:3743"
+    ]
+  },
+  {
+    "id": "economy-engines",
+    "family": "economy_engine",
+    "trigger_keys": [
+      "j_to_the_moon",
+      "j_rocket",
+      "j_business"
+    ],
+    "required_keys": [],
+    "phases": [
+      "SHOP",
+      "PACK",
+      "SELECTING_HAND"
+    ],
+    "situation": "To the Moon, Rocket, or Business Card offers economy instead of immediate scoring.",
+    "options": [
+      "Invest in income for later shops.",
+      "Buy scoring needed for the next blind."
+    ],
+    "lesson": "To the Moon improves interest, Rocket pays and grows after bosses, and Business Card can pay on scoring faces.",
+    "reversal": "Prefer immediate score when the run cannot safely wait for the economy to repay its slot and cost.",
+    "provenance": "constructed",
+    "sources": [
+      "game:card.lua:670",
+      "game:card.lua:1664",
+      "game:card.lua:2896",
+      "game:card.lua:3175"
+    ]
+  },
+  {
+    "id": "wee-hack-low-ranks",
+    "family": "low_rank_retrigger",
+    "trigger_keys": [
+      "j_wee",
+      "j_hack"
+    ],
+    "required_keys": [
+      "j_wee",
+      "j_hack",
+      "rank:2"
+    ],
+    "phases": [
+      "SELECTING_HAND",
+      "SHOP"
+    ],
+    "situation": "Scoring 2s can trigger both Wee Joker growth and Hack retriggers.",
+    "options": [
+      "Build the scoring hand around supported 2s.",
+      "Use a stronger hand without forcing low ranks."
+    ],
+    "lesson": "Wee Joker gains chips from scoring 2s, while Hack retriggers ranks 2 through 5; their overlap makes public 2 density relevant.",
+    "reversal": "Pivot when too few low ranks can score reliably or a boss debuffs the line.",
+    "provenance": "constructed",
+    "sources": [
+      "game:card.lua:3083",
+      "game:card.lua:3374"
+    ]
+  },
+  {
+    "id": "observatory-held-planet",
+    "family": "voucher_engine",
+    "trigger_keys": [
+      "v_observatory",
+      "c_pluto",
+      "c_mercury",
+      "c_saturn"
+    ],
+    "required_keys": [
+      "v_observatory"
+    ],
+    "phases": [
+      "SHOP",
+      "PACK",
+      "SELECTING_HAND"
+    ],
+    "situation": "Observatory is owned and a Planet matching the played hand can remain held.",
+    "options": [
+      "Hold the matching Planet for XMult.",
+      "Use it now to level the hand and free capacity."
+    ],
+    "lesson": "Observatory makes a held matching Planet give X1.5; compare repeated held value with permanent hand leveling.",
+    "reversal": "Use the Planet when capacity, immediate base score, or another consumable matters more.",
+    "provenance": "constructed",
+    "sources": [
+      "game:card.lua:1910",
+      "game:game.lua:614"
+    ]
+  },
+  {
+    "id": "madness-eternal-shell",
+    "family": "destruction_scaling",
+    "trigger_keys": [
+      "j_madness"
+    ],
+    "required_keys": [
+      "j_madness"
+    ],
+    "phases": [
+      "SHOP",
+      "PACK",
+      "BLIND_SELECT"
+    ],
+    "situation": "Madness is considered with Eternal Jokers or expendable slots before a non-boss blind.",
+    "options": [
+      "Build a protected shell around Madness growth.",
+      "Keep several ordinary Jokers and avoid random destruction."
+    ],
+    "lesson": "Madness gains XMult and destroys another Joker on Small or Big Blind selection; Eternal status changes the destruction risk.",
+    "reversal": "Pass when key non-Eternal Jokers cannot be protected or upcoming growth opportunities are too few.",
+    "provenance": "constructed",
+    "sources": [
+      "game:card.lua:2503",
+      "game:game.lua:435"
+    ]
+  },
+  {
+    "id": "vampire-midas-order",
+    "family": "enhancement_conversion",
+    "trigger_keys": [
+      "j_vampire",
+      "j_midas_mask"
+    ],
+    "required_keys": [
+      "j_vampire",
+      "j_midas_mask"
+    ],
+    "phases": [
+      "SELECTING_HAND",
+      "SHOP"
+    ],
+    "situation": "Midas Mask and Vampire can interact on scoring face cards, but Joker order controls whether new Gold is consumed immediately.",
+    "options": [
+      "Order Midas before Vampire for same-play feeding.",
+      "Order Vampire before Midas to leave new Gold cards."
+    ],
+    "lesson": "Midas makes scoring faces Gold; Vampire removes scoring-card enhancements for growth. Vampire removes enhancements, not seals.",
+    "reversal": "Preserve Gold or another enhancement when its card value matters more than immediate Vampire growth.",
+    "provenance": "constructed",
+    "sources": [
+      "game:card.lua:3443",
+      "game:card.lua:3465"
+    ]
+  },
+  {
+    "id": "obelisk-most-played-tie",
+    "family": "hand_pivot",
+    "trigger_keys": [
+      "j_obelisk"
+    ],
+    "required_keys": [
+      "j_obelisk"
+    ],
+    "phases": [
+      "SELECTING_HAND",
+      "SHOP"
+    ],
+    "situation": "Two or more poker hands are tied for most played while Obelisk is owned or offered.",
+    "options": [
+      "Play a hand below the tied leaders.",
+      "Skip Obelisk and continue a leading hand."
+    ],
+    "lesson": "Obelisk resets on a hand tied for most played; a safe pivot must be below every current leader.",
+    "reversal": "Take a leading hand when it is required to clear or no lower-count hand is reliable.",
+    "provenance": "constructed",
+    "sources": [
+      "game:card.lua:3543"
+    ]
+  },
+  {
+    "id": "low-rank-chip-engines",
+    "family": "rank_chip_build",
+    "trigger_keys": [
+      "j_hiker",
+      "j_wee",
+      "j_fibonacci",
+      "j_hack"
+    ],
+    "required_keys": [],
+    "phases": [
+      "SHOP",
+      "PACK",
+      "SELECTING_HAND"
+    ],
+    "situation": "Low-rank cards can support Hiker, Wee Joker, Fibonacci, or Hack.",
+    "options": [
+      "Retrigger and permanently grow supported low ranks.",
+      "Favor higher ranks or another hand engine."
+    ],
+    "lesson": "Hiker adds permanent chips, Wee grows from scoring 2s, Fibonacci rewards A/2/3/5/8, and Hack retriggers 2 through 5.",
+    "reversal": "Pass when supported ranks are sparse, debuffed, or cannot form the chosen scoring hand.",
+    "provenance": "constructed",
+    "sources": [
+      "game:card.lua:3067",
+      "game:card.lua:3083",
+      "game:card.lua:3185",
+      "game:card.lua:3374"
+    ]
+  }
+]
