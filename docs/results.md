@@ -28,6 +28,7 @@ win rate of the coached system is unmeasured.
 | System | Games | Ante 8 cleared | Reached Ante 8+ | Median ante | Seeds |
 |---|---|---|---|---|---|
 | Astra low + tools, headless | 1 | 1 | 1 | 13 (endless) | TAF7DNTX |
+| Astra low + tools, supervised | 1 | 1 | 1 | 11 (endless) | QD3F4XVW |
 | Astra low + tools, on a panel seed | 1 | 1 | 1 | 10 (endless) | D0000000 |
 | Astra low + tools | 1 | 1 | 1 | 11 (endless) | 2K9H9HN |
 | search-v4 | 20 | 3 | 7 | 6.5 | D0000000-19 |
@@ -56,6 +57,15 @@ Disclosures that belong with this table:
   at safe moments, always while waiting for the model, to deploy runner fixes; the
   game state and trajectories were never edited. Details, hashes and the revision
   of each segment: `evidence/astra-low-TAF7DNTX/README.md`.
+- **Astra low, QD3F4XVW** (`gpt-6-astra`, low effort, game visible at speed 2 and
+  screen recorded in one take): the first game played end to end by
+  `balatro supervise`. Cleared Ante 8 against Cerulean Bell with 111,598 against
+  100,000; lowered the ante twice with Hieroglyph and Petroglyph to buy rounds;
+  lost to The Plant at Ante 11 with 14,400,000 required. 473 decisions from 388
+  calls, 50 chained, 6 forced, zero rejected replies, 3 stalls retried. One
+  automatic restart after the mod refused a boss reroll the runner had considered
+  legal; the supervisor resumed two seconds later with the live state verified.
+  Details: `evidence/astra-low-QD3F4XVW/README.md`.
 - **Astra low, D0000000** (`gpt-6-astra`, low effort, game window visible and screen
   recorded): the operator set the seed to the first seed of the baseline panel, so
   this is the one game where the model and every heuristic played identical cards.
@@ -136,7 +146,7 @@ generated tables keep the earlier run's mix as a second block.
 
 ## What is not shown, and why
 
-- No win rate for the coached system. Three games cannot support one.
+- No win rate for the coached system. Four games cannot support one.
 - No same-seed comparison between the coached system and search-v6, and no
   model-without-tools control. Neither was run.
 - No token or cost figures. The evidence run did not record them.

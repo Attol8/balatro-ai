@@ -16,13 +16,13 @@ extra win.
 
 - Heuristic baselines were run on the fixed development panel D0000000 to
   D0000019: twenty seeds, one game each, all starting from Ante 1.
-- The coached wins used seeds 2K9H9HN and TAF7DNTX, chosen by the game, outside
-  that panel.
+- The coached wins used seeds 2K9H9HN and TAF7DNTX, chosen by the game, QD3F4XVW,
+  set by the operator, all outside that panel, and D0000000, the first panel seed.
 - Seeds live in run manifests only. The model never receives one.
 
-The coached games are therefore two single games on different seeds from the
-panel. They demonstrate that the system can beat the game; they do not estimate a
-win rate.
+The coached games are therefore four single games, three on seeds outside the
+panel and one on a panel seed. They demonstrate that the system can beat the game;
+they do not estimate a win rate.
 The repository says "unattended win rate unmeasured" wherever that matters.
 
 ## Disclosure rules

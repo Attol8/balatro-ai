@@ -14,25 +14,31 @@ and search policies won at most 3 games in 20.
 
 ## Watch it play
 
-![Time-lapse of a recorded game beside the live dashboard](evidence/astra-low-D0000000/recording-timelapse.gif)
+![Time-lapse of a recorded game beside the live dashboard](evidence/astra-low-QD3F4XVW/recording-timelapse.gif)
 
-A 69-minute game on seed D0000000, the first seed of the baseline panel, compressed
-to twelve seconds: the real game on the left, `balatro watch` on the right. The
-two-minute version is [`recording-timelapse.mp4`](evidence/astra-low-D0000000/recording-timelapse.mp4).
-On that seed the best heuristic reached Ante 6 with a 14,700 peak; the model
-cleared Ante 8 and reached Ante 10 with 1,840,907.
+A 101-minute game on seed QD3F4XVW played end to end by `balatro supervise`,
+compressed to twenty seconds: the real game on the left, `balatro watch` on the
+right. It cleared Ante 8 against Cerulean Bell, reached Ante 11 in endless mode
+with a 7,052,918 hand, and made zero illegal replies in 388 model calls. The
+two-minute version is [`recording-timelapse.mp4`](evidence/astra-low-QD3F4XVW/recording-timelapse.mp4)
+and the last frame is [`final-frame.jpg`](evidence/astra-low-QD3F4XVW/final-frame.jpg).
+An earlier recorded game on the baseline seed D0000000 is in
+[`evidence/astra-low-D0000000`](evidence/astra-low-D0000000): there the best
+heuristic reached Ante 6 with a 14,700 peak and the model reached Ante 10 with
+1,840,907.
 
 ## Results
 
 | System | Games | Ante 8 cleared | Notes |
 |---|---|---|---|
 | Astra low + tools, headless | 1 | 1 | Seed TAF7DNTX. Won, then reached Ante 13 in endless with a 134,231,931,235 hand. 456 decisions from 404 model calls; the runner was restarted four times at safe moments to deploy fixes, never inside a blind. |
+| Astra low + tools, supervised | 1 | 1 | Seed QD3F4XVW. Won, then reached Ante 11 in endless with a 7,052,918 hand. 473 decisions from 388 model calls, zero rejected replies, one automatic restart; recorded end to end. |
 | Astra low + tools, on a panel seed | 1 | 1 | Seed D0000000. Won, then reached Ante 10 in endless with a 1,840,907 hand. 315 decisions from 265 model calls, zero rejected replies. Every heuristic baseline played this seed; the best reached Ante 6. |
 | Astra low + tools | 1 | 1 | Seed 2K9H9HN. Won, then reached Ante 11 in endless with a 1,239,454 hand. Supervised run with adapter fixes between segments. |
 | search-v6 (best heuristic) | 20 | 3 | Bounded public-information search, the strongest of ten non-model policies. |
 | Ten heuristic and search policies | 200 | 0 to 3 each | Same game, same settings, seeds D0000000 to D0000019. |
 
-The coached games are three single games, two on seeds outside the baseline panel
+The coached games are four single games, three on seeds outside the baseline panel
 and one on a panel seed. They show the system can beat the game and keep scaling
 in endless mode; they do not estimate a win rate, and the unattended win rate is
 unmeasured. Full tables, figures and every caveat: [docs/results.md](docs/results.md).
@@ -161,6 +167,9 @@ restart cap. `balatro watch runs/game-002` shows the whole game.
 - [`evidence/astra-low-TAF7DNTX/`](evidence/astra-low-TAF7DNTX): the headless
   Ante 13 run, five hash-chained segments with the runner revision and reason for
   each restart.
+- [`evidence/astra-low-QD3F4XVW/`](evidence/astra-low-QD3F4XVW): the supervised,
+  recorded game, two segments, supervisor records, time-lapse video and GIF, the
+  final frame and the dashboard at game over.
 - [`evidence/astra-low-D0000000/`](evidence/astra-low-D0000000): the recorded
   game on the baseline seed, four segments, the same-seed comparison with every
   heuristic, the time-lapse video and GIF, and the dashboard at game over.
@@ -178,7 +187,7 @@ restart cap. `balatro watch runs/game-002` shows the whole game.
 
 ## Limitations
 
-- Three coached wins on three seeds. No win rate, no model-without-tools control.
+- Four coached wins on four seeds. No win rate, no model-without-tools control.
   The D0000000 game is the only same-seed comparison with the heuristics.
 - Both runs were watched by an operator. The earlier one had adapter fixes between
   segments; the later one had runner restarts at safe moments to deploy the retry,
