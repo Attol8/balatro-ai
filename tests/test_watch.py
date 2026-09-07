@@ -22,6 +22,11 @@ def segment_run(tmp_path):
             shutil.copyfileobj(archive, plain)
     for name in ("manifest.json", "result.json"):
         shutil.copy(SEGMENT / name, run / name)
+    # Isolate the fixture: the recorded manifest points at a run directory that may
+    # still exist on a developer machine, and the watch would follow it.
+    manifest = json.loads((run / "manifest.json").read_text(encoding="utf-8"))
+    manifest.pop("continuation_of", None)
+    (run / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
     return run
 
 
@@ -158,3 +163,46 @@ def test_http_serves_the_page_and_the_state(segment_run):
 def test_page_supports_a_zoom_query_parameter() -> None:
     html = (Path(__file__).resolve().parents[1] / "balatro_ai" / "watch.html").read_text()
     assert 'get("zoom")' in html and "style.zoom" in html
+
+
+def test_watch_follows_continuation_chain(tmp_path) -> None:
+    first = tmp_path / "first"
+    second = tmp_path / "second"
+    for directory in (first, second):
+        directory.mkdir()
+    (first / "manifest.json").write_text(json.dumps({"seed": "X"}), encoding="utf-8")
+    (second / "manifest.json").write_text(
+        json.dumps({"seed": "X", "continuation_of": str(first)}), encoding="utf-8"
+    )
+
+    def transition(ante, chips_before, chips_after):
+        state = {
+            "ante": ante,
+            "phase": "SELECTING_HAND",
+            "money": 4,
+            "round_no": ante,
+            "round": {"chips": chips_before, "hands_left": 3, "discards_left": 3},
+            "blinds": [{"kind": "SMALL", "name": "Small Blind", "status": "CURRENT", "score": 300}],
+            "jokers": [],
+            "consumables": [],
+            "hand_stats": [],
+        }
+        after = dict(state, round=dict(state["round"], chips=chips_after))
+        return json.dumps(
+            {
+                "event": "transition",
+                "before": state,
+                "action": {"type": "play_cards", "cards": [0]},
+                "after": after,
+                "source": "coach",
+            }
+        )
+
+    (first / "trajectory.jsonl").write_text(
+        transition(1, 0, 100) + "\n" + transition(1, 100, 250) + "\n"
+    )
+    (second / "trajectory.jsonl").write_text(transition(2, 0, 900) + "\n")
+    summary = summarize(second)
+    assert summary["counters"]["decisions"] == 3
+    assert summary["peak_hand"] == 900
+    assert summary["ante"] == 2

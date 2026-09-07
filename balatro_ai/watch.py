@@ -73,6 +73,7 @@ class RunWatch:
     # -- reading ---------------------------------------------------------
     def _reset(self):
         self._offset = 0
+        self._preloaded = False
         self._observation = {}
         self._plan = ""
         self._blinds = []
@@ -100,6 +101,7 @@ class RunWatch:
             archive = self.run_dir / "trajectory.jsonl.gz"
             if archive.exists():
                 if self._offset == 0:  # a finished artifact: read it once
+                    self._preload_ancestors()
                     with gzip.open(archive, "rt", encoding="utf-8") as handle:
                         for line in handle:
                             self._consume(line)
@@ -110,6 +112,8 @@ class RunWatch:
         size = path.stat().st_size
         if size < self._offset:  # the run directory was replaced under us
             self._reset()
+        if not self._preloaded:
+            self._preload_ancestors()
         if size == self._offset:
             return
         with path.open("rb") as handle:
@@ -121,6 +125,45 @@ class RunWatch:
         for line in chunk[: end + 1].splitlines():
             self._consume(line.decode("utf-8", "replace"))
         self._offset += end + 1
+
+    def _ancestors(self):
+        """Run directories this run continued, oldest first, following manifests."""
+        chain = []
+        seen = {self.run_dir.resolve()}
+        current = self.run_dir
+        for _ in range(32):
+            manifest = current / "manifest.json"
+            if not manifest.exists():
+                break
+            try:
+                source = json.loads(manifest.read_text(encoding="utf-8")).get("continuation_of")
+            except (OSError, ValueError):
+                break
+            if not source:
+                break
+            candidates = [Path(source), current.parent / Path(source).name]
+            previous = next((c for c in candidates if (c / "manifest.json").exists()), None)
+            if previous is None or previous.resolve() in seen:
+                break
+            seen.add(previous.resolve())
+            chain.append(previous)
+            current = previous
+        return list(reversed(chain))
+
+    def _preload_ancestors(self):
+        """Read the finished segments this run continues so the view covers the whole game."""
+        self._preloaded = True
+        for directory in self._ancestors():
+            plain = directory / "trajectory.jsonl"
+            archive = directory / "trajectory.jsonl.gz"
+            if plain.exists():
+                with plain.open("r", encoding="utf-8") as handle:
+                    for line in handle:
+                        self._consume(line)
+            elif archive.exists():
+                with gzip.open(archive, "rt", encoding="utf-8") as handle:
+                    for line in handle:
+                        self._consume(line)
 
     def _consume(self, line):
         line = line.strip()
