@@ -14,7 +14,7 @@ from itertools import islice
 from pathlib import Path
 
 from .analysis import analyze
-from .client import BalatroBotClient
+from .client import BalatroBotClient, BalatroBotError
 from .game.actions import (
     CashOut,
     PublicAction,
@@ -358,6 +358,7 @@ def run_game(
         coach_timeouts=0,
         forced_actions=0,
         followup_actions=0,
+        rpc_timeouts_recovered=0,
         ante_reached=0,
         peak_hand_score=0,
     )
@@ -477,14 +478,32 @@ def run_game(
                 observation=public_observation_to_data(observation),
                 action=action_to_data(action),
             )
-            # An uncertain mutation is never retried: stop and preserve evidence.
-            after = settle(client, game_rpc(client, method, params, deadline), deadline)
+            # An uncertain mutation is never re-sent blindly. When the reply never
+            # arrives, the game itself says what happened: an unchanged public state
+            # means the action did not land and the send may be repeated once; a
+            # changed state means it landed, and play continues from that state.
+            recovered = None
+            try:
+                after = settle(client, game_rpc(client, method, params, deadline), deadline)
+            except BalatroBotError as exc:
+                if "timed out" not in str(exc):
+                    raise
+                live = settle(client, game_rpc(client, "gamestate", None, deadline), deadline)
+                if live == state:
+                    recovered = "resent after a reply timeout; the state had not changed"
+                    after = settle(client, game_rpc(client, method, params, deadline), deadline)
+                else:
+                    recovered = "reply timed out; the live state shows the action landed"
+                    after = live
+                result["rpc_timeouts_recovered"] += 1
+                record("rpc_timeout", method=method, params=params, recovery=recovered)
             record(
                 "transition",
                 before=public_observation_to_data(state),
                 action=action_to_data(action),
                 after=public_observation_to_data(after),
                 source=source,
+                **({"recovered": recovered} if recovered else {}),
             )
             history.append(HistoryStep(state, action, after))
             step_sources.append(source)

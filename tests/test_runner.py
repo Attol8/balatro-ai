@@ -3,6 +3,7 @@ from copy import deepcopy
 
 import pytest
 
+from balatro_ai.client import BalatroBotError
 from balatro_ai.runner import Limits, public_state, run_game, validate_response
 from tests.game.state_factory import item_card, shop_area, state
 
@@ -643,3 +644,51 @@ def test_coach_timeout_is_not_retried_without_run_budget(tmp_path, monkeypatch):
     assert result["status"] == "stopped" and result["reason"] == "Codex CLI timed out"
     assert result["coach_timeouts"] == 1 and result["coach_requests"] == 1
     assert len(coach.packets) == 1 and "select" not in game.calls
+
+
+class TimingOutGame(Game):
+    """Raise a reply timeout on the first mutation; optionally apply it anyway."""
+
+    def __init__(self, *, applied):
+        super().__init__()
+        self.applied = applied
+        self.timed_out = False
+
+    def rpc(self, method, params=None):
+        if method not in ("health", "gamestate", "start") and not self.timed_out:
+            self.timed_out = True
+            if self.applied:
+                super().rpc(method, params)
+            else:
+                self.calls.append(method)
+            raise BalatroBotError("failed to connect to BalatroBot at test: timed out")
+        return super().rpc(method, params)
+
+
+def test_reply_timeout_with_unchanged_state_resends_once(tmp_path):
+    game = TimingOutGame(applied=False)
+    game.raw["state"] = "ROUND_EVAL"
+    result = run_game(game, Coach(), tmp_path / "run")
+    assert result["status"] == "won" and result["decisions"] == 1
+    assert result["rpc_timeouts_recovered"] == 1
+    assert game.calls.count("cash_out") == 2
+    rows = [
+        json.loads(line) for line in (tmp_path / "run/trajectory.jsonl").read_text().splitlines()
+    ]
+    assert any(r["event"] == "rpc_timeout" and "resent" in r["recovery"] for r in rows)
+    assert [r for r in rows if r["event"] == "transition"][0]["recovered"].startswith("resent")
+
+
+def test_reply_timeout_with_changed_state_continues_without_resending(tmp_path):
+    game = TimingOutGame(applied=True)
+    game.raw["state"] = "ROUND_EVAL"
+    result = run_game(game, Coach(), tmp_path / "run")
+    assert result["status"] == "won" and result["decisions"] == 1
+    assert result["rpc_timeouts_recovered"] == 1
+    assert game.calls.count("cash_out") == 1
+    rows = [
+        json.loads(line) for line in (tmp_path / "run/trajectory.jsonl").read_text().splitlines()
+    ]
+    assert [r for r in rows if r["event"] == "transition"][0]["recovered"].startswith(
+        "reply timed out"
+    )

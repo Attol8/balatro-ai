@@ -23,7 +23,7 @@ class BalatroBotClient:
     port: int = 12346
     # The mod replies once an action has settled; visible-mode animations can take
     # several seconds, and a timed-out mutation ends the run, so allow a wide margin.
-    timeout: float = 30.0
+    timeout: float = 60.0
     transport: Transport | None = None
 
     @property
