@@ -166,13 +166,20 @@ class CodexCoach:
                 command.extend(("--disable", feature))
             command.append("-")
             execution_started = time.monotonic()
-            _run_process(
-                command,
-                cwd=workdir,
-                environment=environment,
-                timeout=_remaining(deadline),
-                stdin=prompt,
-            )
+            log_path = workdir / "codex-output.log"
+            try:
+                _run_process(
+                    command,
+                    cwd=workdir,
+                    environment=environment,
+                    timeout=_remaining(deadline),
+                    stdin=prompt,
+                    captured_output=log_path,
+                )
+            except TimeoutError as exc:
+                # Keep the tail of the child's own output so a stalled call can be
+                # diagnosed from the trajectory instead of vanishing silently.
+                raise TimeoutError(f"{exc}; codex output tail: {_tail(log_path)}") from exc
             self.last_timings["codex_seconds"] = time.monotonic() - execution_started
             return _read_json_object(output_path)
 
@@ -233,6 +240,17 @@ def write_response(public_dir: Path, response: dict[str, object]) -> None:
     if response.get("request_id") != request.get("request_id"):
         raise ValueError("response request_id does not match the outstanding request")
     _atomic_write(target, _encode_bounded(response, limit=_MAX_RESPONSE_BYTES))
+
+
+def _tail(path: Path, limit: int = 1500) -> str:
+    """Return the last characters of a captured child log, or a placeholder."""
+
+    try:
+        data = path.read_bytes()
+    except OSError:
+        return "(no output captured)"
+    text = data[-limit:].decode("utf-8", errors="replace").strip()
+    return " ".join(text.split()) or "(empty output)"
 
 
 def _run_process(

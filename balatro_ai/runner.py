@@ -601,13 +601,14 @@ def run_game(
                             packet, min(limits.call_seconds, deadline - time.monotonic())
                         )
                         break
-                    except TimeoutError:
+                    except TimeoutError as exc:
                         result["coach_timeouts"] += 1
                         record(
                             "coach_timeout",
                             request_id=request_id,
                             seconds=round(time.monotonic() - call_started, 3),
                             attempt=attempt,
+                            detail=str(exc)[:2000],
                         )
                         # Only the model call is retried, and only while the run
                         # budget still fits another one.
