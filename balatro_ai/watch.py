@@ -340,7 +340,10 @@ class RunWatch:
 
     def _game(self, result):
         """Header facts about the whole game: how many segments, and how it resumed."""
-        supervisor = self._json(self.run_dir / "summary.json") or {}
+        supervisor = {
+            **(self._json(self.run_dir / "supervisor.json") or {}),
+            **(self._json(self.run_dir / "summary.json") or {}),
+        }
         manifests = [self._json(d / "manifest.json") or {} for d in self._segments]
         counted = supervisor.get("segments")
         if isinstance(counted, list):
@@ -360,7 +363,7 @@ class RunWatch:
             else None,
             segment=self._tail_dir.name if self._root and self._tail_dir else None,
             resumed=any(m.get("continuation_of") for m in manifests),
-            restored=any(m.get("resume_adjusted") for m in manifests),
+            restored=bool(supervisor.get("restores")),
             over=self._over(result, supervisor),
         )
 

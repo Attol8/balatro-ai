@@ -17,6 +17,14 @@ class BalatroBotError(RuntimeError):
     """BalatroBot was unreachable or returned an invalid/error response."""
 
 
+class BalatroBotRejected(BalatroBotError):
+    """The mod answered with a JSON-RPC error: it validated the request and refused it.
+
+    Nothing was mutated, so the caller may treat this like an invalid action and
+    ask for another one. Transport failures never use this class.
+    """
+
+
 @dataclass(frozen=True, slots=True)
 class BalatroBotClient:
     host: str = "127.0.0.1"
@@ -49,7 +57,7 @@ class BalatroBotClient:
             message = (
                 error.get("message", "BalatroBot error") if isinstance(error, dict) else str(error)
             )
-            raise BalatroBotError(message)
+            raise BalatroBotRejected(message)
         if "result" not in response:
             raise BalatroBotError(f"BalatroBot response for {method} has no result")
         result = response["result"]

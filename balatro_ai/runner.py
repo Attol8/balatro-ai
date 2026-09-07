@@ -14,7 +14,7 @@ from itertools import islice
 from pathlib import Path
 
 from .analysis import analyze
-from .client import BalatroBotClient, BalatroBotError
+from .client import BalatroBotClient, BalatroBotError, BalatroBotRejected
 from .game.actions import (
     CashOut,
     PublicAction,
@@ -617,7 +617,11 @@ def run_game(
                     except ValueError as exc:
                         stopped = str(exc)
                         break
-                    state = perform(action, observation, state, "coach_followup")
+                    try:
+                        state = perform(action, observation, state, "coach_followup")
+                    except BalatroBotRejected as exc:
+                        stopped = f"the game refused {entry.describe()}: {exc}"
+                        break
                     executed += 1
                     result["followup_actions"] += 1
                 if stopped:
@@ -757,7 +761,25 @@ def run_game(
                 rejected = 0
                 validation_feedback = None
                 source = "coach"
-            state = perform(action, observation, state, source)
+            try:
+                state = perform(action, observation, state, source)
+            except BalatroBotRejected as exc:
+                # The game refused the action, so nothing changed. For a model choice
+                # that is a rejected reply: say why and ask again.
+                if source != "coach":
+                    raise
+                rejected += 1
+                validation_feedback = dict(
+                    error=f"the game refused the action: {exc}",
+                    rejected_response=response,
+                    instruction="No game action was executed. Choose a different legal action.",
+                )
+                record("coach_rejected", **validation_feedback)
+                if rejected >= 3:
+                    raise ValueError(
+                        "three consecutive coach actions were refused by the game"
+                    ) from exc
+                continue
             if followups:
                 state = run_chain(followups, state)
             if unchanged >= 3:

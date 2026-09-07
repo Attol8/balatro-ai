@@ -160,7 +160,9 @@ def wait_for_health(client_factory, sleep, seconds=HEALTH_WAIT_SECONDS) -> bool:
     return False
 
 
-def recover_game(client_factory, *, server_command, launcher, log_path, save_file, sleep, log):
+def recover_game(
+    client_factory, *, server_command, launcher, log_path, save_file, sleep, log, events=None
+):
     """Put the live game back where a resume can continue it.
 
     Returns the live state name, or ``None`` when the server stays unreachable.
@@ -185,6 +187,8 @@ def recover_game(client_factory, *, server_command, launcher, log_path, save_fil
             return state
         state = probe_state(client_factory)
         log(f"the restored game is at {state}")
+        if isinstance(events, dict):
+            events["restores"] = int(events.get("restores", 0)) + 1
     return state
 
 
@@ -272,6 +276,7 @@ def supervise(
         max_restarts=max_restarts,
         started_at=_now(),
         restarts=0,
+        restores=0,
         segments=[],
         stopped=False,
         stop_reason=None,
@@ -303,6 +308,7 @@ def supervise(
                 save_file=save_file,
                 sleep=sleep,
                 log=log,
+                events=state,
             )
             stop_reason = _unplayable(live)
         while stop_reason is None:
@@ -371,6 +377,7 @@ def supervise(
                 save_file=save_file,
                 sleep=sleep,
                 log=log,
+                events=state,
             )
             stop_reason = _unplayable(live)
             index += 1

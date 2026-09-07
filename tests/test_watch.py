@@ -276,7 +276,13 @@ def test_a_game_root_keeps_the_past_while_the_next_segment_starts(tmp_path):
     assert waiting["result"] is None  # a segment ending is not the game ending
     assert waiting["game"]["segments"] == 2
     assert waiting["game"]["segment"] == "segment-01"
-    assert waiting["game"]["resumed"] and waiting["game"]["restored"]
+    assert waiting["game"]["resumed"] and not waiting["game"]["restored"]
+    # Only a supervisor-recorded autosave restore earns the "restored" chip.
+    (root / "supervisor.json").write_text(
+        json.dumps({"status": "running", "restores": 1, "restarts": 1})
+    )
+    assert summarize(root)["game"]["restored"] is True
+    (root / "supervisor.json").unlink()
 
     _play(root / "segment-01", 2, 900)
     live = summarize(root)
