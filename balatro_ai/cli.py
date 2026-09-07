@@ -46,6 +46,12 @@ def main(argv=None):
     )
     inspect = sub.add_parser("inspect", help="read a result without running anything")
     inspect.add_argument("run", type=Path)
+    watch = sub.add_parser("watch", help="live dashboard for a run directory (no model calls)")
+    watch.add_argument("run", type=Path, help="run directory that balatro play is writing")
+    watch.add_argument(
+        "--host", default="127.0.0.1", help="interface to bind; local only by default"
+    )
+    watch.add_argument("--port", type=int, default=8765, help="port the dashboard listens on")
     next_cmd = sub.add_parser("next", help="read the outstanding public session request")
     next_cmd.add_argument("public", type=Path)
     reply = sub.add_parser("reply", help="submit a response JSON file to a session")
@@ -56,6 +62,10 @@ def main(argv=None):
         if args.command == "inspect":
             print((args.run / "result.json").read_text())
             return 0
+        if args.command == "watch":
+            from .watch import serve
+
+            return serve(args.run, args.host, args.port)
         if args.command in {"next", "reply"}:
             from .coach import read_request, write_response
 

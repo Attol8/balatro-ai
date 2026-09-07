@@ -1,0 +1,811 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>balatro-ai watch</title>
+<style>
+:root {
+  color-scheme: dark;
+  --plane: #0d0d0d;
+  --surface: #1a1a19;
+  --ink: #ffffff;
+  --ink-2: #c3c2b7;
+  --muted: #898781;
+  --grid: #2c2c2a;
+  --axis: #383835;
+  --border: rgba(255, 255, 255, 0.10);
+  --s1: #3987e5;   /* blind requirement, model actions */
+  --s2: #d95926;   /* best hand in blind */
+  --s3: #199e70;   /* follow-up actions */
+  --good: #0ca30c;
+  --warning: #fab219;
+  --serious: #ec835a;
+  --critical: #d03b3b;
+  --gap: 10px;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0;
+  height: 100vh;
+  overflow: hidden;
+  background: var(--plane);
+  color: var(--ink);
+  font: 14px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+#app {
+  height: 100%;
+  padding: var(--gap);
+  display: grid;
+  gap: var(--gap);
+  grid-template-rows: auto auto minmax(0, 1fr) auto auto;
+}
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  min-width: 0;
+  min-height: 0;
+}
+.panel h2 {
+  margin: 0 0 6px;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* Header ------------------------------------------------------------ */
+header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 8px 12px;
+}
+.brand { font-size: 15px; font-weight: 600; letter-spacing: 0.02em; }
+.run-name { font-size: 15px; color: var(--ink-2); }
+.note { font-size: 13px; color: var(--muted); }
+.spacer { flex: 1 1 auto; }
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  border: 1px solid var(--border);
+  color: var(--ink);
+}
+.pill .dot { width: 9px; height: 9px; border-radius: 50%; background: currentColor; }
+.pill[data-state="live"] { color: var(--good); }
+.pill[data-state="live"] .dot { animation: pulse 1.6s ease-in-out infinite; }
+.pill[data-state="won"] { color: var(--good); }
+.pill[data-state="lost"] { color: var(--critical); }
+.pill[data-state="stopped"], .pill[data-state="waiting"] { color: var(--muted); }
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.25; } }
+@media (prefers-reduced-motion: reduce) { .pill .dot { animation: none; } }
+.elapsed { font-size: 15px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+
+/* Stat tiles --------------------------------------------------------- */
+#tiles { display: grid; grid-template-columns: repeat(6, 1fr); gap: var(--gap); }
+.tile { display: flex; flex-direction: column; gap: 4px; }
+.tile .label {
+  font-size: 13px;
+  color: var(--muted);
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tile .value { font-size: 26px; font-weight: 600; line-height: 1.1; white-space: nowrap; }
+.tile .value .unit { font-size: 17px; font-weight: 500; color: var(--ink-2); }
+.tile .sub { font-size: 13px; color: var(--ink-2); overflow: hidden; }
+.meter {
+  height: 8px;
+  border-radius: 4px;
+  background: rgba(57, 135, 229, 0.22);
+  overflow: hidden;
+  margin-top: 2px;
+}
+.meter > span { display: block; height: 100%; background: var(--s1); border-radius: 4px; }
+.meter.done > span { background: var(--good); }
+.chips { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 13px; color: var(--ink-2); }
+.chips b { font-weight: 600; color: var(--ink); font-variant-numeric: tabular-nums; }
+.key { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 5px; }
+
+/* Middle ------------------------------------------------------------- */
+#middle { display: grid; grid-template-columns: minmax(0, 1fr) 366px; gap: var(--gap); min-height: 0; }
+#chart-panel { display: flex; flex-direction: column; min-height: 0; }
+.panel-head { display: flex; align-items: baseline; gap: 12px; }
+.panel-head h2 { flex: 0 0 auto; }
+.legend { display: flex; gap: 14px; font-size: 13px; color: var(--ink-2); flex: 1 1 auto; }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.legend i { display: inline-block; }
+.legend i.line { width: 16px; height: 2px; background: var(--s1); }
+.legend i.dot { width: 9px; height: 9px; border-radius: 50%; background: var(--s2); }
+button.toggle {
+  font: inherit;
+  font-size: 13px;
+  color: var(--ink-2);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 2px 10px;
+  cursor: pointer;
+}
+button.toggle:hover { color: var(--ink); border-color: var(--muted); }
+#plot-wrap { position: relative; flex: 1 1 auto; min-height: 0; }
+#plot { width: 100%; height: 100%; display: block; }
+#tip {
+  position: absolute;
+  pointer-events: none;
+  display: none;
+  background: #0d0d0d;
+  border: 1px solid var(--axis);
+  border-radius: 6px;
+  padding: 7px 9px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--ink-2);
+  white-space: nowrap;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.55);
+}
+#tip b { color: var(--ink); font-variant-numeric: tabular-nums; }
+#table-wrap { flex: 1 1 auto; overflow: auto; display: none; }
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+th, td { text-align: right; padding: 3px 8px; border-bottom: 1px solid var(--grid); font-variant-numeric: tabular-nums; }
+th { color: var(--muted); font-weight: 600; position: sticky; top: 0; background: var(--surface); }
+th:first-child, td:first-child, th:nth-child(2), td:nth-child(2) { text-align: left; font-variant-numeric: normal; }
+
+#side { display: grid; grid-template-rows: minmax(0, 1fr) auto; gap: var(--gap); min-height: 0; }
+#jokers-panel { display: flex; flex-direction: column; min-height: 0; }
+#jokers {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 6px;
+  align-content: start;
+  overflow: hidden;
+}
+.joker {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--s1);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.02);
+}
+.joker .name { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.joker .edition {
+  font-size: 13px;
+  color: var(--ink-2);
+  border: 1px solid var(--axis);
+  border-radius: 4px;
+  padding: 0 5px;
+  flex: 0 0 auto;
+}
+.joker.more { border-left-color: var(--muted); color: var(--muted); font-size: 13px; justify-content: center; }
+.joker .val { margin-left: auto; font-size: 13px; font-weight: 600; color: var(--ink); font-variant-numeric: tabular-nums; flex: 0 0 auto; }
+blockquote {
+  margin: 0;
+  padding: 6px 0 2px 10px;
+  border-left: 3px solid var(--s3);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--ink-2);
+  max-height: 62px;
+  overflow: hidden;
+}
+
+/* Bottom -------------------------------------------------------------- */
+#bottom { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: var(--gap); }
+#feed { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px; }
+.row {
+  display: grid;
+  grid-template-columns: 40px 74px 1fr 92px 104px 58px;
+  gap: 8px;
+  padding: 1px 0;
+  line-height: 1.3;
+  white-space: nowrap;
+  color: var(--ink-2);
+}
+.row .phase { overflow: hidden; text-overflow: ellipsis; }
+.row .num { text-align: right; font-variant-numeric: tabular-nums; }
+.row .src { display: inline-flex; align-items: center; gap: 6px; }
+.row .src i { width: 8px; height: 8px; border-radius: 2px; flex: 0 0 auto; }
+.row[data-src="coach"] i { background: var(--s1); }
+.row[data-src="coach_followup"] i { background: var(--s3); }
+.row[data-src="forced"] i { background: var(--warning); }
+.row[data-src="automatic"] i { background: var(--muted); }
+.row .act { color: var(--ink); overflow: hidden; text-overflow: ellipsis; }
+#spark-panel { display: flex; flex-direction: column; }
+#spark { width: 100%; height: 62px; display: block; flex: 0 0 auto; }
+footer { font-size: 13px; color: var(--muted); text-align: right; padding: 0 4px 2px; }
+.empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--muted);
+  font-size: 15px;
+}
+
+/* Narrow: a ~630px recording window beside the game --------------------- */
+@media (max-width: 800px) {
+  body { height: auto; min-height: 100vh; overflow-y: auto; overflow-x: hidden; }
+  #app { height: auto; min-height: 100vh; grid-template-rows: none; }
+  header { flex-wrap: wrap; row-gap: 4px; }
+  #tiles { grid-template-columns: repeat(2, 1fr); }
+  #middle, #bottom { grid-template-columns: minmax(0, 1fr); }
+  #plot-wrap { height: 300px; flex: 0 0 auto; }
+  #table-wrap { max-height: 300px; }
+  .joker .effect { display: none; }
+  blockquote { max-height: none; }
+  .row { grid-template-columns: 40px 1fr 84px 92px 56px; }
+  .row .phase { display: none; }
+}
+</style>
+</head>
+<body>
+<div id="app">
+  <header class="panel">
+    <span class="brand">balatro-ai</span>
+    <span class="run-name" id="run">&mdash;</span>
+    <span class="note">seed withheld from the model</span>
+    <span class="spacer"></span>
+    <span class="pill" id="status" data-state="waiting"><span class="dot"></span><span id="status-text">WAITING</span></span>
+    <span class="elapsed" id="elapsed">0:00</span>
+  </header>
+
+  <section id="tiles">
+    <div class="panel tile">
+      <span class="label">Ante</span>
+      <span class="value" id="t-ante">&mdash;</span>
+      <span class="sub" id="t-phase">&nbsp;</span>
+    </div>
+    <div class="panel tile">
+      <span class="label" id="t-blind-label">Blind requirement</span>
+      <span class="value" id="t-chips">&mdash;</span>
+      <div class="meter" id="t-meter"><span style="width:0%"></span></div>
+      <span class="sub" id="t-blind-sub">&nbsp;</span>
+    </div>
+    <div class="panel tile">
+      <span class="label">Money</span>
+      <span class="value" id="t-money">&mdash;</span>
+      <span class="sub" id="t-hands">&nbsp;</span>
+    </div>
+    <div class="panel tile">
+      <span class="label">Peak hand</span>
+      <span class="value" id="t-peak">&mdash;</span>
+      <span class="sub" id="t-peak-sub">&nbsp;</span>
+    </div>
+    <div class="panel tile">
+      <span class="label">Model calls / decisions</span>
+      <span class="value" id="t-calls">&mdash;</span>
+      <span class="sub" id="t-calls-sub">&nbsp;</span>
+    </div>
+    <div class="panel tile">
+      <span class="label">Hedges won</span>
+      <span class="value" id="t-hedges">&mdash;</span>
+      <div class="chips">
+        <span><i class="key" style="background:var(--warning)"></i>timeouts <b id="t-timeouts">0</b></span>
+        <span><i class="key" style="background:var(--serious)"></i>rejected <b id="t-rejected">0</b></span>
+        <span><i class="key" style="background:var(--muted)"></i>forced <b id="t-forced">0</b></span>
+      </div>
+    </div>
+  </section>
+
+  <section id="middle">
+    <div class="panel" id="chart-panel">
+      <div class="panel-head">
+        <h2>Blind requirement vs best hand</h2>
+        <div class="legend">
+          <span><i class="line"></i>Requirement</span>
+          <span><i class="dot"></i>Best hand in blind</span>
+        </div>
+        <button class="toggle" id="view-toggle" type="button">Table</button>
+      </div>
+      <div id="plot-wrap">
+        <canvas id="plot"></canvas>
+        <div id="tip"></div>
+      </div>
+      <div id="table-wrap">
+        <table id="blind-table">
+          <thead><tr><th>Blind</th><th>Kind</th><th>Ante</th><th>Requirement</th><th>Best hand</th><th>Round chips</th><th>Cleared</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+    <div id="side">
+      <div class="panel" id="jokers-panel">
+        <h2>Joker board</h2>
+        <div id="jokers"></div>
+      </div>
+      <div class="panel">
+        <h2>Model plan</h2>
+        <blockquote id="plan">waiting for the first reply</blockquote>
+      </div>
+    </div>
+  </section>
+
+  <section id="bottom">
+    <div class="panel">
+      <div class="panel-head">
+        <h2>Action feed</h2>
+        <div class="legend">
+          <span><i class="key" style="background:var(--s1)"></i>model</span>
+          <span><i class="key" style="background:var(--s3)"></i>follow-up</span>
+          <span><i class="key" style="background:var(--warning)"></i>forced</span>
+          <span><i class="key" style="background:var(--muted)"></i>automatic</span>
+        </div>
+      </div>
+      <div id="feed"></div>
+    </div>
+    <div class="panel" id="spark-panel">
+      <h2>Model latency</h2>
+      <canvas id="spark"></canvas>
+      <div class="chips" style="margin-top:6px">
+        <span>median <b id="l-median">&mdash;</b>s</span>
+        <span>p90 <b id="l-p90">&mdash;</b>s</span>
+        <span>last <b id="l-last">&mdash;</b>s</span>
+      </div>
+    </div>
+  </section>
+
+  <footer>balatro-ai &middot; watch</footer>
+</div>
+
+<script>
+// ?zoom=0.85 scales the page for narrow recording windows.
+const zoomParam = new URLSearchParams(location.search).get("zoom");
+if (zoomParam && Number(zoomParam) > 0) document.body.style.zoom = zoomParam;
+"use strict";
+var state = null;
+var showTable = false;
+var hover = -1;
+
+function full(n) {
+  return (n === null || n === undefined) ? "" : Number(n).toLocaleString("en-US");
+}
+function fmt(n) {
+  if (n === null || n === undefined || isNaN(n)) return "—";
+  var a = Math.abs(n);
+  if (a >= 1e12) return trim(n / 1e12) + "T";
+  if (a >= 1e9) return trim(n / 1e9) + "B";
+  if (a >= 1e6) return trim(n / 1e6) + "M";
+  return Number(n).toLocaleString("en-US");
+}
+function trim(v) {
+  return v.toFixed(2).replace(/\.?0+$/, "");
+}
+function setNum(id, value, text) {
+  var el = document.getElementById(id);
+  el.textContent = text === undefined ? fmt(value) : text;
+  el.title = full(value);
+}
+function clock(seconds) {
+  var s = Math.max(0, Math.round(seconds || 0));
+  var h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60);
+  var pad = function (v) { return (v < 10 ? "0" : "") + v; };
+  return h > 0 ? h + ":" + pad(m) + ":" + pad(s % 60) : m + ":" + pad(s % 60);
+}
+function words(text) {
+  return String(text || "").replace(/_/g, " ");
+}
+var PHASES = {
+  SELECTING_HAND: "hand", SHOP: "shop", BLIND_SELECT: "blind",
+  PACK: "pack", ROUND_EVAL: "cash out", GAME_OVER: "game over"
+};
+function money(n) {
+  return (n < 0 ? "-$" : "$") + fmt(Math.abs(n));
+}
+
+/* Header + tiles ------------------------------------------------------- */
+function renderHead(d) {
+  document.getElementById("run").textContent = d.run;
+  document.getElementById("elapsed").textContent = clock(d.elapsed_seconds);
+  var pill = document.getElementById("status"), label = "WAITING", key = "waiting";
+  if (d.status === "live") { label = "LIVE"; key = "live"; }
+  else if (d.status === "finished" && d.result) {
+    if (d.result.status === "won") { label = "WON"; key = "won"; }
+    else if (d.result.status === "lost") { label = "LOST"; key = "lost"; }
+    else { label = "STOPPED"; key = "stopped"; }
+  }
+  pill.dataset.state = key;
+  document.getElementById("status-text").textContent = label;
+  var why = d.result && d.result.reason ? words(d.result.reason) : label.toLowerCase();
+  if (d.result && d.result.ante_8_cleared) why += " · ante 8 cleared";
+  pill.title = why;
+}
+
+function renderTiles(d) {
+  setNum("t-ante", d.ante, d.ante === null || d.ante === undefined ? "—" : String(d.ante));
+  document.getElementById("t-phase").textContent = words(d.phase || "");
+  var blind = d.blind;
+  if (blind) {
+    var pct = blind.requirement > 0 ? Math.min(100, 100 * blind.chips / blind.requirement) : 0;
+    document.getElementById("t-blind-label").textContent =
+      words(blind.kind || "blind").toLowerCase() + " — " + (blind.name || "blind");
+    setNum("t-chips", blind.chips, fmt(blind.chips));
+    document.getElementById("t-blind-sub").textContent = "of " + fmt(blind.requirement) + " required";
+    document.getElementById("t-blind-sub").title = full(blind.requirement);
+    var meter = document.getElementById("t-meter");
+    meter.className = "meter" + (pct >= 100 ? " done" : "");
+    meter.firstElementChild.style.width = pct.toFixed(1) + "%";
+    document.getElementById("t-hands").textContent =
+      blind.hands_left + " hands · " + blind.discards_left + " discards left";
+  } else {
+    setNum("t-chips", null, "—");
+    document.getElementById("t-blind-sub").textContent = "no blind in play";
+    document.getElementById("t-hands").textContent = " ";
+  }
+  setNum("t-money", d.money, money(d.money));
+  setNum("t-peak", d.peak_hand, fmt(d.peak_hand));
+  document.getElementById("t-peak-sub").textContent = "chips in one hand";
+  var c = d.counters;
+  setNum("t-calls", c.coach_calls, fmt(c.coach_calls) + " / " + fmt(c.decisions));
+  document.getElementById("t-calls-sub").textContent =
+    c.calls_per_decision + " calls per decision · " + fmt(c.followups) + " follow-ups";
+  setNum("t-hedges", c.hedges_won, fmt(c.hedges_won));
+  document.getElementById("t-timeouts").textContent = fmt(c.timeouts);
+  document.getElementById("t-rejected").textContent = fmt(c.rejections);
+  document.getElementById("t-forced").textContent = fmt(c.forced);
+}
+
+/* Joker board, plan, feed ---------------------------------------------- */
+function renderSide(d) {
+  var box = document.getElementById("jokers");
+  box.textContent = "";
+  if (!d.jokers.length) {
+    var none = document.createElement("div");
+    none.className = "note";
+    none.textContent = "no jokers on board";
+    box.appendChild(none);
+  }
+  d.jokers.forEach(function (j) {
+    var card = document.createElement("div");
+    card.className = "joker";
+    card.title = j.effect || "";
+    var name = document.createElement("span");
+    name.className = "name";
+    name.textContent = j.label || "?";
+    card.appendChild(name);
+    if (j.edition) {
+      var ed = document.createElement("span");
+      ed.className = "edition";
+      ed.textContent = String(j.edition).toLowerCase();
+      card.appendChild(ed);
+    }
+    if (j.value) {
+      var val = document.createElement("span");
+      val.className = "val";
+      val.textContent = j.value;
+      card.appendChild(val);
+    }
+    box.appendChild(card);
+  });
+  var hidden = 0;
+  while (box.scrollHeight > box.clientHeight && box.lastElementChild) {
+    box.removeChild(box.lastElementChild);
+    hidden += 1;
+  }
+  if (hidden) {
+    var more = document.createElement("div");
+    more.className = "joker more";
+    more.textContent = "+" + (hidden + 1) + " more";
+    box.removeChild(box.lastElementChild);
+    box.appendChild(more);
+  }
+  document.getElementById("plan").textContent = d.plan || "waiting for the first reply";
+}
+
+function renderFeed(d) {
+  var box = document.getElementById("feed");
+  var limit = window.innerWidth < 800 ? 8 : 12;
+  box.textContent = "";
+  d.feed.slice(0, limit).forEach(function (row) {
+    var el = document.createElement("div");
+    el.className = "row";
+    el.dataset.src = row.source;
+    var cells = [
+      ["num", "A" + (row.ante === null ? "?" : row.ante)],
+      ["phase", PHASES[row.phase] || words(row.phase || "").toLowerCase()],
+      ["act", words(row.action)],
+      ["src", null],
+      ["num chips", row.chips ? "+" + fmt(row.chips) : ""],
+      ["num", money(row.money)]
+    ];
+    cells.forEach(function (pair) {
+      var cell = document.createElement("span");
+      cell.className = pair[0];
+      if (pair[0] === "src") {
+        var key = document.createElement("i");
+        cell.appendChild(key);
+        cell.appendChild(document.createTextNode(
+          row.source === "coach" ? "model"
+            : row.source === "coach_followup" ? "follow-up"
+              : words(row.source)));
+      } else {
+        cell.textContent = pair[1];
+      }
+      if (pair[0] === "num chips" && row.chips) cell.title = full(row.chips);
+      el.appendChild(cell);
+    });
+    box.appendChild(el);
+  });
+}
+
+/* Charts ---------------------------------------------------------------- */
+function surface(canvas) {
+  var ratio = window.devicePixelRatio || 1;
+  var w = canvas.clientWidth, h = canvas.clientHeight;
+  canvas.width = Math.max(1, Math.round(w * ratio));
+  canvas.height = Math.max(1, Math.round(h * ratio));
+  var ctx = canvas.getContext("2d");
+  ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+  ctx.clearRect(0, 0, w, h);
+  return { ctx: ctx, w: w, h: h };
+}
+function css(name) {
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+}
+
+var plotGeom = null;
+
+function renderPlot(d) {
+  var canvas = document.getElementById("plot");
+  var s = surface(canvas), ctx = s.ctx;
+  var blinds = d.blinds || [];
+  if (!blinds.length) {
+    ctx.fillStyle = css("--muted");
+    ctx.font = "15px system-ui, sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText(d.status === "waiting" ? "waiting for the run to start" : "no blind played yet",
+      s.w / 2, s.h / 2);
+    plotGeom = null;
+    return;
+  }
+  var pad = { l: 56, r: 18, t: 14, b: 26 };
+  var pw = Math.max(10, s.w - pad.l - pad.r), ph = Math.max(10, s.h - pad.t - pad.b);
+  var values = [];
+  blinds.forEach(function (b) {
+    if (b.requirement > 0) values.push(b.requirement);
+    if (b.best_hand > 0) values.push(b.best_hand);
+  });
+  if (!values.length) values = [1];
+  var lo = Math.max(1, Math.min.apply(null, values)), hi = Math.max.apply(null, values);
+  var e0 = Math.floor(Math.log10(lo)), e1 = Math.ceil(Math.log10(hi));
+  if (e1 <= e0) e1 = e0 + 1;
+  var x = function (i) {
+    return pad.l + (blinds.length === 1 ? pw / 2 : pw * i / (blinds.length - 1));
+  };
+  var y = function (v) {
+    var t = (Math.log10(Math.max(1, v)) - e0) / (e1 - e0);
+    return pad.t + ph * (1 - Math.min(1, Math.max(0, t)));
+  };
+  plotGeom = { x: x, blinds: blinds, pad: pad, w: s.w, h: s.h };
+
+  // Gridlines: one solid hairline per decade.
+  ctx.font = "13px system-ui, sans-serif";
+  ctx.textBaseline = "middle";
+  for (var e = e0; e <= e1; e++) {
+    var gy = Math.round(y(Math.pow(10, e))) + 0.5;
+    ctx.strokeStyle = css("--grid");
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(pad.l, gy);
+    ctx.lineTo(s.w - pad.r, gy);
+    ctx.stroke();
+    ctx.fillStyle = css("--muted");
+    ctx.textAlign = "right";
+    ctx.fillText(fmt(Math.pow(10, e)), pad.l - 8, gy);
+  }
+
+  // Highlight band behind the blind in play, and the Ante 8 marker.
+  var current = blinds.length - 1;
+  ctx.fillStyle = "rgba(255,255,255,0.05)";
+  var half = blinds.length > 1 ? pw / (blinds.length - 1) / 2 : pw / 2;
+  var bandLeft = Math.max(pad.l, x(current) - half);
+  ctx.fillRect(bandLeft, pad.t, Math.min(pad.l + pw, x(current) + half) - bandLeft, ph);
+  var ante8 = -1;
+  for (var i = 0; i < blinds.length; i++) { if (blinds[i].ante === 8) { ante8 = i; break; } }
+  if (ante8 >= 0) {
+    var ax = Math.round(x(ante8)) + 0.5;
+    ctx.strokeStyle = css("--axis");
+    ctx.beginPath();
+    ctx.moveTo(ax, pad.t);
+    ctx.lineTo(ax, pad.t + ph);
+    ctx.stroke();
+    ctx.fillStyle = css("--ink-2");
+    ctx.textAlign = "left";
+    ctx.fillText("Ante 8", ax + 5, pad.t + 8);
+  }
+
+  // Requirement: a step line, because a blind's target holds for its whole round.
+  ctx.strokeStyle = css("--s1");
+  ctx.lineWidth = 2;
+  ctx.lineJoin = "round";
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  blinds.forEach(function (b, i) {
+    var px = x(i), py = y(b.requirement);
+    if (i === 0) { ctx.moveTo(px, py); } else { ctx.lineTo(px, py); }
+    if (i < blinds.length - 1) ctx.lineTo(x(i + 1), py);
+  });
+  ctx.stroke();
+
+  // Best hand per blind: dots with a surface ring so they stay legible.
+  var peakIndex = 0;
+  blinds.forEach(function (b, i) { if (b.best_hand > blinds[peakIndex].best_hand) peakIndex = i; });
+  blinds.forEach(function (b, i) {
+    if (!(b.best_hand > 0)) return;
+    var px = x(i), py = y(b.best_hand);
+    ctx.beginPath();
+    ctx.arc(px, py, 4.5, 0, Math.PI * 2);
+    ctx.fillStyle = css("--s2");
+    ctx.fill();
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = css("--surface");
+    ctx.stroke();
+  });
+
+  // Selective direct labels: the target in play and the biggest hand so far.
+  ctx.fillStyle = css("--ink");
+  ctx.font = "600 13px system-ui, sans-serif";
+  ctx.textAlign = "right";
+  ctx.fillText(fmt(blinds[current].requirement), x(current) - 6, y(blinds[current].requirement) - 10);
+  if (blinds[peakIndex].best_hand > 0) {
+    ctx.fillStyle = css("--ink-2");
+    ctx.textAlign = peakIndex > blinds.length / 2 ? "right" : "left";
+    ctx.fillText(fmt(blinds[peakIndex].best_hand),
+      x(peakIndex) + (peakIndex > blinds.length / 2 ? -8 : 8), y(blinds[peakIndex].best_hand) + 16);
+  }
+
+  // X axis: one label per ante.
+  ctx.strokeStyle = css("--axis");
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(pad.l, Math.round(pad.t + ph) + 0.5);
+  ctx.lineTo(s.w - pad.r, Math.round(pad.t + ph) + 0.5);
+  ctx.stroke();
+  ctx.fillStyle = css("--muted");
+  ctx.font = "13px system-ui, sans-serif";
+  ctx.textAlign = "center";
+  var seen = null;
+  blinds.forEach(function (b, i) {
+    if (b.ante === seen) return;
+    seen = b.ante;
+    ctx.fillText("A" + b.ante, x(i), pad.t + ph + 13);
+  });
+
+  if (hover >= 0 && hover < blinds.length) showTip(blinds[hover], x(hover), y(blinds[hover].requirement));
+}
+
+function showTip(b, px, py) {
+  var tip = document.getElementById("tip");
+  tip.innerHTML = "Ante " + b.ante + " · " + words(b.kind).toLowerCase() + " — " + (b.name || "") +
+    "<br>requirement <b>" + full(b.requirement) + "</b>" +
+    "<br>best hand <b>" + full(b.best_hand) + "</b>" +
+    "<br>round chips <b>" + full(b.chips) + "</b>" +
+    "<br>" + (b.cleared ? "cleared" : "not cleared");
+  tip.style.display = "block";
+  var wrap = document.getElementById("plot-wrap");
+  var left = Math.min(Math.max(4, px + 12), wrap.clientWidth - tip.offsetWidth - 4);
+  tip.style.left = left + "px";
+  tip.style.top = Math.min(Math.max(4, py - 10), wrap.clientHeight - tip.offsetHeight - 4) + "px";
+}
+
+function renderTable(d) {
+  var body = document.querySelector("#blind-table tbody");
+  body.textContent = "";
+  (d.blinds || []).forEach(function (b) {
+    var tr = document.createElement("tr");
+    [String(b.index + 1), words(b.kind).toLowerCase() + " — " + (b.name || ""), b.ante,
+      full(b.requirement), full(b.best_hand), full(b.chips), b.cleared ? "yes" : "no"
+    ].forEach(function (value) {
+      var td = document.createElement("td");
+      td.textContent = value;
+      tr.appendChild(td);
+    });
+    body.appendChild(tr);
+  });
+}
+
+function renderSpark(d) {
+  var canvas = document.getElementById("spark");
+  var s = surface(canvas), ctx = s.ctx;
+  var series = (d.latency && d.latency.recent) || [];
+  document.getElementById("l-median").textContent = d.latency.median === null ? "—" : d.latency.median.toFixed(1);
+  document.getElementById("l-p90").textContent = d.latency.p90 === null ? "—" : d.latency.p90.toFixed(1);
+  document.getElementById("l-last").textContent = d.latency.last === null ? "—" : d.latency.last.toFixed(1);
+  if (series.length < 2) {
+    ctx.fillStyle = css("--muted");
+    ctx.font = "13px system-ui, sans-serif";
+    ctx.fillText("no replies yet", 2, s.h / 2);
+    return;
+  }
+  var hi = Math.max.apply(null, series), pad = 6;
+  var x = function (i) { return pad + (s.w - 2 * pad) * i / (series.length - 1); };
+  var y = function (v) { return s.h - pad - (s.h - 2 * pad) * (v / (hi || 1)); };
+  if (d.latency.median !== null) {
+    ctx.strokeStyle = css("--grid");
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(pad, Math.round(y(d.latency.median)) + 0.5);
+    ctx.lineTo(s.w - pad, Math.round(y(d.latency.median)) + 0.5);
+    ctx.stroke();
+  }
+  ctx.strokeStyle = css("--muted");
+  ctx.lineWidth = 2;
+  ctx.lineJoin = "round";
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  series.forEach(function (v, i) { i ? ctx.lineTo(x(i), y(v)) : ctx.moveTo(x(i), y(v)); });
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(x(series.length - 1), y(series[series.length - 1]), 4, 0, Math.PI * 2);
+  ctx.fillStyle = css("--s1");
+  ctx.fill();
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = css("--surface");
+  ctx.stroke();
+}
+
+function render() {
+  if (!state) return;
+  renderHead(state);
+  renderTiles(state);
+  renderSide(state);
+  renderFeed(state);
+  renderPlot(state);
+  renderTable(state);
+  renderSpark(state);
+}
+
+/* Wiring ---------------------------------------------------------------- */
+document.getElementById("view-toggle").addEventListener("click", function () {
+  showTable = !showTable;
+  document.getElementById("plot-wrap").style.display = showTable ? "none" : "block";
+  document.getElementById("table-wrap").style.display = showTable ? "block" : "none";
+  this.textContent = showTable ? "Chart" : "Table";
+  if (!showTable) render();
+});
+
+var plotWrap = document.getElementById("plot-wrap");
+plotWrap.addEventListener("mousemove", function (event) {
+  if (!plotGeom) return;
+  var rect = plotWrap.getBoundingClientRect(), mx = event.clientX - rect.left;
+  var best = -1, bestDistance = 32;
+  plotGeom.blinds.forEach(function (_, i) {
+    var distance = Math.abs(plotGeom.x(i) - mx);
+    if (distance < bestDistance) { bestDistance = distance; best = i; }
+  });
+  if (best !== hover) { hover = best; render(); }
+  if (best < 0) document.getElementById("tip").style.display = "none";
+});
+plotWrap.addEventListener("mouseleave", function () {
+  hover = -1;
+  document.getElementById("tip").style.display = "none";
+  render();
+});
+window.addEventListener("resize", render);
+
+function poll() {
+  fetch("api/state", { cache: "no-store" })
+    .then(function (response) { return response.json(); })
+    .then(function (data) { state = data; render(); })
+    .catch(function () { /* hold the last render rather than flashing */ });
+}
+poll();
+setInterval(poll, 2000);
+</script>
+</body>
+</html>
