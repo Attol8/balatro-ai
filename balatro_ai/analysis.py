@@ -21,6 +21,7 @@ from balatro_ai.game.scoring import (
     _prepare_score_context,
     _score_play_prepared,
     _scoring_cards,
+    unmodelled_scoring_jokers,
 )
 from balatro_ai.game.state import (
     HiddenHandCard,
@@ -37,6 +38,11 @@ _MAX_STRATEGIC_ACTIONS = 24
 _MAX_REORDER_SUGGESTIONS = 4
 _FACE_RANKS = frozenset({"J", "Q", "K"})
 _BLACK_SUITS = frozenset({"S", "C"})
+# Vanilla raises the interest cap by voucher: $25 held earns the base $5, Seed
+# Money lifts that to $50 held for $10, and Money Tree to $100 held for $20.
+_INTEREST_CAP_MONEY = {"v_seed_money": 50, "v_money_tree": 100}
+_BASE_INTEREST_CAP_MONEY = 25
+_INTEREST_STEP = 5
 _COPY_ENGINE_KEYS = frozenset(
     {
         "j_card_sharp",
@@ -69,6 +75,8 @@ def analyze(observation: PublicObservation) -> dict[str, object]:
         "strategic_actions_omitted": omitted,
         "shortlist_is_not_allowlist": True,
         "mechanism_reminders": _mechanism_reminders(observation),
+        "unmodelled_jokers": _unmodelled_joker_rows(observation),
+        "economy": _economy(observation),
     }
     examples = retrieve_examples(observation)
     if examples:
@@ -86,6 +94,42 @@ def analyze(observation: PublicObservation) -> dict[str, object]:
             "Discards require model choice; no discard outcome search is available."
         )
     return result
+
+
+def _unmodelled_joker_rows(observation: PublicObservation) -> list[dict[str, object]]:
+    """Name every active Joker the public scorer does not model."""
+
+    return [
+        {"key": joker.key, "label": joker.label, "effect_text": joker.effect_text}
+        for joker in unmodelled_scoring_jokers(observation)
+    ]
+
+
+def _economy(observation: PublicObservation) -> dict[str, object]:
+    """Preview cashout interest from public money, vouchers and Jokers."""
+
+    cap_money = max(
+        [_BASE_INTEREST_CAP_MONEY]
+        + [
+            amount
+            for voucher, amount in _INTEREST_CAP_MONEY.items()
+            if voucher in observation.used_vouchers
+        ]
+    )
+    # Vanilla pays interest_amount per $5 held; each To the Moon adds one.
+    per_step = 1 + sum(
+        isinstance(joker, PublicItem) and joker.key == "j_to_the_moon"
+        for joker in observation.jokers
+    )
+    steps = max(0, observation.money) // _INTEREST_STEP
+    cap_steps = cap_money // _INTEREST_STEP
+    return {
+        "money": observation.money,
+        "interest_at_cashout": per_step * min(steps, cap_steps),
+        "interest_cap": per_step * cap_steps,
+        "next_interest_threshold": (None if steps >= cap_steps else (steps + 1) * _INTEREST_STEP),
+        "reroll_cost": observation.round.reroll_cost,
+    }
 
 
 def _play_advice(
@@ -337,6 +381,10 @@ def _score_approximation(observation: PublicObservation) -> str:
         notes.append(
             "Ride the Bus with Pareidolia or Splash follows the retained scorer; treat reset safety as uncertain."
         )
+    unmodelled = unmodelled_scoring_jokers(observation)
+    if unmodelled:
+        names = ", ".join(sorted({joker.label or joker.key for joker in unmodelled}))
+        notes.append(f"Scores omit {names}: no scoring rule.")
     return " ".join(notes)
 
 

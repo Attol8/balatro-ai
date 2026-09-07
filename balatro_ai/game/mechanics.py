@@ -293,6 +293,12 @@ def planet_hand(key: str) -> str | None:
     return _PLANET_HANDS.get(key)
 
 
+def known_joker_keys() -> frozenset[str]:
+    """Return every vanilla Joker key the boundary recognizes."""
+
+    return _KNOWN_JOKER_KEYS
+
+
 def joker_rarity(key: str) -> int:
     """Return vanilla Joker rarity, or zero for an unknown key."""
 

@@ -212,3 +212,99 @@ def test_negative_mime_does_not_require_a_sale_with_full_slots() -> None:
         row for row in analyze(observation)["engine_opportunities"] if row["key"] == "j_mime"
     )
     assert "capacity" not in mime
+
+
+def test_modelled_board_reports_no_unmodelled_jokers() -> None:
+    observation = replace(
+        _selecting_hand(),
+        hand=(VisiblePlayingCard("A", "S"),),
+        hand_stats=(HandStat("High Card", 1, 5, 1, 0, 0),),
+        jokers=(
+            PublicItem("j_steel_joker", "Steel Joker", "JOKER"),
+            PublicItem("j_golden", "Golden Joker", "JOKER"),
+        ),
+    )
+
+    result = analyze(observation)
+    assert result["unmodelled_jokers"] == []
+    assert "no scoring rule" not in result["play_candidates"][0]["approximation"]
+
+
+def test_an_unclassified_joker_is_named_in_the_output_and_the_approximation() -> None:
+    observation = replace(
+        _selecting_hand(),
+        hand=(VisiblePlayingCard("A", "S"),),
+        hand_stats=(HandStat("High Card", 1, 5, 1, 0, 0),),
+        jokers=(
+            PublicItem(
+                "j_not_a_vanilla_key",
+                "Modded Joker",
+                "JOKER",
+                effect_text="Does something unmodelled",
+            ),
+        ),
+    )
+
+    result = analyze(observation)
+    assert result["unmodelled_jokers"] == [
+        {
+            "key": "j_not_a_vanilla_key",
+            "label": "Modded Joker",
+            "effect_text": "Does something unmodelled",
+        }
+    ]
+    assert (
+        "Scores omit Modded Joker: no scoring rule."
+        in (result["play_candidates"][0]["approximation"])
+    )
+
+
+def test_interest_preview_uses_the_base_cap_without_a_voucher() -> None:
+    observation = replace(_selecting_hand(), money=17)
+
+    assert analyze(observation)["economy"] == {
+        "money": 17,
+        "interest_at_cashout": 3,
+        "interest_cap": 5,
+        "next_interest_threshold": 20,
+        "reroll_cost": 5,
+    }
+
+
+def test_interest_preview_reports_the_cap_is_reached() -> None:
+    observation = replace(_selecting_hand(), money=40)
+
+    economy = analyze(observation)["economy"]
+    assert economy["interest_at_cashout"] == 5
+    assert economy["next_interest_threshold"] is None
+
+
+def test_seed_money_and_money_tree_raise_the_public_interest_cap() -> None:
+    base = replace(_selecting_hand(), money=60)
+
+    seeded = analyze(replace(base, used_vouchers=("v_seed_money",)))["economy"]
+    assert (seeded["interest_cap"], seeded["interest_at_cashout"]) == (10, 10)
+    assert seeded["next_interest_threshold"] is None
+
+    tree = analyze(replace(base, used_vouchers=("v_seed_money", "v_money_tree")))["economy"]
+    assert (tree["interest_cap"], tree["interest_at_cashout"]) == (20, 12)
+    assert tree["next_interest_threshold"] == 65
+
+
+def test_to_the_moon_doubles_the_previewed_interest() -> None:
+    observation = replace(
+        _selecting_hand(),
+        money=17,
+        jokers=(PublicItem("j_to_the_moon", "To the Moon", "JOKER"),),
+    )
+
+    economy = analyze(observation)["economy"]
+    assert (economy["interest_at_cashout"], economy["interest_cap"]) == (6, 10)
+
+
+def test_negative_money_previews_no_interest() -> None:
+    observation = replace(_selecting_hand(), money=-3)
+
+    economy = analyze(observation)["economy"]
+    assert (economy["money"], economy["interest_at_cashout"]) == (-3, 0)
+    assert economy["next_interest_threshold"] == 5

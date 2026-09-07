@@ -85,40 +85,70 @@ _FIBONACCI_RANKS = {"A", "2", "3", "5", "8"}
 _THREE_HALVES = Fraction(3, 2)
 _FIVE_FOURTHS = Fraction(5, 4)
 _COPY_JOKERS = frozenset({"j_blueprint", "j_brainstorm"})
-# Installed vanilla game.lua marks these targets blueprint_compat=true. Their
-# current main-scoring effects are already modeled below; copying delegates to
-# that same public runtime, never to the target's edition or growth mutation.
+# Jokers whose whole main contribution is the tooltip-visible counter. Copying
+# delegates to that same public runtime, never to the target's edition or
+# growth mutation, so a copy without that public value has nothing to apply.
 _COPY_MAIN_RUNTIME_FIELDS = {
-    "j_popcorn": "current_mult",
-    "j_ice_cream": "current_chips",
-    "j_throwback": "current_x_mult",
+    "j_caino": "current_x_mult",
+    "j_campfire": "current_x_mult",
+    "j_castle": "current_chips",
+    "j_ceremonial": "current_mult",
     "j_constellation": "current_x_mult",
+    "j_flash": "current_mult",
+    "j_fortune_teller": "current_mult",
+    "j_glass": "current_x_mult",
+    "j_hit_the_road": "current_x_mult",
     "j_hologram": "current_x_mult",
+    "j_ice_cream": "current_chips",
+    "j_lucky_cat": "current_x_mult",
+    "j_madness": "current_x_mult",
+    "j_obelisk": "current_x_mult",
+    "j_popcorn": "current_mult",
+    "j_red_card": "current_mult",
+    "j_throwback": "current_x_mult",
+    "j_vampire": "current_x_mult",
+    "j_yorick": "current_x_mult",
 }
-_COPY_MAIN_JOKERS = frozenset(
+# Every key whose chips/Mult/xMult contribution comes from the Joker-main pass.
+_MAIN_EFFECT_JOKERS = frozenset(
     {
-        "j_joker",
-        "j_half",
         "j_abstract",
         "j_acrobat",
-        "j_mystic_summit",
         "j_banner",
-        "j_supernova",
+        "j_blackboard",
         "j_blue_joker",
-        "j_bull",
-        "j_stuntman",
-        "j_gros_michel",
-        "j_cavendish",
-        "j_card_sharp",
         "j_bootstraps",
+        "j_bull",
+        "j_card_sharp",
+        "j_cavendish",
+        "j_drivers_license",
         "j_erosion",
+        "j_flower_pot",
         "j_green_joker",
+        "j_gros_michel",
+        "j_half",
+        "j_joker",
+        "j_loyalty_card",
+        "j_misprint",
+        "j_mystic_summit",
+        "j_ramen",
+        "j_ride_the_bus",
+        "j_runner",
+        "j_seeing_double",
+        "j_square",
+        "j_steel_joker",
+        "j_stencil",
+        "j_stone",
+        "j_stuntman",
+        "j_supernova",
+        "j_swashbuckler",
+        "j_trousers",
+        "j_wee",
     }
     | frozenset(_TYPE_MULT_JOKERS)
     | frozenset(_TYPE_CHIP_JOKERS)
     | frozenset(_TYPE_XMULT_JOKERS)
     | frozenset(_COPY_MAIN_RUNTIME_FIELDS)
-    | {"j_blackboard"}
 )
 _PLAYED_INDIVIDUAL_ADDITIVE_JOKERS = frozenset(
     {
@@ -135,17 +165,105 @@ _PLAYED_INDIVIDUAL_ADDITIVE_JOKERS = frozenset(
     | frozenset(_SUIT_MULT_JOKERS)
 )
 _PLAYED_INDIVIDUAL_XMULT_JOKERS = frozenset(
-    {"j_photograph", "j_ancient", "j_triboulet", "j_bloodstone"}
+    {"j_photograph", "j_ancient", "j_idol", "j_triboulet", "j_bloodstone"}
 )
 _PLAYED_INDIVIDUAL_EFFECT_JOKERS = (
     _PLAYED_INDIVIDUAL_ADDITIVE_JOKERS | _PLAYED_INDIVIDUAL_XMULT_JOKERS
 )
-_COPY_PLAYED_INDIVIDUAL_JOKERS = _PLAYED_INDIVIDUAL_EFFECT_JOKERS - {"j_bloodstone"}
-_COPY_PLAYED_RETRIGGER_JOKERS = frozenset(
+_PLAYED_RETRIGGER_JOKERS = frozenset(
     {"j_hack", "j_sock_and_buskin", "j_hanging_chad", "j_dusk", "j_selzer"}
 )
-_COPY_HELD_INDIVIDUAL_JOKERS = frozenset({"j_raised_fist", "j_shoot_the_moon", "j_baron"})
-_COPY_HELD_RETRIGGER_JOKERS = frozenset({"j_mime"})
+_HELD_INDIVIDUAL_JOKERS = frozenset({"j_raised_fist", "j_shoot_the_moon", "j_baron"})
+_HELD_RETRIGGER_JOKERS = frozenset({"j_mime"})
+# Passive rules consumed by hand classification rather than by a scoring pass.
+_PASSIVE_HAND_SHAPE_JOKERS = frozenset(
+    {"j_four_fingers", "j_pareidolia", "j_shortcut", "j_smeared", "j_splash"}
+)
+# Passive rules applied across scoring cards or Jokers instead of at one slot.
+_PASSIVE_GLOBAL_JOKERS = frozenset({"j_baseball", "j_hiker"})
+# These are scored by their expectation, not by a public value. Copying them
+# would compound an estimate, so Blueprint and Brainstorm decline the target.
+_STOCHASTIC_ESTIMATE_JOKERS = frozenset({"j_misprint", "j_bloodstone"})
+
+# Blueprint and Brainstorm delegate to any modeled effect in the pass where
+# that effect applies. Vanilla game.lua marks every one of these targets
+# blueprint_compat=true; the only modeled effects left out are the passive
+# hand-shape Jokers, which vanilla itself marks blueprint_compat=false.
+_COPY_MAIN_JOKERS = _MAIN_EFFECT_JOKERS - _STOCHASTIC_ESTIMATE_JOKERS
+_COPY_PLAYED_INDIVIDUAL_JOKERS = _PLAYED_INDIVIDUAL_EFFECT_JOKERS - _STOCHASTIC_ESTIMATE_JOKERS
+_COPY_PLAYED_RETRIGGER_JOKERS = _PLAYED_RETRIGGER_JOKERS
+_COPY_HELD_INDIVIDUAL_JOKERS = _HELD_INDIVIDUAL_JOKERS
+_COPY_HELD_RETRIGGER_JOKERS = _HELD_RETRIGGER_JOKERS
+
+SCORING_RULE_JOKERS = (
+    _MAIN_EFFECT_JOKERS
+    | _PLAYED_INDIVIDUAL_EFFECT_JOKERS
+    | _PLAYED_RETRIGGER_JOKERS
+    | _HELD_INDIVIDUAL_JOKERS
+    | _HELD_RETRIGGER_JOKERS
+    | _PASSIVE_HAND_SHAPE_JOKERS
+    | _PASSIVE_GLOBAL_JOKERS
+    | _COPY_JOKERS
+)
+"""Every Joker key this module gives a chips, Mult or xMult rule."""
+
+NO_SCORING_EFFECT_JOKERS = frozenset(
+    {
+        # Money, hand and discard economy, hand size, shop, deck edits, card
+        # creation and probability rewrites. Each was checked against vanilla
+        # card.lua: none of them returns chips, mult, x_mult or a *_mod, so
+        # contributing nothing to a played hand is exact rather than a gap.
+        "j_8_ball",
+        "j_astronomer",
+        "j_burglar",
+        "j_burnt",
+        "j_business",
+        "j_cartomancer",
+        "j_certificate",
+        "j_chaos",
+        "j_chicot",
+        "j_cloud_9",
+        "j_credit_card",
+        "j_delayed_grat",
+        "j_diet_cola",
+        "j_dna",
+        "j_drunkard",
+        "j_egg",
+        "j_faceless",
+        "j_gift",
+        "j_golden",
+        "j_hallucination",
+        "j_invisible",
+        "j_juggler",
+        "j_luchador",
+        "j_mail",
+        "j_marble",
+        "j_matador",
+        "j_merry_andy",
+        "j_midas_mask",
+        "j_mr_bones",
+        "j_oops",
+        "j_perkeo",
+        "j_reserved_parking",
+        "j_riff_raff",
+        "j_ring_master",
+        "j_rocket",
+        "j_rough_gem",
+        "j_satellite",
+        "j_seance",
+        "j_sixth_sense",
+        "j_space",
+        "j_superposition",
+        "j_ticket",
+        "j_to_the_moon",
+        "j_todo_list",
+        "j_trading",
+        "j_troubadour",
+        "j_turtle_bean",
+        "j_vagabond",
+    }
+)
+"""Joker keys that never touch chips, Mult or xMult during a played hand."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -305,7 +423,7 @@ def _score_play_prepared(
                     repeat_xmult = _individual_joker_card_xmult(
                         observation,
                         card,
-                        joker.key,
+                        joker,
                         first_face=index == first_face_index,
                     )
                     if repeat_xmult != 1:
@@ -501,23 +619,36 @@ def _is_face(card: VisiblePlayingCard, active_keys: frozenset[str]) -> bool:
 def _individual_joker_card_xmult(
     observation: PublicObservation,
     card: VisiblePlayingCard,
-    joker_key: str,
+    joker: PublicItem,
     *,
     first_face: bool,
 ) -> int | Fraction:
     if card.debuffed:
         return 1
+    joker_key = joker.key
     multiplier: int | Fraction = 1
     if joker_key == "j_photograph" and first_face:
         multiplier *= 2
     if joker_key == "j_ancient" and observation.round.ancient_suit == card.suit:
         multiplier *= _THREE_HALVES
+    if joker_key == "j_idol" and _idol_target(joker) == (card.rank, card.suit):
+        # The tooltip names one rank and suit; a card matching both gives X2.
+        multiplier *= 2
     if joker_key == "j_triboulet" and card.rank in {"K", "Q"}:
         multiplier *= 2
     if joker_key == "j_bloodstone" and card.suit == "H":
         # The heuristic scores the public 1-in-2 trigger by its expectation.
         multiplier *= _FIVE_FOURTHS
     return multiplier
+
+
+def _idol_target(joker: PublicItem) -> tuple[str, str] | None:
+    """Return The Idol's public rank/suit target, or None when it is missing."""
+
+    runtime = joker.runtime
+    if runtime is None or runtime.target_rank is None or runtime.target_suit is None:
+        return None
+    return runtime.target_rank, runtime.target_suit
 
 
 def _card_repetitions(
@@ -655,6 +786,15 @@ def _joker_main_effect(
     elif key == "j_erosion":
         starting_size = 40 if observation.deck.upper() == "ABANDONED" else 52
         chips += 4 * max(0, starting_size - observation.deck_size)
+    elif key == "j_steel_joker":
+        # Vanilla steel_tally counts Steel cards across the whole deck, not the
+        # hand, and applies X(1 + 0.2 * tally).
+        steel = _full_deck_enhancement_count(observation, "STEEL")
+        if steel:
+            xmult *= 1 + Fraction(steel, 5)
+    elif key == "j_stone":
+        # Vanilla stone_tally is the same full-deck scan, worth +25 Chips each.
+        chips += 25 * _full_deck_enhancement_count(observation, "STONE")
     elif key == "j_stencil" and runtime is None:
         stencil_count = sum(
             item.key == "j_stencil" and not item.debuffed
@@ -700,6 +840,33 @@ def _joker_main_effect(
     elif key == "j_loyalty_card" and runtime is not None and runtime.loyalty_remaining == 0:
         xmult *= 4
     return chips, mult, xmult
+
+
+def _full_deck_enhancement_count(observation: PublicObservation, enhancement: str) -> int:
+    """Count one enhancement across the public full-deck composition."""
+
+    return sum(
+        entry.count for entry in observation.full_deck if entry.card.enhancement == enhancement
+    )
+
+
+def unmodelled_scoring_jokers(observation: PublicObservation) -> tuple[PublicItem, ...]:
+    """Return active Jokers this scorer neither models nor knows to be inert.
+
+    ``SCORING_RULE_JOKERS`` and ``NO_SCORING_EFFECT_JOKERS`` partition every
+    vanilla key, so this is normally empty. It stays as the surface that makes
+    a future gap visible: an unknown or modded key, and a modeled Joker whose
+    required public target is absent, are reported instead of scored silently.
+    """
+
+    classified = SCORING_RULE_JOKERS | NO_SCORING_EFFECT_JOKERS
+    return tuple(
+        joker
+        for joker in observation.jokers
+        if isinstance(joker, PublicItem)
+        and not joker.debuffed
+        and (joker.key not in classified or (joker.key == "j_idol" and _idol_target(joker) is None))
+    )
 
 
 def _current_boss_rule(observation: PublicObservation) -> BossRule | None:
