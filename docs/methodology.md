@@ -148,6 +148,26 @@ through that, all on the model-call side and never touching the game:
 trajectory after verifying the live state, which is how the headless run was
 carried across runner restarts without touching the game.
 
+## Recording a game
+
+The recorded game on seed D0000000 used two scripts that ship in `scripts/`:
+`record-display.sh` captures one display to an MP4 with ffmpeg until interrupted,
+and `make-timelapse.sh` cuts a full recording into a two-minute time-lapse and a
+short GIF sized for the repository. The full recording stays out of git.
+
+Lessons from that recording, so the next one is clean:
+
+- Put the game and the dashboard on a display you do not otherwise use, and record
+  only that display. Set the monitor in Balatro's own Options so the game reopens
+  there after any restart; the recorded game lost its footage when a restarted
+  game window came up on the other display.
+- Open the dashboard as a chromeless app window sized to the free column, for
+  example `--app=http://127.0.0.1:8765/?zoom=0.8`, and point `balatro watch` at
+  the game root so it follows every segment without being restarted.
+- Stop the recorder with SIGINT, never SIGKILL, so the file is finalised. Keep
+  memory-hungry applications closed for the duration: an operating-system
+  low-memory kill ended a game, its server and its recorder at once.
+
 ## What is deliberately absent
 
 No game simulator, no training, no policy ensemble, no automatic fallback player,

@@ -138,10 +138,23 @@ Each run writes `manifest.json`, `trajectory.jsonl` and `result.json`. The
 trajectory is append-only JSON lines, so `tail -f` it to watch a game live;
 `balatro inspect DIR` prints the result, for example
 `balatro inspect evidence/astra-low-TAF7DNTX`. For a live view, `balatro watch DIR`
-serves a dashboard at http://127.0.0.1:8765 from the standard library alone: ante
-and blind progress, money, peak hand, calls per decision, the requirement-versus-
-best-hand chart, the Joker board, the model's plan and an action feed. It follows
-resumed runs across directories and takes `?zoom=0.8` for narrow windows.
+serves a dashboard at http://127.0.0.1:8765 from the standard library alone: the
+requirement-versus-best-hand chart, the model's current plan, the action feed and a
+compact status line, with the full stat tiles behind `?tiles=1` and `?zoom=0.8` for
+narrow windows. Point it at a game root and it follows every segment.
+
+For an unattended game, use the supervisor instead of `play`:
+
+```sh
+balatro supervise --endless --seed QD3F4XVW --output runs/game-002 \
+  --server-command 'BALATROBOT_ALL_UNLOCKED=1 uvx balatrobot serve --gamespeed 1 --no-fast --animation-fps 60'
+```
+
+It writes one segment directory per runner process under the root, resumes
+automatically after any exit that is not a finished game, relaunches the server
+if it is unreachable, restores the run from Balatro's autosave if the game process
+died, and stops on a real end, a Codex login problem, an exhausted budget or the
+restart cap. `balatro watch runs/game-002` shows the whole game.
 
 ## Evidence
 
