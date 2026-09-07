@@ -34,13 +34,23 @@ body {
   color: var(--ink);
   font: 14px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif;
 }
+/* One column, tallest-first: the chart, then the plan, then the feed. */
 #app {
   height: 100%;
   padding: var(--gap);
-  display: grid;
+  display: flex;
+  flex-direction: column;
   gap: var(--gap);
-  grid-template-rows: auto auto minmax(0, 1fr) auto auto;
 }
+#app > * { flex: 0 0 auto; }
+#chart-panel { flex: 4 1 0; min-height: 150px; }
+#plan-panel { flex: 2 1 0; min-height: 70px; }
+#feed-panel { flex: 3 1 0; min-height: 84px; }
+#chart-panel, #plan-panel, #feed-panel { display: flex; flex-direction: column; }
+/* The six stat tiles and the joker board repeat the game window: ?tiles=1 brings them back. */
+#tiles, #jokers-panel { display: none; }
+body.tiles #tiles { display: grid; }
+body.tiles #jokers-panel { display: flex; }
 .panel {
   background: var(--surface);
   border: 1px solid var(--border);
@@ -62,7 +72,8 @@ body {
 header {
   display: flex;
   align-items: center;
-  gap: 14px;
+  flex-wrap: wrap;
+  gap: 4px 14px;
   padding: 8px 12px;
 }
 .brand { font-size: 15px; font-weight: 600; letter-spacing: 0.02em; }
@@ -87,12 +98,40 @@ header {
 .pill[data-state="won"] { color: var(--good); }
 .pill[data-state="lost"] { color: var(--critical); }
 .pill[data-state="stopped"], .pill[data-state="waiting"] { color: var(--muted); }
+.pill[data-state="resuming"] { color: var(--warning); }
+.pill[data-state="resuming"] .dot { animation: pulse 1.6s ease-in-out infinite; }
 @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.25; } }
 @media (prefers-reduced-motion: reduce) { .pill .dot { animation: none; } }
 .elapsed { font-size: 15px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+/* Small facts about the game itself, beside the status pill. */
+.hchips { display: inline-flex; flex-wrap: wrap; gap: 6px; }
+.hchip {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 12px;
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+.hchip[hidden] { display: none; }
+.hchip.warn { color: var(--warning); border-color: rgba(250, 178, 25, 0.4); }
+/* The numbers the stat tiles used to carry, kept readable but out of the way. */
+.statline {
+  flex: 1 0 100%;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 12px;
+  font-size: 12.5px;
+  color: var(--muted);
+  line-height: 1.35;
+}
+.statline b { font-weight: 600; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.statline .lead b { color: var(--ink); }
 
 /* Stat tiles --------------------------------------------------------- */
-#tiles { display: grid; grid-template-columns: repeat(6, 1fr); gap: var(--gap); }
+#tiles { grid-template-columns: repeat(6, 1fr); gap: var(--gap); }
 .tile { display: flex; flex-direction: column; gap: 4px; }
 .tile .label {
   font-size: 13px;
@@ -119,8 +158,6 @@ header {
 .key { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 5px; }
 
 /* Middle ------------------------------------------------------------- */
-#middle { display: grid; grid-template-columns: minmax(0, 1fr) 366px; gap: var(--gap); min-height: 0; }
-#chart-panel { display: flex; flex-direction: column; min-height: 0; }
 .panel-head { display: flex; align-items: baseline; gap: 12px; }
 .panel-head h2 { flex: 0 0 auto; }
 .legend { display: flex; gap: 14px; font-size: 13px; color: var(--ink-2); flex: 1 1 auto; }
@@ -162,8 +199,7 @@ th, td { text-align: right; padding: 3px 8px; border-bottom: 1px solid var(--gri
 th { color: var(--muted); font-weight: 600; position: sticky; top: 0; background: var(--surface); }
 th:first-child, td:first-child, th:nth-child(2), td:nth-child(2) { text-align: left; font-variant-numeric: normal; }
 
-#side { display: grid; grid-template-rows: minmax(0, 1fr) auto; gap: var(--gap); min-height: 0; }
-#jokers-panel { display: flex; flex-direction: column; min-height: 0; }
+#jokers-panel { flex-direction: column; min-height: 0; max-height: 116px; }
 #jokers {
   flex: 1 1 auto;
   min-height: 0;
@@ -196,24 +232,32 @@ th:first-child, td:first-child, th:nth-child(2), td:nth-child(2) { text-align: l
 .joker .val { margin-left: auto; font-size: 13px; font-weight: 600; color: var(--ink); font-variant-numeric: tabular-nums; flex: 0 0 auto; }
 blockquote {
   margin: 0;
-  padding: 6px 0 2px 10px;
+  padding: 4px 0 2px 10px;
   border-left: 3px solid var(--s3);
-  font-size: 13px;
+  font-size: 16px;
   line-height: 1.5;
-  color: var(--ink-2);
-  max-height: 62px;
-  overflow: hidden;
+  color: var(--ink);
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 /* Bottom -------------------------------------------------------------- */
-#bottom { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: var(--gap); }
-#feed { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px; }
+#feed {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 13px;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
 .row {
   display: grid;
-  grid-template-columns: 40px 74px 1fr 92px 104px 58px;
+  grid-template-columns: 40px 74px minmax(110px, 220px) 92px 104px 58px;
   gap: 8px;
-  padding: 1px 0;
-  line-height: 1.3;
+  justify-content: start;
+  font-size: 12.5px;
+  height: 16px;
+  line-height: 16px;
   white-space: nowrap;
   color: var(--ink-2);
 }
@@ -226,9 +270,10 @@ blockquote {
 .row[data-src="forced"] i { background: var(--warning); }
 .row[data-src="automatic"] i { background: var(--muted); }
 .row .act { color: var(--ink); overflow: hidden; text-overflow: ellipsis; }
-#spark-panel { display: flex; flex-direction: column; }
-#spark { width: 100%; height: 62px; display: block; flex: 0 0 auto; }
-footer { font-size: 13px; color: var(--muted); text-align: right; padding: 0 4px 2px; }
+#spark-panel { display: flex; flex-direction: column; padding-bottom: 6px; }
+#spark-panel .panel-head { justify-content: space-between; }
+#spark { width: 100%; height: 40px; display: block; flex: 0 0 auto; }
+footer { font-size: 12px; color: var(--muted); text-align: right; padding: 0 4px; }
 .empty {
   display: flex;
   align-items: center;
@@ -238,19 +283,17 @@ footer { font-size: 13px; color: var(--muted); text-align: right; padding: 0 4px
   font-size: 15px;
 }
 
+/* Tall recording windows can hold more of the feed. */
+@media (min-height: 950px) { #feed-panel { flex-grow: 3.5; } }
+
 /* Narrow: a ~630px recording window beside the game --------------------- */
 @media (max-width: 800px) {
-  body { height: auto; min-height: 100vh; overflow-y: auto; overflow-x: hidden; }
-  #app { height: auto; min-height: 100vh; grid-template-rows: none; }
-  header { flex-wrap: wrap; row-gap: 4px; }
   #tiles { grid-template-columns: repeat(2, 1fr); }
-  #middle, #bottom { grid-template-columns: minmax(0, 1fr); }
-  #plot-wrap { height: 300px; flex: 0 0 auto; }
-  #table-wrap { max-height: 300px; }
   .joker .effect { display: none; }
-  blockquote { max-height: none; }
   .row { grid-template-columns: 40px 1fr 84px 92px 56px; }
   .row .phase { display: none; }
+  .panel-head { flex-wrap: wrap; }
+  .legend { font-size: 12px; gap: 10px; }
 }
 </style>
 </head>
@@ -261,8 +304,11 @@ footer { font-size: 13px; color: var(--muted); text-align: right; padding: 0 4px
     <span class="run-name" id="run">&mdash;</span>
     <span class="note">seed withheld from the model</span>
     <span class="spacer"></span>
+    <span class="hchips" id="head-chips"></span>
+    <span class="hchip warn" id="reconnect" hidden>reconnecting</span>
     <span class="pill" id="status" data-state="waiting"><span class="dot"></span><span id="status-text">WAITING</span></span>
     <span class="elapsed" id="elapsed">0:00</span>
+    <div class="statline" id="statline"></div>
   </header>
 
   <section id="tiles">
@@ -298,75 +344,78 @@ footer { font-size: 13px; color: var(--muted); text-align: right; padding: 0 4px
       <div class="chips">
         <span><i class="key" style="background:var(--warning)"></i>timeouts <b id="t-timeouts">0</b></span>
         <span><i class="key" style="background:var(--serious)"></i>rejected <b id="t-rejected">0</b></span>
+        <span><i class="key" style="background:var(--s2)"></i>rpc <b id="t-rpc">0</b></span>
         <span><i class="key" style="background:var(--muted)"></i>forced <b id="t-forced">0</b></span>
       </div>
     </div>
   </section>
 
-  <section id="middle">
-    <div class="panel" id="chart-panel">
-      <div class="panel-head">
-        <h2>Blind requirement vs best hand</h2>
-        <div class="legend">
-          <span><i class="line"></i>Requirement</span>
-          <span><i class="dot"></i>Best hand in blind</span>
-        </div>
-        <button class="toggle" id="view-toggle" type="button">Table</button>
+  <div class="panel" id="chart-panel">
+    <div class="panel-head">
+      <h2>Blind requirement vs best hand</h2>
+      <div class="legend">
+        <span><i class="line"></i>Requirement</span>
+        <span><i class="dot"></i>Best hand in blind</span>
       </div>
-      <div id="plot-wrap">
-        <canvas id="plot"></canvas>
-        <div id="tip"></div>
-      </div>
-      <div id="table-wrap">
-        <table id="blind-table">
-          <thead><tr><th>Blind</th><th>Kind</th><th>Ante</th><th>Requirement</th><th>Best hand</th><th>Round chips</th><th>Cleared</th></tr></thead>
-          <tbody></tbody>
-        </table>
-      </div>
+      <button class="toggle" id="view-toggle" type="button">Table</button>
     </div>
-    <div id="side">
-      <div class="panel" id="jokers-panel">
-        <h2>Joker board</h2>
-        <div id="jokers"></div>
-      </div>
-      <div class="panel">
-        <h2>Model plan</h2>
-        <blockquote id="plan">waiting for the first reply</blockquote>
-      </div>
+    <div id="plot-wrap">
+      <canvas id="plot"></canvas>
+      <div id="tip"></div>
     </div>
-  </section>
+    <div id="table-wrap">
+      <table id="blind-table">
+        <thead><tr><th>Blind</th><th>Kind</th><th>Ante</th><th>Requirement</th><th>Best hand</th><th>Round chips</th><th>Cleared</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
 
-  <section id="bottom">
-    <div class="panel">
-      <div class="panel-head">
-        <h2>Action feed</h2>
-        <div class="legend">
-          <span><i class="key" style="background:var(--s1)"></i>model</span>
-          <span><i class="key" style="background:var(--s3)"></i>follow-up</span>
-          <span><i class="key" style="background:var(--warning)"></i>forced</span>
-          <span><i class="key" style="background:var(--muted)"></i>automatic</span>
-        </div>
+  <div class="panel" id="jokers-panel">
+    <h2>Joker board</h2>
+    <div id="jokers"></div>
+  </div>
+
+  <div class="panel" id="plan-panel">
+    <h2>Model plan</h2>
+    <blockquote id="plan">waiting for the first reply</blockquote>
+  </div>
+
+  <div class="panel" id="feed-panel">
+    <div class="panel-head">
+      <h2>Action feed</h2>
+      <div class="legend">
+        <span><i class="key" style="background:var(--s1)"></i>model</span>
+        <span><i class="key" style="background:var(--s3)"></i>follow-up</span>
+        <span><i class="key" style="background:var(--warning)"></i>forced</span>
+        <span><i class="key" style="background:var(--muted)"></i>automatic</span>
       </div>
-      <div id="feed"></div>
     </div>
-    <div class="panel" id="spark-panel">
+    <div id="feed"></div>
+  </div>
+
+  <div class="panel" id="spark-panel">
+    <div class="panel-head">
       <h2>Model latency</h2>
-      <canvas id="spark"></canvas>
-      <div class="chips" style="margin-top:6px">
+      <div class="chips">
         <span>median <b id="l-median">&mdash;</b>s</span>
         <span>p90 <b id="l-p90">&mdash;</b>s</span>
         <span>last <b id="l-last">&mdash;</b>s</span>
       </div>
     </div>
-  </section>
+    <canvas id="spark"></canvas>
+  </div>
 
   <footer>balatro-ai &middot; watch</footer>
 </div>
 
 <script>
 // ?zoom=0.85 scales the page for narrow recording windows.
-const zoomParam = new URLSearchParams(location.search).get("zoom");
+const params = new URLSearchParams(location.search);
+const zoomParam = params.get("zoom");
 if (zoomParam && Number(zoomParam) > 0) document.body.style.zoom = zoomParam;
+// ?tiles=1 brings back the stat tiles and the joker board the game window duplicates.
+if (params.get("tiles") === "1") document.body.classList.add("tiles");
 "use strict";
 var state = null;
 var showTable = false;
@@ -414,16 +463,78 @@ function renderHead(d) {
   document.getElementById("elapsed").textContent = clock(d.elapsed_seconds);
   var pill = document.getElementById("status"), label = "WAITING", key = "waiting";
   if (d.status === "live") { label = "LIVE"; key = "live"; }
-  else if (d.status === "finished" && d.result) {
-    if (d.result.status === "won") { label = "WON"; key = "won"; }
-    else if (d.result.status === "lost") { label = "LOST"; key = "lost"; }
-    else { label = "STOPPED"; key = "stopped"; }
+  else if (d.status === "resuming") { label = "RESUMING"; key = "resuming"; }
+  else if (d.status === "finished") {
+    label = "STOPPED"; key = "stopped";
+    if (d.result && d.result.status === "won") { label = "WON"; key = "won"; }
+    else if (d.result && d.result.status === "lost") { label = "LOST"; key = "lost"; }
   }
   pill.dataset.state = key;
   document.getElementById("status-text").textContent = label;
   var why = d.result && d.result.reason ? words(d.result.reason) : label.toLowerCase();
   if (d.result && d.result.ante_8_cleared) why += " · ante 8 cleared";
   pill.title = why;
+  renderChips(d);
+  renderStatLine(d);
+}
+
+function chip(text, warn) {
+  var el = document.createElement("span");
+  el.className = "hchip" + (warn ? " warn" : "");
+  el.textContent = text;
+  return el;
+}
+
+/* How the game got here: segments, restarts and how each one was resumed. */
+function renderChips(d) {
+  var g = d.game || {}, box = document.getElementById("head-chips");
+  box.textContent = "";
+  var segments = g.segments || 1;
+  if (g.segment) {
+    var name = g.segment.replace(/^segments?[-_ ]?/i, "");
+    box.appendChild(chip("segment " + name + " of " + segments));
+  } else if (segments > 1) {
+    box.appendChild(chip(segments + " segments"));
+  }
+  if (g.restarts) box.appendChild(chip(g.restarts + (g.restarts === 1 ? " restart" : " restarts")));
+  if (g.resumed) box.appendChild(chip("resumed"));
+  if (g.restored) box.appendChild(chip("restored from autosave", true));
+  if (g.supervisor) box.appendChild(chip(words(g.supervisor)));
+}
+
+function stat(box, label, value, lead) {
+  var el = document.createElement("span");
+  if (lead) el.className = "lead";
+  if (label) el.appendChild(document.createTextNode(label + " "));
+  var strong = document.createElement("b");
+  strong.textContent = value;
+  el.appendChild(strong);
+  box.appendChild(el);
+  return el;
+}
+
+/* The numbers the stat tiles carried, on one small line under the header. */
+function renderStatLine(d) {
+  var box = document.getElementById("statline"), c = d.counters, blind = d.blind;
+  box.textContent = "";
+  stat(box, "ante", d.ante === null || d.ante === undefined ? "—" : String(d.ante), true)
+    .title = words(d.phase || "");
+  if (blind) {
+    stat(box, words(blind.kind || "blind").toLowerCase(),
+      fmt(blind.chips) + " / " + fmt(blind.requirement), true)
+      .title = (blind.name || "blind") + " · " +
+        full(blind.chips) + " of " + full(blind.requirement);
+    stat(box, "", blind.hands_left + " hands · " + blind.discards_left + " discards");
+  } else {
+    stat(box, "", "no blind in play");
+  }
+  stat(box, "money", money(d.money), true);
+  stat(box, "calls", fmt(c.coach_calls) + " / " + fmt(c.decisions) +
+    " (" + c.calls_per_decision + ")");
+  stat(box, "hedges", fmt(c.hedges_won));
+  stat(box, "timeouts", fmt(c.timeouts));
+  stat(box, "rpc recovered", fmt(c.rpc_timeouts));
+  stat(box, "rejected", fmt(c.rejections));
 }
 
 function renderTiles(d) {
@@ -457,6 +568,7 @@ function renderTiles(d) {
   setNum("t-hedges", c.hedges_won, fmt(c.hedges_won));
   document.getElementById("t-timeouts").textContent = fmt(c.timeouts);
   document.getElementById("t-rejected").textContent = fmt(c.rejections);
+  document.getElementById("t-rpc").textContent = fmt(c.rpc_timeouts);
   document.getElementById("t-forced").textContent = fmt(c.forced);
 }
 
@@ -507,9 +619,12 @@ function renderSide(d) {
   document.getElementById("plan").textContent = d.plan || "waiting for the first reply";
 }
 
+var FEED_ROW = 16;  /* keep in step with .row's line-height */
+
 function renderFeed(d) {
   var box = document.getElementById("feed");
-  var limit = window.innerWidth < 800 ? 8 : 12;
+  // As many rows as the panel can hold: 14 in a 1050px-tall recording window.
+  var limit = Math.max(4, Math.min(24, Math.floor((box.clientHeight || 160) / FEED_ROW)));
   box.textContent = "";
   d.feed.slice(0, limit).forEach(function (row) {
     var el = document.createElement("div");
@@ -568,7 +683,8 @@ function renderPlot(d) {
     ctx.fillStyle = css("--muted");
     ctx.font = "15px system-ui, sans-serif";
     ctx.textAlign = "center";
-    ctx.fillText(d.status === "waiting" ? "waiting for the run to start" : "no blind played yet",
+    ctx.fillText(d.status === "waiting" ? "waiting for the run to start"
+      : d.status === "resuming" ? "waiting for the next segment" : "no blind played yet",
       s.w / 2, s.h / 2);
     plotGeom = null;
     return;
@@ -798,11 +914,18 @@ plotWrap.addEventListener("mouseleave", function () {
 });
 window.addEventListener("resize", render);
 
+/* A restarting server must not blank the page: keep the last state on screen. */
+function connected(ok) {
+  document.getElementById("reconnect").hidden = ok;
+}
 function poll() {
   fetch("api/state", { cache: "no-store" })
-    .then(function (response) { return response.json(); })
-    .then(function (data) { state = data; render(); })
-    .catch(function () { /* hold the last render rather than flashing */ });
+    .then(function (response) {
+      if (!response.ok) throw new Error(response.status);
+      return response.json();
+    })
+    .then(function (data) { state = data; connected(true); render(); })
+    .catch(function () { connected(false); });  /* hold the last render rather than flashing */
 }
 poll();
 setInterval(poll, 2000);

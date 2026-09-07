@@ -57,7 +57,7 @@ def test_segment_summary_carries_the_dashboard_panels(segment_run):
     assert summary["plan"] and summary["jokers"]
     assert [hand["name"] for hand in summary["hand_levels"]][0] == "Flush"
     assert len(summary["hand_levels"]) == 5
-    assert len(summary["feed"]) == 12
+    assert len(summary["feed"]) == 24
     assert summary["feed"][0]["index"] > summary["feed"][1]["index"]
     assert summary["latency"]["median"] > 0 and len(summary["latency"]["recent"]) == 60
     assert summary["counters"]["calls_per_decision"] > 0
@@ -160,9 +160,28 @@ def test_http_serves_the_page_and_the_state(segment_run):
         server.server_close()
 
 
+def _page() -> str:
+    return (Path(__file__).resolve().parents[1] / "balatro_ai" / "watch.html").read_text()
+
+
 def test_page_supports_a_zoom_query_parameter() -> None:
-    html = (Path(__file__).resolve().parents[1] / "balatro_ai" / "watch.html").read_text()
+    html = _page()
     assert 'get("zoom")' in html and "style.zoom" in html
+
+
+def test_the_stat_tiles_are_off_unless_asked_for() -> None:
+    """The game window beside the dashboard already shows them; ?tiles=1 brings them back."""
+    html = _page()
+    assert "#tiles, #jokers-panel { display: none; }" in html
+    assert 'params.get("tiles") === "1"' in html
+    # The numbers stay on screen, small, in the header line.
+    assert 'id="statline"' in html and "renderStatLine" in html
+
+
+def test_the_page_holds_its_last_state_when_the_server_goes_away() -> None:
+    html = _page()
+    assert 'id="reconnect"' in html and "connected(false)" in html
+    assert "setInterval(poll, 2000);" in html
 
 
 def test_watch_follows_continuation_chain(tmp_path) -> None:
@@ -206,3 +225,127 @@ def test_watch_follows_continuation_chain(tmp_path) -> None:
     assert summary["counters"]["decisions"] == 3
     assert summary["peak_hand"] == 900
     assert summary["ante"] == 2
+
+
+def _segment(root, name, *, continued=None, adjusted=False):
+    directory = root / name
+    directory.mkdir(parents=True)
+    manifest = {"seed": "X"}
+    if continued is not None:
+        manifest["continuation_of"] = str(continued)
+        manifest["resume_adjusted"] = adjusted
+    (directory / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+    return directory
+
+
+def _play(directory, ante, chips):
+    """One transition per call, appended the way the runner writes them."""
+    state = {
+        "ante": ante,
+        "phase": "SELECTING_HAND",
+        "money": 4,
+        "round": {"chips": 0, "hands_left": 3, "discards_left": 3},
+        "blinds": [{"kind": "SMALL", "name": "Small Blind", "status": "CURRENT", "score": 300}],
+    }
+    after = dict(state, round=dict(state["round"], chips=chips))
+    line = json.dumps(
+        {
+            "event": "transition",
+            "before": state,
+            "action": {"type": "play_cards"},
+            "after": after,
+            "source": "coach",
+        }
+    )
+    with (directory / "trajectory.jsonl").open("a", encoding="utf-8") as handle:
+        handle.write(line + "\n")
+
+
+def test_a_game_root_keeps_the_past_while_the_next_segment_starts(tmp_path):
+    """The gap between segments is the moment the dashboard used to go blank."""
+    root = tmp_path / "game"
+    first = _segment(root, "segment-00")
+    _play(first, 1, 100)
+    _play(first, 1, 250)
+    (first / "result.json").write_text(json.dumps({"status": "error", "seconds": 30}))
+    _segment(root, "segment-01", continued=first, adjusted=True)
+
+    waiting = summarize(root)
+    assert waiting["status"] == "resuming"
+    assert waiting["counters"]["decisions"] == 2 and waiting["peak_hand"] == 250
+    assert waiting["result"] is None  # a segment ending is not the game ending
+    assert waiting["game"]["segments"] == 2
+    assert waiting["game"]["segment"] == "segment-01"
+    assert waiting["game"]["resumed"] and waiting["game"]["restored"]
+
+    _play(root / "segment-01", 2, 900)
+    live = summarize(root)
+    assert live["status"] == "live"
+    assert live["counters"]["decisions"] == 3 and live["peak_hand"] == 900
+    assert live["ante"] == 2 and live["game"]["segments"] == 2
+
+
+def test_a_game_root_switches_to_the_newest_segment(tmp_path):
+    root = tmp_path / "game"
+    first = _segment(root, "segment-00")
+    _play(first, 1, 100)
+    assert summarize(root)["counters"]["decisions"] == 1
+
+    second = _segment(root, "segment-01", continued=first)
+    _play(second, 2, 400)
+    assert summarize(root)["counters"]["decisions"] == 2
+
+    _play(second, 2, 500)  # the old tail keeps growing until the next one appears
+    third = _segment(root, "segment-02", continued=second)
+    _play(third, 3, 700)
+    summary = summarize(root)
+    assert summary["counters"]["decisions"] == 4 and summary["peak_hand"] == 700
+    assert summary["game"]["segments"] == 3 and summary["game"]["segment"] == "segment-02"
+    assert summary["ante"] == 3
+
+
+def test_a_game_root_reads_the_supervisor_summary(tmp_path):
+    root = tmp_path / "game"
+    first = _segment(root, "segment-00")
+    _play(first, 1, 100)
+    (root / "summary.json").write_text(
+        json.dumps({"status": "running", "segments": 4, "restarts": 3}), encoding="utf-8"
+    )
+    summary = summarize(root)
+    assert summary["game"] == dict(
+        segments=4,
+        restarts=3,
+        supervisor="running",
+        segment="segment-00",
+        resumed=False,
+        restored=False,
+        over=False,
+    )
+    assert summary["status"] == "live"
+
+    (root / "summary.json").write_text(json.dumps({"status": "stopped"}), encoding="utf-8")
+    assert summarize(root)["status"] == "finished"
+
+
+def test_a_game_root_with_nothing_written_yet_is_waiting(tmp_path):
+    root = tmp_path / "game"
+    _segment(root, "segment-00")
+    summary = summarize(root)
+    assert summary["status"] == "waiting" and summary["counters"]["decisions"] == 0
+
+
+def test_a_continuation_directory_without_a_trajectory_is_resuming(tmp_path):
+    """Single-directory mode: the runner has made the directory but not the file."""
+    first = tmp_path / "first"
+    first.mkdir()
+    (first / "manifest.json").write_text(json.dumps({"seed": "X"}), encoding="utf-8")
+    _play(first, 1, 250)
+    second = tmp_path / "second"
+    second.mkdir()
+    (second / "manifest.json").write_text(
+        json.dumps({"seed": "X", "continuation_of": str(first)}), encoding="utf-8"
+    )
+    summary = summarize(second)
+    assert summary["status"] == "resuming"
+    assert summary["counters"]["decisions"] == 1 and summary["peak_hand"] == 250
+    assert summary["game"]["segments"] == 2 and summary["game"]["resumed"]

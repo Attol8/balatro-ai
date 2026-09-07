@@ -19,6 +19,8 @@ HTML_PATH = Path(__file__).with_name("watch.html")
 
 _MAX_FEED = 400
 _MAX_LATENCY = 600
+# A supervisor summary reporting any other status means the game is over for good.
+_RUNNING_STATUSES = frozenset({"running", "resuming", "restarting", "starting", "live"})
 _FEED_COLUMNS = ("index", "ante", "phase", "action", "source", "chips", "money")
 
 # First non-null wins: one joker exposes at most one interesting live number.
@@ -63,7 +65,14 @@ def _percentile(values, fraction):
 
 
 class RunWatch:
-    """Incremental view of one run directory; state survives between polls."""
+    """Incremental view of one game; state survives between polls.
+
+    The directory is either a single run (a ``trajectory.jsonl`` beside a
+    manifest) or a game root holding one sub-directory per segment, as the
+    supervisor writes when it restarts the game. Either way the reader keeps one
+    running view: finished segments are read once, the newest one is tailed, and
+    a segment that appears later becomes the new tail without losing the past.
+    """
 
     def __init__(self, run_dir):
         self.run_dir = Path(run_dir)
@@ -73,7 +82,11 @@ class RunWatch:
     # -- reading ---------------------------------------------------------
     def _reset(self):
         self._offset = 0
-        self._preloaded = False
+        self._tail_dir = None
+        self._loaded = set()
+        self._chain = None
+        self._segments = [self.run_dir]
+        self._root = False
         self._observation = {}
         self._plan = ""
         self._blinds = []
@@ -91,32 +104,89 @@ class RunWatch:
             forced=0,
             rejections=0,
             timeouts=0,
+            rpc_timeouts=0,
             hedges_won=0,
         )
 
     def refresh(self):
-        """Consume whatever the run appended since the previous call."""
-        path = self.run_dir / "trajectory.jsonl"
-        if not path.exists():
-            archive = self.run_dir / "trajectory.jsonl.gz"
-            if archive.exists():
-                if self._offset == 0:  # a finished artifact: read it once
-                    self._preload_ancestors()
-                    with gzip.open(archive, "rt", encoding="utf-8") as handle:
-                        for line in handle:
-                            self._consume(line)
-                    self._offset = 1
-                return
-            self._reset()
+        """Consume whatever the game appended since the previous call."""
+        segments = self._segment_dirs()
+        newest = segments[-1]
+        plain = newest / "trajectory.jsonl"
+        if newest == self._tail_dir and plain.exists() and plain.stat().st_size < self._offset:
+            self._reset()  # the directory was replaced under us; rebuild from scratch
+            segments = self._segment_dirs()
+            newest = segments[-1]
+        self._segments = segments
+        for directory in segments[:-1]:
+            self._load_finished(directory)
+        if self._tail_dir != newest:
+            self._tail_dir = newest
+            self._offset = 0
+        self._tail(newest)
+
+    def _children(self):
+        """Sub-directories holding a manifest: the segments a supervisor writes."""
+        try:
+            entries = sorted(self.run_dir.iterdir())
+        except OSError:
+            return []
+        return [d for d in entries if d.is_dir() and (d / "manifest.json").exists()]
+
+    def _segment_dirs(self):
+        """Every directory of this game, oldest first; the last one is tailed."""
+        own = ("trajectory.jsonl", "trajectory.jsonl.gz", "manifest.json")
+        if not any((self.run_dir / name).exists() for name in own):
+            children = self._children()
+            if children:  # a game root: re-scanned every poll, so a new segment is picked up
+                self._root = True
+                return children
+        self._root = False
+        if self._chain is None and (self.run_dir / "manifest.json").exists():
+            self._chain = self._ancestors()
+        return [*(self._chain or []), self.run_dir]
+
+    def _trajectory_bytes(self, directory, start=0):
+        """Everything past ``start`` in a segment's trajectory, plain or archived."""
+        plain = directory / "trajectory.jsonl"
+        if plain.exists():
+            with plain.open("rb") as handle:
+                handle.seek(start)
+                return handle.read()
+        archive = directory / "trajectory.jsonl.gz"
+        if archive.exists():
+            with gzip.open(archive, "rb") as handle:
+                return handle.read()[start:]
+        return None
+
+    def _load_finished(self, directory):
+        """Read a segment that will not grow again, once, from wherever we stopped."""
+        key = directory.resolve()
+        if key in self._loaded:
             return
-        size = path.stat().st_size
-        if size < self._offset:  # the run directory was replaced under us
-            self._reset()
-        if not self._preloaded:
-            self._preload_ancestors()
+        # Only the directory we were tailing has already given us part of its lines.
+        data = self._trajectory_bytes(directory, self._offset if directory == self._tail_dir else 0)
+        if data is None:  # the segment exists but has written nothing yet
+            return
+        for line in data.splitlines():
+            self._consume(line.decode("utf-8", "replace"))
+        self._loaded.add(key)
+
+    def _tail(self, directory):
+        """Consume the bytes the newest segment appended since the previous poll."""
+        plain = directory / "trajectory.jsonl"
+        if not plain.exists():
+            if self._offset == 0:  # a finished artifact: read it once
+                data = self._trajectory_bytes(directory)
+                if data is not None:
+                    for line in data.splitlines():
+                        self._consume(line.decode("utf-8", "replace"))
+                    self._offset = len(data)
+            return
+        size = plain.stat().st_size
         if size == self._offset:
             return
-        with path.open("rb") as handle:
+        with plain.open("rb") as handle:
             handle.seek(self._offset)
             chunk = handle.read(size - self._offset)
         end = chunk.rfind(b"\n")
@@ -150,21 +220,6 @@ class RunWatch:
             current = previous
         return list(reversed(chain))
 
-    def _preload_ancestors(self):
-        """Read the finished segments this run continues so the view covers the whole game."""
-        self._preloaded = True
-        for directory in self._ancestors():
-            plain = directory / "trajectory.jsonl"
-            archive = directory / "trajectory.jsonl.gz"
-            if plain.exists():
-                with plain.open("r", encoding="utf-8") as handle:
-                    for line in handle:
-                        self._consume(line)
-            elif archive.exists():
-                with gzip.open(archive, "rt", encoding="utf-8") as handle:
-                    for line in handle:
-                        self._consume(line)
-
     def _consume(self, line):
         line = line.strip()
         if not line:
@@ -192,6 +247,8 @@ class RunWatch:
             self._counts["rejections"] += 1
         elif kind == "coach_timeout":
             self._counts["timeouts"] += 1
+        elif kind == "rpc_timeout":
+            self._counts["rpc_timeouts"] += 1  # the runner only records recovered ones
         elif kind == "rpc_attempt":
             self._observe(event.get("observation"))
         elif kind == "continued":
@@ -263,21 +320,91 @@ class RunWatch:
                 entry["cleared"] = True
 
     # -- reporting -------------------------------------------------------
-    def _result(self):
-        path = self.run_dir / "result.json"
-        if not path.exists():
-            return None
+    def _json(self, path):
         try:
-            return json.loads(path.read_text())
-        except (OSError, json.JSONDecodeError):
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
             return None
+        return data if isinstance(data, dict) else None
+
+    def _result(self):
+        """The result of the segment being tailed: the game's own once it ends."""
+        return self._json((self._tail_dir or self.run_dir) / "result.json")
 
     def _started_at(self):
         for name in ("manifest.json", "trajectory.jsonl"):
-            path = self.run_dir / name
+            path = self._segments[0] / name
             if path.exists():
                 return path.stat().st_mtime
         return None
+
+    def _game(self, result):
+        """Header facts about the whole game: how many segments, and how it resumed."""
+        supervisor = self._json(self.run_dir / "summary.json") or {}
+        manifests = [self._json(d / "manifest.json") or {} for d in self._segments]
+        counted = supervisor.get("segments")
+        if isinstance(counted, list):
+            segments = len(counted)
+        elif isinstance(counted, int) and not isinstance(counted, bool):
+            segments = counted
+        else:
+            segments = len(self._segments)
+        restarts = supervisor.get("restarts")
+        return dict(
+            segments=segments,
+            restarts=restarts
+            if isinstance(restarts, int) and not isinstance(restarts, bool)
+            else None,
+            supervisor=supervisor.get("status")
+            if isinstance(supervisor.get("status"), str)
+            else None,
+            segment=self._tail_dir.name if self._root and self._tail_dir else None,
+            resumed=any(m.get("continuation_of") for m in manifests),
+            restored=any(m.get("resume_adjusted") for m in manifests),
+            over=self._over(result, supervisor),
+        )
+
+    def _over(self, result, supervisor):
+        """Whether the game itself ended, as opposed to one of its segments."""
+        state = supervisor.get("status")
+        if isinstance(state, str) and state.strip().lower() not in _RUNNING_STATUSES:
+            return True
+        if self._root:  # a segment stopping is a restart unless the game was decided
+            return bool(result) and result.get("status") in ("won", "lost")
+        return result is not None
+
+    def _status(self, game):
+        if game["over"]:
+            return "finished"
+        if not self._observation and not self._sequence:
+            return "waiting"  # nothing has been played anywhere yet
+        newest = self._tail_dir or self.run_dir
+        writing = any(
+            (newest / name).exists() for name in ("trajectory.jsonl", "trajectory.jsonl.gz")
+        )
+        if self._root:
+            # Either the next segment has not started writing, or this one just ended.
+            if not writing or (newest / "result.json").exists():
+                return "resuming"
+        elif not writing and game["resumed"]:
+            return "resuming"  # a continuation directory the runner has not filled in yet
+        return "live"
+
+    def _elapsed(self, result):
+        """Seconds of play: a segmented game adds its parts up."""
+        if self._root:
+            total = 0.0
+            for directory in self._segments:
+                done = self._json(directory / "result.json")
+                if done is not None:
+                    total += _number(done.get("seconds"))
+                elif (directory / "manifest.json").exists():
+                    total += max(0.0, time.time() - (directory / "manifest.json").stat().st_mtime)
+            return total
+        if result is not None:
+            return _number(result.get("seconds"))
+        started = self._started_at()
+        return max(0.0, time.time() - started) if started is not None else 0.0
 
     def _current_blind(self, observation):
         blinds = observation.get("blinds") or []
@@ -313,22 +440,14 @@ class RunWatch:
                 key=lambda h: (_number(h.get("level")), _number(h.get("played"))),
                 reverse=True,
             )[:5]
-            started = self._started_at()
-            if result is not None:
-                elapsed = _number(result.get("seconds"))
-            elif started is not None:
-                elapsed = max(0.0, time.time() - started)
-            else:
-                elapsed = 0.0
-            if not observation and result is None:
-                status = "waiting"
-            else:
-                status = "finished" if result is not None else "live"
+            game = self._game(result)
+            status = self._status(game)
             return dict(
                 run=self.run_dir.name,
                 status=status,
-                result=result,
-                elapsed_seconds=round(elapsed, 1),
+                game=game,
+                result=result if status == "finished" else None,
+                elapsed_seconds=round(self._elapsed(result), 1),
                 ante=observation.get("ante"),
                 phase=observation.get("phase"),
                 money=_number(observation.get("money")),
@@ -365,7 +484,7 @@ class RunWatch:
                 ),
                 plan=self._plan,
                 peak_hand=self._peak_hand,
-                feed=list(reversed(self._feed[-12:])),
+                feed=list(reversed(self._feed[-24:])),
                 blinds=list(self._blinds),
                 last_event=self._sequence,
             )
