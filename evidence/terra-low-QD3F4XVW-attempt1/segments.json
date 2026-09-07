@@ -1,0 +1,32 @@
+[
+ {
+  "segment": "00",
+  "original_directory": "runs/terra-QD3F4XVW/segment-00",
+  "part_of_completed_game": true,
+  "status": "stopped",
+  "reason": "interrupted",
+  "ante_reached": 1,
+  "decisions": 1,
+  "coach_requests": 52,
+  "sha256_uncompressed": {
+   "result.json": "972f09003231aba11bf5711b9db819f60c02c0dda31ecfc416f116689d0b54de",
+   "trajectory.jsonl": "4f37a1bda42d6a60ace73e194ca7935c74c35dddb76d4e45d0437e1c10a5371a",
+   "manifest.json": "1a1a7da12fec735b196f1755193541dc9da50e630fda1d2aff1cb891bf56a30e"
+  }
+ },
+ {
+  "segment": "01",
+  "original_directory": "runs/terra-QD3F4XVW/segment-01",
+  "part_of_completed_game": true,
+  "status": "lost",
+  "reason": "endless_game_over",
+  "ante_reached": 2,
+  "decisions": 19,
+  "coach_requests": 67,
+  "sha256_uncompressed": {
+   "result.json": "6c80363eac24a9dc8f5e5196086e36dd2d50c9c466415b9408c8a06424cef3a0",
+   "trajectory.jsonl": "2b64b00f588043337ea98b1ec8773cbcd7ba9843bf12b6f7c47ad91a81506bd8",
+   "manifest.json": "8608453b308fc5308d38e92584c9709b83a22073f26c10abb70b334c09eea606"
+  }
+ }
+]

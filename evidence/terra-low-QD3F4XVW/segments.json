@@ -1,0 +1,17 @@
+[
+ {
+  "segment": "00",
+  "original_directory": "runs/terra-QD3F4XVW-3/segment-00",
+  "part_of_completed_game": true,
+  "status": "lost",
+  "reason": "endless_game_over",
+  "ante_reached": 2,
+  "decisions": 36,
+  "coach_requests": 30,
+  "sha256_uncompressed": {
+   "result.json": "b65ea9f252b7f23eb526768a30586ba3bf7ba937f7ff8ff8065fad19ab8b2338",
+   "trajectory.jsonl": "86ea3da9c28126edec63274cfea78504882da487d85471c714caeed7ed66f9ec",
+   "manifest.json": "1a1a7da12fec735b196f1755193541dc9da50e630fda1d2aff1cb891bf56a30e"
+  }
+ }
+]
