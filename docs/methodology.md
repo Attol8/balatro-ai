@@ -16,11 +16,13 @@ extra win.
 
 - Heuristic baselines were run on the fixed development panel D0000000 to
   D0000019: twenty seeds, one game each, all starting from Ante 1.
-- The coached win used seed 2K9H9HN, chosen by the game, outside that panel.
+- The coached wins used seeds 2K9H9HN and TAF7DNTX, chosen by the game, outside
+  that panel.
 - Seeds live in run manifests only. The model never receives one.
 
-The coached game is therefore a single game on a different seed from the panel. It
-demonstrates that the system can beat the game; it does not estimate a win rate.
+The coached games are therefore two single games on different seeds from the
+panel. They demonstrate that the system can beat the game; they do not estimate a
+win rate.
 The repository says "unattended win rate unmeasured" wherever that matters.
 
 ## Disclosure rules
@@ -32,8 +34,14 @@ a file under `evidence/`. Specific disclosures that must accompany the results:
   continuations and extended limits were applied between segments. No uncertain
   game mutation was replayed and no trajectory was edited. Segment boundaries and
   SHA-256 hashes are in `evidence/astra-low-2K9H9HN/segments.json`.
-- The model chose 353 of 383 recorded decisions; the other 30 were automatic
-  cashouts. No decision was delegated to a heuristic policy.
+- In the 2K9H9HN run the model chose 353 of 383 recorded decisions; the other 30
+  were automatic cashouts. In the TAF7DNTX run it chose 409 of 456, 31 of them as
+  chained follow-ups; 34 were automatic cashouts and 13 forced moves with a single
+  legal action. No decision was ever delegated to a heuristic policy.
+- The TAF7DNTX run was played headless and the runner process was stopped and
+  resumed four times while waiting for the model, to deploy the retry, resume and
+  hedging fixes described below. Every resume verified that the live game matched
+  the last recorded transition. The model received no hints or corrections.
 - An earlier high-effort run of a previous version of the system is archived under
   `evidence/first-win/` with its own write-up. It is not part of the results and
   is not used by the benchmark builder.
@@ -76,12 +84,14 @@ continued. Do not pool partial panels with complete ones without saying so.
 
 ## Speed
 
-Every model call in the recorded run took about ten seconds, and profiling on
-recorded states showed the local work (analysis about 15 ms, encoding about 1 ms)
-is negligible: the time is the Codex call. Two things drive it, the size of the
-packet the model must read and the number of calls per game. Both were reduced
-after the recorded run, and both reductions are verified offline; the wall-clock
-effect is not measured until a new game is played.
+Every model call in the first recorded run took about ten seconds, and profiling
+on recorded states showed the local work (analysis about 15 ms, encoding about
+1 ms) is negligible: the time is the Codex call. A trivial one-word Codex call
+takes about 4.6 seconds on its own, so roughly half of each decision is fixed
+round-trip cost. Two things remain to work on: the size of the packet and the
+number of calls per game. The headless TAF7DNTX run measured the result: calls the
+service answered promptly took about nine seconds, and 404 calls covered 456
+decisions.
 
 | Measured on the recorded run | Value |
 |---|---|
@@ -110,6 +120,23 @@ The stable instructions come first in every request and are byte-identical withi
 a run, so the service-side prompt cache can reuse them. Persistent Codex sessions
 were tried and rejected because the app-server ignores the isolation flags that
 keep personal configuration out of the model's context.
+
+Service stalls turned out to matter more than packet size. In the headless run the
+Codex service intermittently never started answering, on roughly one call in ten,
+with the process idle and no error. Three mechanisms now keep a game alive
+through that, all on the model-call side and never touching the game:
+
+- **Retry.** A timed-out model call is re-asked with a fresh request id, up to six
+  attempts per decision with a pause from the second retry, within the run budget.
+- **Hedging.** If a call has not answered after twenty seconds, a second identical
+  process starts and the first valid answer wins. In the headless run the hedge
+  fired sixteen times and the second process won fourteen.
+- **Private Codex home.** The child runs from an empty home linked only to the
+  login file, so the CLI never scans the user's session history at startup.
+
+`balatro play --resume DIR` continues an interrupted game from its recorded
+trajectory after verifying the live state, which is how the headless run was
+carried across runner restarts without touching the game.
 
 ## What is deliberately absent
 

@@ -21,11 +21,18 @@ from pathlib import Path
 
 from . import EVIDENCE_ROOT, SETTING
 from .baselines import BaselinePanel, load_panels
-from .trajectories import Trajectory, load_astra_low, segment_ante_bounds
+from .trajectories import (
+    ASTRA_LOW_HEADLESS,
+    ASTRA_LOW_SUPERVISED,
+    Trajectory,
+    load_astra_low,
+    load_astra_low_headless,
+    segment_ante_bounds,
+)
 
 TABLE_A_TITLE = f"Real-game results, {SETTING}"
 TABLE_B_TITLE = "Scoring-engine exactness"
-TABLE_C_TITLE = "Decision mix in the Astra-low run"
+TABLE_C_TITLE = "Decision mix in the Astra-low runs"
 SHOP_PHASE = "SHOP"
 
 TRAJECTORY_REVIEW = "docs/trajectory-review.md"
@@ -48,6 +55,9 @@ class CoachedRow:
     peak_hand_score: float
     note: str
     sources: list[str] = field(default_factory=list)
+    followup_actions: int | None = None
+    forced_actions: int | None = None
+    coach_timeouts: int | None = None
 
     @property
     def median_ante(self) -> float:
@@ -70,6 +80,15 @@ class CoachedRow:
         ratio = self.coach_requests / self.decisions
         return f"{self.coach_requests}/{self.decisions} = {ratio:.2f}"
 
+    @property
+    def intervention_label(self) -> str:
+        """Follow-ups, forced moves and retried stalls, or ``-`` when not recorded."""
+
+        parts = (self.followup_actions, self.forced_actions, self.coach_timeouts)
+        if all(part is None for part in parts):
+            return "-"
+        return " / ".join("-" if part is None else str(part) for part in parts)
+
 
 def _panel_row(panel: BaselinePanel) -> dict:
     return {
@@ -86,6 +105,7 @@ def _panel_row(panel: BaselinePanel) -> dict:
         "seed_panel": panel.seeds_label,
         "partial": panel.partial,
         "calls_per_decision": "-",
+        "followups_forced_stalls": "-",
         "git_revision": panel.git_revision,
         "profile_mode": panel.profile_mode,
         "notes": list(panel.notes),
@@ -110,6 +130,10 @@ def _coached_row(row: CoachedRow) -> dict:
         "decisions": row.decisions,
         "coach_requests": row.coach_requests,
         "calls_per_decision": row.calls_per_decision,
+        "followup_actions": row.followup_actions,
+        "forced_actions": row.forced_actions,
+        "coach_timeouts": row.coach_timeouts,
+        "followups_forced_stalls": row.intervention_label,
         "seconds": row.seconds,
         "peak_hand_score": row.peak_hand_score,
         "notes": [row.note],
@@ -118,13 +142,38 @@ def _coached_row(row: CoachedRow) -> dict:
 
 
 def built_in_coached_rows(evidence_root: Path | None = None) -> list[CoachedRow]:
-    """The published coached run: Astra low on seed 2K9H9HN."""
+    """The two published coached runs, headless TAF7DNTX first."""
 
-    root = (evidence_root or EVIDENCE_ROOT) / "astra-low-2K9H9HN"
-    low = json.loads((root / "result.json").read_text())
-    low_ante8 = json.loads((root / "ante-8-result.json").read_text())
-    low_manifest = json.loads((root / "manifest.json").read_text())
+    root = evidence_root or EVIDENCE_ROOT
+    headless_dir = root / ASTRA_LOW_HEADLESS
+    headless = json.loads((headless_dir / "result.json").read_text())
+    headless_manifest = json.loads((headless_dir / "manifest.json").read_text())
+    supervised_dir = root / ASTRA_LOW_SUPERVISED
+    low = json.loads((supervised_dir / "result.json").read_text())
+    low_ante8 = json.loads((supervised_dir / "ante-8-result.json").read_text())
+    low_manifest = json.loads((supervised_dir / "manifest.json").read_text())
     return [
+        CoachedRow(
+            label=f"Astra low ({headless_manifest['requested_model']})",
+            model=headless_manifest["requested_model"],
+            reasoning_effort=headless_manifest["requested_reasoning_effort"],
+            seeds=[headless_manifest["seed"]],
+            games=1,
+            ante8_clears=1 if headless["won"] else 0,
+            antes_reached=[int(headless["ante_reached"])],
+            decisions=int(headless["decisions"]),
+            coach_requests=int(headless["coach_requests"]),
+            seconds=float(headless["seconds"]),
+            peak_hand_score=float(headless["peak_hand_score"]),
+            note=(
+                f"single game, seed {headless_manifest['seed']}: headless, endless; "
+                f"cleared Ante 8, then lost at ante {headless['ante_reached']}"
+            ),
+            sources=[f"evidence/{ASTRA_LOW_HEADLESS}"],
+            followup_actions=int(headless["followup_actions"]),
+            forced_actions=int(headless["forced_actions"]),
+            coach_timeouts=int(headless["coach_timeouts"]),
+        ),
         CoachedRow(
             label=f"Astra low ({low_manifest['requested_model']})",
             model=low_manifest["requested_model"],
@@ -142,7 +191,7 @@ def built_in_coached_rows(evidence_root: Path | None = None) -> list[CoachedRow]
                 f"({low_ante8['decisions']} decisions, ante {low_ante8['ante_reached']}), "
                 f"then continued in endless and lost at ante {low['ante_reached']}"
             ),
-            sources=["evidence/astra-low-2K9H9HN"],
+            sources=[f"evidence/{ASTRA_LOW_SUPERVISED}"],
         ),
     ]
 
@@ -196,9 +245,12 @@ def _table_a(panels: list[BaselinePanel], coached: list[CoachedRow]) -> dict:
         )
         baseline_rows.append(row)
     coached_rows = []
+    seen_labels = Counter(row.label for row in coached)
     for row in coached:
         entry = _coached_row(row)
-        entry["display_name"] = row.label
+        entry["display_name"] = (
+            f"{row.label}, seed {row.seed_label}" if seen_labels[row.label] > 1 else row.label
+        )
         coached_rows.append(entry)
     return {
         "title": TABLE_A_TITLE,
@@ -206,12 +258,19 @@ def _table_a(panels: list[BaselinePanel], coached: list[CoachedRow]) -> dict:
         "baselines": baseline_rows,
         "coached": coached_rows,
         "footnotes": [
-            "The coached row is a single game on a seed outside the D0000000-D0000019 baseline "
-            "panel; it is a demonstration, not a win-rate estimate.",
+            "Each coached row is a single game on a seed outside the D0000000-D0000019 "
+            "baseline panel; they are demonstrations, not win-rate estimates.",
+            "Seed TAF7DNTX was played headless in endless mode. The runner process was stopped "
+            "and resumed four times at safe moments (during model calls) to deploy runner fixes "
+            "- request-id length, timeout retry, hedged calls. No game state or trajectory was "
+            "edited; illegal replies were rejected and corrected in place.",
             "The Astra-low run was supervised: it was played with adapter fixes and reviewed "
             "continuations across 7 recorded segments, so it is not an unattended benchmark.",
             "'Coach calls / decisions' counts model requests against actions taken; the runner "
             "takes cash-outs itself, so the ratio is below one.",
+            "'Follow-ups / forced / stalls' counts chained follow-up actions, moves the runner "
+            "forced when no legal reply arrived, and coach calls that timed out and were "
+            "retried; only the current runner records them.",
             "Baselines are sorted by Ante-8 clears (descending), then median ante (descending).",
             "Games with status 'error' count as attempted but not completed and are excluded "
             "from the ante statistics.",
@@ -254,12 +313,12 @@ def _table_b(low: Trajectory, evidence_root: Path | None = None) -> dict:
     }
 
 
-def _shop_visits(low: Trajectory) -> dict:
+def _shop_visits(trajectory: Trajectory) -> dict:
     """Consecutive SHOP-phase decisions grouped into one shop visit each."""
 
     visits: list[int] = []
     current = 0
-    for record in low.decisions:
+    for record in trajectory.decisions:
         if record.phase == SHOP_PHASE:
             current += 1
         elif current:
@@ -276,13 +335,12 @@ def _shop_visits(low: Trajectory) -> dict:
     }
 
 
-def _table_c(low: Trajectory, evidence_root: Path | None = None) -> dict:
-    root = evidence_root or EVIDENCE_ROOT
-    result = json.loads((root / "astra-low-2K9H9HN" / "result.json").read_text())
-    sources = low.source_counts()
-    phases = Counter(record.phase for record in low.decisions)
+def _decision_mix(trajectory: Trajectory, result: dict) -> dict:
+    """One run's decision mix: sources, phases, action types, shop visits, call health."""
+
+    phases = Counter(record.phase for record in trajectory.decisions)
     by_action: dict[str, Counter] = {}
-    for record in low.decisions:
+    for record in trajectory.decisions:
         by_action.setdefault(record.action, Counter())[record.source] += 1
     actions = [
         {
@@ -293,22 +351,45 @@ def _table_c(low: Trajectory, evidence_root: Path | None = None) -> dict:
         for action, counts in by_action.items()
     ]
     actions.sort(key=lambda entry: (-entry["count"], entry["action"]))
-    return {
-        "title": TABLE_C_TITLE,
-        "run": low.run_id,
-        "seed": low.seed,
-        "total_transitions": len(low.decisions),
+    calls = trajectory.coach_calls
+    block = {
+        "run": trajectory.run_id,
+        "seed": trajectory.seed,
+        "total_transitions": len(trajectory.decisions),
         "reported_decisions": int(result["decisions"]),
-        "decision_sources": sources,
+        "decision_sources": trajectory.source_counts(),
         "decisions_per_phase": {phase: phases[phase] for phase in sorted(phases)},
         "decisions_per_action": actions,
-        "shop_visits": _shop_visits(low),
-        "source": "evidence/astra-low-2K9H9HN/segments/*/trajectory.jsonl.gz",
-        "note": (
-            f"The concatenated segments hold {len(low.decisions)} transitions while "
-            f"result.json reports {result['decisions']} decisions: segment 00 ended on an "
-            "errored action that was counted but never produced a transition record."
-        ),
+        "shop_visits": _shop_visits(trajectory),
+        "coach_calls": {
+            "recorded": calls.recorded,
+            "responses": calls.responses,
+            "responses_with_hedge_data": calls.responses_with_hedge_data,
+            "hedged": calls.hedged,
+            "hedges_won": calls.hedges_won,
+            "timeouts": calls.timeouts,
+            "rejected_responses": calls.rejected_responses,
+        },
+        "source": f"evidence/{trajectory.run_id}/segments/*/trajectory.jsonl.gz",
+    }
+    if len(trajectory.decisions) != block["reported_decisions"]:
+        block["note"] = (
+            f"The concatenated segments hold {len(trajectory.decisions)} transitions while "
+            f"result.json reports {block['reported_decisions']} decisions: segment 00 ended on "
+            "an errored action that was counted but never produced a transition record."
+        )
+    else:
+        block["note"] = (
+            f"The concatenated segments hold exactly the {block['reported_decisions']} decisions "
+            "result.json reports."
+        )
+    return block
+
+
+def _table_c(runs: list[tuple[Trajectory, dict]]) -> dict:
+    return {
+        "title": TABLE_C_TITLE,
+        "blocks": [_decision_mix(trajectory, result) for trajectory, result in runs],
     }
 
 
@@ -321,16 +402,25 @@ def build_results(
     root = evidence_root or EVIDENCE_ROOT
     panels = load_panels(root)
     low = load_astra_low(root)
+    headless = load_astra_low_headless(root)
+    low_result = json.loads((root / ASTRA_LOW_SUPERVISED / "result.json").read_text())
+    headless_result = json.loads((root / ASTRA_LOW_HEADLESS / "result.json").read_text())
     coached = built_in_coached_rows(root) + load_extra_runs(list(extra_runs or []))
     return {
         "setting": SETTING,
         "evidence_root": "evidence",
         "table_a": _table_a(panels, coached),
         "table_b": _table_b(low, root),
-        "table_c": _table_c(low, root),
-        "astra_low_segments": [
-            {"segment": segment, "ante_start": start, "ante_end": end}
-            for segment, start, end in segment_ante_bounds(low)
+        "table_c": _table_c([(headless, headless_result), (low, low_result)]),
+        "segment_continuity": [
+            {
+                "run": trajectory.run_id,
+                "segments": [
+                    {"segment": segment, "ante_start": start, "ante_end": end}
+                    for segment, start, end in segment_ante_bounds(trajectory)
+                ],
+            }
+            for trajectory in (headless, low)
         ],
     }
 
@@ -377,6 +467,7 @@ def render_markdown(results: dict) -> str:
         "Median ante",
         "Mean ante",
         "Coach calls / decisions",
+        "Follow-ups / forced / stalls",
         "Seed panel",
         "Notes",
     ]
@@ -392,6 +483,7 @@ def render_markdown(results: dict) -> str:
                 _fmt(row["median_ante"]),
                 _fmt(row["mean_ante"]),
                 row.get("calls_per_decision") or "-",
+                row.get("followups_forced_stalls") or "-",
                 row["seed_panel"],
                 "; ".join(row["notes"]) or "-",
             ]
@@ -423,64 +515,93 @@ def render_markdown(results: dict) -> str:
 
     table_c = results["table_c"]
     lines += [f"## Table C - {table_c['title']}", ""]
-    lines.append("Decision source, over the concatenated segments 00-06:")
-    lines.append("")
-    lines += _md_table(
-        ["Decision source", "Count"],
-        [[name, str(count)] for name, count in table_c["decision_sources"].items()]
-        + [["**total**", str(table_c["total_transitions"])]],
-    )
-    lines.append("")
-    lines.append("Decisions per phase:")
-    lines.append("")
-    lines += _md_table(
-        ["Phase", "Decisions"],
-        [[phase, str(count)] for phase, count in table_c["decisions_per_phase"].items()],
-    )
-    lines.append("")
-    lines.append("Decisions per action type:")
-    lines.append("")
-    lines += _md_table(
-        ["Action", "Count", "Sources"],
-        [
+    for block in table_c["blocks"]:
+        lines.append(f"### {block['run']} (seed {block['seed']})")
+        lines.append("")
+        lines.append("Decision source, over the concatenated segments:")
+        lines.append("")
+        lines += _md_table(
+            ["Decision source", "Count"],
+            [[name, str(count)] for name, count in block["decision_sources"].items()]
+            + [["**total**", str(block["total_transitions"])]],
+        )
+        lines.append("")
+        lines.append("Decisions per phase:")
+        lines.append("")
+        lines += _md_table(
+            ["Phase", "Decisions"],
+            [[phase, str(count)] for phase, count in block["decisions_per_phase"].items()],
+        )
+        lines.append("")
+        lines.append("Decisions per action type:")
+        lines.append("")
+        lines += _md_table(
+            ["Action", "Count", "Sources"],
             [
-                entry["action"],
-                str(entry["count"]),
-                ", ".join(f"{name} {count}" for name, count in entry["sources"].items()),
-            ]
-            for entry in table_c["decisions_per_action"]
-        ],
-    )
-    lines.append("")
-    shop = table_c["shop_visits"]
-    lines.append("Shop visits:")
-    lines.append("")
-    lines += _md_table(
-        ["Visits", "Shop actions", "Median per visit", "Mean per visit", "Max in one visit"],
-        [
+                [
+                    entry["action"],
+                    str(entry["count"]),
+                    ", ".join(f"{name} {count}" for name, count in entry["sources"].items()),
+                ]
+                for entry in block["decisions_per_action"]
+            ],
+        )
+        lines.append("")
+        shop = block["shop_visits"]
+        lines.append("Shop visits:")
+        lines.append("")
+        lines += _md_table(
+            ["Visits", "Shop actions", "Median per visit", "Mean per visit", "Max in one visit"],
             [
-                str(shop["visits"]),
-                str(shop["actions_total"]),
-                _fmt(shop["median_actions_per_visit"]),
-                _fmt(shop["mean_actions_per_visit"]),
-                str(shop["max_actions_in_a_visit"]),
-            ]
-        ],
-    )
+                [
+                    str(shop["visits"]),
+                    str(shop["actions_total"]),
+                    _fmt(shop["median_actions_per_visit"]),
+                    _fmt(shop["mean_actions_per_visit"]),
+                    str(shop["max_actions_in_a_visit"]),
+                ]
+            ],
+        )
+        lines.append("")
+        calls = block["coach_calls"]
+        lines.append("Coach call health:")
+        lines.append("")
+        if calls["recorded"]:
+            lines += _md_table(
+                ["Responses", "With hedge data", "Hedged", "Hedges won", "Timeouts", "Rejected"],
+                [
+                    [
+                        str(calls["responses"]),
+                        str(calls["responses_with_hedge_data"]),
+                        str(calls["hedged"]),
+                        str(calls["hedges_won"]),
+                        str(calls["timeouts"]),
+                        str(calls["rejected_responses"]),
+                    ]
+                ],
+            )
+        else:
+            lines.append(
+                f"- {calls['responses']} coach responses; this run predates the transport "
+                "timings, so hedges, timeouts and rejections were never recorded."
+            )
+        lines.append("")
+        lines.append(f"- {block['note']}")
+        lines.append(f"- Source: `{block['source']}`")
+        lines.append("")
+    lines.append("## Segment continuity")
     lines.append("")
-    lines.append(f"- {table_c['note']}")
-    lines.append(f"- Source: `{table_c['source']}`")
-    lines.append("")
-    lines.append("## Astra-low segment continuity")
-    lines.append("")
-    lines += _md_table(
-        ["Segment", "Ante at start", "Ante at end"],
-        [
-            [entry["segment"], str(entry["ante_start"]), str(entry["ante_end"])]
-            for entry in results["astra_low_segments"]
-        ],
-    )
-    lines.append("")
+    for entry in results["segment_continuity"]:
+        lines.append(f"### {entry['run']}")
+        lines.append("")
+        lines += _md_table(
+            ["Segment", "Ante at start", "Ante at end"],
+            [
+                [item["segment"], str(item["ante_start"]), str(item["ante_end"])]
+                for item in entry["segments"]
+            ],
+        )
+        lines.append("")
     return "\n".join(lines)
 
 

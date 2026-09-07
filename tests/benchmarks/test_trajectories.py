@@ -4,14 +4,19 @@ from __future__ import annotations
 
 import itertools
 
+from benchmarks import EVIDENCE_ROOT
 from benchmarks.trajectories import (
+    ASTRA_LOW_HEADLESS,
     SOURCE_AUTOMATIC,
     SOURCE_COACH,
     SOURCE_DELEGATE,
     Trajectory,
     astra_low_segments,
     load_astra_low,
+    load_astra_low_headless,
     load_first_win,
+    load_segmented_run,
+    run_segments,
     segment_ante_bounds,
 )
 
@@ -141,3 +146,81 @@ def test_astra_low_plays_and_blinds():
     assert final.total_chips_scored == 3350514.0
     assert not final.cleared
     _assert_requirements_increase(low)
+
+
+EXPECTED_HEADLESS_BOUNDS = [
+    ("00", 1, 2),
+    ("01", 2, 5),
+    ("02", 5, 6),
+    ("03", 6, 6),
+    ("04", 6, 13),
+]
+
+
+def test_headless_run_loads_every_segment():
+    segments = run_segments(EVIDENCE_ROOT / ASTRA_LOW_HEADLESS)
+    assert [entry["segment"] for entry in segments] == ["00", "01", "02", "03", "04"]
+    assert all(entry["part_of_completed_game"] for entry in segments)
+    assert all(entry["sha256_uncompressed"]["trajectory.jsonl"] for entry in segments)
+
+
+def test_headless_run_has_456_transitions_and_the_new_sources():
+    run = load_astra_low_headless()
+    assert run.run_id == ASTRA_LOW_HEADLESS
+    assert run.seed == "TAF7DNTX"
+    assert len(run.decisions) == 456
+    assert run.source_counts() == {
+        "automatic": 34,
+        "coach": 378,
+        "coach_followup": 31,
+        "forced": 13,
+    }
+    assert sum(run.source_counts().values()) == 456
+
+
+def test_headless_segments_are_contiguous_from_ante_one_to_thirteen():
+    run = load_astra_low_headless()
+    bounds = segment_ante_bounds(run)
+    assert bounds == EXPECTED_HEADLESS_BOUNDS
+    for (_, _, end), (_, start, _) in itertools.pairwise(bounds):
+        assert end == start
+    antes = run.ante_series()
+    assert antes[0] == 1
+    assert all(before <= after for before, after in itertools.pairwise(antes))
+    assert run.decisions[-1].ante_after == 13
+
+
+def test_headless_coach_call_health_comes_from_the_events():
+    calls = load_astra_low_headless().coach_calls
+    assert calls.recorded
+    assert calls.responses == 386
+    assert calls.responses_with_hedge_data == 219
+    assert calls.hedged == 16
+    assert calls.hedges_won == 14
+    assert calls.timeouts == 15
+    assert calls.rejected_responses == 8
+    assert not load_astra_low().coach_calls.recorded
+
+
+def test_headless_blind_requirements_stay_exact_integers():
+    run = load_astra_low_headless()
+    blinds = run.blind_series()
+    assert len(blinds) == 35
+    assert all(isinstance(blind.requirement, int) for blind in blinds)
+    # The Ante 1 small blind was skipped for an Investment Tag.
+    assert (blinds[0].ante, blinds[0].blind) == (1, "BIG")
+    by_key = {(blind.ante, blind.blind): blind for blind in blinds}
+    ante8_boss = by_key[(8, "BOSS")]
+    assert ante8_boss.requirement == 100_000
+    assert ante8_boss.best_hand_score == 180442.0
+    assert ante8_boss.cleared
+    final = blinds[-1]
+    assert (final.ante, final.blind, final.requirement) == (13, "BOSS", 94_000_000_000)
+    assert not final.cleared
+    assert max(blind.best_hand_score for blind in blinds) == 134231931235.0
+    _assert_requirements_increase(run)
+
+
+def test_load_segmented_run_works_on_any_run_directory():
+    direct = load_segmented_run(EVIDENCE_ROOT / ASTRA_LOW_HEADLESS)
+    assert direct.decisions == load_astra_low_headless().decisions

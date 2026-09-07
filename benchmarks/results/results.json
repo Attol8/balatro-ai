@@ -1,42 +1,77 @@
 {
-  "astra_low_segments": [
+  "evidence_root": "evidence",
+  "segment_continuity": [
     {
-      "ante_end": 2,
-      "ante_start": 1,
-      "segment": "00"
+      "run": "astra-low-TAF7DNTX",
+      "segments": [
+        {
+          "ante_end": 2,
+          "ante_start": 1,
+          "segment": "00"
+        },
+        {
+          "ante_end": 5,
+          "ante_start": 2,
+          "segment": "01"
+        },
+        {
+          "ante_end": 6,
+          "ante_start": 5,
+          "segment": "02"
+        },
+        {
+          "ante_end": 6,
+          "ante_start": 6,
+          "segment": "03"
+        },
+        {
+          "ante_end": 13,
+          "ante_start": 6,
+          "segment": "04"
+        }
+      ]
     },
     {
-      "ante_end": 3,
-      "ante_start": 2,
-      "segment": "01"
-    },
-    {
-      "ante_end": 4,
-      "ante_start": 3,
-      "segment": "02"
-    },
-    {
-      "ante_end": 6,
-      "ante_start": 4,
-      "segment": "03"
-    },
-    {
-      "ante_end": 6,
-      "ante_start": 6,
-      "segment": "04"
-    },
-    {
-      "ante_end": 9,
-      "ante_start": 6,
-      "segment": "05"
-    },
-    {
-      "ante_end": 11,
-      "ante_start": 9,
-      "segment": "06"
+      "run": "astra-low-2K9H9HN",
+      "segments": [
+        {
+          "ante_end": 2,
+          "ante_start": 1,
+          "segment": "00"
+        },
+        {
+          "ante_end": 3,
+          "ante_start": 2,
+          "segment": "01"
+        },
+        {
+          "ante_end": 4,
+          "ante_start": 3,
+          "segment": "02"
+        },
+        {
+          "ante_end": 6,
+          "ante_start": 4,
+          "segment": "03"
+        },
+        {
+          "ante_end": 6,
+          "ante_start": 6,
+          "segment": "04"
+        },
+        {
+          "ante_end": 9,
+          "ante_start": 6,
+          "segment": "05"
+        },
+        {
+          "ante_end": 11,
+          "ante_start": 9,
+          "segment": "06"
+        }
+      ]
     }
   ],
-  "evidence_root": "evidence",
   "setting": "Red Deck / White Stake / all unlocked",
   "table_a": {
     "baselines": [
@@ -44,6 +79,7 @@
         "ante8_clears": 3,
         "calls_per_decision": "-",
         "display_name": "search-v4",
+        "followups_forced_stalls": "-",
         "games_attempted": 20,
         "games_completed": 20,
         "games_requested": 20,
@@ -63,6 +99,7 @@
         "ante8_clears": 3,
         "calls_per_decision": "-",
         "display_name": "search-v5",
+        "followups_forced_stalls": "-",
         "games_attempted": 20,
         "games_completed": 20,
         "games_requested": 20,
@@ -82,6 +119,7 @@
         "ante8_clears": 3,
         "calls_per_decision": "-",
         "display_name": "search-v6",
+        "followups_forced_stalls": "-",
         "games_attempted": 20,
         "games_completed": 20,
         "games_requested": 20,
@@ -101,6 +139,7 @@
         "ante8_clears": 2,
         "calls_per_decision": "-",
         "display_name": "search-v7",
+        "followups_forced_stalls": "-",
         "games_attempted": 20,
         "games_completed": 20,
         "games_requested": 20,
@@ -120,6 +159,7 @@
         "ante8_clears": 2,
         "calls_per_decision": "-",
         "display_name": "search-v3",
+        "followups_forced_stalls": "-",
         "games_attempted": 20,
         "games_completed": 20,
         "games_requested": 20,
@@ -139,6 +179,7 @@
         "ante8_clears": 1,
         "calls_per_decision": "-",
         "display_name": "search",
+        "followups_forced_stalls": "-",
         "games_attempted": 20,
         "games_completed": 20,
         "games_requested": 20,
@@ -158,6 +199,7 @@
         "ante8_clears": 1,
         "calls_per_decision": "-",
         "display_name": "search-planets",
+        "followups_forced_stalls": "-",
         "games_attempted": 20,
         "games_completed": 20,
         "games_requested": 20,
@@ -177,6 +219,7 @@
         "ante8_clears": 1,
         "calls_per_decision": "-",
         "display_name": "search-v2",
+        "followups_forced_stalls": "-",
         "games_attempted": 20,
         "games_completed": 20,
         "games_requested": 20,
@@ -196,6 +239,7 @@
         "ante8_clears": 1,
         "calls_per_decision": "-",
         "display_name": "build-first",
+        "followups_forced_stalls": "-",
         "games_attempted": 20,
         "games_completed": 20,
         "games_requested": 20,
@@ -215,6 +259,7 @@
         "ante8_clears": 0,
         "calls_per_decision": "-",
         "display_name": "strategic (strategic-001)",
+        "followups_forced_stalls": "-",
         "games_attempted": 10,
         "games_completed": 10,
         "games_requested": 10,
@@ -237,6 +282,7 @@
         "ante8_clears": 0,
         "calls_per_decision": "-",
         "display_name": "strategic (strategic-unlocked-001)",
+        "followups_forced_stalls": "-",
         "games_attempted": 20,
         "games_completed": 20,
         "games_requested": 20,
@@ -256,6 +302,7 @@
         "ante8_clears": 0,
         "calls_per_decision": "-",
         "display_name": "baseline-v1",
+        "followups_forced_stalls": "-",
         "games_attempted": 11,
         "games_completed": 10,
         "games_requested": 20,
@@ -278,10 +325,45 @@
     "coached": [
       {
         "ante8_clears": 1,
+        "calls_per_decision": "404/456 = 0.89",
+        "coach_requests": 404,
+        "coach_timeouts": 15,
+        "decisions": 456,
+        "display_name": "Astra low (gpt-6-astra), seed TAF7DNTX",
+        "followup_actions": 31,
+        "followups_forced_stalls": "31 / 13 / 15",
+        "forced_actions": 13,
+        "games_attempted": 1,
+        "games_completed": 1,
+        "games_requested": 1,
+        "kind": "coached",
+        "mean_ante": 13.0,
+        "median_ante": 13.0,
+        "model": "gpt-6-astra",
+        "notes": [
+          "single game, seed TAF7DNTX: headless, endless; cleared Ante 8, then lost at ante 13"
+        ],
+        "peak_hand_score": 134231931235.0,
+        "policy": "Astra low (gpt-6-astra)",
+        "reached_ante8_or_more": 1,
+        "reasoning_effort": "low",
+        "run_dir": "evidence/astra-low-TAF7DNTX",
+        "seconds": 5882.708,
+        "seed_panel": "TAF7DNTX",
+        "sources": [
+          "evidence/astra-low-TAF7DNTX"
+        ]
+      },
+      {
+        "ante8_clears": 1,
         "calls_per_decision": "357/384 = 0.93",
         "coach_requests": 357,
+        "coach_timeouts": null,
         "decisions": 384,
-        "display_name": "Astra low (gpt-6-astra)",
+        "display_name": "Astra low (gpt-6-astra), seed 2K9H9HN",
+        "followup_actions": null,
+        "followups_forced_stalls": "-",
+        "forced_actions": null,
         "games_attempted": 1,
         "games_completed": 1,
         "games_requested": 1,
@@ -305,9 +387,11 @@
       }
     ],
     "footnotes": [
-      "The coached row is a single game on a seed outside the D0000000-D0000019 baseline panel; it is a demonstration, not a win-rate estimate.",
+      "Each coached row is a single game on a seed outside the D0000000-D0000019 baseline panel; they are demonstrations, not win-rate estimates.",
+      "Seed TAF7DNTX was played headless in endless mode. The runner process was stopped and resumed four times at safe moments (during model calls) to deploy runner fixes - request-id length, timeout retry, hedged calls. No game state or trajectory was edited; illegal replies were rejected and corrected in place.",
       "The Astra-low run was supervised: it was played with adapter fixes and reviewed continuations across 7 recorded segments, so it is not an unattended benchmark.",
       "'Coach calls / decisions' counts model requests against actions taken; the runner takes cash-outs itself, so the ratio is below one.",
+      "'Follow-ups / forced / stalls' counts chained follow-up actions, moves the runner forced when no legal reply arrived, and coach calls that timed out and were retried; only the current runner records them.",
       "Baselines are sorted by Ante-8 clears (descending), then median ante (descending).",
       "Games with status 'error' count as attempted but not completed and are excluded from the ante statistics."
     ],
@@ -334,151 +418,329 @@
     "title": "Scoring-engine exactness"
   },
   "table_c": {
-    "decision_sources": {
-      "automatic": 30,
-      "coach": 353
-    },
-    "decisions_per_action": [
+    "blocks": [
       {
-        "action": "reroll_shop",
-        "count": 72,
-        "sources": {
-          "coach": 72
-        }
+        "coach_calls": {
+          "hedged": 16,
+          "hedges_won": 14,
+          "recorded": true,
+          "rejected_responses": 8,
+          "responses": 386,
+          "responses_with_hedge_data": 219,
+          "timeouts": 15
+        },
+        "decision_sources": {
+          "automatic": 34,
+          "coach": 378,
+          "coach_followup": 31,
+          "forced": 13
+        },
+        "decisions_per_action": [
+          {
+            "action": "reroll_shop",
+            "count": 73,
+            "sources": {
+              "coach": 68,
+              "coach_followup": 5
+            }
+          },
+          {
+            "action": "use_consumable",
+            "count": 45,
+            "sources": {
+              "coach": 34,
+              "coach_followup": 11
+            }
+          },
+          {
+            "action": "buy_pack",
+            "count": 44,
+            "sources": {
+              "coach": 37,
+              "coach_followup": 7
+            }
+          },
+          {
+            "action": "choose_pack_card",
+            "count": 44,
+            "sources": {
+              "coach": 44
+            }
+          },
+          {
+            "action": "buy_shop_card",
+            "count": 40,
+            "sources": {
+              "coach": 37,
+              "coach_followup": 3
+            }
+          },
+          {
+            "action": "play_cards",
+            "count": 40,
+            "sources": {
+              "coach": 40
+            }
+          },
+          {
+            "action": "select_blind",
+            "count": 35,
+            "sources": {
+              "coach": 22,
+              "forced": 13
+            }
+          },
+          {
+            "action": "cash_out",
+            "count": 34,
+            "sources": {
+              "automatic": 34
+            }
+          },
+          {
+            "action": "leave_shop",
+            "count": 34,
+            "sources": {
+              "coach": 30,
+              "coach_followup": 4
+            }
+          },
+          {
+            "action": "discard_cards",
+            "count": 33,
+            "sources": {
+              "coach": 33
+            }
+          },
+          {
+            "action": "buy_voucher",
+            "count": 8,
+            "sources": {
+              "coach": 7,
+              "coach_followup": 1
+            }
+          },
+          {
+            "action": "reorder_jokers",
+            "count": 8,
+            "sources": {
+              "coach": 8
+            }
+          },
+          {
+            "action": "sell_joker",
+            "count": 6,
+            "sources": {
+              "coach": 6
+            }
+          },
+          {
+            "action": "sell_consumable",
+            "count": 4,
+            "sources": {
+              "coach": 4
+            }
+          },
+          {
+            "action": "skip_blind",
+            "count": 4,
+            "sources": {
+              "coach": 4
+            }
+          },
+          {
+            "action": "skip_pack",
+            "count": 3,
+            "sources": {
+              "coach": 3
+            }
+          },
+          {
+            "action": "reorder_hand",
+            "count": 1,
+            "sources": {
+              "coach": 1
+            }
+          }
+        ],
+        "decisions_per_phase": {
+          "BLIND_SELECT": 39,
+          "PACK": 47,
+          "ROUND_EVAL": 34,
+          "SELECTING_HAND": 95,
+          "SHOP": 241
+        },
+        "note": "The concatenated segments hold exactly the 456 decisions result.json reports.",
+        "reported_decisions": 456,
+        "run": "astra-low-TAF7DNTX",
+        "seed": "TAF7DNTX",
+        "shop_visits": {
+          "actions_total": 241,
+          "max_actions_in_a_visit": 13,
+          "mean_actions_per_visit": 3.09,
+          "median_actions_per_visit": 2.0,
+          "visits": 78
+        },
+        "source": "evidence/astra-low-TAF7DNTX/segments/*/trajectory.jsonl.gz",
+        "total_transitions": 456
       },
       {
-        "action": "play_cards",
-        "count": 49,
-        "sources": {
-          "coach": 49
-        }
-      },
-      {
-        "action": "buy_pack",
-        "count": 35,
-        "sources": {
-          "coach": 35
-        }
-      },
-      {
-        "action": "choose_pack_card",
-        "count": 33,
-        "sources": {
-          "coach": 33
-        }
-      },
-      {
-        "action": "use_consumable",
-        "count": 31,
-        "sources": {
-          "coach": 31
-        }
-      },
-      {
-        "action": "cash_out",
-        "count": 30,
-        "sources": {
-          "automatic": 30
-        }
-      },
-      {
-        "action": "leave_shop",
-        "count": 30,
-        "sources": {
-          "coach": 30
-        }
-      },
-      {
-        "action": "select_blind",
-        "count": 30,
-        "sources": {
-          "coach": 30
-        }
-      },
-      {
-        "action": "buy_shop_card",
-        "count": 27,
-        "sources": {
-          "coach": 27
-        }
-      },
-      {
-        "action": "reorder_jokers",
-        "count": 11,
-        "sources": {
-          "coach": 11
-        }
-      },
-      {
-        "action": "skip_pack",
-        "count": 9,
-        "sources": {
-          "coach": 9
-        }
-      },
-      {
-        "action": "discard_cards",
-        "count": 8,
-        "sources": {
-          "coach": 8
-        }
-      },
-      {
-        "action": "sell_joker",
-        "count": 8,
-        "sources": {
-          "coach": 8
-        }
-      },
-      {
-        "action": "buy_voucher",
-        "count": 5,
-        "sources": {
-          "coach": 5
-        }
-      },
-      {
-        "action": "sell_consumable",
-        "count": 3,
-        "sources": {
-          "coach": 3
-        }
-      },
-      {
-        "action": "reroll_boss",
-        "count": 1,
-        "sources": {
-          "coach": 1
-        }
-      },
-      {
-        "action": "skip_blind",
-        "count": 1,
-        "sources": {
-          "coach": 1
-        }
+        "coach_calls": {
+          "hedged": 0,
+          "hedges_won": 0,
+          "recorded": false,
+          "rejected_responses": 0,
+          "responses": 355,
+          "responses_with_hedge_data": 0,
+          "timeouts": 0
+        },
+        "decision_sources": {
+          "automatic": 30,
+          "coach": 353
+        },
+        "decisions_per_action": [
+          {
+            "action": "reroll_shop",
+            "count": 72,
+            "sources": {
+              "coach": 72
+            }
+          },
+          {
+            "action": "play_cards",
+            "count": 49,
+            "sources": {
+              "coach": 49
+            }
+          },
+          {
+            "action": "buy_pack",
+            "count": 35,
+            "sources": {
+              "coach": 35
+            }
+          },
+          {
+            "action": "choose_pack_card",
+            "count": 33,
+            "sources": {
+              "coach": 33
+            }
+          },
+          {
+            "action": "use_consumable",
+            "count": 31,
+            "sources": {
+              "coach": 31
+            }
+          },
+          {
+            "action": "cash_out",
+            "count": 30,
+            "sources": {
+              "automatic": 30
+            }
+          },
+          {
+            "action": "leave_shop",
+            "count": 30,
+            "sources": {
+              "coach": 30
+            }
+          },
+          {
+            "action": "select_blind",
+            "count": 30,
+            "sources": {
+              "coach": 30
+            }
+          },
+          {
+            "action": "buy_shop_card",
+            "count": 27,
+            "sources": {
+              "coach": 27
+            }
+          },
+          {
+            "action": "reorder_jokers",
+            "count": 11,
+            "sources": {
+              "coach": 11
+            }
+          },
+          {
+            "action": "skip_pack",
+            "count": 9,
+            "sources": {
+              "coach": 9
+            }
+          },
+          {
+            "action": "discard_cards",
+            "count": 8,
+            "sources": {
+              "coach": 8
+            }
+          },
+          {
+            "action": "sell_joker",
+            "count": 8,
+            "sources": {
+              "coach": 8
+            }
+          },
+          {
+            "action": "buy_voucher",
+            "count": 5,
+            "sources": {
+              "coach": 5
+            }
+          },
+          {
+            "action": "sell_consumable",
+            "count": 3,
+            "sources": {
+              "coach": 3
+            }
+          },
+          {
+            "action": "reroll_boss",
+            "count": 1,
+            "sources": {
+              "coach": 1
+            }
+          },
+          {
+            "action": "skip_blind",
+            "count": 1,
+            "sources": {
+              "coach": 1
+            }
+          }
+        ],
+        "decisions_per_phase": {
+          "BLIND_SELECT": 32,
+          "PACK": 44,
+          "ROUND_EVAL": 30,
+          "SELECTING_HAND": 70,
+          "SHOP": 207
+        },
+        "note": "The concatenated segments hold 383 transitions while result.json reports 384 decisions: segment 00 ended on an errored action that was counted but never produced a transition record.",
+        "reported_decisions": 384,
+        "run": "astra-low-2K9H9HN",
+        "seed": "2K9H9HN",
+        "shop_visits": {
+          "actions_total": 207,
+          "max_actions_in_a_visit": 12,
+          "mean_actions_per_visit": 3.18,
+          "median_actions_per_visit": 2.0,
+          "visits": 65
+        },
+        "source": "evidence/astra-low-2K9H9HN/segments/*/trajectory.jsonl.gz",
+        "total_transitions": 383
       }
     ],
-    "decisions_per_phase": {
-      "BLIND_SELECT": 32,
-      "PACK": 44,
-      "ROUND_EVAL": 30,
-      "SELECTING_HAND": 70,
-      "SHOP": 207
-    },
-    "note": "The concatenated segments hold 383 transitions while result.json reports 384 decisions: segment 00 ended on an errored action that was counted but never produced a transition record.",
-    "reported_decisions": 384,
-    "run": "astra-low-2K9H9HN",
-    "seed": "2K9H9HN",
-    "shop_visits": {
-      "actions_total": 207,
-      "max_actions_in_a_visit": 12,
-      "mean_actions_per_visit": 3.18,
-      "median_actions_per_visit": 2.0,
-      "visits": 65
-    },
-    "source": "evidence/astra-low-2K9H9HN/segments/*/trajectory.jsonl.gz",
-    "title": "Decision mix in the Astra-low run",
-    "total_transitions": 383
+    "title": "Decision mix in the Astra-low runs"
   }
 }

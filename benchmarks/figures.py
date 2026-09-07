@@ -10,6 +10,7 @@ figure paints its own light surface, so it stays legible on a dark page.
 from __future__ import annotations
 
 import random
+from collections import Counter
 from pathlib import Path
 
 import matplotlib
@@ -21,7 +22,11 @@ import matplotlib.pyplot as plt  # noqa: E402
 from . import EVIDENCE_ROOT, SETTING  # noqa: E402
 from .baselines import BaselinePanel, load_panels  # noqa: E402
 from .tables import CoachedRow, built_in_coached_rows  # noqa: E402
-from .trajectories import Trajectory, load_astra_low  # noqa: E402
+from .trajectories import (  # noqa: E402
+    Trajectory,
+    load_astra_low,
+    load_astra_low_headless,
+)
 
 SURFACE = "#fcfcfb"
 INK = "#0b0b0b"
@@ -33,8 +38,9 @@ SERIES_BASELINE = "#2a78d6"
 SERIES_COACHED = "#eb6834"
 
 WIN_ANTE = 8
+LABEL_BOX = {"boxstyle": "round,pad=0.2", "facecolor": SURFACE, "edgecolor": "none"}
 WIN_ANTE_REACHED = WIN_ANTE + 1
-ENDLESS_FOOTNOTE = "Astra low continued in endless mode after clearing Ante 8."
+ENDLESS_FOOTNOTE = "Each Astra-low game continued in endless mode after clearing Ante 8."
 
 
 def _coached_annotation(row: CoachedRow) -> str:
@@ -81,8 +87,17 @@ def ante_reached_by_policy(
 
     _configure()
     jitter = random.Random(0)
+    repeated_coached = {
+        label for label, count in Counter(row.label for row in coached).items() if count > 1
+    }
     rows: list[tuple[str, list[int], bool, str]] = [
-        (row.label, list(row.antes_reached), True, _coached_annotation(row)) for row in coached
+        (
+            f"{row.label}, seed {row.seed_label}" if row.label in repeated_coached else row.label,
+            list(row.antes_reached),
+            True,
+            _coached_annotation(row),
+        )
+        for row in coached
     ]
     rows += [
         (
@@ -181,7 +196,7 @@ def ante_reached_by_policy(
     axes.set_yticklabels([label for label, _, _, _ in rows])
     axes.set_ylim(-0.8, len(rows) - 0.1)
     axes.set_xlabel("Ante reached", color=INK_SECONDARY)
-    axes.set_xticks(range(1, 12))
+    axes.set_xticks(range(1, max(max(antes) for _, antes, _, _ in rows if antes) + 1))
 
     total_baseline = sum(len(antes) for _, antes, coach, _note in rows if not coach)
     total_coached = sum(len(antes) for _, antes, coach, _note in rows if coach)
@@ -261,110 +276,103 @@ def ante_reached_by_policy(
     return _save(fig, path)
 
 
-def score_vs_requirement(low: Trajectory, path: Path) -> Path:
-    """Chip requirement versus the best hand actually scored, per blind."""
+def score_vs_requirement(runs: list[tuple[Trajectory, str]], path: Path) -> Path:
+    """Chip requirement versus the best hand actually scored, per blind, per run."""
 
     _configure()
-    fig, axes = plt.subplots(figsize=(8.0, 4.6), dpi=100)
-    loss_ante = 11
-    _style_axes(axes)
-    axes.set_yscale("log")
-    axes.yaxis.grid(True, color=GRID, linewidth=0.8)
-    axes.set_axisbelow(True)
-    blinds = low.blind_series()
-    xs = list(range(len(blinds)))
-    requirements = [blind.requirement for blind in blinds]
-    best = [blind.best_hand_score for blind in blinds]
-    axes.step(
-        xs,
-        requirements,
-        where="mid",
-        color=INK_MUTED,
-        linewidth=2.0,
-        label="Blind requirement (chips)",
-        zorder=3,
+    fig, axes_column = plt.subplots(
+        len(runs), 1, figsize=(8.0, 3.4 * len(runs) + 0.9), dpi=100, squeeze=False
     )
-    axes.plot(
-        xs,
-        best,
-        linestyle="none",
-        marker="o",
-        markersize=6,
-        color=SERIES_BASELINE,
-        markeredgecolor=SURFACE,
-        markeredgewidth=0.8,
-        label="Best single hand in the blind",
-        zorder=4,
-    )
-    ticks, labels = [], []
-    seen: set[int] = set()
-    for index, blind in enumerate(blinds):
-        if blind.ante not in seen:
-            seen.add(blind.ante)
-            ticks.append(index)
-            labels.append(f"A{blind.ante}")
-    axes.set_xticks(ticks)
-    axes.set_xticklabels(labels)
-    for index, blind in enumerate(blinds):
-        if blind.ante == WIN_ANTE and blind.blind == "BOSS":
-            axes.annotate(
-                "Ante 8 boss",
-                (index, blind.requirement),
-                textcoords="offset points",
-                xytext=(-6, 14),
-                ha="right",
-                color=INK_SECONDARY,
-                fontsize=8,
-                arrowprops=dict(arrowstyle="-", color=AXIS, linewidth=0.8),
-            )
-        if blind.ante == loss_ante and index == len(blinds) - 1:
-            axes.plot(
-                [index],
-                [blind.best_hand_score],
-                linestyle="none",
-                marker="X",
-                markersize=10,
-                color=SERIES_COACHED,
-                markeredgecolor=SURFACE,
-                markeredgewidth=1.0,
-                zorder=5,
-                label=f"Ante {loss_ante} loss (endless)",
-            )
-            axes.annotate(
-                f"best hand {blind.best_hand_score:,.0f}",
-                (index, blind.best_hand_score),
-                textcoords="offset points",
-                xytext=(-10, 20),
-                ha="right",
-                color=INK_SECONDARY,
-                fontsize=8,
-                arrowprops=dict(arrowstyle="-", color=AXIS, linewidth=0.8),
-            )
-    axes.set_ylabel("Chips (log)", color=INK_SECONDARY)
-    axes.set_xlabel("Blinds played, labelled by ante", color=INK_SECONDARY)
-    legend = axes.legend(loc="upper left", frameon=False, fontsize=8)
-    for text in legend.get_texts():
-        text.set_color(INK_SECONDARY)
-    fig.text(
-        0.012,
-        0.975,
+    for axes, (trajectory, title) in zip(axes_column[:, 0], runs):
+        _style_axes(axes)
+        axes.set_yscale("log")
+        axes.yaxis.grid(True, color=GRID, linewidth=0.8)
+        axes.set_axisbelow(True)
+        blinds = trajectory.blind_series()
+        xs = list(range(len(blinds)))
+        axes.step(
+            xs,
+            [blind.requirement for blind in blinds],
+            where="mid",
+            color=INK_MUTED,
+            linewidth=2.0,
+            label="Blind requirement (chips)",
+            zorder=3,
+        )
+        axes.plot(
+            xs,
+            [blind.best_hand_score for blind in blinds],
+            linestyle="none",
+            marker="o",
+            markersize=6,
+            color=SERIES_BASELINE,
+            markeredgecolor=SURFACE,
+            markeredgewidth=0.8,
+            label="Best single hand in the blind",
+            zorder=4,
+        )
+        ticks, labels = [], []
+        seen: set[int] = set()
+        for index, blind in enumerate(blinds):
+            if blind.ante not in seen:
+                seen.add(blind.ante)
+                ticks.append(index)
+                labels.append(f"A{blind.ante}")
+        axes.set_xticks(ticks)
+        axes.set_xticklabels(labels)
+        final = blinds[-1]
+        for index, blind in enumerate(blinds):
+            if blind.ante == WIN_ANTE and blind.blind == "BOSS":
+                axes.annotate(
+                    "Ante 8 boss",
+                    (index, blind.requirement),
+                    textcoords="offset points",
+                    xytext=(-12, 20),
+                    ha="right",
+                    color=INK_SECONDARY,
+                    fontsize=8,
+                    bbox=LABEL_BOX,
+                    arrowprops=dict(arrowstyle="-", color=AXIS, linewidth=0.8),
+                )
+        axes.plot(
+            [len(blinds) - 1],
+            [final.best_hand_score],
+            linestyle="none",
+            marker="X",
+            markersize=10,
+            color=SERIES_COACHED,
+            markeredgecolor=SURFACE,
+            markeredgewidth=1.0,
+            zorder=5,
+            label=f"Ante {final.ante} loss (endless)",
+        )
+        axes.annotate(
+            f"best hand {final.best_hand_score:,.0f}",
+            (len(blinds) - 1, final.best_hand_score),
+            textcoords="offset points",
+            xytext=(-10, 20),
+            ha="right",
+            color=INK_SECONDARY,
+            fontsize=8,
+            bbox=LABEL_BOX,
+            arrowprops=dict(arrowstyle="-", color=AXIS, linewidth=0.8),
+        )
+        axes.set_title(title, loc="left", color=INK, fontsize=10, fontweight="bold", pad=8)
+        axes.set_ylabel("Chips (log)", color=INK_SECONDARY)
+        legend = axes.legend(loc="upper left", frameon=False, fontsize=8)
+        for text in legend.get_texts():
+            text.set_color(INK_SECONDARY)
+    axes_column[-1, 0].set_xlabel("Blinds played, labelled by ante", color=INK_SECONDARY)
+    fig.suptitle(
         "Score delivered against the blind it had to beat",
+        x=0.012,
+        y=0.99,
         ha="left",
-        va="top",
         color=INK,
         fontsize=13,
         fontweight="bold",
     )
-    fig.text(
-        0.012,
-        0.918,
-        "Astra low, seed 2K9H9HN - cleared Ante 8, lost in endless Ante 11",
-        ha="left",
-        va="top",
-        color=INK_SECONDARY,
-        fontsize=9,
-    )
-    fig.tight_layout(rect=(0, 0, 1, 0.87))
+    fig.tight_layout(rect=(0, 0, 1, 0.955))
     return _save(fig, path)
 
 
@@ -375,10 +383,19 @@ def render_all(out_dir: Path, evidence_root: Path | None = None) -> list[Path]:
     figures_dir = out_dir / "figures"
     panels = load_panels(root)
     coached = built_in_coached_rows(root)
-    low = load_astra_low(root)
+    runs = [
+        (
+            load_astra_low_headless(root),
+            "Astra low, seed TAF7DNTX - headless, cleared Ante 8, lost in endless Ante 13",
+        ),
+        (
+            load_astra_low(root),
+            "Astra low, seed 2K9H9HN - cleared Ante 8, lost in endless Ante 11",
+        ),
+    ]
     return [
         ante_reached_by_policy(panels, coached, figures_dir / "ante-reached-by-policy.svg"),
-        score_vs_requirement(low, figures_dir / "score-vs-requirement.svg"),
+        score_vs_requirement(runs, figures_dir / "score-vs-requirement.svg"),
     ]
 
 

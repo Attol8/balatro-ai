@@ -15,17 +15,19 @@ all-unlocked profile, complete games from Ante 1. A win is clearing the Ante 8 b
 ![Ante reached per game by policy](../benchmarks/results/figures/ante-reached-by-policy.svg)
 
 Each dot is one complete game of a non-model policy on the fixed seed panel
-D0000000 to D0000019. The star is the coached game. The best heuristic policies
-cleared Ante 8 in 3 of 20 games and reached Ante 8 or beyond in 7 of 20. The
-coached system, GPT-6 Astra at low reasoning effort with exact numerical tools,
-cleared Ante 8 in its recorded game on a seed outside the panel and continued to
-Ante 11 in endless mode. One game is a demonstration, not a rate. The unattended
+D0000000 to D0000019. The stars are the two coached games. The best heuristic
+policies cleared Ante 8 in 3 of 20 games and reached Ante 8 or beyond in 7 of 20.
+The coached system, GPT-6 Astra at low reasoning effort with exact numerical tools,
+cleared Ante 8 in both recorded games on seeds outside the panel and continued in
+endless mode to Ante 11 and then Ante 13, the latter with a peak hand of
+134,231,931,235 chips. Two games are a demonstration, not a rate. The unattended
 win rate of the coached system is unmeasured.
 
 ## Table A: real-game results
 
 | System | Games | Ante 8 cleared | Reached Ante 8+ | Median ante | Seeds |
 |---|---|---|---|---|---|
+| Astra low + tools, headless | 1 | 1 | 1 | 13 (endless) | TAF7DNTX |
 | Astra low + tools | 1 | 1 | 1 | 11 (endless) | 2K9H9HN |
 | search-v4 | 20 | 3 | 7 | 6.5 | D0000000-19 |
 | search-v5 | 20 | 3 | 6 | 6.5 | D0000000-19 |
@@ -42,7 +44,18 @@ win rate of the coached system is unmeasured.
 
 Disclosures that belong with this table:
 
-- **Astra low** (`gpt-6-astra`, low effort): cleared Ante 8 after 303 decisions,
+- **Astra low, headless, TAF7DNTX** (`gpt-6-astra`, low effort): skipped the Ante 1
+  small blind for an Investment Tag, cleared the Ante 8 boss Crimson Heart with
+  180,442 against 100,000, and lost to The Tooth at Ante 13 with 94 billion
+  required. 456 decisions from 404 model calls: 378 chosen directly, 31 chained
+  follow-ups the model spelled out, 13 forced moves with a single legal action,
+  34 automatic cashouts. Eight replies were rejected as illegal and corrected on
+  the next call. The Codex service stalled on 15 calls, all retried, and the hedge
+  process answered 14 more. The runner process was stopped and resumed four times
+  at safe moments, always while waiting for the model, to deploy runner fixes; the
+  game state and trajectories were never edited. Details, hashes and the revision
+  of each segment: `evidence/astra-low-TAF7DNTX/README.md`.
+- **Astra low, 2K9H9HN** (`gpt-6-astra`, low effort): cleared Ante 8 after 303 decisions,
   then continued in endless mode and lost at Ante 11 with a peak hand of 1,239,454
   against a 10,800,000 requirement. 357 model calls covered 384 decisions; the
   other 30 were automatic cashouts. This was a supervised development run: adapter
@@ -66,9 +79,12 @@ Disclosures that belong with this table:
 The grey step is the chip requirement of each blind, which grows roughly
 exponentially. Dots are the best single hand scored in that blind. A blind is
 cleared by the sum of its hands, so dots below the step are normal in early antes.
-From Ante 4 onward the best hand overtakes the requirement and stays there, which
-is what a scaling build looks like when it works. The last two antes show the
-endless requirement pulling away faster than the build could follow.
+In both games the best hand overtakes the requirement from Ante 4 onward and stays
+there, which is what a scaling build looks like when it works. In the headless
+run, Blueprint on Hanging Chad, Brainstorm on Photograph, Hologram and Steel Joker
+kept pace with the endless curve through Ante 12; at Ante 13 the requirement of
+94 billion outran a best hand of 951 million in that blind, even though the
+previous blind had produced 134 billion.
 
 ## Scoring-engine exactness
 
@@ -80,37 +96,40 @@ The scorer is the part of the system a reader can check without a model. When
 the hand is deterministic and every Joker is visible, it predicts the real game's
 score exactly.
 
-## Decision mix in the recorded run
+## Decision mix in the headless run
 
 | Source | Decisions |
 |---|---|
-| Model (Astra) | 353 |
-| Automatic cashout | 30 |
-| Total recorded transitions | 383 |
+| Model, one action per reply | 378 |
+| Model, chained follow-ups | 31 |
+| Forced move (single legal action) | 13 |
+| Automatic cashout | 34 |
+| Total | 456 |
 
 | Phase | Decisions |
 |---|---|
-| Shop | 207 |
-| Selecting a hand | 70 |
-| Opening a pack | 44 |
-| Choosing a blind | 32 |
-| Round end (cashout) | 30 |
+| Shop | 241 |
+| Selecting a hand | 95 |
+| Opening a pack | 47 |
+| Choosing a blind | 39 |
+| Round end (cashout) | 34 |
 
-The shop is where the calls go: 72 rerolls, 35 pack purchases, 31 consumable uses,
-30 shop exits and 27 card purchases, across 65 shop visits with a median of 2 and
-a maximum of 12 actions each. Actual hand plays and discards were 57. This
-breakdown motivated the follow-up chains and forced moves described in
-[methodology.md](methodology.md); they were added after this run and have not yet
-been measured live.
+The shop is still where the calls go: 73 rerolls, 44 pack purchases, 45 consumable
+uses, 40 card purchases and 34 shop exits across 78 visits with a median of 2 and a
+maximum of 13 actions each. Hand plays and discards were 73. Follow-up chains
+covered 31 of those shop actions and forced moves 13 blind selections, so 404 calls
+produced 456 decisions. The earlier run needed 357 calls for 384 decisions. The
+generated tables keep the earlier run's mix as a second block.
 
 ## What is not shown, and why
 
-- No win rate for the coached system. One game cannot support one.
+- No win rate for the coached system. Two games cannot support one.
 - No same-seed comparison between the coached system and search-v6, and no
   model-without-tools control. Neither was run.
 - No token or cost figures. The evidence run did not record them.
-- No per-decision latency. Only whole-run wall-clock is recorded: 3,611 seconds
-  of active play for 357 model calls, about ten seconds each.
+- Latency only as whole-run totals and per-call seconds inside the trajectories:
+  the headless run took 5,883 active seconds for 404 calls, about 14.6 seconds
+  each including stalls; calls the service answered promptly took about nine.
 
 New games can be added to every table and figure with
 `python -m benchmarks --runs DIR...`; see [methodology.md](methodology.md).

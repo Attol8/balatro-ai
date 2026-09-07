@@ -5,13 +5,17 @@
 decision carries ``observation`` and ``predicted_score``; the matching transition
 carries ``observed_score``.
 
-``evidence/astra-low-2K9H9HN/segments/NN/trajectory.jsonl.gz`` is the older shape:
-``rpc_attempt / coach_request / coach_response / transition``.  Only the transition
+Any evidence directory holding a ``segments.json`` (``astra-low-2K9H9HN``,
+``astra-low-TAF7DNTX``) uses the runner's segment shape:
+``rpc_attempt / coach_request / coach_response / transition``, plus ``continued``,
+``coach_timeout`` and ``coach_rejected`` in the current runner.  Only the transition
 is a decision; ``before``/``after`` are full state snapshots and the hand score has
-to be recovered as the round-chip delta.  A predicted score exists there only when
-the chosen play appears in that request's advisory ``analysis.play_candidates``
-shortlist, so it is recorded as an estimate with a coverage count rather than as a
-per-play guarantee.
+to be recovered as the round-chip delta.  ``transition.source`` is one of
+``coach``, ``automatic``, ``forced`` or ``coach_followup``.  A predicted score exists
+only when the chosen play appears in that request's advisory
+``analysis.play_candidates`` shortlist, so it is recorded as an estimate with a
+coverage count rather than as a per-play guarantee.  Chip requirements reach the
+billions in endless antes and are kept as exact integers throughout.
 """
 
 from __future__ import annotations
@@ -29,6 +33,11 @@ PLAY_ACTION = "play_cards"
 SOURCE_COACH = "coach"
 SOURCE_AUTOMATIC = "automatic"
 SOURCE_DELEGATE = "numerical_delegate"
+SOURCE_FORCED = "forced"
+SOURCE_COACH_FOLLOWUP = "coach_followup"
+
+ASTRA_LOW_SUPERVISED = "astra-low-2K9H9HN"
+ASTRA_LOW_HEADLESS = "astra-low-TAF7DNTX"
 
 
 @dataclass(frozen=True)
@@ -72,12 +81,31 @@ class BlindRecord:
 
 
 @dataclass(frozen=True)
+class CoachCallHealth:
+    """Transport-level events the current runner records around coach calls."""
+
+    responses: int = 0
+    responses_with_hedge_data: int = 0
+    hedged: int = 0
+    hedges_won: int = 0
+    timeouts: int = 0
+    rejected_responses: int = 0
+
+    @property
+    def recorded(self) -> bool:
+        """Older trajectories carry no transport timings at all."""
+
+        return self.responses_with_hedge_data > 0 or self.timeouts > 0
+
+
+@dataclass(frozen=True)
 class Trajectory:
     """A whole recorded game (segments already concatenated)."""
 
     run_id: str
     seed: str
     decisions: tuple[DecisionRecord, ...]
+    coach_calls: CoachCallHealth = CoachCallHealth()
 
     @property
     def plays(self) -> tuple[DecisionRecord, ...]:
@@ -206,29 +234,54 @@ def _shortlist_estimate(request: dict | None, action: dict) -> float | None:
     return None
 
 
-def astra_low_segments(evidence_root: Path | None = None) -> list[dict]:
+def run_segments(run_dir: Path) -> list[dict]:
     """Segments belonging to the completed game, in ``segments.json`` order."""
 
-    root = (evidence_root or EVIDENCE_ROOT) / "astra-low-2K9H9HN"
-    listed = json.loads((root / "segments.json").read_text())
+    listed = json.loads((run_dir / "segments.json").read_text())
     return [entry for entry in listed if entry.get("part_of_completed_game")]
 
 
-def load_astra_low(evidence_root: Path | None = None) -> Trajectory:
-    """Concatenate the astra-low segments into one trajectory."""
+def astra_low_segments(evidence_root: Path | None = None) -> list[dict]:
+    """Segments of the supervised astra-low run (seed 2K9H9HN)."""
 
-    root = (evidence_root or EVIDENCE_ROOT) / "astra-low-2K9H9HN"
-    seed = json.loads((root / "manifest.json").read_text())["seed"]
+    return run_segments((evidence_root or EVIDENCE_ROOT) / ASTRA_LOW_SUPERVISED)
+
+
+def _hedge_stats(events: Counter, hedged: int, won: int, with_data: int) -> CoachCallHealth:
+    return CoachCallHealth(
+        responses=events["coach_response"],
+        responses_with_hedge_data=with_data,
+        hedged=hedged,
+        hedges_won=won,
+        timeouts=events["coach_timeout"],
+        rejected_responses=events["coach_rejected"],
+    )
+
+
+def load_segmented_run(run_dir: Path, run_id: str | None = None) -> Trajectory:
+    """Concatenate every ``part_of_completed_game`` segment of one run directory."""
+
+    seed = json.loads((run_dir / "manifest.json").read_text())["seed"]
     records: list[DecisionRecord] = []
+    events: Counter = Counter()
+    hedged = won = with_hedge_data = 0
     index = 0
-    for entry in astra_low_segments(evidence_root):
+    for entry in run_segments(run_dir):
         segment = entry["segment"]
-        path = root / "segments" / segment / "trajectory.jsonl.gz"
+        path = run_dir / "segments" / segment / "trajectory.jsonl.gz"
         pending_request: dict | None = None
         for event in _read_jsonl_gz(path):
-            kind = event.get("event")
+            kind = event.get("event", "unknown")
+            events[kind] += 1
             if kind == "coach_request":
                 pending_request = event
+                continue
+            if kind == "coach_response":
+                timings = event.get("transport_timings") or {}
+                if "hedged" in timings:
+                    with_hedge_data += 1
+                    hedged += bool(timings["hedged"])
+                    won += int(timings.get("winner") or 0) > 0
                 continue
             if kind != "transition":
                 continue
@@ -262,7 +315,24 @@ def load_astra_low(evidence_root: Path | None = None) -> Trajectory:
             )
             index += 1
             pending_request = None
-    return Trajectory(run_id="astra-low-2K9H9HN", seed=seed, decisions=tuple(records))
+    return Trajectory(
+        run_id=run_id or run_dir.name,
+        seed=seed,
+        decisions=tuple(records),
+        coach_calls=_hedge_stats(events, hedged, won, with_hedge_data),
+    )
+
+
+def load_astra_low(evidence_root: Path | None = None) -> Trajectory:
+    """The supervised astra-low run, seed 2K9H9HN."""
+
+    return load_segmented_run((evidence_root or EVIDENCE_ROOT) / ASTRA_LOW_SUPERVISED)
+
+
+def load_astra_low_headless(evidence_root: Path | None = None) -> Trajectory:
+    """The headless astra-low run, seed TAF7DNTX."""
+
+    return load_segmented_run((evidence_root or EVIDENCE_ROOT) / ASTRA_LOW_HEADLESS)
 
 
 def segment_ante_bounds(trajectory: Trajectory) -> list[tuple[str, int, int]]:

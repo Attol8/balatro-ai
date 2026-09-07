@@ -15,15 +15,21 @@ from benchmarks.tables import (
 )
 
 
-def test_table_a_rows_cover_baselines_and_the_coached_run():
+def test_table_a_rows_cover_baselines_and_both_coached_runs():
     table = build_results()["table_a"]
     assert table["title"].endswith("Red Deck / White Stake / all unlocked")
     assert len(table["baselines"]) == 12
-    assert len(table["coached"]) == 1
-    (low,) = table["coached"]
+    assert len(table["coached"]) == 2
+    headless, low = table["coached"]
+    assert headless["seed_panel"] == "TAF7DNTX"
+    assert headless["display_name"] == "Astra low (gpt-6-astra), seed TAF7DNTX"
+    assert headless["games_attempted"] == 1
+    assert headless["ante8_clears"] == 1
+    assert headless["median_ante"] == 13
+    assert headless["decisions"] == 456
+    assert "headless" in headless["notes"][0]
     assert low["policy"] == "Astra low (gpt-6-astra)"
-    assert low["games_attempted"] == 1
-    assert low["ante8_clears"] == 1
+    assert low["display_name"] == "Astra low (gpt-6-astra), seed 2K9H9HN"
     assert low["seed_panel"] == "2K9H9HN"
     assert low["median_ante"] == 11
     assert "cleared Ante 8" in low["notes"][0]
@@ -32,16 +38,32 @@ def test_table_a_rows_cover_baselines_and_the_coached_run():
 
 def test_table_a_reports_coach_calls_per_decision():
     table = build_results()["table_a"]
-    (low,) = table["coached"]
-    assert low["coach_requests"] == 357
-    assert low["decisions"] == 384
+    headless, low = table["coached"]
+    assert (headless["coach_requests"], headless["decisions"]) == (404, 456)
+    assert headless["calls_per_decision"] == "404/456 = 0.89"
+    assert (low["coach_requests"], low["decisions"]) == (357, 384)
     assert low["calls_per_decision"] == "357/384 = 0.93"
     assert {row["calls_per_decision"] for row in table["baselines"]} == {"-"}
 
 
+def test_table_a_reports_followups_forced_moves_and_stalls():
+    headless, low = build_results()["table_a"]["coached"]
+    assert headless["followup_actions"] == 31
+    assert headless["forced_actions"] == 13
+    assert headless["coach_timeouts"] == 15
+    assert headless["followups_forced_stalls"] == "31 / 13 / 15"
+    assert low["followups_forced_stalls"] == "-"
+    assert {row["followups_forced_stalls"] for row in build_results()["table_a"]["baselines"]} == {
+        "-"
+    }
+
+
 def test_table_a_footnotes_state_the_caveats():
     footnotes = " ".join(build_results()["table_a"]["footnotes"])
-    assert "not a win-rate estimate" in footnotes
+    assert "not win-rate estimates" in footnotes
+    assert "headless" in footnotes
+    assert "stopped and resumed four times" in footnotes
+    assert "No game state or trajectory was edited" in footnotes
     assert "outside the D0000000-D0000019 baseline panel" in footnotes
     assert "supervised" in footnotes
     assert "adapter fixes" in footnotes
@@ -62,68 +84,106 @@ def test_table_b_reports_only_the_low_run():
     assert low["cross_check"]["shortlist_estimates_within_1_chip"] == 15
 
 
-def test_table_c_decision_mix_in_the_low_run():
-    table = build_results()["table_c"]
-    assert table["title"] == "Decision mix in the Astra-low run"
-    assert table["run"] == "astra-low-2K9H9HN"
-    assert table["total_transitions"] == 383
-    assert table["reported_decisions"] == 384
-    assert "errored action" in table["note"]
-    assert table["decision_sources"] == {"automatic": 30, "coach": 353}
-    assert sum(table["decision_sources"].values()) == table["total_transitions"]
+def _block(run: str) -> dict:
+    blocks = {block["run"]: block for block in build_results()["table_c"]["blocks"]}
+    return blocks[run]
 
 
-def test_table_c_decisions_per_phase():
+def test_table_c_has_a_block_per_coached_run_headless_first():
     table = build_results()["table_c"]
-    assert table["decisions_per_phase"] == {
+    assert [block["run"] for block in table["blocks"]] == [
+        "astra-low-TAF7DNTX",
+        "astra-low-2K9H9HN",
+    ]
+
+
+def test_table_c_headless_decision_sources():
+    block = _block("astra-low-TAF7DNTX")
+    assert block["seed"] == "TAF7DNTX"
+    assert block["total_transitions"] == 456
+    assert block["reported_decisions"] == 456
+    assert block["decision_sources"] == {
+        "automatic": 34,
+        "coach": 378,
+        "coach_followup": 31,
+        "forced": 13,
+    }
+    assert "exactly" in block["note"]
+
+
+def test_table_c_headless_phases_actions_and_shop():
+    block = _block("astra-low-TAF7DNTX")
+    assert block["decisions_per_phase"] == {
+        "BLIND_SELECT": 39,
+        "PACK": 47,
+        "ROUND_EVAL": 34,
+        "SELECTING_HAND": 95,
+        "SHOP": 241,
+    }
+    actions = {entry["action"]: entry["count"] for entry in block["decisions_per_action"]}
+    assert sum(actions.values()) == 456
+    assert actions["reroll_shop"] == 73
+    assert actions["use_consumable"] == 45
+    assert actions["buy_pack"] == 44
+    assert actions["choose_pack_card"] == 44
+    assert actions["play_cards"] == 40
+    assert actions["buy_shop_card"] == 40
+    assert actions["cash_out"] == 34
+    assert actions["reorder_hand"] == 1
+    by_action = {entry["action"]: entry["sources"] for entry in block["decisions_per_action"]}
+    assert by_action["cash_out"] == {"automatic": 34}
+    assert set(by_action["play_cards"]) <= {"coach", "coach_followup", "forced"}
+    assert block["shop_visits"] == {
+        "visits": 78,
+        "actions_total": 241,
+        "median_actions_per_visit": 2.0,
+        "mean_actions_per_visit": 3.09,
+        "max_actions_in_a_visit": 13,
+    }
+
+
+def test_table_c_headless_coach_call_health():
+    calls = _block("astra-low-TAF7DNTX")["coach_calls"]
+    assert calls == {
+        "recorded": True,
+        "responses": 386,
+        "responses_with_hedge_data": 219,
+        "hedged": 16,
+        "hedges_won": 14,
+        "timeouts": 15,
+        "rejected_responses": 8,
+    }
+
+
+def test_table_c_supervised_block_is_unchanged():
+    block = _block("astra-low-2K9H9HN")
+    assert block["total_transitions"] == 383
+    assert block["reported_decisions"] == 384
+    assert "errored action" in block["note"]
+    assert block["decision_sources"] == {"automatic": 30, "coach": 353}
+    assert block["decisions_per_phase"] == {
         "BLIND_SELECT": 32,
         "PACK": 44,
         "ROUND_EVAL": 30,
         "SELECTING_HAND": 70,
         "SHOP": 207,
     }
-    assert sum(table["decisions_per_phase"].values()) == 383
-
-
-def test_table_c_decisions_per_action_type():
-    table = build_results()["table_c"]
-    actions = {entry["action"]: entry["count"] for entry in table["decisions_per_action"]}
-    assert actions == {
-        "reroll_shop": 72,
-        "play_cards": 49,
-        "buy_pack": 35,
-        "choose_pack_card": 33,
-        "use_consumable": 31,
-        "select_blind": 30,
-        "cash_out": 30,
-        "leave_shop": 30,
-        "buy_shop_card": 27,
-        "reorder_jokers": 11,
-        "skip_pack": 9,
-        "discard_cards": 8,
-        "sell_joker": 8,
-        "buy_voucher": 5,
-        "sell_consumable": 3,
-        "reroll_boss": 1,
-        "skip_blind": 1,
-    }
-    assert sum(actions.values()) == 383
-    by_action = {entry["action"]: entry["sources"] for entry in table["decisions_per_action"]}
-    assert by_action["cash_out"] == {"automatic": 30}
-    assert by_action["play_cards"] == {"coach": 49}
-    counts = [entry["count"] for entry in table["decisions_per_action"]]
-    assert counts == sorted(counts, reverse=True)
-
-
-def test_table_c_shop_visits():
-    shop = build_results()["table_c"]["shop_visits"]
-    assert shop == {
+    assert block["shop_visits"] == {
         "visits": 65,
         "actions_total": 207,
         "median_actions_per_visit": 2.0,
         "mean_actions_per_visit": 3.18,
         "max_actions_in_a_visit": 12,
     }
+    assert not block["coach_calls"]["recorded"]
+
+
+def test_segment_continuity_is_reported_for_both_runs():
+    entries = build_results()["segment_continuity"]
+    assert [entry["run"] for entry in entries] == ["astra-low-TAF7DNTX", "astra-low-2K9H9HN"]
+    headless = entries[0]["segments"]
+    assert headless[0]["ante_start"] == 1
+    assert headless[-1]["ante_end"] == 13
 
 
 def test_results_never_mention_the_unpublished_run():
@@ -204,4 +264,4 @@ def test_extra_runs_are_grouped_by_model_and_effort(tmp_path: Path):
     labels = [entry["policy"] for entry in results["table_a"]["coached"]]
     assert labels[-1] == "gpt-6-astra (low)"
     assert row.calls_per_decision == "11/21 = 0.52"
-    assert len(built_in_coached_rows()) == 1
+    assert len(built_in_coached_rows()) == 2

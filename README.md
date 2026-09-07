@@ -5,10 +5,10 @@ An LLM coach with exact numerical tools that clears Balatro on the real game.
 GPT-6 Astra at low reasoning effort chooses every strategic action from public
 information only. Python enumerates legal moves, scores hands exactly, validates each
 reply and executes it through the [BalatroBot](https://github.com/coder/balatrobot)
-mod. No training, no simulator, no fallback policy, no hidden information. The
-recorded run cleared Ante 8 on Red Deck / White Stake and went on to Ante 11 in
-endless mode, where ten earlier heuristic and search policies won at most 3 games
-in 20.
+mod. No training, no simulator, no fallback policy, no hidden information. Both
+recorded games cleared Ante 8 on Red Deck / White Stake; the latest went on to
+Ante 13 in endless mode with a 134 billion chip hand, where ten earlier heuristic
+and search policies won at most 3 games in 20.
 
 ![Ante reached per game by policy](benchmarks/results/figures/ante-reached-by-policy.svg)
 
@@ -16,13 +16,14 @@ in 20.
 
 | System | Games | Ante 8 cleared | Notes |
 |---|---|---|---|
-| Astra low + tools | 1 | 1 | Seed 2K9H9HN. Won, then reached Ante 11 in endless with a 1,239,454 hand. 353 of 383 decisions by the model, 30 automatic cashouts. Supervised run with fixes between segments. |
+| Astra low + tools, headless | 1 | 1 | Seed TAF7DNTX. Won, then reached Ante 13 in endless with a 134,231,931,235 hand. 456 decisions from 404 model calls; the runner was restarted four times at safe moments to deploy fixes, never inside a blind. |
+| Astra low + tools | 1 | 1 | Seed 2K9H9HN. Won, then reached Ante 11 in endless with a 1,239,454 hand. Supervised run with adapter fixes between segments. |
 | search-v6 (best heuristic) | 20 | 3 | Bounded public-information search, the strongest of ten non-model policies. |
 | Ten heuristic and search policies | 200 | 0 to 3 each | Same game, same settings, seeds D0000000 to D0000019. |
 
-The coached game is a single game on a seed outside the baseline panel. It shows
-the system can beat the game; it does not estimate a win rate, and the unattended
-win rate is unmeasured. Full tables, figures and every caveat: [docs/results.md](docs/results.md).
+The coached games are two single games on seeds outside the baseline panel. They
+show the system can beat the game and keep scaling in endless mode; they do not
+estimate a win rate, and the unattended win rate is unmeasured. Full tables, figures and every caveat: [docs/results.md](docs/results.md).
 How the numbers are produced and what is disclosed: [docs/methodology.md](docs/methodology.md).
 
 ![Chips scored against the blind requirement](benchmarks/results/figures/score-vs-requirement.svg)
@@ -110,7 +111,10 @@ with `balatro inspect DIR`, for example `balatro inspect evidence/astra-low-2K9H
 
 ## Evidence
 
-- [`evidence/astra-low-2K9H9HN/`](evidence/astra-low-2K9H9HN): the recorded win
+- [`evidence/astra-low-TAF7DNTX/`](evidence/astra-low-TAF7DNTX): the headless
+  Ante 13 run, five hash-chained segments with the runner revision and reason for
+  each restart.
+- [`evidence/astra-low-2K9H9HN/`](evidence/astra-low-2K9H9HN): the earlier win
   and endless continuation, in hash-chained segments with the interrupted first
   attempt kept separately.
 - [`evidence/first-win/`](evidence/first-win): an earlier high-effort run of a
@@ -124,14 +128,14 @@ with `balatro inspect DIR`, for example `balatro inspect evidence/astra-low-2K9H
 
 ## Limitations
 
-- One coached win on one seed. No win rate, no same-seed ablation of model versus
+- Two coached wins on two seeds. No win rate, no same-seed ablation of model versus
   tools, no model-without-tools control.
-- The win was a supervised development run with adapter fixes and reviewed
-  continuations between segments.
-- Decision latency is about ten seconds per model call in the recorded run. The
-  packet and call-count reductions described in
-  [docs/methodology.md](docs/methodology.md) are verified offline; their effect on
-  wall-clock time has not been measured in a live game.
+- Both runs were watched by an operator. The earlier one had adapter fixes between
+  segments; the later one had runner restarts at safe moments to deploy the retry,
+  resume and hedging fixes, with the model never given hints or corrections.
+- The Codex service stalls on roughly one call in ten. Hedged calls and retries
+  keep a game alive through that, at a cost in wall-clock time; a decision takes
+  about nine seconds when the service answers promptly.
 - Scoring approximates random effects and withholds advice when hidden cards or
   Jokers make an estimate unsound.
 - Model access is your own Codex CLI and ChatGPT account. There is no API client
