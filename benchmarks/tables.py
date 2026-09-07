@@ -26,6 +26,8 @@ from .trajectories import (
     ASTRA_LOW_PANEL_SEED,
     ASTRA_LOW_RECORDED,
     ASTRA_LOW_SUPERVISED,
+    TERRA_LOW,
+    TERRA_LOW_FIRST_ATTEMPT,
     Trajectory,
     load_astra_low,
     load_segmented_run,
@@ -42,6 +44,17 @@ PANEL_SEED = "D0000000"
 # runs reached the same ante the later, cleaner game is listed first.
 COACHED_RUNS: tuple[tuple[str, str], ...] = (
     (
+        TERRA_LOW,
+        "single game, seed QD3F4XVW: visible game, endless; lost at the ante 2 boss "
+        "The Mouth after locking the round to High Card",
+    ),
+    (
+        TERRA_LOW_FIRST_ATTEMPT,
+        "first attempt on seed QD3F4XVW: lost at the ante 2 boss The Mouth; a runner "
+        "fault, since fixed, selected the boss while a skip tag's Mega Buffoon Pack "
+        "was opening, so that pack was never offered",
+    ),
+    (
         ASTRA_LOW_RECORDED,
         "supervised end to end, one automatic restart, game visible at speed 2, recorded",
     ),
@@ -55,6 +68,14 @@ COACHED_RUNS: tuple[tuple[str, str], ...] = (
     ),
     (ASTRA_LOW_SUPERVISED, ""),
 )
+# Table C, the score figure and the segment-continuity report cover the Astra-low
+# runs; the terra games are rows of Table A and stars in the headline figure only.
+DECISION_MIX_RUNS = frozenset(
+    {ASTRA_LOW_RECORDED, ASTRA_LOW_PANEL_SEED, ASTRA_LOW_HEADLESS, ASTRA_LOW_SUPERVISED}
+)
+# Two games on one seed by one model would otherwise share a label.
+LABEL_SUFFIXES = {TERRA_LOW_FIRST_ATTEMPT: ", first attempt"}
+_MODEL_FAMILIES = {"astra": "Astra", "terra": "Terra"}
 # Only the newest runs are written out in full in results.md; results.json keeps them all.
 RENDERED_MIXES = 2
 SHOP_PHASE = "SHOP"
@@ -169,11 +190,20 @@ def _coached_row(row: CoachedRow) -> dict:
     }
 
 
+def _coached_label(manifest: dict) -> str:
+    """``Astra low (gpt-6-astra)``: the model family, its effort and the exact model id."""
+
+    model = manifest["requested_model"]
+    family = next((name for key, name in _MODEL_FAMILIES.items() if key in model), model)
+    return f"{family} {manifest['requested_reasoning_effort']} ({model})"
+
+
 def _coached_row_from_result(
     run_dir: Path,
     note: str,
     known_panel_seeds: frozenset[str],
     recency: int = 0,
+    label_suffix: str = "",
 ) -> CoachedRow:
     """Build one coached row from a run directory's ``result.json``/``manifest.json``."""
 
@@ -181,7 +211,7 @@ def _coached_row_from_result(
     manifest = json.loads((run_dir / "manifest.json").read_text())
     seed = manifest["seed"]
     return CoachedRow(
-        label=f"Astra low ({manifest['requested_model']})",
+        label=_coached_label(manifest) + label_suffix,
         model=manifest["requested_model"],
         reasoning_effort=manifest["requested_reasoning_effort"],
         seeds=[seed],
@@ -224,6 +254,7 @@ def built_in_coached_rows(evidence_root: Path | None = None) -> list[CoachedRow]
             note or supervised_note,
             known,
             recency=recency,
+            label_suffix=LABEL_SUFFIXES.get(directory, ""),
         )
         for recency, (directory, note) in enumerate(COACHED_RUNS)
     ]
@@ -299,6 +330,7 @@ def _table_a(
         "coached": coached_rows,
         "footnotes": [
             _coached_seeds_footnote(coached),
+            _terra_footnote(),
             _panel_seed_footnote(table_d),
             _recorded_run_footnote(table_c),
             "Coached rows are sorted by ante reached (descending); when two runs reached the "
@@ -452,12 +484,22 @@ def _table_c(runs: list[tuple[Trajectory, dict, int]]) -> dict:
 
 
 def _coached_seeds_footnote(coached: list[CoachedRow]) -> str:
-    outside = [row.seed_label for row in coached if not row.panel_seed]
-    on_panel = [row.seed_label for row in coached if row.panel_seed]
+    outside = list(dict.fromkeys(row.seed_label for row in coached if not row.panel_seed))
+    on_panel = list(dict.fromkeys(row.seed_label for row in coached if row.panel_seed))
     return (
         f"Each coached row is a single game: {', '.join(outside)} are seeds outside the "
         f"D0000000-D0000019 baseline panel, {', '.join(on_panel)} is that panel's first seed. "
         "They are demonstrations, not win-rate estimates."
+    )
+
+
+def _terra_footnote() -> str:
+    return (
+        "The two gpt-5.6-terra rows are the same seed as the recorded gpt-6-astra game "
+        "QD3F4XVW, played with the same tools, prompts and limits; both lost at the ante 2 "
+        "boss. One seed at one effort level is not a model ranking. They are not part of "
+        "Table C or the score figure, which cover the Astra-low runs. See "
+        f"evidence/{TERRA_LOW}/README.md."
     )
 
 
@@ -540,7 +582,8 @@ def build_results(
     root = evidence_root or EVIDENCE_ROOT
     panels = load_panels(root)
     builtin = built_in_coached_rows(root)
-    trajectories = [load_segmented_run(root / row.sources[0].rsplit("/", 1)[-1]) for row in builtin]
+    mixed = [row for row in builtin if row.sources[0].rsplit("/", 1)[-1] in DECISION_MIX_RUNS]
+    trajectories = [load_segmented_run(root / row.sources[0].rsplit("/", 1)[-1]) for row in mixed]
     low = load_astra_low(root)
     runs = [
         (
@@ -548,7 +591,7 @@ def build_results(
             json.loads((root / trajectory.run_id / "result.json").read_text()),
             row.recency,
         )
-        for trajectory, row in zip(trajectories, builtin)
+        for trajectory, row in zip(trajectories, mixed)
     ]
     coached = builtin + load_extra_runs(list(extra_runs or []))
     table_c = _table_c(runs)

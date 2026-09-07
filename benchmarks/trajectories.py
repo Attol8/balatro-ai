@@ -45,6 +45,8 @@ ASTRA_LOW_SUPERVISED = "astra-low-2K9H9HN"
 ASTRA_LOW_HEADLESS = "astra-low-TAF7DNTX"
 ASTRA_LOW_PANEL_SEED = "astra-low-D0000000"
 ASTRA_LOW_RECORDED = "astra-low-QD3F4XVW"
+TERRA_LOW = "terra-low-QD3F4XVW"
+TERRA_LOW_FIRST_ATTEMPT = "terra-low-QD3F4XVW-attempt1"
 
 
 @dataclass(frozen=True)
