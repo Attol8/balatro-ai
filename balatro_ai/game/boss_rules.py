@@ -183,4 +183,3 @@ def boss_rule(public_name: str) -> BossRule | None:
 
 def all_boss_rules() -> tuple[BossRule, ...]:
     return BOSS_RULES
-

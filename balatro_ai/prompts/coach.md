@@ -32,6 +32,26 @@ Lessons from a successful run, conditional on the actual cards:
   cards can damage or strengthen the whole build. Telescope rewards a coherent
   most-played-hand plan. Do not force any particular Joker combination.
 
+High-score planning, especially when the objective is endless:
+- Before rerolling, inspect engine_opportunities even with full Joker slots.
+  Compare a sell-then-buy replacement: lost chips, additive Mult, income, rarity
+  synergies and reliability versus the new engine. Reobserve after any sale.
+  A supported engine now can be better than searching indefinitely for a copier.
+- Held Steel/Baron effects happen before main Joker additive Mult. Raise the
+  played hand's base Mult with planets/card effects; late Fortune Teller Mult
+  does not receive earlier held-card multipliers. Mime retriggers held abilities;
+  Baron needs enough held Kings. Preserve and duplicate useful Steel/red-seal
+  Kings when that engine is supported, and consider the cost of reduced hand size.
+- Played-card engines need both effects and retriggers: Glass or first-face
+  Photograph with Hanging Chad can grow sharply. Put the intended scoring card
+  first, respect debuffs/bosses, and account for Glass breaking and draw reliability.
+- Copiers should balance multiplier effects and retriggers, not blindly copy a
+  familiar Joker. Growing uncommon Jokers can retain Baseball synergy. Do not
+  discard a survival engine merely for a hypothetical combination not yet offered.
+- For endless, develop scalable scoring before the current build hits its ceiling.
+  Use coherent deck edits, hand levels and income; reassess Ramen's discard cost.
+  Keep enough cash for an actionable upgrade rather than rerolling past it.
+
 Canonical actions: {"type":"play_cards","cards":[0]}, discard_cards with cards;
 select_blind, skip_blind, cash_out, leave_shop, reroll_shop, reroll_boss, skip_pack
 with only type; buy_shop_card with card and mode (store/use); mode use is ONLY for usable Planet

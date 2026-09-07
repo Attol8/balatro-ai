@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import re
 from collections import Counter
 from collections.abc import Mapping, Sequence
 from typing import Any
@@ -74,6 +75,7 @@ _ENHANCEMENTS = {"BONUS", "MULT", "WILD", "GLASS", "STEEL", "STONE", "GOLD", "LU
 _SEALS = {"RED", "BLUE", "GOLD", "GOLD SEAL", "PURPLE"}
 _RANKS = {"2", "3", "4", "5", "6", "7", "8", "9", "T", "J", "Q", "K", "A"}
 _SUITS = {"S", "H", "D", "C"}
+_FORTUNE_TELLER_CURRENT = re.compile(r"\(Currently \+(\d+)\)$")
 
 _CURRENT_MULT_JOKERS = frozenset(
     {
@@ -503,14 +505,23 @@ def _joker_runtime(key: str, kind: str, value: Mapping[str, Any]) -> PublicJoker
     if kind != "JOKER":
         return None
     ability = value.get("ability")
-    if ability is None:
-        return None
-    if not isinstance(ability, Mapping):
+    if ability is not None and not isinstance(ability, Mapping):
         raise ObservationError("joker ability must be an object")
+    fortune_mult = (
+        _fortune_teller_mult(value) if key == "j_fortune_teller" else None
+    )
+    if ability is None:
+        if fortune_mult is None:
+            return None
+        ability = {}
 
     try:
         runtime = PublicJokerRuntime(
-            current_mult=_runtime_int(ability, "mult") if key in _CURRENT_MULT_JOKERS else None,
+            current_mult=(
+                _runtime_int(ability, "mult")
+                if key in _CURRENT_MULT_JOKERS
+                else fortune_mult
+            ),
             current_chips=_runtime_int(ability, "chips") if key in _CURRENT_CHIP_JOKERS else None,
             current_x_mult=_runtime_number(ability, "x_mult") if key in _CURRENT_X_MULT_JOKERS else None,
             current_dollars=_runtime_int(ability, "dollars") if key == "j_rocket" else None,
@@ -551,6 +562,18 @@ def _joker_runtime(key: str, kind: str, value: Mapping[str, Any]) -> PublicJoker
     if key == "j_idol" and runtime.target_rank is None:
         raise ObservationError("visible Idol requires its tooltip target")
     return runtime if runtime != PublicJokerRuntime() else None
+
+
+def _fortune_teller_mult(value: Mapping[str, Any]) -> int | None:
+    effect = value.get("effect")
+    if not isinstance(effect, str):
+        return None
+    match = _FORTUNE_TELLER_CURRENT.search(effect)
+    if match is not None:
+        return int(match.group(1))
+    if "(Currently " in effect:
+        raise ObservationError("Fortune Teller current Mult must be a non-negative integer")
+    return None
 
 
 def _runtime_int(ability: Mapping[str, Any], key: str) -> int | None:

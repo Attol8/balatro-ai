@@ -13,6 +13,8 @@ Vessel's 300,000 requirement. [Recorded proof](docs/coached-win.md) includes the
 original prompt and full compressed trace. Astra low also cleared Ante 8 on [seed 2K9H9HN](evidence/astra-low-2K9H9HN)
 during a supervised development run with recovery fixes, then reached Ante 11
 in endless mode with a peak hand of 1,239,454. Its unattended win rate is unmeasured.
+The [trajectory review](docs/trajectory-review.md) documents missed scaling offers,
+the Fortune Teller scoring fix, and offline-tested improvements for future runs.
 
 ## Install and check
 

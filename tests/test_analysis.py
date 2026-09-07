@@ -1,11 +1,15 @@
 from __future__ import annotations
 
 from dataclasses import replace
+import gzip
+import json
+from pathlib import Path
 
 from tests.game.state_factory import hidden_joker_slot, item_card, state
 
 from balatro_ai.analysis import analyze
 from balatro_ai.game.adapter import to_public_observation
+from balatro_ai.game.codec import public_observation_from_data
 from balatro_ai.game.state import (
     HandStat,
     PublicBlind,
@@ -174,3 +178,41 @@ def test_adjacent_hand_reorder_remaps_the_same_physical_selection() -> None:
     assert hand_swap["selected_before"] == [0, 1, 2, 3, 4]
     assert hand_swap["selected_after"] == [0, 1, 2, 3, 4]
     assert hand_swap["reordered_score"] > hand_swap["baseline_score"]
+
+
+def _recorded_observation(segment: str, event_index: int):
+    path = (Path(__file__).resolve().parents[1] / "evidence/astra-low-2K9H9HN/segments") / segment / "trajectory.jsonl.gz"
+    with gzip.open(path, "rt", encoding="utf-8") as stream:
+        events = [json.loads(line) for line in stream]
+    return public_observation_from_data(events[event_index]["observation"])
+
+
+def test_recorded_full_slot_mime_offer_surfaces_public_steel_synergy() -> None:
+    # Ante 7's actual shop had five occupied Joker slots, five Steel cards,
+    # and Mime in shop slot 2. Capacity must not hide the strategic option.
+    observation = _recorded_observation("05", 95)
+
+    opportunities = analyze(observation)["engine_opportunities"]
+    mime = next(row for row in opportunities if row["key"] == "j_mime")
+    assert (mime["zone"], mime["slot"]) == ("shop", 2)
+    assert mime["support"] == {"steel_cards_in_public_deck": 5}
+    assert "fresh state" in mime["capacity"]
+    assert "expected" not in json.dumps(mime).lower()
+
+
+def test_unknown_public_deck_does_not_invent_offer_support() -> None:
+    observation = _recorded_observation("05", 95)
+    unknown = replace(observation, full_deck=(), deck_size=0)
+
+    result = analyze(unknown)
+    assert "engine_opportunities" not in result
+
+
+def test_negative_mime_does_not_require_a_sale_with_full_slots() -> None:
+    observation = _recorded_observation("05", 95)
+    offers = list(observation.shop)
+    offers[2] = replace(offers[2], edition="NEGATIVE")
+    observation = replace(observation, shop=tuple(offers))
+    mime = next(row for row in analyze(observation)["engine_opportunities"]
+                if row["key"] == "j_mime")
+    assert "capacity" not in mime

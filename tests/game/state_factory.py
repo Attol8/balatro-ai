@@ -236,4 +236,3 @@ def state(
         raw["ante_num"] = 9 if won else 2
         raw["round_num"] = 24 if won else 4
     return deepcopy(raw)
-

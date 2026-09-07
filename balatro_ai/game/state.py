@@ -494,4 +494,3 @@ def _json_value(value: object) -> object:
     if isinstance(value, dict):
         return {str(key): _json_value(item) for key, item in value.items()}
     return value
-

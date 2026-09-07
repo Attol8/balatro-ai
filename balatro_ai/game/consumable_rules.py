@@ -227,4 +227,3 @@ def _target_matches(
             return False
         return card.edition is None
     return False
-

@@ -116,3 +116,44 @@ def test_deck_size_comes_from_public_composition_when_area_limit_is_stale(
     assert observation.deck_size == expected_size
     assert sum(entry.count for entry in observation.full_deck) == expected_size
     assert raw["cards"]["limit"] == 52
+
+
+def test_fortune_teller_current_mult_is_admitted_from_public_effect() -> None:
+    raw = state("SHOP")
+    fortune = item_card("j_fortune_teller", card_id=90, kind="JOKER")
+    fortune["value"]["effect"] = "+1 Mult per Tarot card used this run (Currently +47)"
+    fortune["value"]["ability"] = {}
+    raw["jokers"]["cards"] = [fortune]
+    raw["jokers"]["count"] = 1
+
+    runtime = to_public_observation(raw).jokers[0].runtime
+
+    assert runtime is not None
+    assert runtime.current_mult == 47
+
+
+def test_fortune_teller_ignores_unrelated_ability_mult() -> None:
+    raw = state("SHOP")
+    fortune = item_card("j_fortune_teller", card_id=90, kind="JOKER")
+    fortune["value"]["effect"] = "+1 Mult per Tarot card used this run (Currently +47)"
+    fortune["value"]["ability"] = {"mult": 0}
+    raw["jokers"]["cards"] = [fortune]
+    raw["jokers"]["count"] = 1
+
+    runtime = to_public_observation(raw).jokers[0].runtime
+
+    assert runtime is not None
+    assert runtime.current_mult == 47
+
+
+@pytest.mark.parametrize("display", ["-1", "1.5", "many"])
+def test_fortune_teller_rejects_malformed_current_mult(display: str) -> None:
+    raw = state("SHOP")
+    fortune = item_card("j_fortune_teller", card_id=90, kind="JOKER")
+    fortune["value"]["effect"] = f"+1 Mult per Tarot card used this run (Currently {display})"
+    fortune["value"]["ability"] = {}
+    raw["jokers"]["cards"] = [fortune]
+    raw["jokers"]["count"] = 1
+
+    with pytest.raises(ObservationError, match="non-negative integer"):
+        to_public_observation(raw)

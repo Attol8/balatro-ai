@@ -36,6 +36,11 @@ _MAX_STRATEGIC_ACTIONS = 24
 _MAX_REORDER_SUGGESTIONS = 4
 _FACE_RANKS = frozenset({"J", "Q", "K"})
 _BLACK_SUITS = frozenset({"S", "C"})
+_COPY_ENGINE_KEYS = frozenset({
+    "j_card_sharp", "j_hologram", "j_constellation", "j_ramen",
+    "j_blackboard", "j_photograph", "j_hanging_chad", "j_stuntman",
+    "j_mime", "j_baron",
+})
 
 
 def analyze(observation: PublicObservation) -> dict[str, object]:
@@ -55,6 +60,9 @@ def analyze(observation: PublicObservation) -> dict[str, object]:
         "shortlist_is_not_allowlist": True,
         "mechanism_reminders": _mechanism_reminders(observation),
     }
+    opportunities = _engine_opportunities(observation)
+    if opportunities:
+        result["engine_opportunities"] = opportunities
     if observation.phase == Phase.SELECTING_HAND and not plays:
         if any(isinstance(card, HiddenHandCard) for card in observation.hand):
             result["numerical_play_status"] = "unavailable: hand contains hidden cards"
@@ -371,3 +379,80 @@ def _boss_scoring_restriction(
     if boss is None:
         return None
     return f"{boss.name} suppresses this play's score under its active restriction; the legal action can intentionally waste a hand."
+
+
+def _engine_opportunities(observation: PublicObservation) -> list[dict[str, object]]:
+    deck_known = bool(observation.full_deck) and observation.deck_size > 0
+    steel = kings = faces = enhanced = 0
+    if deck_known:
+        for entry in observation.full_deck:
+            card, count = entry.card, entry.count
+            steel += count if card.enhancement == "STEEL" else 0
+            kings += count if card.rank == "K" else 0
+            faces += count if card.rank in _FACE_RANKS else 0
+            enhanced += count if (
+                card.enhancement in {"BONUS", "MULT", "GLASS", "LUCKY"}
+                or card.edition is not None
+                or card.seal == "RED"
+            ) else 0
+    copy_targets = [
+        joker.key for joker in observation.jokers
+        if isinstance(joker, PublicItem)
+        and not joker.debuffed
+        and joker.key in _COPY_ENGINE_KEYS
+    ]
+    full = len(observation.jokers) >= observation.joker_limit
+    offers = (
+        [("shop", slot, item) for slot, item in enumerate(observation.shop)]
+        + [("opened_pack", slot, item) for slot, item in enumerate(observation.opened_pack)]
+    )
+    result: list[dict[str, object]] = []
+    for zone, slot, item in offers:
+        if not isinstance(item, PublicItem) or item.kind != "JOKER":
+            continue
+        support: dict[str, object]
+        mechanism: str
+        tradeoff: str
+        if item.key == "j_mime" and deck_known and steel:
+            support = {"steel_cards_in_public_deck": steel}
+            mechanism = "Mime retriggers held-card abilities; drawn Steel cards can apply held XMult again."
+            tradeoff = "Value depends on drawing and holding Steel instead of scoring it."
+        elif item.key == "j_baron" and deck_known and kings:
+            support = {"kings_in_public_deck": kings}
+            mechanism = "Baron gives X1.5 Mult for each King held in hand."
+            tradeoff = "Value depends on drawing and holding Kings."
+        elif item.key == "j_hanging_chad" and deck_known and enhanced:
+            support = {"enhanced_scoring_cards_in_public_deck": enhanced}
+            mechanism = "Hanging Chad retriggers the first scoring card twice."
+            tradeoff = "Gain depends on making a supported enhanced card score first."
+        elif item.key == "j_photograph" and deck_known and faces:
+            support = {"face_cards_in_public_deck": faces}
+            mechanism = "Photograph gives X2 Mult when the first played face card scores."
+            tradeoff = "Gain requires a non-debuffed face card to score."
+        elif item.key in {"j_hologram", "j_constellation"}:
+            runtime = item.runtime.current_x_mult if item.runtime is not None else None
+            support = {"displayed_current_x_mult": runtime}
+            mechanism = (
+                "Hologram grows when playing cards are added to the deck."
+                if item.key == "j_hologram"
+                else "Constellation grows when Planet cards are used."
+            )
+            tradeoff = "This is a scaling route, not a guaranteed immediate gain; compare its displayed runtime."
+        elif item.key in {"j_blueprint", "j_brainstorm"} and copy_targets:
+            support = {"visible_compatible_engine_keys": copy_targets}
+            mechanism = "This copier can repeat a visible compatible scoring engine when positioned correctly."
+            tradeoff = "Compatibility and target position must be rechecked after acquisition."
+        else:
+            continue
+        row: dict[str, object] = {
+            "zone": zone, "slot": slot, "key": item.key,
+            "support": support, "mechanism": mechanism, "tradeoff": tradeoff,
+        }
+        if full and item.edition != "NEGATIVE":
+            row["capacity"] = (
+                "Joker slots are full: selling is a separate action; observe the fresh state before buying or choosing this offer."
+            )
+        result.append(row)
+        if len(result) == 6:
+            break
+    return result

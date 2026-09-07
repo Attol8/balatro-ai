@@ -729,4 +729,3 @@ def _validate_typed_selection(
     if not all(isinstance(value, expected) for value in values):
         raise TypeError(f"selection requires {expected.__name__} values")
     _validate_selection(values, minimum=minimum, maximum=maximum)
-

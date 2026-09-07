@@ -361,4 +361,3 @@ def _boolean(value: object, name: str) -> bool:
     if not isinstance(value, bool):
         raise PublicCodecError(f"{name} must be a boolean")
     return value
-

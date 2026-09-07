@@ -231,3 +231,25 @@ mechanisms. Compare missed opportunities with actually visible offers; never use
 future knowledge to claim a move was obviously right. Improve only supported
 mechanics/advice, retain Astra-low/standard credits/public-state isolation and
 one minimal player. No live rerun or gameplay model calls are authorized.
+
+## Post-run improvement design (baseline 99cf692)
+
+User-visible outcome: Astra notices supported scaling offers before rerolling,
+and receives accurate Fortune Teller estimates. Smallest examples: the Ante7
+Mime offer remains visible to advice with five occupied Joker slots and five
+Steel cards; the final Glass6 hand estimates 1,239,454 after integer flooring.
+Reuse the public adapter, existing scorer, compact analysis packet and coach
+prompt. Add conditional offer facts, not another player or a new service.
+
+Acceptance: regress recorded public offers and final-hand arithmetic; audit all
+49 recorded plays with hidden/stochastic exceptions; run full offline tests and
+package checks. Document actual missed offers versus speculative pivots, and
+retain source links for mechanics. No new game or gameplay inference. Commit
+improvements separately from the preserved successful baseline.
+
+Post-run implementation verified: Fortune Teller public tooltip runtime fixes
+46/47 visible-hand parity (one Lucky RNG discrepancy; two hidden hands excluded).
+Conditional engine offers now survive full slots, with Negative capacity handled;
+coach guidance covers replacements, scoring phases and retrigger/deck development.
+232 offline tests pass; wheel built and reinstalled locally. No gameplay/model
+calls. Detailed findings and online sources: docs/trajectory-review.md.
