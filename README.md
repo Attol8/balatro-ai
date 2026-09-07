@@ -39,13 +39,15 @@ best of them reached Ante 6 with a 14,700 peak; the model reached Ante 10 with
 | Astra low + tools, supervised | 1 | 1 | Seed QD3F4XVW. Won, then reached Ante 11 in endless with a 7,052,918 hand. 473 decisions from 388 model calls, zero rejected replies, one automatic restart; recorded end to end. |
 | Astra low + tools, on a panel seed | 1 | 1 | Seed D0000000. Won, then reached Ante 10 in endless with a 1,840,907 hand. 315 decisions from 265 model calls, zero rejected replies. Every heuristic baseline played this seed; the best reached Ante 6. |
 | Astra low + tools | 1 | 1 | Seed 2K9H9HN. Won, then reached Ante 11 in endless with a 1,239,454 hand. Supervised run with adapter fixes between segments. |
+| Terra low + tools, supervised | 2 | 0 | Seed QD3F4XVW, `gpt-5.6-terra` at low effort, same tools and prompts as the astra game on this seed. Both games lost at the Ante 2 boss The Mouth: the clean game with 356 of 1,600 after 30 model calls, the first attempt with 496 of 1,600 after a runner fault cost it a joker pack. Per-call latency matched astra. |
 | search-v6 (best heuristic) | 20 | 3 | Bounded public-information search, the strongest of ten non-model policies. |
 | Ten heuristic and search policies | 200 | 0 to 3 each | Same game, same settings, seeds D0000000 to D0000019. |
 
-The coached games are four single games, three on seeds outside the baseline panel
+The astra games are four single games, three on seeds outside the baseline panel
 and one on a panel seed. They show the system can beat the game and keep scaling
 in endless mode; they do not estimate a win rate, and the unattended win rate is
-unmeasured. Full tables, figures and every caveat: [docs/results.md](docs/results.md).
+unmeasured. The two terra games are the only other model tried so far: one seed,
+one effort level, both lost at Ante 2, so they rank nothing. Full tables, figures and every caveat: [docs/results.md](docs/results.md).
 How the numbers are produced and what is disclosed: [docs/methodology.md](docs/methodology.md).
 
 ![Chips scored against the blind requirement](benchmarks/results/figures/score-vs-requirement.svg)
@@ -112,7 +114,8 @@ balatro doctor                     # read-only readiness check, no model calls
 balatro play --endless --output runs/endless-001
 ```
 
-The product is fixed to `gpt-6-astra` at low reasoning effort. Defaults cap a run
+The product defaults to `gpt-6-astra` at low reasoning effort; `--model` on `play`
+and `supervise` selects another Codex model and records it in the manifest. Defaults cap a run
 at 450 coach calls, 750 actions, 7200 seconds and 60 seconds per call
 (`--max-calls`, `--max-actions`, `--seconds`, `--call-seconds`); they bound work,
 not price. They are sized for a full endless game — the recorded Ante 13 run took
@@ -177,6 +180,10 @@ restart cap. `balatro watch runs/game-002` shows the whole game.
 - [`evidence/astra-low-D0000000/`](evidence/astra-low-D0000000): the recorded
   game on the baseline seed, four segments, the same-seed comparison with every
   heuristic, the time-lapse video and GIF, and the dashboard at game over.
+- [`evidence/terra-low-QD3F4XVW/`](evidence/terra-low-QD3F4XVW) and
+  [`evidence/terra-low-QD3F4XVW-attempt1/`](evidence/terra-low-QD3F4XVW-attempt1):
+  two games with `gpt-5.6-terra` on the seed of the recorded astra game, both lost
+  at Ante 2; the first attempt with the runner faults that it exposed.
 - [`evidence/astra-low-2K9H9HN/`](evidence/astra-low-2K9H9HN): the earlier win
   and endless continuation, in hash-chained segments with the interrupted first
   attempt kept separately.

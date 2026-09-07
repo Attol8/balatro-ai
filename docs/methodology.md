@@ -22,7 +22,9 @@ extra win.
 
 The coached games are therefore four single games, three on seeds outside the
 panel and one on a panel seed. They demonstrate that the system can beat the game;
-they do not estimate a win rate.
+they do not estimate a win rate. Two further games with `gpt-5.6-terra` reused
+QD3F4XVW so that the only change from the recorded astra game was the model; both
+lost at Ante 2 and are reported as losses, not as a ranking.
 The repository says "unattended win rate unmeasured" wherever that matters.
 
 ## Disclosure rules
