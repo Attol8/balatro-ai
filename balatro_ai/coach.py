@@ -91,8 +91,14 @@ class CodexCoach:
     def close(self):
         """Remove the isolated workspace when the run ends."""
         if self._workspace is not None:
+            sync_codex_home(Path(self._workspace.name))
             self._workspace.cleanup()
             self._workspace = None
+
+    def _codex_home(self) -> Path | None:
+        if self._workspace is None:
+            self._workspace = tempfile.TemporaryDirectory(prefix="balatro-coach-")
+        return prepare_codex_home(Path(self._workspace.name))
 
     def preflight(self, timeout: float) -> None:
         """Require installed Codex authentication through ChatGPT, without inference."""
@@ -108,7 +114,7 @@ class CodexCoach:
             _run_process(
                 [executable, "login", "status"],
                 cwd=workdir,
-                environment=_sanitized_environment(),
+                environment=_sanitized_environment(self._codex_home()),
                 timeout=_remaining(_deadline(timeout)),
                 captured_output=output_path,
             )
@@ -128,7 +134,7 @@ class CodexCoach:
         executable = shutil.which(self.codex_executable)
         if executable is None:
             raise RuntimeError(f"Codex CLI is unavailable: {self.codex_executable}")
-        environment = _sanitized_environment()
+        environment = _sanitized_environment(self._codex_home())
 
         if not self._preflight_complete:
             self.preflight(_remaining(deadline))
@@ -398,11 +404,51 @@ def _kill_process_group(process: subprocess.Popen[Any]) -> None:
     process.wait()
 
 
-def _sanitized_environment() -> dict[str, str]:
+def _sanitized_environment(codex_home: Path | None = None) -> dict[str, str]:
     environment = {key: value for key, value in os.environ.items() if "API_KEY" not in key.upper()}
     # Surface the CLI's own warnings (retries, rate limits) in the captured log tail.
     environment.setdefault("RUST_LOG", "warn")
+    if codex_home is not None:
+        environment["CODEX_HOME"] = str(codex_home)
     return environment
+
+
+def _default_codex_home() -> Path:
+    return Path(os.environ.get("CODEX_HOME") or Path.home() / ".codex")
+
+
+def prepare_codex_home(workdir: Path) -> Path | None:
+    """Give the Codex child a private home holding only the login file.
+
+    The user's real Codex home can hold gigabytes of session history that the CLI
+    scans at startup (logged as "state db discrepancy ... falling_back"). The child
+    gets an empty home with `auth.json` linked to the real file, so the login is
+    shared and nothing else is. Returns None when no login file exists, in which
+    case the default home is used unchanged.
+    """
+
+    source = _default_codex_home() / "auth.json"
+    if not source.exists():
+        return None
+    home = workdir / "codex-home"
+    home.mkdir(parents=True, exist_ok=True)
+    link = home / "auth.json"
+    if link.is_symlink():
+        return home
+    if link.exists():
+        # A token refresh replaced the link with a real file: keep the real home current.
+        shutil.copyfile(link, source)
+        link.unlink()
+    link.symlink_to(source)
+    return home
+
+
+def sync_codex_home(workdir: Path) -> None:
+    """Copy a refreshed login back to the real home before the workspace is removed."""
+
+    link = workdir / "codex-home" / "auth.json"
+    if link.exists() and not link.is_symlink():
+        shutil.copyfile(link, _default_codex_home() / "auth.json")
 
 
 def _encode_bounded(value: object, *, limit: int = _MAX_REQUEST_BYTES) -> bytes:
