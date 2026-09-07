@@ -7,6 +7,7 @@ import itertools
 from benchmarks import EVIDENCE_ROOT
 from benchmarks.trajectories import (
     ASTRA_LOW_HEADLESS,
+    ASTRA_LOW_PANEL_SEED,
     SOURCE_AUTOMATIC,
     SOURCE_COACH,
     SOURCE_DELEGATE,
@@ -14,6 +15,7 @@ from benchmarks.trajectories import (
     astra_low_segments,
     load_astra_low,
     load_astra_low_headless,
+    load_astra_low_panel_seed,
     load_first_win,
     load_segmented_run,
     run_segments,
@@ -224,3 +226,58 @@ def test_headless_blind_requirements_stay_exact_integers():
 def test_load_segmented_run_works_on_any_run_directory():
     direct = load_segmented_run(EVIDENCE_ROOT / ASTRA_LOW_HEADLESS)
     assert direct.decisions == load_astra_low_headless().decisions
+
+
+EXPECTED_PANEL_SEED_BOUNDS = [("00", 1, 7), ("01", 7, 9), ("02", 9, 10), ("03", 10, 10)]
+
+
+def test_panel_seed_run_has_315_transitions():
+    run = load_astra_low_panel_seed()
+    assert run.run_id == ASTRA_LOW_PANEL_SEED
+    assert run.seed == "D0000000"
+    assert len(run.decisions) == 315
+    assert run.source_counts() == {
+        "automatic": 19,
+        "coach": 257,
+        "coach_followup": 34,
+        "forced": 5,
+    }
+    assert sum(run.source_counts().values()) == 315
+
+
+def test_panel_seed_segments_are_contiguous_and_include_the_reconstructed_one():
+    segments = run_segments(EVIDENCE_ROOT / ASTRA_LOW_PANEL_SEED)
+    assert [entry["segment"] for entry in segments] == ["00", "01", "02", "03"]
+    reconstructed = [entry["segment"] for entry in segments if entry["reconstructed_result"]]
+    assert reconstructed == ["02"]
+    bounds = segment_ante_bounds(load_astra_low_panel_seed())
+    assert bounds == EXPECTED_PANEL_SEED_BOUNDS
+    for (_, _, end), (_, start, _) in itertools.pairwise(bounds):
+        assert end == start
+
+
+def test_panel_seed_run_records_the_recovered_game_reply():
+    calls = load_astra_low_panel_seed().coach_calls
+    assert calls.recorded
+    assert calls.responses == 259
+    assert calls.hedged == 30
+    assert calls.hedges_won == 24
+    assert calls.timeouts == 5
+    assert calls.rejected_responses == 0
+    assert calls.rpc_timeouts == 1
+    assert calls.recovered_transitions == 1
+
+
+def test_panel_seed_blind_requirements_stay_below_ten_million():
+    run = load_astra_low_panel_seed()
+    blinds = run.blind_series()
+    assert len(blinds) == 20
+    assert all(isinstance(blind.requirement, int) for blind in blinds)
+    assert max(blind.requirement for blind in blinds) == 1_120_000
+    final = blinds[-1]
+    assert (final.ante, final.blind, final.requirement) == (10, "BOSS", 1_120_000)
+    assert final.hands_played == 4
+    assert final.total_chips_scored == 232367.0
+    assert not final.cleared
+    assert max(blind.best_hand_score for blind in blinds) == 1840907.0
+    _assert_requirements_increase(run)

@@ -15,12 +15,22 @@ from benchmarks.tables import (
 )
 
 
-def test_table_a_rows_cover_baselines_and_both_coached_runs():
+def test_table_a_rows_cover_baselines_and_all_coached_runs():
     table = build_results()["table_a"]
     assert table["title"].endswith("Red Deck / White Stake / all unlocked")
     assert len(table["baselines"]) == 12
-    assert len(table["coached"]) == 2
-    headless, low = table["coached"]
+    assert len(table["coached"]) == 3
+    headless, low, panel = table["coached"]
+    assert [row["median_ante"] for row in table["coached"]] == [13, 11, 10]
+    assert panel["seed_panel"] == "D0000000"
+    assert panel["display_name"] == "Astra low (gpt-6-astra), seed D0000000"
+    assert panel["panel_seed"] is True
+    assert headless["panel_seed"] is False and low["panel_seed"] is False
+    assert panel["median_ante"] == 10
+    assert panel["decisions"] == 315
+    assert panel["notes"] == [
+        "visible game, endless; on the baseline panel seed; cleared Ante 8, lost at ante 10"
+    ]
     assert headless["seed_panel"] == "TAF7DNTX"
     assert headless["display_name"] == "Astra low (gpt-6-astra), seed TAF7DNTX"
     assert headless["games_attempted"] == 1
@@ -38,16 +48,24 @@ def test_table_a_rows_cover_baselines_and_both_coached_runs():
 
 def test_table_a_reports_coach_calls_per_decision():
     table = build_results()["table_a"]
-    headless, low = table["coached"]
+    headless, low, panel = table["coached"]
     assert (headless["coach_requests"], headless["decisions"]) == (404, 456)
     assert headless["calls_per_decision"] == "404/456 = 0.89"
     assert (low["coach_requests"], low["decisions"]) == (357, 384)
     assert low["calls_per_decision"] == "357/384 = 0.93"
+    assert (panel["coach_requests"], panel["decisions"]) == (265, 315)
+    assert panel["calls_per_decision"] == "265/315 = 0.84"
     assert {row["calls_per_decision"] for row in table["baselines"]} == {"-"}
 
 
 def test_table_a_reports_followups_forced_moves_and_stalls():
-    headless, low = build_results()["table_a"]["coached"]
+    headless, low, panel = build_results()["table_a"]["coached"]
+    assert panel["followups_forced_stalls"] == "34 / 5 / 5"
+    assert (panel["followup_actions"], panel["forced_actions"], panel["coach_timeouts"]) == (
+        34,
+        5,
+        5,
+    )
     assert headless["followup_actions"] == 31
     assert headless["forced_actions"] == 13
     assert headless["coach_timeouts"] == 15
@@ -64,6 +82,13 @@ def test_table_a_footnotes_state_the_caveats():
     assert "headless" in footnotes
     assert "stopped and resumed four times" in footnotes
     assert "No game state or trajectory was edited" in footnotes
+    assert "D0000000 is that panel's first seed" in footnotes
+    assert (
+        "the best heuristic (search-v5) reached ante 6 with a 14,700 peak hand; "
+        "the coached run reached ante 10 with 1,840,907" in footnotes
+    )
+    assert "restarted three times at safe moments" in footnotes
+    assert "restored from Balatro's autosave" in footnotes
     assert "outside the D0000000-D0000019 baseline panel" in footnotes
     assert "supervised" in footnotes
     assert "adapter fixes" in footnotes
@@ -93,8 +118,73 @@ def test_table_c_has_a_block_per_coached_run_headless_first():
     table = build_results()["table_c"]
     assert [block["run"] for block in table["blocks"]] == [
         "astra-low-TAF7DNTX",
+        "astra-low-D0000000",
         "astra-low-2K9H9HN",
     ]
+
+
+def test_table_c_panel_seed_block():
+    block = _block("astra-low-D0000000")
+    assert block["total_transitions"] == 315
+    assert block["reported_decisions"] == 315
+    assert "exactly" in block["note"]
+    assert block["decision_sources"] == {
+        "automatic": 19,
+        "coach": 257,
+        "coach_followup": 34,
+        "forced": 5,
+    }
+    assert block["decisions_per_phase"] == {
+        "BLIND_SELECT": 30,
+        "PACK": 26,
+        "ROUND_EVAL": 19,
+        "SELECTING_HAND": 55,
+        "SHOP": 185,
+    }
+    actions = {entry["action"]: entry["count"] for entry in block["decisions_per_action"]}
+    assert sum(actions.values()) == 315
+    assert actions["reroll_shop"] == 67
+    assert actions["buy_shop_card"] == 41
+    assert actions["play_cards"] == 27
+    assert actions["cash_out"] == 19
+    assert block["shop_visits"] == {
+        "visits": 43,
+        "actions_total": 185,
+        "median_actions_per_visit": 3.0,
+        "mean_actions_per_visit": 4.3,
+        "max_actions_in_a_visit": 13,
+    }
+    assert block["coach_calls"]["rpc_timeouts"] == 1
+    assert block["coach_calls"]["recovered_transitions"] == 1
+
+
+def test_table_d_ranks_every_player_on_the_panel_seed():
+    table = build_results()["table_d"]
+    assert table["seed"] == "D0000000"
+    rows = table["rows"]
+    assert len(rows) == 13
+    top = rows[0]
+    assert top["kind"] == "coached"
+    assert (top["ante_reached"], top["peak_hand_score"]) == (10, 1840907.0)
+    by_run = {row["run"]: (row["ante_reached"], row["peak_hand_score"]) for row in rows}
+    assert by_run["search-v5-001"] == (6, 14700.0)
+    assert by_run["build-first-001"] == (5, 5775.0)
+    assert by_run["strategic-001"] == (5, 6162.0)
+    assert by_run["strategic-unlocked-001"] == (5, 6162.0)
+    assert by_run["search-v6-001"] == (4, 5872.0)
+    assert by_run["search-v7-002"] == (4, 4104.0)
+    assert by_run["live-validation-001"] == (2, 1158.0)
+    for run in (
+        "search-stable-001",
+        "search-v2-001",
+        "search-v3-001",
+        "search-v4-001",
+        "search-planets-001",
+    ):
+        assert by_run[run] == (4, 4968.0)
+    antes = [row["ante_reached"] for row in rows]
+    assert antes == sorted(antes, reverse=True)
+    assert table["best_baseline"]["run"] == "search-v5-001"
 
 
 def test_table_c_headless_decision_sources():
@@ -152,6 +242,8 @@ def test_table_c_headless_coach_call_health():
         "hedges_won": 14,
         "timeouts": 15,
         "rejected_responses": 8,
+        "rpc_timeouts": 0,
+        "recovered_transitions": 0,
     }
 
 
@@ -180,7 +272,11 @@ def test_table_c_supervised_block_is_unchanged():
 
 def test_segment_continuity_is_reported_for_both_runs():
     entries = build_results()["segment_continuity"]
-    assert [entry["run"] for entry in entries] == ["astra-low-TAF7DNTX", "astra-low-2K9H9HN"]
+    assert [entry["run"] for entry in entries] == [
+        "astra-low-TAF7DNTX",
+        "astra-low-D0000000",
+        "astra-low-2K9H9HN",
+    ]
     headless = entries[0]["segments"]
     assert headless[0]["ante_start"] == 1
     assert headless[-1]["ante_end"] == 13
@@ -264,4 +360,4 @@ def test_extra_runs_are_grouped_by_model_and_effort(tmp_path: Path):
     labels = [entry["policy"] for entry in results["table_a"]["coached"]]
     assert labels[-1] == "gpt-6-astra (low)"
     assert row.calls_per_decision == "11/21 = 0.52"
-    assert len(built_in_coached_rows()) == 2
+    assert len(built_in_coached_rows()) == 3

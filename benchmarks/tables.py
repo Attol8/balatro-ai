@@ -20,19 +20,23 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from . import EVIDENCE_ROOT, SETTING
-from .baselines import BaselinePanel, load_panels
+from .baselines import BaselinePanel, load_panels, panel_seeds
 from .trajectories import (
     ASTRA_LOW_HEADLESS,
+    ASTRA_LOW_PANEL_SEED,
     ASTRA_LOW_SUPERVISED,
     Trajectory,
     load_astra_low,
     load_astra_low_headless,
+    load_astra_low_panel_seed,
     segment_ante_bounds,
 )
 
 TABLE_A_TITLE = f"Real-game results, {SETTING}"
 TABLE_B_TITLE = "Scoring-engine exactness"
 TABLE_C_TITLE = "Decision mix in the Astra-low runs"
+TABLE_D_TITLE = "Same seed, D0000000"
+PANEL_SEED = "D0000000"
 SHOP_PHASE = "SHOP"
 
 TRAJECTORY_REVIEW = "docs/trajectory-review.md"
@@ -58,6 +62,7 @@ class CoachedRow:
     followup_actions: int | None = None
     forced_actions: int | None = None
     coach_timeouts: int | None = None
+    panel_seed: bool = False
 
     @property
     def median_ante(self) -> float:
@@ -134,6 +139,7 @@ def _coached_row(row: CoachedRow) -> dict:
         "forced_actions": row.forced_actions,
         "coach_timeouts": row.coach_timeouts,
         "followups_forced_stalls": row.intervention_label,
+        "panel_seed": row.panel_seed,
         "seconds": row.seconds,
         "peak_hand_score": row.peak_hand_score,
         "notes": [row.note],
@@ -141,59 +147,70 @@ def _coached_row(row: CoachedRow) -> dict:
     }
 
 
+def _coached_row_from_result(
+    run_dir: Path,
+    note: str,
+    known_panel_seeds: frozenset[str],
+) -> CoachedRow:
+    """Build one coached row from a run directory's ``result.json``/``manifest.json``."""
+
+    result = json.loads((run_dir / "result.json").read_text())
+    manifest = json.loads((run_dir / "manifest.json").read_text())
+    seed = manifest["seed"]
+    return CoachedRow(
+        label=f"Astra low ({manifest['requested_model']})",
+        model=manifest["requested_model"],
+        reasoning_effort=manifest["requested_reasoning_effort"],
+        seeds=[seed],
+        games=1,
+        ante8_clears=1 if result["won"] else 0,
+        antes_reached=[int(result["ante_reached"])],
+        decisions=int(result["decisions"]),
+        coach_requests=int(result["coach_requests"]),
+        seconds=float(result["seconds"]),
+        peak_hand_score=float(result["peak_hand_score"]),
+        note=note,
+        sources=[f"evidence/{run_dir.name}"],
+        followup_actions=_optional_int(result, "followup_actions"),
+        forced_actions=_optional_int(result, "forced_actions"),
+        coach_timeouts=_optional_int(result, "coach_timeouts"),
+        panel_seed=seed in known_panel_seeds,
+    )
+
+
+def _optional_int(result: dict, key: str) -> int | None:
+    value = result.get(key)
+    return None if value is None else int(value)
+
+
 def built_in_coached_rows(evidence_root: Path | None = None) -> list[CoachedRow]:
-    """The two published coached runs, headless TAF7DNTX first."""
+    """The published coached runs, ordered by ante reached (descending)."""
 
     root = evidence_root or EVIDENCE_ROOT
-    headless_dir = root / ASTRA_LOW_HEADLESS
-    headless = json.loads((headless_dir / "result.json").read_text())
-    headless_manifest = json.loads((headless_dir / "manifest.json").read_text())
+    known = panel_seeds(root)
     supervised_dir = root / ASTRA_LOW_SUPERVISED
-    low = json.loads((supervised_dir / "result.json").read_text())
-    low_ante8 = json.loads((supervised_dir / "ante-8-result.json").read_text())
-    low_manifest = json.loads((supervised_dir / "manifest.json").read_text())
-    return [
-        CoachedRow(
-            label=f"Astra low ({headless_manifest['requested_model']})",
-            model=headless_manifest["requested_model"],
-            reasoning_effort=headless_manifest["requested_reasoning_effort"],
-            seeds=[headless_manifest["seed"]],
-            games=1,
-            ante8_clears=1 if headless["won"] else 0,
-            antes_reached=[int(headless["ante_reached"])],
-            decisions=int(headless["decisions"]),
-            coach_requests=int(headless["coach_requests"]),
-            seconds=float(headless["seconds"]),
-            peak_hand_score=float(headless["peak_hand_score"]),
-            note=(
-                f"single game, seed {headless_manifest['seed']}: headless, endless; "
-                f"cleared Ante 8, then lost at ante {headless['ante_reached']}"
-            ),
-            sources=[f"evidence/{ASTRA_LOW_HEADLESS}"],
-            followup_actions=int(headless["followup_actions"]),
-            forced_actions=int(headless["forced_actions"]),
-            coach_timeouts=int(headless["coach_timeouts"]),
+    ante8 = json.loads((supervised_dir / "ante-8-result.json").read_text())
+    rows = [
+        _coached_row_from_result(
+            root / ASTRA_LOW_HEADLESS,
+            "single game, seed TAF7DNTX: headless, endless; cleared Ante 8, then lost at ante 13",
+            known,
         ),
-        CoachedRow(
-            label=f"Astra low ({low_manifest['requested_model']})",
-            model=low_manifest["requested_model"],
-            reasoning_effort=low_manifest["requested_reasoning_effort"],
-            seeds=[low_manifest["seed"]],
-            games=1,
-            ante8_clears=1 if low["won"] else 0,
-            antes_reached=[int(low["ante_reached"])],
-            decisions=int(low["decisions"]),
-            coach_requests=int(low["coach_requests"]),
-            seconds=float(low["seconds"]),
-            peak_hand_score=float(low["peak_hand_score"]),
-            note=(
-                f"single game, seed {low_manifest['seed']}: cleared Ante 8 "
-                f"({low_ante8['decisions']} decisions, ante {low_ante8['ante_reached']}), "
-                f"then continued in endless and lost at ante {low['ante_reached']}"
-            ),
-            sources=[f"evidence/{ASTRA_LOW_SUPERVISED}"],
+        _coached_row_from_result(
+            root / ASTRA_LOW_PANEL_SEED,
+            "visible game, endless; on the baseline panel seed; cleared Ante 8, lost at ante 10",
+            known,
+        ),
+        _coached_row_from_result(
+            supervised_dir,
+            "single game, seed 2K9H9HN: cleared Ante 8 "
+            f"({ante8['decisions']} decisions, ante {ante8['ante_reached']}), "
+            "then continued in endless and lost at ante 11",
+            known,
         ),
     ]
+    rows.sort(key=lambda row: (-max(row.antes_reached), row.seed_label))
+    return rows
 
 
 def load_extra_runs(run_dirs: list[Path]) -> list[CoachedRow]:
@@ -233,7 +250,7 @@ def load_extra_runs(run_dirs: list[Path]) -> list[CoachedRow]:
     return rows
 
 
-def _table_a(panels: list[BaselinePanel], coached: list[CoachedRow]) -> dict:
+def _table_a(panels: list[BaselinePanel], coached: list[CoachedRow], table_d: dict) -> dict:
     repeated = {
         policy for policy, count in Counter(panel.policy for panel in panels).items() if count > 1
     }
@@ -258,8 +275,13 @@ def _table_a(panels: list[BaselinePanel], coached: list[CoachedRow]) -> dict:
         "baselines": baseline_rows,
         "coached": coached_rows,
         "footnotes": [
-            "Each coached row is a single game on a seed outside the D0000000-D0000019 "
-            "baseline panel; they are demonstrations, not win-rate estimates.",
+            "Each coached row is a single game: TAF7DNTX and 2K9H9HN are seeds outside the "
+            "D0000000-D0000019 baseline panel, D0000000 is that panel's first seed. They are "
+            "demonstrations, not win-rate estimates.",
+            _panel_seed_footnote(table_d),
+            f"The {PANEL_SEED} run was restarted three times at safe moments and once restored "
+            "from Balatro's autosave after an operating-system kill; no game state or trajectory "
+            f"was edited by hand. See evidence/astra-low-{PANEL_SEED}/README.md.",
             "Seed TAF7DNTX was played headless in endless mode. The runner process was stopped "
             "and resumed four times at safe moments (during model calls) to deploy runner fixes "
             "- request-id length, timeout retry, hedged calls. No game state or trajectory was "
@@ -369,6 +391,8 @@ def _decision_mix(trajectory: Trajectory, result: dict) -> dict:
             "hedges_won": calls.hedges_won,
             "timeouts": calls.timeouts,
             "rejected_responses": calls.rejected_responses,
+            "rpc_timeouts": calls.rpc_timeouts,
+            "recovered_transitions": calls.recovered_transitions,
         },
         "source": f"evidence/{trajectory.run_id}/segments/*/trajectory.jsonl.gz",
     }
@@ -393,6 +417,65 @@ def _table_c(runs: list[tuple[Trajectory, dict]]) -> dict:
     }
 
 
+def _panel_seed_footnote(table_d: dict) -> str:
+    best = table_d["best_baseline"]
+    coached = next(row for row in table_d["rows"] if row["kind"] == "coached")
+    return (
+        f"On seed {PANEL_SEED} the best heuristic ({best['player']}) reached ante "
+        f"{best['ante_reached']} with a {best['peak_hand_score']:,.0f} peak hand; the coached "
+        f"run reached ante {coached['ante_reached']} with {coached['peak_hand_score']:,.0f}."
+    )
+
+
+def _table_d(panels: list[BaselinePanel], coached: list[CoachedRow]) -> dict:
+    """Every player that met seed D0000000, best first."""
+
+    rows: list[dict] = []
+    for panel in panels:
+        for game in panel.games:
+            if game.seed != PANEL_SEED:
+                continue
+            rows.append(
+                {
+                    "player": panel.policy,
+                    "run": panel.run_dir,
+                    "kind": "baseline",
+                    "status": game.status,
+                    "ante_reached": game.ante_reached,
+                    "peak_hand_score": game.peak_hand_score,
+                }
+            )
+    for row in coached:
+        if PANEL_SEED not in row.seeds:
+            continue
+        rows.append(
+            {
+                "player": f"{row.label} + tools",
+                "run": row.sources[0] if row.sources else "",
+                "kind": "coached",
+                "status": "ante 8 cleared, lost in endless",
+                "ante_reached": max(row.antes_reached),
+                "peak_hand_score": row.peak_hand_score,
+            }
+        )
+    rows.sort(key=lambda row: (-row["ante_reached"], -row["peak_hand_score"], row["run"]))
+    best_baseline = max(
+        (row for row in rows if row["kind"] == "baseline"),
+        key=lambda row: (row["ante_reached"], row["peak_hand_score"]),
+    )
+    return {
+        "title": TABLE_D_TITLE,
+        "seed": PANEL_SEED,
+        "rows": rows,
+        "best_baseline": best_baseline,
+        "note": (
+            f"Every heuristic panel played {PANEL_SEED} as its first seed, so this is the same "
+            "game dealt to every player. One seed is not a rate."
+        ),
+        "source": "evidence/baselines/*/summary.json",
+    }
+
+
 def build_results(
     evidence_root: Path | None = None,
     extra_runs: list[Path] | None = None,
@@ -401,17 +484,28 @@ def build_results(
 
     root = evidence_root or EVIDENCE_ROOT
     panels = load_panels(root)
-    low = load_astra_low(root)
-    headless = load_astra_low_headless(root)
-    low_result = json.loads((root / ASTRA_LOW_SUPERVISED / "result.json").read_text())
-    headless_result = json.loads((root / ASTRA_LOW_HEADLESS / "result.json").read_text())
+    trajectories = [
+        load_astra_low_headless(root),
+        load_astra_low_panel_seed(root),
+        load_astra_low(root),
+    ]
+    low = trajectories[-1]
+    runs = [
+        (
+            trajectory,
+            json.loads((root / trajectory.run_id / "result.json").read_text()),
+        )
+        for trajectory in trajectories
+    ]
     coached = built_in_coached_rows(root) + load_extra_runs(list(extra_runs or []))
+    table_d = _table_d(panels, coached)
     return {
         "setting": SETTING,
         "evidence_root": "evidence",
-        "table_a": _table_a(panels, coached),
+        "table_a": _table_a(panels, coached, table_d),
         "table_b": _table_b(low, root),
-        "table_c": _table_c([(headless, headless_result), (low, low_result)]),
+        "table_c": _table_c(runs),
+        "table_d": table_d,
         "segment_continuity": [
             {
                 "run": trajectory.run_id,
@@ -420,7 +514,7 @@ def build_results(
                     for segment, start, end in segment_ante_bounds(trajectory)
                 ],
             }
-            for trajectory in (headless, low)
+            for trajectory in trajectories
         ],
     }
 
@@ -568,7 +662,15 @@ def render_markdown(results: dict) -> str:
         lines.append("")
         if calls["recorded"]:
             lines += _md_table(
-                ["Responses", "With hedge data", "Hedged", "Hedges won", "Timeouts", "Rejected"],
+                [
+                    "Responses",
+                    "With hedge data",
+                    "Hedged",
+                    "Hedges won",
+                    "Timeouts",
+                    "Rejected",
+                    "Game-reply timeouts recovered",
+                ],
                 [
                     [
                         str(calls["responses"]),
@@ -577,6 +679,7 @@ def render_markdown(results: dict) -> str:
                         str(calls["hedges_won"]),
                         str(calls["timeouts"]),
                         str(calls["rejected_responses"]),
+                        f"{calls['recovered_transitions']} of {calls['rpc_timeouts']}",
                     ]
                 ],
             )
@@ -589,6 +692,25 @@ def render_markdown(results: dict) -> str:
         lines.append(f"- {block['note']}")
         lines.append(f"- Source: `{block['source']}`")
         lines.append("")
+    table_d = results["table_d"]
+    lines += [f"## Table D - {table_d['title']}", ""]
+    lines += _md_table(
+        ["Player", "Run", "Ante reached", "Peak hand", "Outcome"],
+        [
+            [
+                f"**{row['player']}**" if row["kind"] == "coached" else row["player"],
+                f"`{row['run']}`",
+                str(row["ante_reached"]),
+                f"{row['peak_hand_score']:,.0f}",
+                row["status"],
+            ]
+            for row in table_d["rows"]
+        ],
+    )
+    lines.append("")
+    lines.append(f"- {table_d['note']}")
+    lines.append(f"- Source: `{table_d['source']}`")
+    lines.append("")
     lines.append("## Segment continuity")
     lines.append("")
     for entry in results["segment_continuity"]:

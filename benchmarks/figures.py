@@ -26,6 +26,7 @@ from .trajectories import (  # noqa: E402
     Trajectory,
     load_astra_low,
     load_astra_low_headless,
+    load_astra_low_panel_seed,
 )
 
 SURFACE = "#fcfcfb"
@@ -40,7 +41,10 @@ SERIES_COACHED = "#eb6834"
 WIN_ANTE = 8
 LABEL_BOX = {"boxstyle": "round,pad=0.2", "facecolor": SURFACE, "edgecolor": "none"}
 WIN_ANTE_REACHED = WIN_ANTE + 1
-ENDLESS_FOOTNOTE = "Each Astra-low game continued in endless mode after clearing Ante 8."
+ENDLESS_FOOTNOTES = (
+    "Each Astra-low game continued in endless mode after clearing Ante 8.",
+    "A hollow star marks a coached game played on a seed from the heuristic panel.",
+)
 
 
 def _coached_annotation(row: CoachedRow) -> str:
@@ -90,12 +94,13 @@ def ante_reached_by_policy(
     repeated_coached = {
         label for label, count in Counter(row.label for row in coached).items() if count > 1
     }
-    rows: list[tuple[str, list[int], bool, str]] = [
+    rows: list[tuple[str, list[int], bool, str, bool]] = [
         (
             f"{row.label}, seed {row.seed_label}" if row.label in repeated_coached else row.label,
             list(row.antes_reached),
             True,
             _coached_annotation(row),
+            row.panel_seed,
         )
         for row in coached
     ]
@@ -107,6 +112,7 @@ def ante_reached_by_policy(
             [game.ante_reached for game in panel.games if game.completed],
             False,
             "",
+            False,
         )
         for panel in panels
     ]
@@ -117,7 +123,7 @@ def ante_reached_by_policy(
     axes.set_axisbelow(True)
 
     positions = list(range(len(rows) - 1, -1, -1))
-    for position, (label, antes, is_coached, annotation) in zip(positions, rows):
+    for position, (label, antes, is_coached, annotation, panel_seed) in zip(positions, rows):
         if not antes:
             continue
         colour = SERIES_COACHED if is_coached else SERIES_BASELINE
@@ -130,9 +136,10 @@ def ante_reached_by_policy(
                 linestyle="none",
                 marker="*",
                 markersize=15,
+                markerfacecolor=SURFACE if panel_seed else colour,
+                markeredgecolor=colour if panel_seed else SURFACE,
+                markeredgewidth=1.6 if panel_seed else 1.2,
                 color=colour,
-                markeredgecolor=SURFACE,
-                markeredgewidth=1.2,
                 zorder=4,
             )
             # A star at the far right of the scale has no room for a label
@@ -193,13 +200,14 @@ def ante_reached_by_policy(
         fontsize=8,
     )
     axes.set_yticks(positions)
-    axes.set_yticklabels([label for label, _, _, _ in rows])
+    axes.set_yticklabels([label for label, _, _, _, _ in rows])
     axes.set_ylim(-0.8, len(rows) - 0.1)
     axes.set_xlabel("Ante reached", color=INK_SECONDARY)
-    axes.set_xticks(range(1, max(max(antes) for _, antes, _, _ in rows if antes) + 1))
+    axes.set_xticks(range(1, max(max(antes) for _, antes, _, _, _ in rows if antes) + 1))
 
-    total_baseline = sum(len(antes) for _, antes, coach, _note in rows if not coach)
-    total_coached = sum(len(antes) for _, antes, coach, _note in rows if coach)
+    total_baseline = sum(len(antes) for _, antes, coach, _note, _seed in rows if not coach)
+    total_coached = sum(len(antes) for _, antes, coach, _note, _seed in rows if coach)
+    on_panel_seed = sum(len(antes) for _, antes, coach, _note, seed in rows if coach and seed)
     fig.text(
         0.012,
         1 - 0.34 / height,
@@ -223,8 +231,8 @@ def ante_reached_by_policy(
         0.012,
         1 - 0.82 / height,
         f"{total_baseline} completed heuristic games on seeds D0000000-D0000019; "
-        f"{total_coached} coached game{'' if total_coached == 1 else 's'} on "
-        f"{'another seed' if total_coached == 1 else 'other seeds'}",
+        f"{total_coached} coached game{'' if total_coached == 1 else 's'}, "
+        f"{on_panel_seed} of them on a panel seed",
         ha="left",
         va="top",
         color=INK_SECONDARY,
@@ -249,13 +257,25 @@ def ante_reached_by_policy(
             color=SERIES_COACHED,
             label="Coached game (n=1, not a win rate)",
         ),
+        plt.Line2D(
+            [],
+            [],
+            linestyle="none",
+            marker="*",
+            markersize=13,
+            markerfacecolor=SURFACE,
+            markeredgecolor=SERIES_COACHED,
+            markeredgewidth=1.6,
+            color=SERIES_COACHED,
+            label="Coached game on a panel seed",
+        ),
         plt.Line2D([], [], color=INK, linewidth=2.0, label="Median ante"),
     ]
     legend = axes.legend(
         handles=handles,
         loc="upper center",
-        bbox_to_anchor=(0.5, -0.09 - 4.0 / (height * 100)),
-        ncol=3,
+        bbox_to_anchor=(0.5, -0.10 - 4.0 / (height * 100)),
+        ncol=2,
         frameon=False,
         fontsize=8,
         handletextpad=0.6,
@@ -263,16 +283,17 @@ def ante_reached_by_policy(
     )
     for text in legend.get_texts():
         text.set_color(INK_SECONDARY)
-    fig.text(
-        0.012,
-        0.012,
-        ENDLESS_FOOTNOTE,
-        ha="left",
-        va="bottom",
-        color=INK_MUTED,
-        fontsize=8,
-    )
-    fig.tight_layout(rect=(0, 0.05, 1, 1 - 1.0 / height))
+    for offset, footnote in enumerate(reversed(ENDLESS_FOOTNOTES)):
+        fig.text(
+            0.012,
+            (0.10 + 0.16 * offset) / height,
+            footnote,
+            ha="left",
+            va="bottom",
+            color=INK_MUTED,
+            fontsize=8,
+        )
+    fig.tight_layout(rect=(0, 0.95 / height, 1, 1 - 1.0 / height))
     return _save(fig, path)
 
 
@@ -387,6 +408,10 @@ def render_all(out_dir: Path, evidence_root: Path | None = None) -> list[Path]:
         (
             load_astra_low_headless(root),
             "Astra low, seed TAF7DNTX - headless, cleared Ante 8, lost in endless Ante 13",
+        ),
+        (
+            load_astra_low_panel_seed(root),
+            "Astra low, seed D0000000 - panel seed, cleared Ante 8, lost in endless Ante 10",
         ),
         (
             load_astra_low(root),

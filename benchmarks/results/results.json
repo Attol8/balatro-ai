@@ -32,6 +32,31 @@
       ]
     },
     {
+      "run": "astra-low-D0000000",
+      "segments": [
+        {
+          "ante_end": 7,
+          "ante_start": 1,
+          "segment": "00"
+        },
+        {
+          "ante_end": 9,
+          "ante_start": 7,
+          "segment": "01"
+        },
+        {
+          "ante_end": 10,
+          "ante_start": 9,
+          "segment": "02"
+        },
+        {
+          "ante_end": 10,
+          "ante_start": 10,
+          "segment": "03"
+        }
+      ]
+    },
+    {
       "run": "astra-low-2K9H9HN",
       "segments": [
         {
@@ -343,6 +368,7 @@
         "notes": [
           "single game, seed TAF7DNTX: headless, endless; cleared Ante 8, then lost at ante 13"
         ],
+        "panel_seed": false,
         "peak_hand_score": 134231931235.0,
         "policy": "Astra low (gpt-6-astra)",
         "reached_ante8_or_more": 1,
@@ -374,6 +400,7 @@
         "notes": [
           "single game, seed 2K9H9HN: cleared Ante 8 (303 decisions, ante 9), then continued in endless and lost at ante 11"
         ],
+        "panel_seed": false,
         "peak_hand_score": 1239454.0,
         "policy": "Astra low (gpt-6-astra)",
         "reached_ante8_or_more": 1,
@@ -384,10 +411,44 @@
         "sources": [
           "evidence/astra-low-2K9H9HN"
         ]
+      },
+      {
+        "ante8_clears": 1,
+        "calls_per_decision": "265/315 = 0.84",
+        "coach_requests": 265,
+        "coach_timeouts": 5,
+        "decisions": 315,
+        "display_name": "Astra low (gpt-6-astra), seed D0000000",
+        "followup_actions": 34,
+        "followups_forced_stalls": "34 / 5 / 5",
+        "forced_actions": 5,
+        "games_attempted": 1,
+        "games_completed": 1,
+        "games_requested": 1,
+        "kind": "coached",
+        "mean_ante": 10.0,
+        "median_ante": 10.0,
+        "model": "gpt-6-astra",
+        "notes": [
+          "visible game, endless; on the baseline panel seed; cleared Ante 8, lost at ante 10"
+        ],
+        "panel_seed": true,
+        "peak_hand_score": 1840907.0,
+        "policy": "Astra low (gpt-6-astra)",
+        "reached_ante8_or_more": 1,
+        "reasoning_effort": "low",
+        "run_dir": "evidence/astra-low-D0000000",
+        "seconds": 3211.615,
+        "seed_panel": "D0000000",
+        "sources": [
+          "evidence/astra-low-D0000000"
+        ]
       }
     ],
     "footnotes": [
-      "Each coached row is a single game on a seed outside the D0000000-D0000019 baseline panel; they are demonstrations, not win-rate estimates.",
+      "Each coached row is a single game: TAF7DNTX and 2K9H9HN are seeds outside the D0000000-D0000019 baseline panel, D0000000 is that panel's first seed. They are demonstrations, not win-rate estimates.",
+      "On seed D0000000 the best heuristic (search-v5) reached ante 6 with a 14,700 peak hand; the coached run reached ante 10 with 1,840,907.",
+      "The D0000000 run was restarted three times at safe moments and once restored from Balatro's autosave after an operating-system kill; no game state or trajectory was edited by hand. See evidence/astra-low-D0000000/README.md.",
       "Seed TAF7DNTX was played headless in endless mode. The runner process was stopped and resumed four times at safe moments (during model calls) to deploy runner fixes - request-id length, timeout retry, hedged calls. No game state or trajectory was edited; illegal replies were rejected and corrected in place.",
       "The Astra-low run was supervised: it was played with adapter fixes and reviewed continuations across 7 recorded segments, so it is not an unattended benchmark.",
       "'Coach calls / decisions' counts model requests against actions taken; the runner takes cash-outs itself, so the ratio is below one.",
@@ -424,9 +485,11 @@
           "hedged": 16,
           "hedges_won": 14,
           "recorded": true,
+          "recovered_transitions": 0,
           "rejected_responses": 8,
           "responses": 386,
           "responses_with_hedge_data": 219,
+          "rpc_timeouts": 0,
           "timeouts": 15
         },
         "decision_sources": {
@@ -586,12 +649,174 @@
       },
       {
         "coach_calls": {
+          "hedged": 30,
+          "hedges_won": 24,
+          "recorded": true,
+          "recovered_transitions": 1,
+          "rejected_responses": 0,
+          "responses": 259,
+          "responses_with_hedge_data": 259,
+          "rpc_timeouts": 1,
+          "timeouts": 5
+        },
+        "decision_sources": {
+          "automatic": 19,
+          "coach": 257,
+          "coach_followup": 34,
+          "forced": 5
+        },
+        "decisions_per_action": [
+          {
+            "action": "reroll_shop",
+            "count": 67,
+            "sources": {
+              "coach": 57,
+              "coach_followup": 10
+            }
+          },
+          {
+            "action": "buy_shop_card",
+            "count": 41,
+            "sources": {
+              "coach": 39,
+              "coach_followup": 2
+            }
+          },
+          {
+            "action": "play_cards",
+            "count": 27,
+            "sources": {
+              "coach": 27
+            }
+          },
+          {
+            "action": "buy_pack",
+            "count": 24,
+            "sources": {
+              "coach": 19,
+              "coach_followup": 5
+            }
+          },
+          {
+            "action": "discard_cards",
+            "count": 24,
+            "sources": {
+              "coach": 24
+            }
+          },
+          {
+            "action": "choose_pack_card",
+            "count": 22,
+            "sources": {
+              "coach": 22
+            }
+          },
+          {
+            "action": "select_blind",
+            "count": 20,
+            "sources": {
+              "coach": 15,
+              "forced": 5
+            }
+          },
+          {
+            "action": "cash_out",
+            "count": 19,
+            "sources": {
+              "automatic": 19
+            }
+          },
+          {
+            "action": "leave_shop",
+            "count": 19,
+            "sources": {
+              "coach": 12,
+              "coach_followup": 7
+            }
+          },
+          {
+            "action": "use_consumable",
+            "count": 15,
+            "sources": {
+              "coach": 6,
+              "coach_followup": 9
+            }
+          },
+          {
+            "action": "skip_blind",
+            "count": 10,
+            "sources": {
+              "coach": 10
+            }
+          },
+          {
+            "action": "reorder_jokers",
+            "count": 8,
+            "sources": {
+              "coach": 8
+            }
+          },
+          {
+            "action": "sell_joker",
+            "count": 7,
+            "sources": {
+              "coach": 7
+            }
+          },
+          {
+            "action": "buy_voucher",
+            "count": 6,
+            "sources": {
+              "coach": 6
+            }
+          },
+          {
+            "action": "skip_pack",
+            "count": 4,
+            "sources": {
+              "coach": 4
+            }
+          },
+          {
+            "action": "sell_consumable",
+            "count": 2,
+            "sources": {
+              "coach": 1,
+              "coach_followup": 1
+            }
+          }
+        ],
+        "decisions_per_phase": {
+          "BLIND_SELECT": 30,
+          "PACK": 26,
+          "ROUND_EVAL": 19,
+          "SELECTING_HAND": 55,
+          "SHOP": 185
+        },
+        "note": "The concatenated segments hold exactly the 315 decisions result.json reports.",
+        "reported_decisions": 315,
+        "run": "astra-low-D0000000",
+        "seed": "D0000000",
+        "shop_visits": {
+          "actions_total": 185,
+          "max_actions_in_a_visit": 13,
+          "mean_actions_per_visit": 4.3,
+          "median_actions_per_visit": 3.0,
+          "visits": 43
+        },
+        "source": "evidence/astra-low-D0000000/segments/*/trajectory.jsonl.gz",
+        "total_transitions": 315
+      },
+      {
+        "coach_calls": {
           "hedged": 0,
           "hedges_won": 0,
           "recorded": false,
+          "recovered_transitions": 0,
           "rejected_responses": 0,
           "responses": 355,
           "responses_with_hedge_data": 0,
+          "rpc_timeouts": 0,
           "timeouts": 0
         },
         "decision_sources": {
@@ -742,5 +967,125 @@
       }
     ],
     "title": "Decision mix in the Astra-low runs"
+  },
+  "table_d": {
+    "best_baseline": {
+      "ante_reached": 6,
+      "kind": "baseline",
+      "peak_hand_score": 14700.0,
+      "player": "search-v5",
+      "run": "search-v5-001",
+      "status": "lost"
+    },
+    "note": "Every heuristic panel played D0000000 as its first seed, so this is the same game dealt to every player. One seed is not a rate.",
+    "rows": [
+      {
+        "ante_reached": 10,
+        "kind": "coached",
+        "peak_hand_score": 1840907.0,
+        "player": "Astra low (gpt-6-astra) + tools",
+        "run": "evidence/astra-low-D0000000",
+        "status": "ante 8 cleared, lost in endless"
+      },
+      {
+        "ante_reached": 6,
+        "kind": "baseline",
+        "peak_hand_score": 14700.0,
+        "player": "search-v5",
+        "run": "search-v5-001",
+        "status": "lost"
+      },
+      {
+        "ante_reached": 5,
+        "kind": "baseline",
+        "peak_hand_score": 6162.0,
+        "player": "strategic",
+        "run": "strategic-001",
+        "status": "lost"
+      },
+      {
+        "ante_reached": 5,
+        "kind": "baseline",
+        "peak_hand_score": 6162.0,
+        "player": "strategic",
+        "run": "strategic-unlocked-001",
+        "status": "lost"
+      },
+      {
+        "ante_reached": 5,
+        "kind": "baseline",
+        "peak_hand_score": 5775.0,
+        "player": "build-first",
+        "run": "build-first-001",
+        "status": "lost"
+      },
+      {
+        "ante_reached": 4,
+        "kind": "baseline",
+        "peak_hand_score": 5872.0,
+        "player": "search-v6",
+        "run": "search-v6-001",
+        "status": "lost"
+      },
+      {
+        "ante_reached": 4,
+        "kind": "baseline",
+        "peak_hand_score": 4968.0,
+        "player": "search-planets",
+        "run": "search-planets-001",
+        "status": "lost"
+      },
+      {
+        "ante_reached": 4,
+        "kind": "baseline",
+        "peak_hand_score": 4968.0,
+        "player": "search",
+        "run": "search-stable-001",
+        "status": "lost"
+      },
+      {
+        "ante_reached": 4,
+        "kind": "baseline",
+        "peak_hand_score": 4968.0,
+        "player": "search-v2",
+        "run": "search-v2-001",
+        "status": "lost"
+      },
+      {
+        "ante_reached": 4,
+        "kind": "baseline",
+        "peak_hand_score": 4968.0,
+        "player": "search-v3",
+        "run": "search-v3-001",
+        "status": "lost"
+      },
+      {
+        "ante_reached": 4,
+        "kind": "baseline",
+        "peak_hand_score": 4968.0,
+        "player": "search-v4",
+        "run": "search-v4-001",
+        "status": "lost"
+      },
+      {
+        "ante_reached": 4,
+        "kind": "baseline",
+        "peak_hand_score": 4104.0,
+        "player": "search-v7",
+        "run": "search-v7-002",
+        "status": "lost"
+      },
+      {
+        "ante_reached": 2,
+        "kind": "baseline",
+        "peak_hand_score": 1158.0,
+        "player": "baseline-v1",
+        "run": "live-validation-001",
+        "status": "lost"
+      }
+    ],
+    "seed": "D0000000",
+    "source": "evidence/baselines/*/summary.json",
+    "title": "Same seed, D0000000"
   }
 }

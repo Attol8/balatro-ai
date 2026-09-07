@@ -6,9 +6,11 @@ decision carries ``observation`` and ``predicted_score``; the matching transitio
 carries ``observed_score``.
 
 Any evidence directory holding a ``segments.json`` (``astra-low-2K9H9HN``,
-``astra-low-TAF7DNTX``) uses the runner's segment shape:
+``astra-low-TAF7DNTX``, ``astra-low-D0000000``) uses the runner's segment shape:
 ``rpc_attempt / coach_request / coach_response / transition``, plus ``continued``,
-``coach_timeout`` and ``coach_rejected`` in the current runner.  Only the transition
+``coach_timeout``, ``coach_rejected`` and ``rpc_timeout`` in the current runner; a
+transition recovered after a game-reply timeout carries ``recovered``.  Unknown event
+types are counted and skipped, so a newer runner never breaks the loader.  Only the transition
 is a decision; ``before``/``after`` are full state snapshots and the hand score has
 to be recovered as the round-chip delta.  ``transition.source`` is one of
 ``coach``, ``automatic``, ``forced`` or ``coach_followup``.  A predicted score exists
@@ -38,6 +40,7 @@ SOURCE_COACH_FOLLOWUP = "coach_followup"
 
 ASTRA_LOW_SUPERVISED = "astra-low-2K9H9HN"
 ASTRA_LOW_HEADLESS = "astra-low-TAF7DNTX"
+ASTRA_LOW_PANEL_SEED = "astra-low-D0000000"
 
 
 @dataclass(frozen=True)
@@ -90,6 +93,8 @@ class CoachCallHealth:
     hedges_won: int = 0
     timeouts: int = 0
     rejected_responses: int = 0
+    rpc_timeouts: int = 0
+    recovered_transitions: int = 0
 
     @property
     def recorded(self) -> bool:
@@ -247,7 +252,7 @@ def astra_low_segments(evidence_root: Path | None = None) -> list[dict]:
     return run_segments((evidence_root or EVIDENCE_ROOT) / ASTRA_LOW_SUPERVISED)
 
 
-def _hedge_stats(events: Counter, hedged: int, won: int, with_data: int) -> CoachCallHealth:
+def _call_health(events: Counter, hedged: int, won: int, with_data: int, recovered: int):
     return CoachCallHealth(
         responses=events["coach_response"],
         responses_with_hedge_data=with_data,
@@ -255,6 +260,8 @@ def _hedge_stats(events: Counter, hedged: int, won: int, with_data: int) -> Coac
         hedges_won=won,
         timeouts=events["coach_timeout"],
         rejected_responses=events["coach_rejected"],
+        rpc_timeouts=events["rpc_timeout"],
+        recovered_transitions=recovered,
     )
 
 
@@ -264,7 +271,7 @@ def load_segmented_run(run_dir: Path, run_id: str | None = None) -> Trajectory:
     seed = json.loads((run_dir / "manifest.json").read_text())["seed"]
     records: list[DecisionRecord] = []
     events: Counter = Counter()
-    hedged = won = with_hedge_data = 0
+    hedged = won = with_hedge_data = recovered = 0
     index = 0
     for entry in run_segments(run_dir):
         segment = entry["segment"]
@@ -285,6 +292,7 @@ def load_segmented_run(run_dir: Path, run_id: str | None = None) -> Trajectory:
                 continue
             if kind != "transition":
                 continue
+            recovered += bool(event.get("recovered"))
             before, after = event["before"], event["after"]
             action = event.get("action") or {}
             action_type = action.get("type", "unknown")
@@ -319,7 +327,7 @@ def load_segmented_run(run_dir: Path, run_id: str | None = None) -> Trajectory:
         run_id=run_id or run_dir.name,
         seed=seed,
         decisions=tuple(records),
-        coach_calls=_hedge_stats(events, hedged, won, with_hedge_data),
+        coach_calls=_call_health(events, hedged, won, with_hedge_data, recovered),
     )
 
 
@@ -333,6 +341,12 @@ def load_astra_low_headless(evidence_root: Path | None = None) -> Trajectory:
     """The headless astra-low run, seed TAF7DNTX."""
 
     return load_segmented_run((evidence_root or EVIDENCE_ROOT) / ASTRA_LOW_HEADLESS)
+
+
+def load_astra_low_panel_seed(evidence_root: Path | None = None) -> Trajectory:
+    """The visible astra-low run on the baseline panel seed D0000000."""
+
+    return load_segmented_run((evidence_root or EVIDENCE_ROOT) / ASTRA_LOW_PANEL_SEED)
 
 
 def segment_ante_bounds(trajectory: Trajectory) -> list[tuple[str, int, int]]:

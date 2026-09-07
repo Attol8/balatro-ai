@@ -12,18 +12,30 @@ and search policies won at most 3 games in 20.
 
 ![Ante reached per game by policy](benchmarks/results/figures/ante-reached-by-policy.svg)
 
+## Watch it play
+
+![Time-lapse of a recorded game beside the live dashboard](evidence/astra-low-D0000000/recording-timelapse.gif)
+
+A 69-minute game on seed D0000000, the first seed of the baseline panel, compressed
+to twelve seconds: the real game on the left, `balatro watch` on the right. The
+two-minute version is [`recording-timelapse.mp4`](evidence/astra-low-D0000000/recording-timelapse.mp4).
+On that seed the best heuristic reached Ante 6 with a 14,700 peak; the model
+cleared Ante 8 and reached Ante 10 with 1,840,907.
+
 ## Results
 
 | System | Games | Ante 8 cleared | Notes |
 |---|---|---|---|
 | Astra low + tools, headless | 1 | 1 | Seed TAF7DNTX. Won, then reached Ante 13 in endless with a 134,231,931,235 hand. 456 decisions from 404 model calls; the runner was restarted four times at safe moments to deploy fixes, never inside a blind. |
+| Astra low + tools, on a panel seed | 1 | 1 | Seed D0000000. Won, then reached Ante 10 in endless with a 1,840,907 hand. 315 decisions from 265 model calls, zero rejected replies. Every heuristic baseline played this seed; the best reached Ante 6. |
 | Astra low + tools | 1 | 1 | Seed 2K9H9HN. Won, then reached Ante 11 in endless with a 1,239,454 hand. Supervised run with adapter fixes between segments. |
 | search-v6 (best heuristic) | 20 | 3 | Bounded public-information search, the strongest of ten non-model policies. |
 | Ten heuristic and search policies | 200 | 0 to 3 each | Same game, same settings, seeds D0000000 to D0000019. |
 
-The coached games are two single games on seeds outside the baseline panel. They
-show the system can beat the game and keep scaling in endless mode; they do not
-estimate a win rate, and the unattended win rate is unmeasured. Full tables, figures and every caveat: [docs/results.md](docs/results.md).
+The coached games are three single games, two on seeds outside the baseline panel
+and one on a panel seed. They show the system can beat the game and keep scaling
+in endless mode; they do not estimate a win rate, and the unattended win rate is
+unmeasured. Full tables, figures and every caveat: [docs/results.md](docs/results.md).
 How the numbers are produced and what is disclosed: [docs/methodology.md](docs/methodology.md).
 
 ![Chips scored against the blind requirement](benchmarks/results/figures/score-vs-requirement.svg)
@@ -125,13 +137,20 @@ balatro reply runs/session-001/public response.json
 Each run writes `manifest.json`, `trajectory.jsonl` and `result.json`. The
 trajectory is append-only JSON lines, so `tail -f` it to watch a game live;
 `balatro inspect DIR` prints the result, for example
-`balatro inspect evidence/astra-low-TAF7DNTX`.
+`balatro inspect evidence/astra-low-TAF7DNTX`. For a live view, `balatro watch DIR`
+serves a dashboard at http://127.0.0.1:8765 from the standard library alone: ante
+and blind progress, money, peak hand, calls per decision, the requirement-versus-
+best-hand chart, the Joker board, the model's plan and an action feed. It follows
+resumed runs across directories and takes `?zoom=0.8` for narrow windows.
 
 ## Evidence
 
 - [`evidence/astra-low-TAF7DNTX/`](evidence/astra-low-TAF7DNTX): the headless
   Ante 13 run, five hash-chained segments with the runner revision and reason for
   each restart.
+- [`evidence/astra-low-D0000000/`](evidence/astra-low-D0000000): the recorded
+  game on the baseline seed, four segments, the same-seed comparison with every
+  heuristic, the time-lapse video and GIF, and the dashboard at game over.
 - [`evidence/astra-low-2K9H9HN/`](evidence/astra-low-2K9H9HN): the earlier win
   and endless continuation, in hash-chained segments with the interrupted first
   attempt kept separately.
@@ -146,8 +165,8 @@ trajectory is append-only JSON lines, so `tail -f` it to watch a game live;
 
 ## Limitations
 
-- Two coached wins on two seeds. No win rate, no same-seed ablation of model versus
-  tools, no model-without-tools control.
+- Three coached wins on three seeds. No win rate, no model-without-tools control.
+  The D0000000 game is the only same-seed comparison with the heuristics.
 - Both runs were watched by an operator. The earlier one had adapter fixes between
   segments; the later one had runner restarts at safe moments to deploy the retry,
   resume and hedging fixes, with the model never given hints or corrections.

@@ -28,6 +28,7 @@ win rate of the coached system is unmeasured.
 | System | Games | Ante 8 cleared | Reached Ante 8+ | Median ante | Seeds |
 |---|---|---|---|---|---|
 | Astra low + tools, headless | 1 | 1 | 1 | 13 (endless) | TAF7DNTX |
+| Astra low + tools, on a panel seed | 1 | 1 | 1 | 10 (endless) | D0000000 |
 | Astra low + tools | 1 | 1 | 1 | 11 (endless) | 2K9H9HN |
 | search-v4 | 20 | 3 | 7 | 6.5 | D0000000-19 |
 | search-v5 | 20 | 3 | 6 | 6.5 | D0000000-19 |
@@ -55,6 +56,18 @@ Disclosures that belong with this table:
   at safe moments, always while waiting for the model, to deploy runner fixes; the
   game state and trajectories were never edited. Details, hashes and the revision
   of each segment: `evidence/astra-low-TAF7DNTX/README.md`.
+- **Astra low, D0000000** (`gpt-6-astra`, low effort, game window visible and screen
+  recorded): the operator set the seed to the first seed of the baseline panel, so
+  this is the one game where the model and every heuristic played identical cards.
+  Cleared Ante 8 and lost to The House at Ante 10 with 1,120,000 required. 315
+  decisions from 265 calls, 34 chained, 5 forced, zero rejected replies, 5 stalls
+  retried, 1 game-reply timeout recovered by reading the live state. The runner
+  was restarted three times at safe moments, once after the operating system
+  killed every process including the game, which Balatro's autosave and
+  BalatroBot's `load` restored; the differences the resume accepted are recorded
+  in the manifests and the reconstructed segment result is marked. On the same
+  seed the best heuristic, search-v5, reached Ante 6 with a 14,700 peak; the
+  model's peak was 1,840,907. Details: `evidence/astra-low-D0000000/README.md`.
 - **Astra low, 2K9H9HN** (`gpt-6-astra`, low effort): cleared Ante 8 after 303 decisions,
   then continued in endless mode and lost at Ante 11 with a peak hand of 1,239,454
   against a 10,800,000 requirement. 357 model calls covered 384 decisions; the
@@ -123,7 +136,7 @@ generated tables keep the earlier run's mix as a second block.
 
 ## What is not shown, and why
 
-- No win rate for the coached system. Two games cannot support one.
+- No win rate for the coached system. Three games cannot support one.
 - No same-seed comparison between the coached system and search-v6, and no
   model-without-tools control. Neither was run.
 - No token or cost figures. The evidence run did not record them.

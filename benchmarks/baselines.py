@@ -137,6 +137,12 @@ def load_panels(evidence_root: Path | None = None) -> list[BaselinePanel]:
     return sort_panels(panels)
 
 
+def panel_seeds(evidence_root: Path | None = None) -> frozenset[str]:
+    """Every seed any baseline panel played, used to spot coached runs on panel seeds."""
+
+    return frozenset(game.seed for panel in load_panels(evidence_root) for game in panel.games)
+
+
 def sort_panels(panels: list[BaselinePanel]) -> list[BaselinePanel]:
     """Table A order: Ante-8 clears desc, median ante desc, then policy name."""
 
