@@ -1,5 +1,9 @@
 # Confirmed Balatro win: Astra with numerical tools
 
+> Archived evidence. This run used an earlier version of the system at high
+> reasoning effort. The published results in [results.md](results.md) cover the
+> low-effort product run only; this document is kept for the record.
+
 Recorded 2026-09-07. This is the run that established that the coached system
 beats the game. No further evaluation of the high-effort configuration has been run.
 

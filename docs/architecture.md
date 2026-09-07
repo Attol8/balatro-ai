@@ -42,6 +42,13 @@ flowchart LR
    corrections. A validated action is executed once. Uncertain mutations are never
    retried. The runner waits for settled public state, appends the transition to
    `trajectory.jsonl`, and repeats.
+7. A reply may also carry a short chain of follow-up shop actions, or a bounded
+   reroll loop with a stop list and a money floor. The runner resolves item keys
+   against the fresh state, validates each follow-up as if it were a new decision,
+   executes it once, and stops the chain silently at the first illegal or
+   unresolvable step. The next packet reports how far the chain got. When only one
+   legal action exists, such as selecting a boss blind, the runner takes it without
+   a call and reports that too.
 
 ## Boundaries that matter
 
@@ -49,7 +56,8 @@ flowchart LR
   `tests/` assert that seeds, deck order and hidden identities never appear in it.
 - **No fallback policy.** If the model cannot produce a valid action within the
   limits, the run stops and records why. There is no heuristic that quietly takes
-  over.
+  over. The runner acts alone only on cashouts, on forced moves with a single
+  legal action, and on follow-ups the model spelled out in its own reply.
 - **No retries of game mutations.** A transport failure after an action was sent
   ends the run rather than risk a double action.
 - **Bounded work.** Calls, actions, wall-clock and per-call time are capped
