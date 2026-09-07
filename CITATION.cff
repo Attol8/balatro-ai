@@ -4,7 +4,7 @@ type: software
 title: "Balatro AI: an LLM coach with exact numerical tools that clears Balatro"
 authors:
   - name: Attol8
-version: 1.0.0
+version: 1.1.0
 date-released: 2026-09-07
 repository-code: "https://github.com/Attol8/balatro-ai"
 license: AGPL-3.0-or-later

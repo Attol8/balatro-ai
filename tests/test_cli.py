@@ -17,6 +17,22 @@ def test_bad_seed_cannot_start_game(tmp_path):
     assert caught.value.code == 1 and not (tmp_path / "run").exists()
 
 
+def test_default_limits_cover_an_endless_game(tmp_path, monkeypatch):
+    captured = {}
+
+    def run_game(client, coach, output, *, limits, **kwargs):
+        captured["limits"] = limits
+        return dict(status="won")
+
+    monkeypatch.setattr("balatro_ai.cli.run_game", run_game)
+    monkeypatch.setattr("balatro_ai.cli.BalatroBotClient", lambda port: object())
+    monkeypatch.setattr("balatro_ai.coach.CodexCoach", lambda: object())
+    assert main(["play", "--output", str(tmp_path / "run")]) == 0
+    limits = captured["limits"]
+    assert (limits.max_calls, limits.max_actions) == (450, 750)
+    assert (limits.seconds, limits.call_seconds) == (7200, 60)
+
+
 def test_doctor_read_only(monkeypatch, capsys):
     from types import SimpleNamespace
 
@@ -127,7 +143,7 @@ def test_resume_refuses_a_menu_or_finished_game(tmp_path, monkeypatch):
     assert caught.value.code == 1 and not (tmp_path / "run").exists()
 
 
-def test_resume_and_seed_are_mutually_exclusive(tmp_path):
+def test_resume_and_seed_are_mutually_exclusive(tmp_path, capsys):
     with pytest.raises(SystemExit) as caught:
         main(
             [
@@ -141,3 +157,4 @@ def test_resume_and_seed_are_mutually_exclusive(tmp_path):
             ]
         )
     assert caught.value.code == 1 and not (tmp_path / "run").exists()
+    assert "drop --seed" in capsys.readouterr().err

@@ -30,18 +30,30 @@ flowchart LR
    `strategy.py` retrieves at most three conditional examples from the offline
    strategy library for the current situation.
 4. `packet.py` assembles the public packet: current state, recent outcomes,
-   candidates, retrieved examples and the coach's own previous plan. Repeated
+   candidates, retrieved examples and the coach's own previous plan. The analysis
+   block names the current `phase` and the `legal_action_types` available in it, so
+   the model reads what it may do before it reads what it could score. Repeated
    records use column tables to keep the packet small.
 5. `coach.py` sends the packet to a fresh, sandboxed Codex process
    (`codex exec` with `--sandbox read-only`, web search disabled, ephemeral
    context) and receives a schema-checked JSON reply: one action plus an updated
    plan. Model and effort are fixed in code. Environment variables containing
-   `API_KEY` are stripped before the child starts.
+   `API_KEY` are stripped before the child starts, `RUST_LOG=warn` is set and the
+   child's stderr is captured. The child gets a private `CODEX_HOME`: an otherwise
+   empty directory holding only a link to the real `auth.json`, so the login works
+   and the CLI never scans the user's session history or personal configuration.
+   Each call is capped at `--call-seconds`, 60 by default. If a call has not
+   answered after 20 seconds a second identical process starts alongside it and the
+   first valid answer wins; the loser is killed and the per-call timings
+   (hedged, winner) are recorded on the `coach_response` event.
 6. `runner.py` validates the reply against the exact outstanding request and the
    current legal actions. Invalid replies get validation feedback for at most two
-   corrections. A validated action is executed once. Uncertain mutations are never
-   retried. The runner waits for settled public state, appends the transition to
-   `trajectory.jsonl`, and repeats.
+   corrections. A call that hits the per-call cap is recorded as a `coach_timeout`
+   and re-asked with a fresh request id, up to six attempts per decision with a
+   pause from the second retry, within the run budget; `result.json` counts the
+   timeouts. All of that is on the model side of the boundary. A validated action
+   is executed once. Uncertain mutations are never retried. The runner waits for
+   settled public state, appends the transition to `trajectory.jsonl`, and repeats.
 7. A reply may also carry a short chain of follow-up shop actions, or a bounded
    reroll loop with a stop list and a money floor. The runner resolves item keys
    against the fresh state, validates each follow-up as if it were a new decision,
@@ -59,9 +71,19 @@ flowchart LR
   over. The runner acts alone only on cashouts, on forced moves with a single
   legal action, and on follow-ups the model spelled out in its own reply.
 - **No retries of game mutations.** A transport failure after an action was sent
-  ends the run rather than risk a double action.
+  ends the run rather than risk a double action. Retrying and hedging exist only
+  on the model side, where a repeated call costs nothing but time; the game is
+  mutated once or not at all.
 - **Bounded work.** Calls, actions, wall-clock and per-call time are capped
-  before any model or game action is taken.
+  before any model or game action is taken. The defaults (450 calls, 750 actions,
+  7200 seconds, 60 seconds per call) are sized for a full endless game; they bound
+  work, not price.
+- **Restartable at a model call.** `balatro play --resume DIR` rebuilds the run
+  from the recorded trajectory, checks the live game against the last recorded
+  transition and records any difference as `resume_adjusted` in the new manifest.
+  Because the runner reads its own code at startup, stopping it while it is waiting
+  on a model call — never inside a game mutation — is the safe pause point for
+  deploying a fix mid-game.
 - **No consumables while a pack is open.** The real game lets a held Tarot,
   Planet or Spectral be used while a booster pack is on screen, but the
   BalatroBot transport declares `requires_state = { G.STATES.SELECTING_HAND,

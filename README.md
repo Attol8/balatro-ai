@@ -85,18 +85,34 @@ does not install or launch the game and ships no game assets.
 ```sh
 pip install -e .
 codex login
-BALATROBOT_ALL_UNLOCKED=1 uvx balatrobot serve --fast --headless   # game side
+BALATROBOT_ALL_UNLOCKED=1 uvx balatrobot serve --fast --headless --logs-path runs/logs
 balatro doctor                     # read-only readiness check, no model calls
-balatro play --output runs/game-001
 balatro play --endless --output runs/endless-001
 ```
 
 The product is fixed to `gpt-6-astra` at low reasoning effort. Defaults cap a run
-at 200 coach calls, 400 actions, 3600 seconds and 180 seconds per call
-(`--max-calls`, `--max-actions`, `--seconds`, `--call-seconds`). `--seed` selects a
-reproducible seed that stays in the manifest. Ctrl-C records an interruption and
-stops the Codex child; the game is left for inspection. Use one game instance:
-separate BalatroBot ports do not isolate the shared profile.
+at 450 coach calls, 750 actions, 7200 seconds and 60 seconds per call
+(`--max-calls`, `--max-actions`, `--seconds`, `--call-seconds`); they bound work,
+not price. They are sized for a full endless game — the recorded Ante 13 run took
+456 decisions, 404 model calls and 98 active minutes — so an Ante 8 win (drop
+`--endless`) finishes well inside them. `--seed` selects a reproducible seed that
+stays in the manifest. Use one game instance: separate BalatroBot ports do not
+isolate the shared profile.
+
+The Codex service stalls on roughly one call in ten, with the process idle and no
+output. A call that has not answered after twenty seconds is hedged with a second
+identical process and the first valid answer wins; a call that hits
+`--call-seconds` is re-asked with a fresh request id, up to six attempts with a
+pause. Every timeout is recorded in the trajectory and counted in `result.json`
+(`coach_timeouts`). None of this touches the game: an uncertain game mutation is
+never retried.
+
+Ctrl-C records an interruption and stops the Codex child; the game is left alone.
+`balatro play --resume runs/endless-001 --output runs/endless-001b` continues from
+the recorded trajectory after checking the live game against the last recorded
+transition, so a run can be stopped while it is waiting on a model call and picked
+up later. The manifest reports whether the live state had moved on
+(`resume_adjusted`).
 
 To answer the packets yourself or from another model, use session mode:
 
@@ -106,8 +122,10 @@ balatro next runs/session-001/public            # read the outstanding request
 balatro reply runs/session-001/public response.json
 ```
 
-Each run writes `manifest.json`, `trajectory.jsonl` and `result.json`. Read them
-with `balatro inspect DIR`, for example `balatro inspect evidence/astra-low-2K9H9HN`.
+Each run writes `manifest.json`, `trajectory.jsonl` and `result.json`. The
+trajectory is append-only JSON lines, so `tail -f` it to watch a game live;
+`balatro inspect DIR` prints the result, for example
+`balatro inspect evidence/astra-low-TAF7DNTX`.
 
 ## Evidence
 

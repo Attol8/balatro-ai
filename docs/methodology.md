@@ -72,15 +72,25 @@ Each directory already contains the `manifest.json` and `result.json` the builde
 needs. For a twenty-seed panel matching the baselines:
 
 ```sh
+BALATROBOT_ALL_UNLOCKED=1 uvx balatrobot serve --fast --headless --logs-path runs/logs
 for n in $(seq -w 0 19); do
-  balatro play --seed D00000$n --output runs/astra-low-panel/D00000$n
+  balatro play --seed D00000$n --output runs/astra-low-panel/D00000$n \
+    --max-calls 450 --max-actions 750 --seconds 7200 --call-seconds 60
 done
 python -m benchmarks --runs runs/astra-low-panel/*
 ```
 
+Those are the shipped defaults and cover a full endless game; an Ante 8 win needs
+fewer. A run stopped part-way is continued with `balatro play --resume DIR
+--output NEWDIR`, which rebuilds the history from the recorded trajectory and
+verifies the live game against the last recorded transition before acting.
+
 Rows are grouped by requested model and reasoning effort from the manifests.
 Report the panel, the number of games, and whether any run was interrupted or
-continued. Do not pool partial panels with complete ones without saying so.
+continued. Restarts are part of the result, not a detail to tidy away: say how
+many segments a game took, why each restart happened, and report each manifest's
+`resume_adjusted` so a reader knows whether any resume had to adopt a live state
+that had moved on. Do not pool partial panels with complete ones without saying so.
 
 ## Speed
 

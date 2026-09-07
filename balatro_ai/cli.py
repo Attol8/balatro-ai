@@ -28,10 +28,22 @@ def main(argv=None):
     play.add_argument(
         "--resume", type=Path, help="continue the paused game recorded in a run directory"
     )
-    play.add_argument("--max-calls", type=int, default=200)
-    play.add_argument("--max-actions", type=int, default=400)
-    play.add_argument("--seconds", type=float, default=3600)
-    play.add_argument("--call-seconds", type=float, default=180)
+    play.add_argument(
+        "--max-calls",
+        type=int,
+        default=450,
+        help="model calls before the run stops; the limits bound work, not price",
+    )
+    play.add_argument(
+        "--max-actions", type=int, default=750, help="game actions before the run stops"
+    )
+    play.add_argument("--seconds", type=float, default=7200, help="wall-clock budget for the run")
+    play.add_argument(
+        "--call-seconds",
+        type=float,
+        default=60,
+        help="per-call cap; a timed-out call is retried, not charged as progress",
+    )
     inspect = sub.add_parser("inspect", help="read a result without running anything")
     inspect.add_argument("run", type=Path)
     next_cmd = sub.add_parser("next", help="read the outstanding public session request")
