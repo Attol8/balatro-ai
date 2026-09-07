@@ -323,3 +323,17 @@ def test_analysis_names_the_phase_and_legal_action_types() -> None:
     assert "leave_shop" in analysis["legal_action_types"]
     assert "play_cards" not in analysis["legal_action_types"]
     assert "choose_pack_card" not in analysis["legal_action_types"]
+
+
+def test_analysis_reports_inventory_slots() -> None:
+    path = Path("evidence/astra-low-2K9H9HN/segments/03/trajectory.jsonl.gz")
+    with gzip.open(path, "rt", encoding="utf-8") as stream:
+        for line in stream:
+            record = json.loads(line)
+            if record.get("event") == "transition" and record["before"].get("phase") == "SHOP":
+                observation = public_observation_from_data(record["before"])
+                break
+    slots = analyze(observation)["slots"]
+    assert slots["jokers"] == f"{len(observation.jokers)}/{observation.joker_limit}"
+    assert slots["jokers_full"] == (len(observation.jokers) >= observation.joker_limit)
+    assert slots["consumables"].endswith(f"/{observation.consumable_limit}")

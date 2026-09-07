@@ -76,6 +76,7 @@ def analyze(observation: PublicObservation) -> dict[str, object]:
         if hasattr(observation.phase, "value")
         else str(observation.phase),
         "legal_action_types": legal_types,
+        "slots": _slots(observation),
         "play_candidates": plays,
         "reorder_suggestions": reorder,
         "strategic_actions": strategic,
@@ -110,6 +111,20 @@ def _unmodelled_joker_rows(observation: PublicObservation) -> list[dict[str, obj
         {"key": joker.key, "label": joker.label, "effect_text": joker.effect_text}
         for joker in unmodelled_scoring_jokers(observation)
     ]
+
+
+def _slots(observation: PublicObservation) -> dict[str, object]:
+    """Inventory occupancy, because a full Joker row makes every Joker buy illegal."""
+
+    jokers_used = len(observation.jokers)
+    consumables_used = len(observation.consumables)
+    return {
+        "jokers": f"{jokers_used}/{observation.joker_limit}",
+        "jokers_full": jokers_used >= observation.joker_limit,
+        "consumables": f"{consumables_used}/{observation.consumable_limit}",
+        "consumables_full": consumables_used >= observation.consumable_limit,
+        "note": "Only a Negative-edition item fits when its row is full; sell first otherwise.",
+    }
 
 
 def _economy(observation: PublicObservation) -> dict[str, object]:
