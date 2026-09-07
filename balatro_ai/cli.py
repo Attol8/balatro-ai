@@ -20,6 +20,7 @@ def main(argv=None):
     play = sub.add_parser("play", help="start one real game (uses model calls)")
     play.add_argument("--output", type=Path, required=True)
     play.add_argument("--coach", choices=["codex", "session"], default="codex")
+    play.add_argument("--model", default="gpt-6-astra", help="Codex model for the codex coach")
     play.add_argument("--port", type=int, default=12346)
     play.add_argument(
         "--endless", action="store_true", help="continue beyond Ante 8 until loss or run limits"
@@ -51,6 +52,7 @@ def main(argv=None):
     keep.add_argument("--port", type=int, default=12346)
     keep.add_argument("--endless", action="store_true", help="continue beyond Ante 8")
     keep.add_argument("--seed", help="optional 1–8 alphanumeric characters; withheld from coach")
+    keep.add_argument("--model", default=None, help="Codex model (default gpt-6-astra)")
     keep.add_argument("--max-calls", type=int, default=450, help="model calls per segment")
     keep.add_argument("--max-actions", type=int, default=750, help="game actions per segment")
     keep.add_argument("--seconds", type=float, default=7200, help="wall-clock budget per segment")
@@ -107,6 +109,7 @@ def main(argv=None):
                 max_restarts=args.max_restarts,
                 server_command=args.server_command,
                 save_file=args.save_file,
+                model=args.model,
             )
             print(json.dumps(summary, indent=2))
             return 0 if summary.get("status") in {"won", "lost"} else 1
@@ -143,7 +146,10 @@ def main(argv=None):
         limits = Limits(args.max_calls, args.max_actions, args.seconds, args.call_seconds)
         from .coach import CodexCoach, SessionCoach
 
-        coach = CodexCoach() if args.coach == "codex" else SessionCoach(args.output / "public")
+        if args.coach == "codex":
+            coach = CodexCoach() if args.model == "gpt-6-astra" else CodexCoach(model=args.model)
+        else:
+            coach = SessionCoach(args.output / "public")
         continuation, seed = None, args.seed
         if args.resume is not None:
             continuation = load_resume(client, args.resume)

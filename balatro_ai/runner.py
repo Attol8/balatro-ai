@@ -23,7 +23,7 @@ from .game.actions import (
     is_legal,
     iter_legal_actions,
 )
-from .game.adapter import action_to_rpc, to_public_observation
+from .game.adapter import ObservationError, action_to_rpc, to_public_observation
 from .game.codec import public_observation_from_data, public_observation_to_data
 from .game.history import HistoryStep, enrich_runtime
 from .game.state import Phase, PublicObservation
@@ -361,6 +361,15 @@ def validate_response(response, request_id, observation):
     return action, response["plan"], _validate_followups(response.get("then"))
 
 
+def _observation_diff(before, after):
+    """Names of the public fields that differ between two observations."""
+    return [
+        field.name
+        for field in fields(after)
+        if getattr(before, field.name) != getattr(after, field.name)
+    ]
+
+
 def public_state(raw):
     # BalatroBot can report won=True on a losing final boss. Ante advancement
     # is the independent confirmation required for an Ante 8 clear.
@@ -378,33 +387,81 @@ def game_rpc(client, method, params, deadline):
     return client.rpc(method, params)
 
 
+_PACK_STATES = frozenset(
+    {
+        "PACK",
+        "SMODS_BOOSTER_OPENED",
+        "TAROT_PACK",
+        "PLANET_PACK",
+        "SPECTRAL_PACK",
+        "STANDARD_PACK",
+        "BUFFOON_PACK",
+    }
+)
+# A skip tag that opens a pack does so after an animation; at visible game speeds
+# the mod still reports BLIND_SELECT for a while. Waiting longer than this means
+# the tag did not open a pack after all.
+PACK_TAG_SECONDS = 8.0
+
+
+def skip_opens_pack(observation) -> bool:
+    """Whether skipping the offered blind hands out a tag that opens a pack."""
+    return any(
+        blind.status == "SELECT" and "pack" in blind.tag_effect.lower()
+        for blind in observation.blinds
+    )
+
+
+def await_pack(client, raw, deadline, seconds=PACK_TAG_SECONDS):
+    """Poll until the pack a skip tag opens is reported, or give up after ``seconds``."""
+    until = min(deadline, time.monotonic() + seconds)
+    while raw.get("state") not in _PACK_STATES and time.monotonic() < until:
+        time.sleep(0.1)
+        raw = game_rpc(client, "gamestate", None, deadline)
+    return raw
+
+
+_SETTLED_STATES = (
+    frozenset({"BLIND_SELECT", "SELECTING_HAND", "ROUND_EVAL", "SHOP", "GAME_OVER"}) | _PACK_STATES
+)
+
+
+def _dealing(raw) -> bool:
+    """An open pack whose cards have not been dealt yet is mid-animation."""
+    return raw.get("state") in _PACK_STATES and not (raw.get("pack") or {}).get("cards")
+
+
+def _stable_reads(raw) -> int:
+    """Identical consecutive reads, 0.1 s apart, before a state counts as settled.
+
+    Pack cards are dealt one at a time at visible game speeds, so a pack has to
+    hold still for longer than the other states."""
+    return 6 if raw.get("state") in _PACK_STATES else 2
+
+
 def settle(client, raw, deadline):
-    previous = None
+    previous, stable = None, 0
     for _ in range(100):
         if time.monotonic() >= deadline:
             raise TimeoutError("game time limit reached while settling")
         if raw.get("state") == "MENU":
             raise RuntimeError("game unexpectedly returned to MENU")
-        if raw.get("state") in {
-            "BLIND_SELECT",
-            "SELECTING_HAND",
-            "ROUND_EVAL",
-            "SHOP",
-            "PACK",
-            "SMODS_BOOSTER_OPENED",
-            "TAROT_PACK",
-            "PLANET_PACK",
-            "SPECTRAL_PACK",
-            "STANDARD_PACK",
-            "BUFFOON_PACK",
-            "GAME_OVER",
-        }:
-            state = public_state(raw)
-            if state == previous:
-                return state
-            previous = state
+        state = None
+        if raw.get("state") in _SETTLED_STATES and not _dealing(raw):
+            try:
+                state = public_state(raw)
+            except ObservationError as exc:
+                # A card area whose count disagrees with its cards is still being
+                # dealt; anything else is a real observation problem.
+                if "unsettled" not in str(exc):
+                    raise
+        if state is None:
+            previous, stable = None, 0
         else:
-            previous = None
+            stable = stable + 1 if state == previous else 1
+            previous = state
+            if stable >= _stable_reads(raw):
+                return state
         time.sleep(min(0.1, max(0, deadline - time.monotonic())))
         raw = game_rpc(client, "gamestate", None, deadline)
     raise TimeoutError("game did not settle")
@@ -486,8 +543,8 @@ def run_game(
             dict(
                 model=getattr(coach, "model", None),
                 reasoning_effort=getattr(coach, "reasoning_effort", None),
-                requested_model="gpt-6-astra",
-                requested_reasoning_effort="low",
+                requested_model=getattr(coach, "model", "gpt-6-astra"),
+                requested_reasoning_effort=getattr(coach, "reasoning_effort", "low"),
                 transport=type(coach).__name__,
                 limits=asdict(limits),
                 seed=seed,
@@ -538,6 +595,7 @@ def run_game(
             )
         unchanged = 0
         rejected = 0
+        refused = 0
         validation_feedback = None
 
         def perform(action, observation, state, source):
@@ -560,7 +618,10 @@ def run_game(
             # changed state means it landed, and play continues from that state.
             recovered = None
             try:
-                after = settle(client, game_rpc(client, method, params, deadline), deadline)
+                raw = game_rpc(client, method, params, deadline)
+                if method == "skip" and skip_opens_pack(observation):
+                    raw = await_pack(client, raw, deadline)
+                after = settle(client, raw, deadline)
             except BalatroBotError as exc:
                 if "timed out" not in str(exc):
                     raise
@@ -764,22 +825,37 @@ def run_game(
             try:
                 state = perform(action, observation, state, source)
             except BalatroBotRejected as exc:
-                # The game refused the action, so nothing changed. For a model choice
-                # that is a rejected reply: say why and ask again.
+                # The game refused the action, so nothing changed.
                 if source != "coach":
                     raise
-                rejected += 1
+                live = settle(client, game_rpc(client, "gamestate", None, deadline), deadline)
+                if live != state:
+                    # The coach answered a stale observation: the game had moved on
+                    # after the last action settled (a skip tag opening a pack, for
+                    # example). The reply was not wrong, so adopt the live state and
+                    # ask again from it without feedback.
+                    record(
+                        "state_refreshed",
+                        reason=f"the game refused the action: {exc}",
+                        diff=_observation_diff(state, live),
+                    )
+                    state = live
+                    validation_feedback = None
+                    continue
+                # For a model choice that is a rejected reply: say why and ask again.
+                refused += 1
                 validation_feedback = dict(
                     error=f"the game refused the action: {exc}",
                     rejected_response=response,
                     instruction="No game action was executed. Choose a different legal action.",
                 )
                 record("coach_rejected", **validation_feedback)
-                if rejected >= 3:
+                if refused >= 3:
                     raise ValueError(
                         "three consecutive coach actions were refused by the game"
                     ) from exc
                 continue
+            refused = 0
             if followups:
                 state = run_chain(followups, state)
             if unchanged >= 3:

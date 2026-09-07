@@ -83,8 +83,10 @@ class CodexCoach:
     # first valid answer wins. Live calls take ~9 s; service stalls take minutes.
     hedge_after_seconds = 20.0
 
-    def __init__(self, codex_executable: str = "codex") -> None:
+    def __init__(self, codex_executable: str = "codex", model: str | None = None) -> None:
         self.codex_executable = codex_executable
+        if model:
+            self.model = model
         self._preflight_complete = False
         self._workspace = None
 
@@ -163,9 +165,9 @@ class CodexCoach:
                 "--output-schema",
                 str(schema_path),
                 "-m",
-                "gpt-6-astra",
+                self.model,
                 "-c",
-                'model_reasoning_effort="low"',
+                f'model_reasoning_effort="{self.reasoning_effort}"',
                 "-c",
                 'model_provider="openai"',
                 "-c",

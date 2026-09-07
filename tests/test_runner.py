@@ -732,3 +732,132 @@ def test_reconstruct_result_from_trajectory_and_previous_segment(tmp_path):
     assert result["forced_actions"] == 2 and result["coach_timeouts"] == 1
     assert result["won"] is True and result["ante_reached"] == 4
     assert result["peak_hand_score"] == 900 and result["seconds"] == 100.0
+
+
+def test_game_refusal_after_the_state_moved_on_refreshes_the_observation(tmp_path):
+    """A skip tag can open a pack after the last action settled; the coach then
+    answers a stale observation and the game refuses. The reply was not wrong, so
+    the runner adopts the live state and asks again without feedback."""
+    from balatro_ai.client import BalatroBotRejected
+
+    game = Game()
+    coach = Coach()
+    refused = []
+
+    def rpc(method, params=None):
+        if method == "select" and not refused:
+            game.calls.append(method)
+            refused.append(method)
+            game.raw["money"] += 3  # the game moved on after the last settle
+            raise BalatroBotRejected("Method 'select' requires one of these states: X")
+        return Game.rpc(game, method, params)
+
+    game.rpc = rpc
+    result = run_game(game, coach, tmp_path / "run")
+    assert result["status"] == "won" and result["coach_requests"] == 2
+    assert coach.packets[1]["validation_feedback"] is None
+    assert coach.packets[1]["observation"]["money"] == coach.packets[0]["observation"]["money"] + 3
+    rows = [
+        json.loads(line) for line in (tmp_path / "run/trajectory.jsonl").read_text().splitlines()
+    ]
+    refreshed = [row for row in rows if row["event"] == "state_refreshed"]
+    assert len(refreshed) == 1 and refreshed[0]["diff"] == ["money"]
+    assert not [row for row in rows if row["event"] == "coach_rejected"]
+
+
+def test_three_refusals_on_an_unchanged_game_end_the_run(tmp_path):
+    from balatro_ai.client import BalatroBotRejected
+
+    game = Game()
+
+    def rpc(method, params=None):
+        if method == "select":
+            game.calls.append(method)
+            raise BalatroBotRejected("Method 'select' requires one of these states: X")
+        return Game.rpc(game, method, params)
+
+    game.rpc = rpc
+    result = run_game(game, Coach(), tmp_path / "run")
+    assert result["status"] == "error" and "refused by the game" in result["reason"]
+    assert result["coach_requests"] == 3
+
+
+def test_a_skip_whose_tag_opens_a_pack_waits_for_the_pack(tmp_path, monkeypatch):
+    """At visible game speeds the mod reports BLIND_SELECT for a moment after a
+    skip before the tag's pack opens; settling there would show the coach a stale
+    blind-select screen and let a forced select land inside the pack."""
+    from balatro_ai import runner
+    from balatro_ai.runner import await_pack, skip_opens_pack
+
+    monkeypatch.setattr(runner.time, "sleep", lambda seconds: None)
+    raw = state()
+    raw["blinds"]["small"]["tag_effect"] = "Gives a free Buffoon Pack"
+    assert skip_opens_pack(public_state(raw))
+    raw["blinds"]["small"]["tag_effect"] = "Gain money"
+    assert not skip_opens_pack(public_state(raw))
+
+    opened = state("BUFFOON_PACK")
+    reads = iter([deepcopy(raw), deepcopy(raw), opened])
+
+    class Client:
+        def rpc(self, method, params=None):
+            assert method == "gamestate"
+            return next(reads)
+
+    settled = await_pack(Client(), deepcopy(raw), deadline=float("inf"))
+    assert settled["state"] == "BUFFOON_PACK"
+
+
+def test_await_pack_gives_up_when_no_pack_opens(monkeypatch):
+    from balatro_ai import runner
+    from balatro_ai.runner import await_pack
+
+    clock = [0.0]
+    monkeypatch.setattr(runner.time, "monotonic", lambda: clock[0])
+
+    def sleep(seconds):
+        clock[0] += 1.0
+
+    monkeypatch.setattr(runner.time, "sleep", sleep)
+    raw = state()
+
+    class Client:
+        def rpc(self, method, params=None):
+            return deepcopy(raw)
+
+    assert (
+        await_pack(Client(), deepcopy(raw), deadline=100.0, seconds=3.0)["state"] == "BLIND_SELECT"
+    )
+    assert clock[0] <= 4.0
+
+
+def test_settle_waits_for_pack_cards_to_be_dealt(monkeypatch):
+    """The mod reports the pack state before its cards are dealt and then deals
+    them one at a time; the runner must not settle on an empty or partial pack,
+    where the only legal action would be to skip it."""
+    from balatro_ai import runner
+    from balatro_ai.runner import settle
+
+    monkeypatch.setattr(runner.time, "sleep", lambda seconds: None)
+    dealt = state("TAROT_PACK")
+    dealt["pack"]["cards"].append(item_card("c_fool", card_id=31, kind="TAROT", buy=3))
+    dealt["pack"]["count"] = 2
+    empty = deepcopy(dealt)
+    empty["pack"]["cards"], empty["pack"]["count"] = [], 0
+    partial = deepcopy(dealt)
+    partial["pack"]["cards"] = dealt["pack"]["cards"][:1]  # count says 2, one card dealt
+    reads = iter([empty, empty, partial, partial, partial] + [dealt] * 12)
+
+    class Client:
+        def __init__(self):
+            self.gamestate_calls = 0
+
+        def rpc(self, method, params=None):
+            assert method == "gamestate"
+            self.gamestate_calls += 1
+            return deepcopy(next(reads))
+
+    client = Client()
+    settled = settle(client, deepcopy(empty), deadline=float("inf"))
+    assert len(settled.opened_pack) == 2
+    assert client.gamestate_calls >= 5 + 5  # empties and partials, then six stable reads

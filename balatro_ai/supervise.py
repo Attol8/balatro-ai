@@ -192,7 +192,7 @@ def recover_game(
     return state
 
 
-def default_runner(*, port, seed, endless, limits):
+def default_runner(*, port, seed, endless, limits, model=None):
     """The real runner: one segment of ``balatro play``, resumed when asked."""
 
     def runner(directory, resume):
@@ -205,7 +205,7 @@ def default_runner(*, port, seed, endless, limits):
             run_seed = json.loads((Path(resume) / "manifest.json").read_text()).get("seed")
         return run_game(
             client,
-            CodexCoach(),
+            CodexCoach(model=model) if model else CodexCoach(),
             directory,
             limits=limits,
             seed=run_seed,
@@ -251,6 +251,7 @@ def supervise(
     max_restarts=DEFAULT_MAX_RESTARTS,
     server_command=None,
     save_file=None,
+    model=None,
     runner=None,
     client_factory=None,
     sleep=time.sleep,
@@ -263,7 +264,9 @@ def supervise(
     root.mkdir(parents=True, exist_ok=True)
     limits = limits or Limits()
     client_factory = client_factory or (lambda: BalatroBotClient(port=port))
-    runner = runner or default_runner(port=port, seed=seed, endless=endless, limits=limits)
+    runner = runner or default_runner(
+        port=port, seed=seed, endless=endless, limits=limits, model=model
+    )
     log = log or _print_line
     log_path = root / "server.log"
     if save_file is None:
