@@ -10,11 +10,19 @@ import time
 import uuid
 from dataclasses import asdict, dataclass, replace
 from importlib.resources import files
+from itertools import islice
 from pathlib import Path
 
 from .analysis import analyze
 from .client import BalatroBotClient
-from .game.actions import CashOut, action_to_data, canonical_action_from_data, is_legal
+from .game.actions import (
+    CashOut,
+    PublicAction,
+    action_to_data,
+    canonical_action_from_data,
+    is_legal,
+    iter_legal_actions,
+)
 from .game.adapter import action_to_rpc, to_public_observation
 from .game.codec import public_observation_to_data
 from .game.history import HistoryStep, enrich_runtime
@@ -51,6 +59,139 @@ class Continuation:
     source: str
 
 
+# One reply may carry a bounded chain of follow-up actions.  Every entry is
+# re-validated against the state the previous action settled into.
+MAX_FOLLOWUPS = 6
+MAX_REPEAT = 6
+_FOLLOWUP_FIELDS = {"action_json", "repeat", "until"}
+_UNTIL_FIELDS = {"shop_has_any", "money_at_least"}
+# Hand slots move under the coach's feet, so they are never chained blindly.
+_HAND_ACTIONS = {"play_cards", "discard_cards", "choose_pack_card", "reorder_hand"}
+_KEYED_FIELDS = {
+    "buy_shop_card": ("card", "shop"),
+    "buy_voucher": ("voucher", "vouchers"),
+    "buy_pack": ("pack", "packs"),
+    "sell_joker": ("joker", "jokers"),
+    "sell_consumable": ("consumable", "consumables"),
+    "use_consumable": ("consumable", "consumables"),
+}
+
+
+@dataclass(frozen=True)
+class FollowUp:
+    """One validated follow-up action, resolved against fresh state later."""
+
+    action_type: str
+    template: dict[str, object]
+    field: str | None
+    zone: str | None
+    key: str | None
+    repeat: int
+    shop_has_any: tuple[str, ...]
+    money_at_least: int | None
+
+    def describe(self) -> str:
+        return f"{self.action_type} key {self.key}" if self.key else self.action_type
+
+    def action(self, observation: PublicObservation) -> PublicAction:
+        """Build the canonical action, resolving any item key against ``observation``."""
+
+        data = dict(self.template)
+        if self.key is not None:
+            matches = [
+                index
+                for index, item in enumerate(getattr(observation, self.zone))
+                if getattr(item, "key", None) == self.key
+            ]
+            if len(matches) != 1:
+                found = "is ambiguous in" if matches else "not in"
+                raise ValueError(f"{self.describe()} {found} {self.zone}")
+            data[self.field] = matches[0]
+        return canonical_action_from_data(data)
+
+    def reroll_stop(self, observation: PublicObservation) -> str | None:
+        """Report why this reroll must not happen, so the coach sees the reason."""
+
+        offered = {
+            getattr(item, "key", None)
+            for item in (*observation.shop, *observation.vouchers, *observation.packs)
+        }
+        matched = sorted(offered.intersection(self.shop_has_any))
+        if matched:
+            return f"the shop offers {matched[0]}"
+        if (
+            self.money_at_least is not None
+            and observation.money - observation.round.reroll_cost < self.money_at_least
+        ):
+            return f"another reroll would drop money below {self.money_at_least}"
+        return None
+
+
+def _validate_followups(value) -> tuple[FollowUp, ...]:
+    if value is None:
+        return ()
+    if not isinstance(value, list) or len(value) > MAX_FOLLOWUPS:
+        raise ValueError(f"then must be a list of at most {MAX_FOLLOWUPS} follow-up actions")
+    return tuple(_validate_followup(entry) for entry in value)
+
+
+def _validate_followup(entry) -> FollowUp:
+    if (
+        not isinstance(entry, dict)
+        or "action_json" not in entry
+        or not set(entry) <= _FOLLOWUP_FIELDS
+    ):
+        raise ValueError("each then entry needs action_json and may set repeat and until")
+    if not isinstance(entry["action_json"], str) or len(entry["action_json"]) > 4096:
+        raise ValueError("invalid follow-up action_json")
+    data = json.loads(entry["action_json"])
+    if not isinstance(data, dict):
+        raise ValueError("follow-up action must be a JSON object")
+    kind = data.get("type")
+    if kind in _HAND_ACTIONS or data.get("targets"):
+        raise ValueError("follow-up actions cannot use hand slots")
+    field = zone = key = None
+    named = _KEYED_FIELDS.get(kind)
+    if named is not None and isinstance(data.get(named[0]), dict):
+        field, zone = named
+        reference = data[field]
+        if set(reference) != {"key"} or not isinstance(reference["key"], str):
+            raise ValueError('a follow-up item reference must be {"key": "<item key>"}')
+        key = reference["key"]
+        # The slot is a placeholder until the fresh observation resolves the key.
+        data = dict(data, **{field: 0})
+    canonical_action_from_data(data)
+    repeat = _validate_repeat(entry.get("repeat"))
+    shop_has_any, money_at_least = _validate_until(entry.get("until"))
+    if kind != "reroll_shop" and (repeat != 1 or shop_has_any or money_at_least is not None):
+        raise ValueError("repeat and until are accepted only on reroll_shop")
+    return FollowUp(kind, data, field, zone, key, repeat, shop_has_any, money_at_least)
+
+
+def _validate_repeat(value) -> int:
+    if value is None:
+        return 1
+    if isinstance(value, bool) or not isinstance(value, int) or not 1 <= value <= MAX_REPEAT:
+        raise ValueError(f"repeat must be an integer in [1, {MAX_REPEAT}]")
+    return value
+
+
+def _validate_until(value) -> tuple[tuple[str, ...], int | None]:
+    if value is None:
+        return (), None
+    if not isinstance(value, dict) or not set(value) <= _UNTIL_FIELDS:
+        raise ValueError("until accepts only shop_has_any and money_at_least")
+    keys = value.get("shop_has_any")
+    if keys is not None and (
+        not isinstance(keys, list) or not all(isinstance(key, str) for key in keys)
+    ):
+        raise ValueError("until.shop_has_any must be a list of item keys")
+    money = value.get("money_at_least")
+    if money is not None and (isinstance(money, bool) or not isinstance(money, int)):
+        raise ValueError("until.money_at_least must be an integer")
+    return tuple(keys or ()), money
+
+
 def write_json(path: Path, value):
     temporary = path.with_suffix(path.suffix + ".tmp")
     temporary.write_text(json.dumps(value, indent=2, allow_nan=False) + "\n")
@@ -58,8 +199,11 @@ def write_json(path: Path, value):
 
 
 def validate_response(response, request_id, observation):
-    if not isinstance(response, dict) or set(response) != {"request_id", "action_json", "plan"}:
-        raise ValueError("coach response must contain request_id, action_json and plan")
+    required = {"request_id", "action_json", "plan"}
+    if not isinstance(response, dict) or not required <= set(response) <= required | {"then"}:
+        raise ValueError(
+            "coach response must contain request_id, action_json and plan, and may add then"
+        )
     if response["request_id"] != request_id:
         raise ValueError("stale coach response")
     if not isinstance(response["plan"], str) or len(response["plan"]) > 2000:
@@ -69,7 +213,7 @@ def validate_response(response, request_id, observation):
     action = canonical_action_from_data(json.loads(response["action_json"]))
     if not is_legal(observation, action):
         raise ValueError("coach selected an illegal action")
-    return action, response["plan"]
+    return action, response["plan"], _validate_followups(response.get("then"))
 
 
 def public_state(raw):
@@ -142,14 +286,21 @@ def run_game(
         reason="not_started",
         decisions=0,
         coach_requests=0,
+        forced_actions=0,
+        followup_actions=0,
         ante_reached=0,
         peak_hand_score=0,
     )
     lock = None
     history = []
+    # Why each recorded step happened, and how its reply chain ended.
+    step_sources: list[str] = []
+    step_chains: list[str | None] = []
     plan = ""
     if continuation:
         history = list(continuation.history)
+        step_sources = ["previous_run"] * len(history)
+        step_chains = [None] * len(history)
         plan = continuation.plan
         result.update(
             coach_requests=continuation.prior_calls,
@@ -236,6 +387,76 @@ def run_game(
         unchanged = 0
         rejected = 0
         validation_feedback = None
+
+        def perform(action, observation, state, source):
+            """Execute one settled mutation and record it exactly once."""
+
+            nonlocal unchanged
+            budget()
+            method, params = action_to_rpc(action, observation)
+            record(
+                "rpc_attempt",
+                method=method,
+                params=params,
+                source=source,
+                observation=public_observation_to_data(observation),
+                action=action_to_data(action),
+            )
+            # An uncertain mutation is never retried: stop and preserve evidence.
+            after = settle(client, game_rpc(client, method, params, deadline), deadline)
+            record(
+                "transition",
+                before=public_observation_to_data(state),
+                action=action_to_data(action),
+                after=public_observation_to_data(after),
+                source=source,
+            )
+            history.append(HistoryStep(state, action, after))
+            step_sources.append(source)
+            step_chains.append(None)
+            result["decisions"] += 1
+            if after.round_no == state.round_no:
+                result["peak_hand_score"] = max(
+                    result["peak_hand_score"], after.round.chips - state.round.chips
+                )
+            unchanged = unchanged + 1 if after == state else 0
+            return after
+
+        def run_chain(followups, state):
+            """Run the reply's follow-ups; the first problem ends the chain silently."""
+
+            executed = 0
+            stopped = None
+            for entry in followups:
+                for _ in range(entry.repeat):
+                    if result["decisions"] >= limits.max_actions:
+                        stopped = "the action limit was reached"
+                    elif time.monotonic() >= deadline:
+                        stopped = "the game time limit was reached"
+                    if stopped:
+                        break
+                    observation = enrich_runtime(state, tuple(history))
+                    try:
+                        if entry.action_type == "reroll_shop":
+                            stopped = entry.reroll_stop(observation)
+                            if stopped:
+                                break
+                        action = entry.action(observation)
+                        if not is_legal(observation, action):
+                            raise ValueError(f"{entry.describe()} is no longer legal")
+                    except ValueError as exc:
+                        stopped = str(exc)
+                        break
+                    state = perform(action, observation, state, "coach_followup")
+                    executed += 1
+                    result["followup_actions"] += 1
+                if stopped:
+                    break
+            step_chains[-1] = f"{executed} follow-up actions ran from one reply" + (
+                f"; chain stopped: {stopped}" if stopped else "; chain complete"
+            )
+            return state
+
         while True:
             result["ante_reached"] = state.ante
             result["won"] = result["won"] or state.won
@@ -251,8 +472,13 @@ def run_game(
                 result.update(status="stopped", reason="action_limit")
                 break
             observation = enrich_runtime(state, tuple(history))
+            followups = ()
             if state.phase == Phase.ROUND_EVAL:
                 action, source = CashOut(), "automatic"
+            elif len(forced := list(islice(iter_legal_actions(observation), 2))) == 1:
+                # Only one legal move exists: asking the coach cannot change it.
+                action, source = forced[0], "forced"
+                result["forced_actions"] += 1
             else:
                 if result["coach_requests"] >= limits.max_calls:
                     result.update(status="stopped", reason="coach_call_limit")
@@ -269,6 +495,8 @@ def run_game(
                     recent_outcomes=[
                         dict(
                             action=action_to_data(h.action),
+                            source=source_of,
+                            chain=chain_of,
                             before_round=h.before.round_no,
                             after_round=h.after.round_no,
                             before_chips=h.before.round.chips,
@@ -276,7 +504,9 @@ def run_game(
                             before_money=h.before.money,
                             after_money=h.after.money,
                         )
-                        for h in history[-3:]
+                        for h, source_of, chain_of in list(
+                            zip(history, step_sources, step_chains, strict=True)
+                        )[-3:]
                     ],
                 )
                 preparation_seconds = time.monotonic() - preparation_started
@@ -301,7 +531,7 @@ def run_game(
                     public_packet_bytes=len(json.dumps(packet, separators=(",", ":")).encode()),
                 )
                 try:
-                    action, plan = validate_response(response, request_id, observation)
+                    action, plan, followups = validate_response(response, request_id, observation)
                 except ValueError as exc:
                     rejected += 1
                     validation_feedback = dict(
@@ -318,33 +548,9 @@ def run_game(
                 rejected = 0
                 validation_feedback = None
                 source = "coach"
-            budget()
-            method, params = action_to_rpc(action, observation)
-            record(
-                "rpc_attempt",
-                method=method,
-                params=params,
-                source=source,
-                observation=public_observation_to_data(observation),
-                action=action_to_data(action),
-            )
-            # An uncertain mutation is never retried: stop and preserve evidence.
-            after = settle(client, game_rpc(client, method, params, deadline), deadline)
-            record(
-                "transition",
-                before=public_observation_to_data(state),
-                action=action_to_data(action),
-                after=public_observation_to_data(after),
-                source=source,
-            )
-            history.append(HistoryStep(state, action, after))
-            result["decisions"] += 1
-            if after.round_no == state.round_no:
-                result["peak_hand_score"] = max(
-                    result["peak_hand_score"], after.round.chips - state.round.chips
-                )
-            unchanged = unchanged + 1 if after == state else 0
-            state = after
+            state = perform(action, observation, state, source)
+            if followups:
+                state = run_chain(followups, state)
             if unchanged >= 3:
                 raise RuntimeError("three actions produced no visible progress")
     except KeyboardInterrupt:

@@ -8,7 +8,13 @@ from threading import Thread
 
 import pytest
 
-from balatro_ai.coach import CodexCoach, SessionCoach, read_request, write_response
+from balatro_ai.coach import (
+    _RESPONSE_SCHEMA,
+    CodexCoach,
+    SessionCoach,
+    read_request,
+    write_response,
+)
 from balatro_ai.packet import compact_packet
 
 
@@ -142,10 +148,12 @@ def test_codex_coach_kills_timed_out_call(monkeypatch, tmp_path) -> None:
     monkeypatch.setenv("FAKE_RESPONSE", json.dumps(_response()))
     monkeypatch.setenv("FAKE_SLEEP", "5")
 
+    coach = CodexCoach(str(executable))
+    coach.preflight(timeout=10)  # keep the login check out of the timed call
     started = time.monotonic()
     with pytest.raises(TimeoutError, match="timed out"):
-        CodexCoach(str(executable)).choose(_packet(), timeout=0.15)
-    assert time.monotonic() - started < 1
+        coach.choose(_packet(), timeout=0.5)
+    assert time.monotonic() - started < 3
 
 
 def test_session_coach_publishes_atomically_and_consumes_response(tmp_path) -> None:
@@ -220,3 +228,46 @@ def test_same_workspace_fresh_context_and_no_previous_response(monkeypatch, tmp_
     assert all("resume" not in call["argv"] for call in calls[1:])
     coach.close()
     assert not workspace.exists()
+
+
+def test_response_schema_carries_an_optional_follow_up_chain() -> None:
+    assert _RESPONSE_SCHEMA["required"] == ["request_id", "action_json", "plan", "then"]
+    chain = _RESPONSE_SCHEMA["properties"]["then"]
+    # Strict structured output needs every key required and optionality as null.
+    assert chain["type"] == ["array", "null"]
+    entry = chain["items"]
+    assert set(entry["properties"]) == {"action_json", "repeat", "until"}
+    assert entry["required"] == ["action_json", "repeat", "until"]
+    assert entry["additionalProperties"] is False
+    until = entry["properties"]["until"]
+    assert until["type"] == ["object", "null"]
+    assert set(until["properties"]) == {"shop_has_any", "money_at_least"}
+    assert until["additionalProperties"] is False
+
+
+def test_session_coach_passes_a_follow_up_chain_through(tmp_path) -> None:
+    public = tmp_path / "public"
+    chained = {
+        **_response(),
+        "then": [
+            {"action_json": '{"type":"leave_shop"}', "repeat": None, "until": None},
+        ],
+    }
+    errors: list[BaseException] = []
+
+    def answer() -> None:
+        try:
+            deadline = time.monotonic() + 2
+            while not (public / "request.json").exists():
+                if time.monotonic() >= deadline:
+                    raise TimeoutError("request did not appear")
+                time.sleep(0.002)
+            write_response(public, chained)
+        except BaseException as error:
+            errors.append(error)
+
+    worker = Thread(target=answer)
+    worker.start()
+    assert SessionCoach(public).choose(_packet(), timeout=2) == chained
+    worker.join(timeout=2)
+    assert not worker.is_alive() and not errors

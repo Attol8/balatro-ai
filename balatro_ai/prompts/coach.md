@@ -70,6 +70,26 @@ use_consumable with consumable and targets; choose_pack_card with card and targe
 reorder_hand, reorder_jokers, reorder_consumables with order (full permutation that swaps exactly two adjacent slots).
 Use the numerical tool's canonical action examples to check field names.
 
+Follow-up chain: also return then, a list of at most 6 further actions carried by
+this one reply (return [] for none). Each entry is
+{"action_json": <canonical action>, "repeat": <1-6 or null>, "until": <object or null>}.
+Follow-ups run in order after the primary action settles, are re-validated against
+the fresh state, and the chain stops silently at the first problem; you are then
+asked again with the reason in recent_outcomes. A stopped chain is not an error.
+In then only, an item may be addressed by key instead of slot index: replace the
+integer card, consumable, joker, voucher or pack field with {"key":"c_pluto"}. The
+runner resolves it against the fresh state; zero or several matches stop the chain.
+Hand actions are never allowed in then: play_cards, discard_cards, choose_pack_card,
+reorder_hand, or any non-empty targets make the whole reply invalid.
+repeat and until are accepted only on reroll_shop. until takes optional shop_has_any
+(stop as soon as an offered card, voucher or pack has one of those keys) and
+money_at_least (stop before a reroll would drop money below it).
+Examples: "then":[{"action_json":"{\"type\":\"buy_shop_card\",\"card\":{\"key\":\"c_pluto\"},\"mode\":\"store\"}","repeat":null,"until":null},
+{"action_json":"{\"type\":\"use_consumable\",\"consumable\":{\"key\":\"c_pluto\"},\"targets\":[]}","repeat":null,"until":null},
+{"action_json":"{\"type\":\"leave_shop\"}","repeat":null,"until":null}]
+and "then":[{"action_json":"{\"type\":\"reroll_shop\"}","repeat":4,"until":{"shop_has_any":["j_blueprint","j_baron"],"money_at_least":12}}]
+Boss blinds are selected automatically because skipping one is illegal.
+
 If validation_feedback is present, correct that rejected action. No game action
 was executed for it. Check the listed legal examples and do not repeat it.
 

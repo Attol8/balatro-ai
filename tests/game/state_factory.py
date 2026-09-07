@@ -70,6 +70,17 @@ def hidden_joker_slot() -> dict[str, Any]:
     return {"set": "JOKER", "state": {"hidden": True}}
 
 
+def shop_area(cards: list[dict[str, Any]]) -> dict[str, Any]:
+    """One shop-side area (shop, vouchers or packs) holding ``cards``."""
+
+    return {
+        "cards": list(cards),
+        "count": len(cards),
+        "highlighted_limit": 1,
+        "limit": max(2, len(cards)),
+    }
+
+
 def state(
     phase: str = "BLIND_SELECT",
     *,

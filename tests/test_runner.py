@@ -4,7 +4,7 @@ from copy import deepcopy
 import pytest
 
 from balatro_ai.runner import Limits, public_state, run_game, validate_response
-from tests.game.state_factory import state
+from tests.game.state_factory import item_card, shop_area, state
 
 
 class Game:
@@ -48,6 +48,81 @@ class Coach:
         }
 
 
+class ShopGame:
+    """Fake BalatroBot that applies shop mutations, so chains meet fresh state."""
+
+    def __init__(self, *, money=20, shop=None, rerolls=(), reroll_cost=5):
+        self.raw = state("SHOP")
+        self.raw.update(deck="RED", stake="WHITE", money=money)
+        self.raw["round"]["reroll_cost"] = reroll_cost
+        self.raw["shop"] = shop_area(
+            [item_card("c_pluto", card_id=40, kind="PLANET", buy=3)] if shop is None else shop
+        )
+        self.raw["vouchers"] = shop_area([])
+        self.raw["packs"] = shop_area([])
+        self.rerolls = [list(offer) for offer in rerolls]
+        self.started = False
+        self.calls = []
+
+    def rpc(self, method, params=None):
+        self.calls.append(method)
+        if method == "health":
+            return {"profile_mode": "all_unlocked"}
+        if method == "gamestate":
+            return deepcopy(self.raw) if self.started else {"state": "MENU"}
+        if method == "start":
+            self.started = True
+            return deepcopy(self.raw)
+        getattr(self, f"_{method}")(params or {})
+        return deepcopy(self.raw)
+
+    def _buy(self, params):
+        card = self.raw["shop"]["cards"].pop(params["card"])
+        self.raw["shop"]["count"] -= 1
+        self.raw["money"] -= card["cost"]["buy"]
+        if params.get("mode") != "use":
+            area = "jokers" if card["set"] == "JOKER" else "consumables"
+            self.raw[area]["cards"].append(card)
+            self.raw[area]["count"] += 1
+
+    def _use(self, params):
+        self.raw["consumables"]["cards"].pop(params["consumable"])
+        self.raw["consumables"]["count"] -= 1
+
+    def _reroll(self, params):
+        self.raw["money"] -= self.raw["round"]["reroll_cost"]
+        offer = self.rerolls.pop(0) if self.rerolls else []
+        self.raw["shop"] = shop_area(offer)
+
+    def _next_round(self, params):
+        self.raw["state"] = "GAME_OVER"
+
+
+class ScriptedCoach:
+    """Reply with the scripted response for each request; repeat the last one."""
+
+    def __init__(self, *replies):
+        self.replies, self.packets = list(replies), []
+
+    def choose(self, packet, timeout):
+        self.packets.append(packet)
+        reply = self.replies[min(len(self.packets) - 1, len(self.replies) - 1)]
+        return {"request_id": packet["request_id"], "plan": "Stay solvent.", **reply}
+
+
+def transitions(run):
+    rows = [json.loads(line) for line in (run / "trajectory.jsonl").read_text().splitlines()]
+    return [row for row in rows if row["event"] == "transition"]
+
+
+def buy(key, mode="store"):
+    return json.dumps({"type": "buy_shop_card", "card": {"key": key}, "mode": mode})
+
+
+LEAVE = '{"type":"leave_shop"}'
+REROLL = '{"type":"reroll_shop"}'
+
+
 @pytest.fixture(autouse=True)
 def no_poll_delay(monkeypatch):
     monkeypatch.setattr("balatro_ai.runner.time.sleep", lambda _: None)
@@ -60,6 +135,7 @@ def test_complete_loop_and_public_boundary(tmp_path):
     result = run_game(game, coach, tmp_path / "run")
     assert result["status"] == "won" and result["ante_reached"] == 9
     assert result["decisions"] == result["coach_requests"] == 1
+    assert result["forced_actions"] == 0 and result["followup_actions"] == 0
     packet = json.dumps(coach.packets)
     assert "TEST-SEED" not in packet
     assert "seed" not in coach.packets[0]["observation"]
@@ -281,3 +357,226 @@ def test_endless_continues_past_ante_eight_and_records_later_loss(tmp_path):
     assert game.calls.count("cash_out") == 1
     assert result["status"] == "lost" and result["reason"] == "endless_game_over"
     assert result["ante_8_cleared"] is True and result["won"] is True
+
+
+def test_only_legal_move_is_forced_without_a_coach_call(tmp_path):
+    game = Game()
+    game.raw["blinds"]["small"]["status"] = "DEFEATED"
+    game.raw["blinds"]["big"]["status"] = "DEFEATED"
+    game.raw["blinds"]["boss"]["status"] = "SELECT"
+    coach = Coach()
+    result = run_game(game, coach, tmp_path / "run")
+    assert result["status"] == "won"
+    assert not coach.packets and result["coach_requests"] == 0
+    assert result["forced_actions"] == 1 and result["decisions"] == 1
+    assert game.calls.count("select") == 1
+    assert [row["source"] for row in transitions(tmp_path / "run")] == ["forced"]
+
+
+def test_selectable_small_blind_still_asks_the_coach(tmp_path):
+    game, coach = Game(), Coach()
+    result = run_game(game, coach, tmp_path / "run")
+    assert len(coach.packets) == 1 and result["forced_actions"] == 0
+
+
+def test_one_reply_buys_uses_and_leaves_the_shop(tmp_path):
+    game = ShopGame()
+    coach = ScriptedCoach(
+        {
+            "action_json": '{"type":"buy_shop_card","card":0,"mode":"store"}',
+            "then": [
+                {
+                    "action_json": '{"type":"use_consumable","consumable":{"key":"c_pluto"}'
+                    ',"targets":[]}'
+                },
+                {"action_json": LEAVE},
+            ],
+        }
+    )
+    result = run_game(game, coach, tmp_path / "run")
+    assert len(coach.packets) == 1 and result["coach_requests"] == 1
+    assert result["followup_actions"] == 2 and result["decisions"] == 3
+    assert game.calls.count("buy") == game.calls.count("use") == 1
+    assert [row["source"] for row in transitions(tmp_path / "run")] == [
+        "coach",
+        "coach_followup",
+        "coach_followup",
+    ]
+
+
+def test_missing_key_stops_the_chain_and_is_reported(tmp_path):
+    game = ShopGame()
+    coach = ScriptedCoach(
+        {
+            "action_json": '{"type":"buy_shop_card","card":0,"mode":"store"}',
+            "then": [
+                {
+                    "action_json": '{"type":"use_consumable","consumable":{"key":"c_pluto"}'
+                    ',"targets":[]}'
+                },
+                {"action_json": buy("c_mars")},
+                {"action_json": LEAVE},
+            ],
+        },
+        {"action_json": LEAVE},
+    )
+    result = run_game(game, coach, tmp_path / "run")
+    assert result["status"] == "lost" and result["followup_actions"] == 1
+    assert len(coach.packets) == 2 and result["coach_requests"] == 2
+    chain = coach.packets[1]["recent_outcomes"][-1]["chain"]
+    assert "1 follow-up actions ran" in chain
+    assert "chain stopped: buy_shop_card key c_mars not in shop" in chain
+    assert coach.packets[1]["recent_outcomes"][-1]["source"] == "coach_followup"
+
+
+def test_ambiguous_key_stops_the_chain(tmp_path):
+    twins = [
+        item_card("c_pluto", card_id=41, kind="PLANET", buy=3),
+        item_card("c_pluto", card_id=42, kind="PLANET", buy=3),
+    ]
+    game = ShopGame(rerolls=[twins])
+    coach = ScriptedCoach(
+        {"action_json": REROLL, "then": [{"action_json": buy("c_pluto")}]},
+        {"action_json": LEAVE},
+    )
+    result = run_game(game, coach, tmp_path / "run")
+    assert result["followup_actions"] == 0 and "buy" not in game.calls
+    assert "is ambiguous in shop" in coach.packets[1]["recent_outcomes"][-1]["chain"]
+
+
+def test_reroll_chain_stops_on_a_wanted_key(tmp_path):
+    game = ShopGame(
+        money=40,
+        rerolls=[
+            [item_card("j_jolly", card_id=50, kind="JOKER", buy=4)],
+            [item_card("j_blueprint", card_id=51, kind="JOKER", buy=10)],
+        ],
+    )
+    coach = ScriptedCoach(
+        {
+            "action_json": REROLL,
+            "then": [
+                {
+                    "action_json": REROLL,
+                    "repeat": 4,
+                    "until": {"shop_has_any": ["j_blueprint", "j_baron"], "money_at_least": None},
+                }
+            ],
+        },
+        {"action_json": LEAVE},
+    )
+    result = run_game(game, coach, tmp_path / "run")
+    assert game.calls.count("reroll") == 2 and result["followup_actions"] == 1
+    assert (
+        "chain stopped: the shop offers j_blueprint"
+        in (coach.packets[1]["recent_outcomes"][-1]["chain"])
+    )
+
+
+def test_reroll_chain_stops_on_the_money_floor(tmp_path):
+    offers = [
+        [item_card(key, card_id=60 + index, kind="JOKER", buy=4)]
+        for index, key in enumerate(("j_jolly", "j_zany", "j_mad", "j_crazy", "j_droll"))
+    ]
+    game = ShopGame(money=30, rerolls=offers)
+    coach = ScriptedCoach(
+        {
+            "action_json": REROLL,
+            "then": [
+                {
+                    "action_json": REROLL,
+                    "repeat": 4,
+                    "until": {"shop_has_any": None, "money_at_least": 12},
+                }
+            ],
+        },
+        {"action_json": LEAVE},
+    )
+    result = run_game(game, coach, tmp_path / "run")
+    assert game.calls.count("reroll") == 3 and result["followup_actions"] == 2
+    assert "money below 12" in coach.packets[1]["recent_outcomes"][-1]["chain"]
+
+
+def test_reroll_chain_stops_when_the_repeat_budget_ends(tmp_path):
+    offers = [
+        [item_card(key, card_id=70 + index, kind="JOKER", buy=4)]
+        for index, key in enumerate(("j_jolly", "j_zany", "j_mad"))
+    ]
+    game = ShopGame(money=40, rerolls=offers)
+    coach = ScriptedCoach(
+        {"action_json": REROLL, "then": [{"action_json": REROLL, "repeat": 2}]},
+        {"action_json": LEAVE},
+    )
+    result = run_game(game, coach, tmp_path / "run")
+    assert game.calls.count("reroll") == 3 and result["followup_actions"] == 2
+    assert coach.packets[1]["recent_outcomes"][-1]["chain"].endswith("chain complete")
+
+
+def test_action_limit_stops_a_chain_midway(tmp_path):
+    game = ShopGame()
+    coach = ScriptedCoach(
+        {
+            "action_json": '{"type":"buy_shop_card","card":0,"mode":"store"}',
+            "then": [
+                {
+                    "action_json": '{"type":"use_consumable","consumable":{"key":"c_pluto"}'
+                    ',"targets":[]}'
+                },
+                {"action_json": LEAVE},
+            ],
+        }
+    )
+    result = run_game(game, coach, tmp_path / "run", limits=Limits(max_actions=2))
+    assert result["reason"] == "action_limit"
+    assert result["decisions"] == 2 and result["followup_actions"] == 1
+    assert "next_round" not in game.calls
+
+
+def test_hand_actions_are_rejected_inside_a_chain(tmp_path):
+    game = ShopGame()
+    coach = ScriptedCoach(
+        {
+            "action_json": REROLL,
+            "then": [{"action_json": '{"type":"play_cards","cards":[0]}'}],
+        },
+        {"action_json": LEAVE},
+    )
+    result = run_game(game, coach, tmp_path / "run")
+    assert result["status"] == "lost" and result["followup_actions"] == 0
+    assert "reroll" not in game.calls and "play" not in game.calls
+    feedback = coach.packets[1]["validation_feedback"]
+    assert feedback["error"] == "follow-up actions cannot use hand slots"
+
+
+def test_replies_without_then_and_repeated_instructions_are_unchanged(tmp_path):
+    game = ShopGame(rerolls=[[item_card("j_jolly", card_id=80, kind="JOKER", buy=4)]])
+    coach = ScriptedCoach({"action_json": REROLL}, {"action_json": LEAVE})
+    result = run_game(game, coach, tmp_path / "run")
+    assert result["decisions"] == result["coach_requests"] == 2
+    assert result["followup_actions"] == 0 and result["forced_actions"] == 0
+    assert coach.packets[0]["instructions"] == coach.packets[1]["instructions"]
+
+
+def test_chain_contract_is_validated_before_any_mutation():
+    obs = public_state(state("SHOP", money=10))
+    rejected = [
+        [{"action_json": '{"type":"reorder_hand","order":[1,0]}'}],
+        [{"action_json": '{"type":"use_consumable","consumable":0,"targets":[0]}'}],
+        [{"action_json": LEAVE, "repeat": 2}],
+        [{"action_json": REROLL, "repeat": 7}],
+        [{"action_json": REROLL, "until": {"unknown": 1}}],
+        [{"action_json": buy("c_pluto"), "extra": 1}],
+        [{"action_json": '{"type":"buy_pack","pack":{"key":1}}'}],
+        [{"action_json": '{"type":"buy_shop_card","card":{"key":"c_pluto"}}'}],
+        [{"action_json": REROLL}] * 7,
+        "not-a-list",
+    ]
+    for then in rejected:
+        with pytest.raises(ValueError):
+            validate_response(
+                {"request_id": "a", "action_json": REROLL, "plan": "", "then": then}, "a", obs
+            )
+    action, plan, followups = validate_response(
+        {"request_id": "a", "action_json": REROLL, "plan": "", "then": None}, "a", obs
+    )
+    assert followups == () and plan == ""

@@ -37,14 +37,36 @@ _DISABLED_FEATURES = (
     "skill_search",
     "view_image",
 )
+# Strict structured output requires every property in "required" and expresses
+# an optional field as a nullable type; bounds (six entries, repeat 1-6) are
+# enforced by the runner, which keeps this schema free of unsupported keywords.
+_FOLLOWUP_SCHEMA: dict[str, object] = {
+    "type": "object",
+    "properties": {
+        "action_json": {"type": "string"},
+        "repeat": {"type": ["integer", "null"]},
+        "until": {
+            "type": ["object", "null"],
+            "properties": {
+                "shop_has_any": {"type": ["array", "null"], "items": {"type": "string"}},
+                "money_at_least": {"type": ["integer", "null"]},
+            },
+            "required": ["shop_has_any", "money_at_least"],
+            "additionalProperties": False,
+        },
+    },
+    "required": ["action_json", "repeat", "until"],
+    "additionalProperties": False,
+}
 _RESPONSE_SCHEMA: dict[str, object] = {
     "type": "object",
     "properties": {
         "request_id": {"type": "string"},
         "action_json": {"type": "string"},
         "plan": {"type": "string"},
+        "then": {"type": ["array", "null"], "items": _FOLLOWUP_SCHEMA},
     },
-    "required": ["request_id", "action_json", "plan"],
+    "required": ["request_id", "action_json", "plan", "then"],
     "additionalProperties": False,
 }
 
@@ -320,7 +342,7 @@ def _deadline(timeout: float) -> float:
 def _remaining(deadline: float) -> float:
     remaining = deadline - time.monotonic()
     if remaining <= 0:
-        raise TimeoutError("coach deadline expired")
+        raise TimeoutError("Codex CLI timed out: coach deadline expired")
     return remaining
 
 
