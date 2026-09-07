@@ -15,7 +15,8 @@ all-unlocked profile, complete games from Ante 1. A win is clearing the Ante 8 b
 ![Ante reached per game by policy](../benchmarks/results/figures/ante-reached-by-policy.svg)
 
 Each dot is one complete game of a non-model policy on the fixed seed panel
-D0000000 to D0000019. The stars are the two coached games. The best heuristic
+D0000000 to D0000019. The stars are the coached games: the astra wins, and at
+Ante 2 the two terra losses on the seed of the recorded astra game. The best heuristic
 policies cleared Ante 8 in 3 of 20 games and reached Ante 8 or beyond in 7 of 20.
 The coached system, GPT-6 Astra at low reasoning effort with exact numerical tools,
 cleared Ante 8 in both recorded games on seeds outside the panel and continued in
@@ -98,8 +99,9 @@ Disclosures that belong with this table:
   boss while a skip tag's Mega Buffoon Pack was opening, so that pack was never
   offered. A third attempt was stopped at Ante 1 by another runner fault and has no
   outcome. Details: `evidence/terra-low-QD3F4XVW/README.md` and
-  `evidence/terra-low-QD3F4XVW-attempt1/README.md`. These rows are not in the
-  generated tables and figures, which cover the astra runs and the baselines.
+  `evidence/terra-low-QD3F4XVW-attempt1/README.md`. Both games are rows of the
+  generated Table A and stars in the headline figure; the score and decision-mix
+  figures cover the astra runs only.
 - **Baselines**: ten complete 20-game panels plus two partial ones. One
   `baseline-v1` game ended with an error status and is excluded from ante
   statistics. The `strategic-001` pilot ran on the career profile, not

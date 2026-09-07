@@ -19,15 +19,22 @@ def test_table_a_rows_cover_baselines_and_all_coached_runs():
     table = build_results()["table_a"]
     assert table["title"].endswith("Red Deck / White Stake / all unlocked")
     assert len(table["baselines"]) == 12
-    assert len(table["coached"]) == 4
-    headless, recorded, low, panel = table["coached"]
+    assert len(table["coached"]) == 6
+    headless, recorded, low, panel, terra, terra_first = table["coached"]
     assert [row["seed_panel"] for row in table["coached"]] == [
         "TAF7DNTX",
         "QD3F4XVW",
         "2K9H9HN",
         "D0000000",
+        "QD3F4XVW",
+        "QD3F4XVW",
     ]
-    assert [row["median_ante"] for row in table["coached"]] == [13, 11, 11, 10]
+    assert [row["median_ante"] for row in table["coached"]] == [13, 11, 11, 10, 2, 2]
+    assert terra["display_name"] == "Terra low (gpt-5.6-terra)"
+    assert terra["ante8_clears"] == 0 and terra["decisions"] == 36
+    assert terra["coach_requests"] == 30
+    assert terra_first["display_name"] == "Terra low (gpt-5.6-terra), first attempt"
+    assert "never offered" in terra_first["notes"][0]
     # QD3F4XVW and 2K9H9HN tie on ante; the newer, cleaner game is listed first.
     assert recorded["recency"] < low["recency"]
     assert recorded["decisions"] == 473
@@ -61,7 +68,7 @@ def test_table_a_rows_cover_baselines_and_all_coached_runs():
 
 def test_table_a_reports_coach_calls_per_decision():
     table = build_results()["table_a"]
-    headless, recorded, low, panel = table["coached"]
+    headless, recorded, low, panel, _terra, _terra_first = table["coached"]
     assert (recorded["coach_requests"], recorded["decisions"]) == (388, 473)
     assert recorded["calls_per_decision"] == "388/473 = 0.82"
     assert (headless["coach_requests"], headless["decisions"]) == (404, 456)
@@ -74,7 +81,7 @@ def test_table_a_reports_coach_calls_per_decision():
 
 
 def test_table_a_reports_followups_forced_moves_and_stalls():
-    headless, recorded, low, panel = build_results()["table_a"]["coached"]
+    headless, recorded, low, panel, _terra, _terra_first = build_results()["table_a"]["coached"]
     assert recorded["followups_forced_stalls"] == "50 / 6 / 3"
     assert panel["followups_forced_stalls"] == "34 / 5 / 5"
     assert (panel["followup_actions"], panel["forced_actions"], panel["coach_timeouts"]) == (
@@ -111,6 +118,7 @@ def test_table_a_footnotes_state_the_caveats():
     assert "blinds at antes 9 and 10 were played twice" in footnotes
     assert "the later, cleaner game is listed first" in footnotes
     assert "outside the D0000000-D0000019 baseline panel" in footnotes
+    assert "gpt-5.6-terra" in footnotes and "not a model ranking" in footnotes
     assert "supervised" in footnotes
     assert "adapter fixes" in footnotes
     assert "reviewed continuations" in footnotes
@@ -435,4 +443,4 @@ def test_extra_runs_are_grouped_by_model_and_effort(tmp_path: Path):
     labels = [entry["policy"] for entry in results["table_a"]["coached"]]
     assert labels[-1] == "gpt-6-astra (low)"
     assert row.calls_per_decision == "11/21 = 0.52"
-    assert len(built_in_coached_rows()) == 4
+    assert len(built_in_coached_rows()) == 6
