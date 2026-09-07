@@ -1,0 +1,18 @@
+Documentation and Data License
+===============================
+
+The contents of the `docs/`, `evidence/`, and `benchmarks/results/`
+directories in this repository are licensed under the
+Creative Commons Attribution 4.0 International License (CC BY 4.0).
+
+Full legal text: https://creativecommons.org/licenses/by/4.0/legalcode
+
+You are free to share and adapt this material for any purpose, even
+commercially, as long as you give appropriate credit. When reusing or
+redistributing this material, please attribute it as:
+
+    "Balatro AI by Attol8"
+
+Code in this repository (everything outside `docs/`, `evidence/`, and
+`benchmarks/results/`) is licensed separately under AGPL-3.0-or-later;
+see the LICENSE file.

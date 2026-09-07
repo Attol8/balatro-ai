@@ -1,0 +1,15 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+type: software
+title: "Balatro AI: an LLM coach with exact numerical tools that clears Balatro"
+authors:
+  - name: Attol8
+version: 1.0.0
+date-released: 2026-09-07
+repository-code: "https://github.com/Attol8/balatro-ai"
+license: AGPL-3.0-or-later
+keywords:
+  - balatro
+  - llm-agents
+  - game-ai
+  - codex

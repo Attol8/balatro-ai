@@ -1,0 +1,70 @@
+Balatro AI
+==========
+
+Copyright (C) 2026 Attol8
+
+License
+-------
+
+Balatro AI's source code is free software: you can redistribute it
+and/or modify it under the terms of the GNU Affero General Public
+License as published by the Free Software Foundation, either version 3
+of the License, or (at your option) any later version. See the LICENSE
+file for the full text. Balatro AI is distributed in the hope that it
+will be useful, but WITHOUT ANY WARRANTY; without even the implied
+warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+
+The contents of `docs/`, `evidence/`, and `benchmarks/results/` are
+licensed separately under the Creative Commons Attribution 4.0
+International License (CC BY 4.0). See LICENSE-DOCS for details.
+
+Third-party components
+-----------------------
+
+This project requires BalatroBot (https://github.com/coder/balatrobot)
+at runtime to interface with the game. BalatroBot is not vendored or
+redistributed with this repository; it must be installed separately by
+the user. BalatroBot is licensed under the MIT License:
+
+    MIT License
+
+    Copyright (c) 2025 Coder
+
+    Permission is hereby granted, free of charge, to any person obtaining a copy
+    of this software and associated documentation files (the "Software"), to deal
+    in the Software without restriction, including without limitation the rights
+    to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+    copies of the Software, and to permit persons to whom the Software is
+    furnished to do so, subject to the following conditions:
+
+    The above copyright notice and this permission notice shall be included in all
+    copies or substantial portions of the Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+    AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+    OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+    SOFTWARE.
+
+Trademark and affiliation
+--------------------------
+
+Balatro is a video game created by LocalThunk and published by
+Playstack. "Balatro" and related marks are the property of their
+respective owners. This project is an independent, unofficial tool and
+is not affiliated with, endorsed by, or sponsored by LocalThunk,
+Playstack, or any related party. This repository does not include,
+vendor, or redistribute any Balatro game assets, code, or content;
+using this project requires the user's own legally obtained copy of
+Balatro.
+
+Model inference
+----------------
+
+Language-model inference used by this project is performed through the
+user's own OpenAI Codex CLI / ChatGPT account and is subject to that
+account's applicable terms of service. This project does not include
+an API client, does not proxy model access, and does not bundle any
+model credentials.

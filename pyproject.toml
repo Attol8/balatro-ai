@@ -8,10 +8,28 @@ version = "1.0.0"
 description = "Astra low with public numerical tools for real Balatro"
 readme = "README.md"
 requires-python = ">=3.11"
+license = {text = "AGPL-3.0-or-later"}
+authors = [{name = "Attol8", email = "45773306+Attol8@users.noreply.github.com"}]
+keywords = ["balatro", "llm-agents", "game-ai", "codex"]
+classifiers = [
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "License :: OSI Approved :: GNU Affero General Public License v3 or later (AGPLv3+)",
+    "Topic :: Games/Entertainment",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Operating System :: MacOS",
+    "Operating System :: POSIX :: Linux",
+]
 dependencies = []
 
+[project.urls]
+Homepage = "https://github.com/Attol8/balatro-ai"
+Repository = "https://github.com/Attol8/balatro-ai"
+Issues = "https://github.com/Attol8/balatro-ai/issues"
+
 [project.optional-dependencies]
-dev = ["pytest>=8"]
+dev = ["pytest>=8", "ruff>=0.6"]
+bench = ["matplotlib>=3.8"]
 
 [project.scripts]
 balatro = "balatro_ai.cli:main"
@@ -25,3 +43,12 @@ balatro_ai = ["prompts/*.md", "knowledge/*.json"]
 [tool.pytest.ini_options]
 pythonpath = ["."]
 testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W"]
+# Long string literals in prompts and advice text; the formatter handles code width.
+ignore = ["E501"]
