@@ -2,15 +2,16 @@
 
 An LLM coach with exact numerical tools that clears Balatro on the real game.
 
-GPT-6 Astra at low reasoning effort chooses every strategic action from public
-information only. Python enumerates legal moves, scores hands exactly, validates each
-reply and executes it through the [BalatroBot](https://github.com/coder/balatrobot)
-mod. No training, no simulator, no fallback policy, no hidden information. Both
-recorded games cleared Ante 8 on Red Deck / White Stake; the latest went on to
-Ante 13 in endless mode with a 134 billion chip hand, where ten earlier heuristic
-and search policies won at most 3 games in 20.
-
-![Ante reached per game by policy](benchmarks/results/figures/ante-reached-by-policy.svg)
+**Every recorded game so far has beaten Balatro.** Four games on the real game
+client, four Ante 8 clears, three of them continuing in endless mode past Ante 10
+and one to Ante 13 with a 134,231,931,235 chip hand. GPT-6 Astra at low reasoning
+effort chooses every strategic action from public information only; Python
+enumerates legal moves, scores hands exactly, validates each reply and executes it
+through the [BalatroBot](https://github.com/coder/balatrobot) mod. No training, no
+simulator, no fallback policy, no hidden information. For reference, the best model
+on the public [BalatroBench](https://gigazine.net/gsc_news/en/20260213-balatrobench/)
+leaderboard clears Ante 8 in 9 of 15 runs, and the ten heuristic and search policies
+in this repository's own baseline panel won at most 3 games in 20.
 
 ## Watch it play
 
@@ -26,6 +27,8 @@ An earlier recorded game on the baseline seed D0000000 is in
 [`evidence/astra-low-D0000000`](evidence/astra-low-D0000000): there the best
 heuristic reached Ante 6 with a 14,700 peak and the model reached Ante 10 with
 1,840,907.
+
+![Ante reached per game by policy](benchmarks/results/figures/ante-reached-by-policy.svg)
 
 ## Results
 

@@ -25,7 +25,7 @@ game and the `balatro watch` dashboard side by side for the whole game.
 - Endless: Hieroglyph and later Petroglyph each lowered the ante by one to buy more
   rounds of income; Constellation replaced Hack and grew with every Planet;
   Blackboard replaced Onyx Agate. Peak 7,052,918 at Ante 11. Lost to The Plant at
-  14,400,000 required with 7,394,177 scored over four hands.
+  14,400,000 required with 7,394,177 scored over five hands, one of them the run's peak.
 
 ## Segments
 
