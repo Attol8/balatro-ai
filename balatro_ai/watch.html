@@ -807,11 +807,16 @@ function renderPlot(d) {
 
 function showTip(b, px, py) {
   var tip = document.getElementById("tip");
-  tip.innerHTML = "Ante " + b.ante + " · " + words(b.kind).toLowerCase() + " — " + (b.name || "") +
-    "<br>requirement <b>" + full(b.requirement) + "</b>" +
-    "<br>best hand <b>" + full(b.best_hand) + "</b>" +
-    "<br>round chips <b>" + full(b.chips) + "</b>" +
-    "<br>" + (b.cleared ? "cleared" : "not cleared");
+  tip.textContent = "Ante " + b.ante + " · " + words(b.kind).toLowerCase() + " — " + (b.name || "");
+  [["requirement", b.requirement], ["best hand", b.best_hand], ["round chips", b.chips]].forEach(function (row) {
+    tip.appendChild(document.createElement("br"));
+    tip.appendChild(document.createTextNode(row[0] + " "));
+    var value = document.createElement("b");
+    value.textContent = full(row[1]);
+    tip.appendChild(value);
+  });
+  tip.appendChild(document.createElement("br"));
+  tip.appendChild(document.createTextNode(b.cleared ? "cleared" : "not cleared"));
   tip.style.display = "block";
   var wrap = document.getElementById("plot-wrap");
   var left = Math.min(Math.max(4, px + 12), wrap.clientWidth - tip.offsetWidth - 4);

@@ -8,3 +8,11 @@ dist/
 build/
 *.egg-info/
 runs/
+logs/
+.DS_Store
+.env
+.env.*
+!.env.example
+auth.json
+*.pem
+*.key
