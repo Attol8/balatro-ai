@@ -38,3 +38,19 @@ Design: compare early economy/deck construction, engine transitions, and late-ga
 3. Write a concise source-linked review with priorities and concrete offline acceptance examples.
 
 Acceptance: at least three videos analyzed from actual content if accessible, with timestamped evidence; descriptions alone never count as viewed content. Correct inherited factual errors in the review rather than repeating them. No claims of validated gameplay improvement without evaluation.
+
+
+## Completion — 8 September 2026
+
+Implemented on `feat/round-production-advice` (policy `9395d7a`); 139 relevant
+tests passed. Fresh seed XV2MP8L5 finished naturally at Ante 12, after an Ante 8
+clear, with a 326,543,967 peak. Supervisor: `endless_game_over`, one segment,
+zero restarts; all original budgets retained. Archived evidence and separately
+labelled benchmark publication preserve the changed policy's provenance.
+Round-production context was exercised; production-copier, Purple and Blue
+opportunities did not occur. Matched-seed improvement remains unmeasured.
+User requested README/docs updates and a final commit only after completion.
+
+Publication verification: 59 benchmark tests passed; archived bytes/hashes and terminal transition agree;
+benchmark regeneration is byte-stable; headline chart inspected after fixing
+legend clipping caused by the longer policy label.

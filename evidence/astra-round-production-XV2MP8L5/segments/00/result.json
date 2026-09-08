@@ -1,0 +1,15 @@
+{
+  "status": "lost",
+  "won": true,
+  "reason": "endless_game_over",
+  "decisions": 515,
+  "coach_requests": 421,
+  "coach_timeouts": 6,
+  "forced_actions": 14,
+  "followup_actions": 48,
+  "rpc_timeouts_recovered": 1,
+  "ante_reached": 12,
+  "peak_hand_score": 326543967,
+  "ante_8_cleared": true,
+  "seconds": 6957.258
+}

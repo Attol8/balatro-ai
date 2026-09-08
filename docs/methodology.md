@@ -87,7 +87,12 @@ fewer. A run stopped part-way is continued with `balatro play --resume DIR
 --output NEWDIR`, which rebuilds the history from the recorded trajectory and
 verifies the live game against the last recorded transition before acting.
 
-Rows are grouped by requested model and reasoning effort from the manifests.
+Extra `--runs` rows are grouped only by requested model and reasoning effort from
+the manifests. Supply only complete games from the same policy revision: do not
+use a wildcard that combines changed policies or counts restart segments as games.
+The built-in XV2MP8L5 result has a separate round-production-advice label and
+records policy revision `9395d7a` in its evidence README; the raw manifest is
+preserved unchanged.
 Report the panel, the number of games, and whether any run was interrupted or
 continued. Restarts are part of the result, not a detail to tidy away: say how
 many segments a game took, why each restart happened, and report each manifest's

@@ -1,0 +1,29 @@
+{
+  "status": "lost",
+  "won": true,
+  "reason": "endless_game_over",
+  "decisions": 515,
+  "coach_requests": 421,
+  "coach_timeouts": 6,
+  "forced_actions": 14,
+  "followup_actions": 48,
+  "rpc_timeouts_recovered": 1,
+  "ante_reached": 12,
+  "peak_hand_score": 326543967,
+  "ante_8_cleared": true,
+  "seconds": 6957.258,
+  "segments": [
+    {
+      "index": 0,
+      "directory": "segment-00",
+      "resumed_from": null,
+      "started_at": "2026-09-07T23:17:09+00:00",
+      "ended_at": "2026-09-08T01:13:07+00:00",
+      "status": "lost",
+      "reason": "endless_game_over",
+      "disposition": "finished"
+    }
+  ],
+  "restarts": 0,
+  "stop_reason": "the game finished: endless_game_over"
+}

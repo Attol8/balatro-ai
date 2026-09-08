@@ -1,0 +1,17 @@
+[
+  {
+    "segment": "00",
+    "original_directory": "runs/astra-round-production-20260908/segment-00",
+    "part_of_completed_game": true,
+    "status": "lost",
+    "reason": "endless_game_over",
+    "ante_reached": 12,
+    "decisions": 515,
+    "coach_requests": 421,
+    "sha256_uncompressed": {
+      "manifest.json": "8dfb7159e542794dae7dadb4a09ccf6f54c2c78a6b85ca159566d68f74af8cea",
+      "result.json": "581a6f2fd4d0afbb3dac1d1145c851c93bc967d6ed95fddcfc2e0aaabe844879",
+      "trajectory.jsonl": "927cc706a9ce1dfe459febb3ea05c678fa589dd3f48ca77b50ef8403d02e7fc9"
+    }
+  }
+]

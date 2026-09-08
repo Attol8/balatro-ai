@@ -39,10 +39,17 @@ TABLE_B_TITLE = "Scoring-engine exactness"
 TABLE_C_TITLE = "Decision mix in the Astra-low runs"
 TABLE_D_TITLE = "Same seed, D0000000"
 PANEL_SEED = "D0000000"
+ASTRA_ROUND_PRODUCTION = "astra-round-production-XV2MP8L5"
 
 # Newest game first. The index breaks ties in Table A's ante ordering, so when two
 # runs reached the same ante the later, cleaner game is listed first.
 COACHED_RUNS: tuple[tuple[str, str], ...] = (
+    (
+        ASTRA_ROUND_PRODUCTION,
+        "single game, seed XV2MP8L5: round-production advice at 9395d7a; "
+        "cleared Ante 8, then lost at the ante 12 boss The Arm; "
+        "one recovered RPC timeout, no rejected replies or restarts",
+    ),
     (
         TERRA_LOW,
         "single game, seed QD3F4XVW: visible game, endless; lost at the ante 2 boss "
@@ -73,8 +80,11 @@ COACHED_RUNS: tuple[tuple[str, str], ...] = (
 DECISION_MIX_RUNS = frozenset(
     {ASTRA_LOW_RECORDED, ASTRA_LOW_PANEL_SEED, ASTRA_LOW_HEADLESS, ASTRA_LOW_SUPERVISED}
 )
-# Two games on one seed by one model would otherwise share a label.
-LABEL_SUFFIXES = {TERRA_LOW_FIRST_ATTEMPT: ", first attempt"}
+# Distinguish repeat attempts and changed advice policies from historical runs.
+LABEL_SUFFIXES = {
+    TERRA_LOW_FIRST_ATTEMPT: ", first attempt",
+    ASTRA_ROUND_PRODUCTION: ", round-production advice (9395d7a)",
+}
 _MODEL_FAMILIES = {"astra": "Astra", "terra": "Terra"}
 # Only the newest runs are written out in full in results.md; results.json keeps them all.
 RENDERED_MIXES = 2

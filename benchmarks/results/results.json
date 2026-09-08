@@ -388,12 +388,45 @@
         "policy": "Astra low (gpt-6-astra)",
         "reached_ante8_or_more": 1,
         "reasoning_effort": "low",
-        "recency": 4,
+        "recency": 5,
         "run_dir": "evidence/astra-low-TAF7DNTX",
         "seconds": 5882.708,
         "seed_panel": "TAF7DNTX",
         "sources": [
           "evidence/astra-low-TAF7DNTX"
+        ]
+      },
+      {
+        "ante8_clears": 1,
+        "calls_per_decision": "421/515 = 0.82",
+        "coach_requests": 421,
+        "coach_timeouts": 6,
+        "decisions": 515,
+        "display_name": "Astra low (gpt-6-astra), round-production advice (9395d7a)",
+        "followup_actions": 48,
+        "followups_forced_stalls": "48 / 14 / 6",
+        "forced_actions": 14,
+        "games_attempted": 1,
+        "games_completed": 1,
+        "games_requested": 1,
+        "kind": "coached",
+        "mean_ante": 12.0,
+        "median_ante": 12.0,
+        "model": "gpt-6-astra",
+        "notes": [
+          "single game, seed XV2MP8L5: round-production advice at 9395d7a; cleared Ante 8, then lost at the ante 12 boss The Arm; one recovered RPC timeout, no rejected replies or restarts"
+        ],
+        "panel_seed": false,
+        "peak_hand_score": 326543967.0,
+        "policy": "Astra low (gpt-6-astra), round-production advice (9395d7a)",
+        "reached_ante8_or_more": 1,
+        "reasoning_effort": "low",
+        "recency": 0,
+        "run_dir": "evidence/astra-round-production-XV2MP8L5",
+        "seconds": 6957.258,
+        "seed_panel": "XV2MP8L5",
+        "sources": [
+          "evidence/astra-round-production-XV2MP8L5"
         ]
       },
       {
@@ -421,7 +454,7 @@
         "policy": "Astra low (gpt-6-astra)",
         "reached_ante8_or_more": 1,
         "reasoning_effort": "low",
-        "recency": 2,
+        "recency": 3,
         "run_dir": "evidence/astra-low-QD3F4XVW",
         "seconds": 6022.928,
         "seed_panel": "QD3F4XVW",
@@ -454,7 +487,7 @@
         "policy": "Astra low (gpt-6-astra)",
         "reached_ante8_or_more": 1,
         "reasoning_effort": "low",
-        "recency": 5,
+        "recency": 6,
         "run_dir": "evidence/astra-low-2K9H9HN",
         "seconds": 3611.146,
         "seed_panel": "2K9H9HN",
@@ -487,7 +520,7 @@
         "policy": "Astra low (gpt-6-astra)",
         "reached_ante8_or_more": 1,
         "reasoning_effort": "low",
-        "recency": 3,
+        "recency": 4,
         "run_dir": "evidence/astra-low-D0000000",
         "seconds": 3211.615,
         "seed_panel": "D0000000",
@@ -520,7 +553,7 @@
         "policy": "Terra low (gpt-5.6-terra)",
         "reached_ante8_or_more": 0,
         "reasoning_effort": "low",
-        "recency": 0,
+        "recency": 1,
         "run_dir": "evidence/terra-low-QD3F4XVW",
         "seconds": 532.708,
         "seed_panel": "QD3F4XVW",
@@ -553,7 +586,7 @@
         "policy": "Terra low (gpt-5.6-terra), first attempt",
         "reached_ante8_or_more": 0,
         "reasoning_effort": "low",
-        "recency": 1,
+        "recency": 2,
         "run_dir": "evidence/terra-low-QD3F4XVW-attempt1",
         "seconds": 598.998,
         "seed_panel": "QD3F4XVW",
@@ -563,7 +596,7 @@
       }
     ],
     "footnotes": [
-      "Each coached row is a single game: TAF7DNTX, QD3F4XVW, 2K9H9HN are seeds outside the D0000000-D0000019 baseline panel, D0000000 is that panel's first seed. They are demonstrations, not win-rate estimates.",
+      "Each coached row is a single game: TAF7DNTX, XV2MP8L5, QD3F4XVW, 2K9H9HN are seeds outside the D0000000-D0000019 baseline panel, D0000000 is that panel's first seed. They are demonstrations, not win-rate estimates.",
       "The two gpt-5.6-terra rows are the same seed as the recorded gpt-6-astra game QD3F4XVW, played with the same tools, prompts and limits; both lost at the ante 2 boss. One seed at one effort level is not a model ranking. They are not part of Table C or the score figure, which cover the Astra-low runs. See evidence/terra-low-QD3F4XVW/README.md.",
       "On seed D0000000 the best heuristic (search-v5) reached ante 6 with a 14,700 peak hand; the coached run reached ante 10 with 1,840,907.",
       "Seed QD3F4XVW was played end to end by the supervisor: one automatic restart after the mod refused a boss reroll, no operator intervention, and 0 rejected replies. Hieroglyph and Petroglyph each lowered the ante by one, so blinds at antes 9 and 10 were played twice.",
@@ -754,7 +787,7 @@
           "SHOP": 241
         },
         "note": "The concatenated segments hold exactly the 456 decisions result.json reports.",
-        "recency": 4,
+        "recency": 5,
         "reported_decisions": 456,
         "run": "astra-low-TAF7DNTX",
         "seed": "TAF7DNTX",
@@ -928,7 +961,7 @@
           "SHOP": 239
         },
         "note": "The concatenated segments hold exactly the 473 decisions result.json reports.",
-        "recency": 2,
+        "recency": 3,
         "reported_decisions": 473,
         "run": "astra-low-QD3F4XVW",
         "seed": "QD3F4XVW",
@@ -1087,7 +1120,7 @@
           "SHOP": 207
         },
         "note": "The concatenated segments hold 383 transitions while result.json reports 384 decisions: segment 00 ended on an errored action that was counted but never produced a transition record.",
-        "recency": 5,
+        "recency": 6,
         "reported_decisions": 384,
         "run": "astra-low-2K9H9HN",
         "seed": "2K9H9HN",
@@ -1248,7 +1281,7 @@
           "SHOP": 185
         },
         "note": "The concatenated segments hold exactly the 315 decisions result.json reports.",
-        "recency": 3,
+        "recency": 4,
         "reported_decisions": 315,
         "run": "astra-low-D0000000",
         "seed": "D0000000",

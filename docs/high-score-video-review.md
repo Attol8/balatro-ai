@@ -115,3 +115,35 @@ Do not assume missing rare Jokers were available: QD3F4XVW's reviewed main segme
 Verification completed: `python -m pytest -q tests/test_analysis.py tests/test_strategy.py tests/test_strategy_exercises.py tests/test_trajectory_audit.py` — **75 passed**. The TAF numerical replay was checked separately. These validate existing behavior; the proposed cases and improvements above have not been implemented or evaluated in new games.
 
 Recommended next implementation: the round-production and copier-phase advice, accompanied by a small offline decision set. Then evaluate matched seeds and budgets for survival and score, keeping filtered record starts separate.
+
+
+## Implemented advice and fresh-seed result — 8 September 2026
+
+Policy `9395d7a` implements bounded public-state round-production context and
+phase-specific copier targets, retains a legal DNA singleton candidate, and
+corrects Glass breakage, interest investment and available boss-reroll guidance.
+The advice marks approximate finishes and unknown setup outcomes explicitly;
+it does not prove future-draw survival. Relevant implementation checks passed:
+139 tests across production, analysis, strategy, trajectory audit, coach and runner.
+The broader deck-access and matched-seed evaluations above remain future work.
+
+Astra low then played fresh seed **XV2MP8L5**, Red Deck / White Stake, endless,
+without gameplay intervention or strategy changes during the run. It cleared
+Ante 8 and lost to The Arm at Ante 12 after exhausting all five hands:
+19,198,174 against 600,000,000. Its peak was **326,543,967**, on the last hand
+of Ante 12's Small Blind. The supervisor stopped on the actual loss, below its
+450-call, 750-action and 7,200-second limits: 421 calls, 515 decisions,
+6,957.258 seconds, zero restarts or rejected actions, six recovered model
+stalls and one recovered game-reply timeout.
+
+The trace contains 147 requests with round-production context: 73 with an
+approximate current finish, 65 prioritizing survival without one, and nine
+last-hand warnings. Sixteen requests exposed held Gold; none exposed Purple or
+Blue opportunities. Brainstorm arrived in an Ante 11 shop for scoring, but no supported
+production-copier target was present, so this game did not exercise the new
+copier-timing output. Those mechanics have offline tests, not live validation here.
+One different seed cannot establish a score improvement. The final loss still
+shows the need for more consistent late-game scaling; this result does not
+justify extending runner budgets as a strategy fix.
+
+[Full evidence, hashes and provenance](../evidence/astra-round-production-XV2MP8L5/README.md).

@@ -272,10 +272,10 @@ def ante_reached_by_policy(
         ),
         plt.Line2D([], [], color=INK, linewidth=2.0, label="Median ante"),
     ]
-    legend = axes.legend(
+    legend = fig.legend(
         handles=handles,
-        loc="upper center",
-        bbox_to_anchor=(0.5, -0.10 - 4.0 / (height * 100)),
+        loc="lower center",
+        bbox_to_anchor=(0.5, 0.42 / height),
         ncol=2,
         frameon=False,
         fontsize=8,

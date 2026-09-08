@@ -1,9 +1,10 @@
 # Balatro AI
 
-**The strongest published Balatro AI we know of: it has won every game it has played.**
+**GPT-6 Astra has cleared Ante 8 in all five published games.**
 
-Four recorded games on the real game client, four Ante 8 clears, three of them
-carried on into endless mode past Ante 10 and one to Ante 13 with a single hand of
+Four earlier-policy games and one round-production-advice game on the real client,
+five Ante 8 clears, four carried on into endless mode past Ante 10 and one to
+Ante 13 with a single hand of
 **134,231,931,235 chips**. No other public agent reports a run like it: the best
 model on the [BalatroBench](https://gigazine.net/gsc_news/en/20260213-balatrobench/)
 leaderboard clears Ante 8 in 9 of 15 runs, and the ten heuristic and search
@@ -35,6 +36,7 @@ best of them reached Ante 6 with a 14,700 peak; the model reached Ante 10 with
 
 | System | Games | Ante 8 cleared | Notes |
 |---|---|---|---|
+| Astra low + tools, round-production advice | 1 | 1 | Fresh seed XV2MP8L5, policy `9395d7a`. Lost to The Arm at Ante 12, peak 326,543,967. 515 decisions from 421 calls, zero rejected replies or restarts. [Evidence](evidence/astra-round-production-XV2MP8L5/README.md). |
 | Astra low + tools, headless | 1 | 1 | Seed TAF7DNTX. Won, then reached Ante 13 in endless with a 134,231,931,235 hand. 456 decisions from 404 model calls; the runner was restarted four times at safe moments to deploy fixes, never inside a blind. |
 | Astra low + tools, supervised | 1 | 1 | Seed QD3F4XVW. Won, then reached Ante 11 in endless with a 7,052,918 hand. 473 decisions from 388 model calls, zero rejected replies, one automatic restart; recorded end to end. |
 | Astra low + tools, on a panel seed | 1 | 1 | Seed D0000000. Won, then reached Ante 10 in endless with a 1,840,907 hand. 315 decisions from 265 model calls, zero rejected replies. Every heuristic baseline played this seed; the best reached Ante 6. |
@@ -43,8 +45,10 @@ best of them reached Ante 6 with a 14,700 peak; the model reached Ante 10 with
 | search-v6 (best heuristic) | 20 | 3 | Bounded public-information search, the strongest of ten non-model policies. |
 | Ten heuristic and search policies | 200 | 0 to 3 each | Same game, same settings, seeds D0000000 to D0000019. |
 
-The astra games are four single games, three on seeds outside the baseline panel
-and one on a panel seed. They show the system can beat the game and keep scaling
+The astra results comprise four historical single games and one fresh-seed game
+with the new round-production advice, labelled separately. Four seeds are outside
+the baseline panel and one is on a panel seed. This is not a matched policy
+comparison. They show the system can beat the game and keep scaling
 in endless mode; they do not estimate a win rate, and the unattended win rate is
 unmeasured. The two terra games are the only other model tried so far: one seed,
 one effort level, both lost at Ante 2, so they rank nothing. Full tables, figures and every caveat: [docs/results.md](docs/results.md).
@@ -171,6 +175,11 @@ restart cap. `balatro watch runs/game-002` shows the whole game.
 
 ## Evidence
 
+- [`evidence/astra-round-production-XV2MP8L5/`](evidence/astra-round-production-XV2MP8L5):
+  fresh-seed round-production-advice run, Ante 12 and 326,543,967 peak, one
+  uninterrupted segment with hashes and supervisor records.
+- [Expert video review and implementation follow-up](docs/high-score-video-review.md):
+  strategy comparisons, implemented advice and the limits of this single-game evaluation.
 - [`evidence/astra-low-TAF7DNTX/`](evidence/astra-low-TAF7DNTX): the headless
   Ante 13 run, five hash-chained segments with the runner revision and reason for
   each restart.
