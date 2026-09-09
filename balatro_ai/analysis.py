@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+from collections import deque
 from dataclasses import replace
 from fractions import Fraction
 
+from balatro_ai.continuation import continuation_advice
+from balatro_ai.discard import flush_draws
 from balatro_ai.game.actions import (
     DiscardCards,
     HandSlot,
@@ -18,6 +21,7 @@ from balatro_ai.game.actions import (
     iter_legal_actions,
 )
 from balatro_ai.game.scoring import (
+    MouthFamilyUnavailable,
     _prepare_score_context,
     _score_play_prepared,
     _scoring_cards,
@@ -32,7 +36,10 @@ from balatro_ai.game.state import (
     VisiblePlayingCard,
 )
 from balatro_ai.production import copier_timing, round_production
+from balatro_ai.readiness import boss_readiness
+from balatro_ai.reordering import joker_reorder_advice
 from balatro_ai.strategy import retrieve_examples
+from balatro_ai.survival import survival_context
 
 _MAX_PLAY_CANDIDATES = 16  # Thirteen hand families plus three preservation views.
 _MAX_STRATEGIC_ACTIONS = 24
@@ -67,7 +74,12 @@ def analyze(observation: PublicObservation) -> dict[str, object]:
     context for the model, not an action allow-list.
     """
 
-    plays, reorder = _play_advice(observation)
+    unavailable = None
+    try:
+        plays, reorder = _play_advice(observation)
+    except MouthFamilyUnavailable as exc:
+        plays, reorder = [], []
+        unavailable = str(exc)
     strategic, omitted = _strategic_actions(observation)
     legal_types = sorted(
         {action_to_data(action)["type"] for action in iter_legal_actions(observation)}
@@ -88,6 +100,18 @@ def analyze(observation: PublicObservation) -> dict[str, object]:
         "economy": _economy(observation),
     }
     examples = retrieve_examples(observation)
+    survival = survival_context(observation)
+    if survival:
+        result["survival_context"] = survival
+    readiness = boss_readiness(observation)
+    if readiness:
+        result["boss_readiness"] = readiness
+    draws = flush_draws(observation)
+    if draws:
+        result["flush_draws"] = draws
+    continuation = continuation_advice(observation, plays)
+    if continuation:
+        result["draw_continuation"] = continuation
     production = round_production(observation, plays)
     if production:
         result["round_production"] = production
@@ -100,13 +124,15 @@ def analyze(observation: PublicObservation) -> dict[str, object]:
     if opportunities:
         result["engine_opportunities"] = opportunities
     if observation.phase == Phase.SELECTING_HAND and not plays:
-        if any(isinstance(card, HiddenHandCard) for card in observation.hand):
+        if unavailable:
+            result["numerical_play_status"] = f"unavailable: {unavailable}"
+        elif any(isinstance(card, HiddenHandCard) for card in observation.hand):
             result["numerical_play_status"] = "unavailable: hand contains hidden cards"
         elif any(isinstance(joker, HiddenJokerSlot) for joker in observation.jokers):
             result["numerical_play_status"] = "unavailable: Joker identities/order are hidden"
     if observation.phase == Phase.SELECTING_HAND:
         result["discard_note"] = (
-            "Discards require model choice; no discard outcome search is available."
+            "Discards require model choice; bounded flush odds and guarded one-draw score samples only, no full discard policy search."
         )
     return result
 
@@ -147,7 +173,7 @@ def _economy(observation: PublicObservation) -> dict[str, object]:
     )
     # Vanilla pays interest_amount per $5 held; each To the Moon adds one.
     per_step = 1 + sum(
-        isinstance(joker, PublicItem) and joker.key == "j_to_the_moon"
+        isinstance(joker, PublicItem) and joker.key == "j_to_the_moon" and not joker.debuffed
         for joker in observation.jokers
     )
     steps = max(0, observation.money) // _INTEREST_STEP
@@ -328,7 +354,11 @@ def _reorder_advice(
                             "note": "Optional adjacent reorder; reassess after it settles.",
                         }
                     )
+    best_available = max((score for _, score, _ in plays), default=0)
+    suggestions = [row for row in suggestions if row["reordered_score"] > best_available]
     suggestions.sort(key=lambda row: float(row["reordered_score"]), reverse=True)
+    if not suggestions:
+        return joker_reorder_advice(observation, plays, _score_approximation(observation))
     return suggestions[:_MAX_REORDER_SUGGESTIONS]
 
 
@@ -340,8 +370,26 @@ def _strategic_actions(
         if isinstance(action, (PlayCards, DiscardCards)):
             continue
         actions.append(action)
-    shown = actions[:_MAX_STRATEGIC_ACTIONS]
-    return [action_to_data(action) for action in shown], len(actions) - len(shown)
+    # A single targeted Tarot can have dozens of legal selections. Taking the
+    # enumeration prefix hides later consumables and entire action mechanisms.
+    # Round-robin across item/mode/target-size groups before showing variants.
+    groups: dict[tuple, deque] = {}
+    for action in actions:
+        row = action_to_data(action)
+        key = (
+            row["type"],
+            *(row.get(field) for field in ("consumable", "card", "joker", "voucher", "pack", "mode")),
+            len(row.get("targets", [])),
+        )
+        groups.setdefault(key, deque()).append(row)
+    pending = deque(groups.values())
+    shown = []
+    while pending and len(shown) < _MAX_STRATEGIC_ACTIONS:
+        group = pending.popleft()
+        shown.append(group.popleft())
+        if group:
+            pending.append(group)
+    return shown, len(actions) - len(shown)
 
 
 def _mechanism_reminders(observation: PublicObservation) -> list[str]:
@@ -490,12 +538,13 @@ def _boss_scoring_restriction(observation: PublicObservation, score: int | Fract
 
 def _engine_opportunities(observation: PublicObservation) -> list[dict[str, object]]:
     deck_known = bool(observation.full_deck) and observation.deck_size > 0
-    steel = kings = faces = enhanced = 0
+    steel = kings = queens = faces = enhanced = 0
     if deck_known:
         for entry in observation.full_deck:
             card, count = entry.card, entry.count
             steel += count if card.enhancement == "STEEL" else 0
             kings += count if card.rank == "K" else 0
+            queens += count if card.rank == "Q" else 0
             faces += count if card.rank in _FACE_RANKS else 0
             enhanced += (
                 count
@@ -511,6 +560,7 @@ def _engine_opportunities(observation: PublicObservation) -> list[dict[str, obje
         for joker in observation.jokers
         if isinstance(joker, PublicItem) and not joker.debuffed and joker.key in _COPY_ENGINE_KEYS
     ]
+    photograph = _active_joker(observation, "j_photograph")
     full = len(observation.jokers) >= observation.joker_limit
     offers = [("shop", slot, item) for slot, item in enumerate(observation.shop)] + [
         ("opened_pack", slot, item) for slot, item in enumerate(observation.opened_pack)
@@ -532,10 +582,21 @@ def _engine_opportunities(observation: PublicObservation) -> list[dict[str, obje
             support = {"kings_in_public_deck": kings}
             mechanism = "Baron gives X1.5 Mult for each King held in hand."
             tradeoff = "Value depends on drawing and holding Kings."
-        elif item.key == "j_hanging_chad" and deck_known and enhanced:
+        elif item.key == "j_shoot_the_moon" and deck_known and queens:
+            support = {"queens_in_public_deck": queens}
+            mechanism = "Shoot the Moon gives +13 Mult for each Queen held in hand."
+            tradeoff = "Compare affordable additive Mult with multiplier offers; value depends on drawing and holding Queens and the played hand's base Mult."
+        elif item.key == "j_hanging_chad" and deck_known and (enhanced or (photograph and faces)):
             support = {"enhanced_scoring_cards_in_public_deck": enhanced}
             mechanism = "Hanging Chad retriggers the first scoring card twice."
             tradeoff = "Gain depends on making a supported enhanced card score first."
+            if photograph and faces:
+                support.update(
+                    active_photograph=True,
+                    face_cards_in_public_deck=faces,
+                )
+                mechanism += " With Photograph, a first scoring face card can trigger its X2 three times, even without enhancements."
+                tradeoff = "Requires a non-debuffed face card to score first; account for draw reliability, boss restrictions, price and stickers."
         elif item.key == "j_photograph" and deck_known and faces:
             support = {"face_cards_in_public_deck": faces}
             mechanism = "Photograph gives X2 Mult when the first played face card scores."

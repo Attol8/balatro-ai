@@ -1,0 +1,47 @@
+[
+  {
+    "segment": "00",
+    "original_directory": "runs/black-gold-readiness-20260909/segment-00",
+    "part_of_completed_game": true,
+    "sha256_uncompressed": {
+      "manifest.json": "98001b5f8b5ccf774436b9c505d1da49570f397182588878b841cb4f718f33f9",
+      "result.json": "8831d07889865ece183e0d5ca7f65fac37f8561c30e6d4195180d9419e25a0b9",
+      "trajectory.jsonl": "3166d72dafd43a9224cfa51eb942a771d44b9b268b2944e62044bf97029624a7"
+    },
+    "status": "stopped",
+    "reason": "coach_call_limit",
+    "ante_reached": 1,
+    "decisions": 16,
+    "coach_requests": 12
+  },
+  {
+    "segment": "01",
+    "original_directory": "runs/black-gold-readiness-20260909/segment-01",
+    "part_of_completed_game": true,
+    "sha256_uncompressed": {
+      "manifest.json": "f94f9a0eda6b59d103e0422e287b94a4ee633ce78eb185f803e25d84fcccc196",
+      "result.json": "1677b89f1ea21745ed99a2f3a867afb35d785af0cc714bff2f724143fcefac0e",
+      "trajectory.jsonl": "5c900192936e9879e5fad252a8aaddaf313b67d79eb0fed364e361b4ef26426b"
+    },
+    "status": "stopped",
+    "reason": "coach_call_limit",
+    "ante_reached": 8,
+    "decisions": 240,
+    "coach_requests": 200
+  },
+  {
+    "segment": "02",
+    "original_directory": "runs/black-gold-readiness-20260909/segment-02",
+    "part_of_completed_game": true,
+    "sha256_uncompressed": {
+      "manifest.json": "602b67509f0ccbc3495f505addf59dccb9e26af3e6e718dcc11011c5b1f8c9a7",
+      "result.json": "5a4b9c9055f5eed20e9689bcc31f2ff8f9548cba88848e267356fc5e84d041d6",
+      "trajectory.jsonl": "2bd2121267374ae4c157302e2f1ea4ce13952c28fc82824884899609217df95d"
+    },
+    "status": "won",
+    "reason": "ante_8_cleared",
+    "ante_reached": 9,
+    "decisions": 264,
+    "coach_requests": 220
+  }
+]

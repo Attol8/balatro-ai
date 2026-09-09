@@ -17,6 +17,30 @@ def test_bad_seed_cannot_start_game(tmp_path):
     assert caught.value.code == 1 and not (tmp_path / "run").exists()
 
 
+@pytest.mark.parametrize("timeout", ["0", "-1", "nan", "inf"])
+def test_invalid_rpc_timeout_cannot_contact_game(tmp_path, monkeypatch, timeout):
+    def unexpected(**kwargs):
+        pytest.fail("invalid timeout constructed a game client")
+
+    monkeypatch.setattr("balatro_ai.cli.BalatroBotClient", unexpected)
+    with pytest.raises(SystemExit) as caught:
+        main(["play", "--output", str(tmp_path / "run"), "--rpc-seconds", timeout])
+    assert caught.value.code == 1
+
+
+def test_rendered_rpc_timeout_reaches_client(tmp_path, monkeypatch):
+    captured = {}
+
+    def run(client, *args, **kwargs):
+        captured["timeout"] = client.timeout
+        return dict(status="won")
+
+    monkeypatch.setattr("balatro_ai.cli.run_game", run)
+    monkeypatch.setattr("balatro_ai.coach.CodexCoach", lambda: object())
+    assert main(["play", "--output", str(tmp_path / "run"), "--rpc-seconds", "180"]) == 0
+    assert captured["timeout"] == 180
+
+
 def test_default_limits_cover_an_endless_game(tmp_path, monkeypatch):
     captured = {}
 
@@ -218,3 +242,69 @@ def test_supervise_passes_the_operator_settings_through(tmp_path, monkeypatch):
     assert captured["max_restarts"] == 3 and captured["server_command"] == "start-balatro"
     assert captured["save_file"] == tmp_path / "save.jkr"
     assert (captured["limits"].max_calls, captured["limits"].max_actions) == (450, 750)
+
+
+@pytest.mark.parametrize("command", ["play", "supervise"])
+def test_cli_accepts_black_gold(tmp_path, monkeypatch, command):
+    captured = {}
+
+    def run(*args, **kwargs):
+        captured.update(kwargs)
+        return dict(status="won")
+
+    monkeypatch.setattr("balatro_ai.cli.run_game", run)
+    monkeypatch.setattr("balatro_ai.supervise.supervise", run)
+    monkeypatch.setattr("balatro_ai.cli.BalatroBotClient", lambda port: object())
+    monkeypatch.setattr("balatro_ai.coach.CodexCoach", lambda: object())
+    assert (
+        main([command, "--output", str(tmp_path / "run"), "--deck", "black", "--stake", "gold"])
+        == 0
+    )
+    assert (captured["deck"], captured["stake"]) == ("BLACK", "GOLD")
+
+
+@pytest.mark.parametrize("command", ["play", "supervise"])
+def test_cli_rejects_unknown_settings(tmp_path, command):
+    with pytest.raises(SystemExit) as caught:
+        main([command, "--output", str(tmp_path / "run"), "--stake", "UNKNOWN"])
+    assert caught.value.code == 2 and not (tmp_path / "run").exists()
+
+
+def test_resume_inherits_black_gold(tmp_path, monkeypatch):
+    game, observation = _paused_game(monkeypatch)
+    game.raw.update(deck="BLACK", stake="GOLD")
+    previous = _resume_dir(tmp_path, observation, game.raw["seed"])
+    (previous / "manifest.json").write_text(
+        json.dumps(dict(seed=game.raw["seed"], deck="BLACK", stake="GOLD"))
+    )
+    assert main(["play", "--output", str(tmp_path / "run"), "--resume", str(previous)]) == 0
+    manifest = json.loads((tmp_path / "run/manifest.json").read_text())
+    assert (manifest["deck"], manifest["stake"]) == ("BLACK", "GOLD")
+    assert "start" not in game.calls
+
+
+def test_resume_rejects_changed_settings_before_game_calls(tmp_path, monkeypatch):
+    game, observation = _paused_game(monkeypatch)
+    previous = _resume_dir(tmp_path, observation, game.raw["seed"])
+    with pytest.raises(SystemExit):
+        main(
+            [
+                "play",
+                "--output",
+                str(tmp_path / "run"),
+                "--resume",
+                str(previous),
+                "--deck",
+                "BLACK",
+            ]
+        )
+    assert not game.calls and not (tmp_path / "run").exists()
+
+
+def test_resume_rejects_wrong_live_settings(tmp_path, monkeypatch):
+    game, observation = _paused_game(monkeypatch)
+    previous = _resume_dir(tmp_path, observation, game.raw["seed"])
+    game.raw.update(stake="GOLD")
+    with pytest.raises(SystemExit):
+        main(["play", "--output", str(tmp_path / "run"), "--resume", str(previous)])
+    assert not (tmp_path / "run").exists()

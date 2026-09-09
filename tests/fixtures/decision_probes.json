@@ -1,0 +1,814 @@
+[
+  {
+    "id": "black_gold_last_hand_face_retrigger",
+    "provenance": "constructed",
+    "objective": "ante8",
+    "observation": {
+      "ante": 8,
+      "antes_cleared": 7,
+      "blinds": [
+        {
+          "disabled": false,
+          "effect": "",
+          "kind": "SMALL",
+          "name": "Small Blind",
+          "score": 300,
+          "status": "DEFEATED",
+          "tag_effect": "Gain money",
+          "tag_name": "Investment Tag"
+        },
+        {
+          "disabled": false,
+          "effect": "",
+          "kind": "BIG",
+          "name": "Big Blind",
+          "score": 100000,
+          "status": "CURRENT",
+          "tag_effect": "",
+          "tag_name": ""
+        },
+        {
+          "disabled": false,
+          "effect": "",
+          "kind": "BOSS",
+          "name": "The Head",
+          "score": 600,
+          "status": "UPCOMING",
+          "tag_effect": "",
+          "tag_name": ""
+        }
+      ],
+      "consumable_limit": 2,
+      "consumables": [],
+      "deck": "BLACK",
+      "deck_size": 12,
+      "draw_count": 0,
+      "full_deck": [
+        {
+          "card": {
+            "debuffed": false,
+            "edition": null,
+            "effect_text": "",
+            "enhancement": null,
+            "permanent_bonus": 0,
+            "rank": "K",
+            "seal": null,
+            "suit": "S"
+          },
+          "count": 1
+        },
+        {
+          "card": {
+            "debuffed": false,
+            "edition": null,
+            "effect_text": "",
+            "enhancement": null,
+            "permanent_bonus": 0,
+            "rank": "A",
+            "seal": null,
+            "suit": "H"
+          },
+          "count": 1
+        },
+        {
+          "card": {
+            "debuffed": false,
+            "edition": null,
+            "effect_text": "",
+            "enhancement": null,
+            "permanent_bonus": 0,
+            "rank": "2",
+            "seal": null,
+            "suit": "D"
+          },
+          "count": 10
+        }
+      ],
+      "hand": [
+        {
+          "debuffed": false,
+          "edition": null,
+          "effect_text": "",
+          "enhancement": null,
+          "permanent_bonus": 0,
+          "rank": "K",
+          "seal": null,
+          "suit": "S"
+        },
+        {
+          "debuffed": false,
+          "edition": null,
+          "effect_text": "",
+          "enhancement": null,
+          "permanent_bonus": 0,
+          "rank": "A",
+          "seal": null,
+          "suit": "H"
+        }
+      ],
+      "hand_limit": 8,
+      "hand_stats": [
+        {
+          "chips": 5,
+          "level": 1,
+          "mult": 1,
+          "name": "High Card",
+          "played": 0,
+          "played_this_round": 0
+        }
+      ],
+      "joker_limit": 5,
+      "jokers": [
+        {
+          "buy_cost": null,
+          "debuffed": false,
+          "edition": null,
+          "effect_text": "",
+          "eternal": true,
+          "key": "j_photograph",
+          "kind": "JOKER",
+          "label": "Photograph",
+          "perishable_rounds": null,
+          "rental": false,
+          "runtime": null,
+          "sell_cost": null
+        },
+        {
+          "buy_cost": null,
+          "debuffed": false,
+          "edition": null,
+          "effect_text": "",
+          "eternal": true,
+          "key": "j_hanging_chad",
+          "kind": "JOKER",
+          "label": "Hanging Chad",
+          "perishable_rounds": null,
+          "rental": false,
+          "runtime": null,
+          "sell_cost": null
+        }
+      ],
+      "last_tarot_planet": null,
+      "money": 0,
+      "opened_pack": [],
+      "pack_choices_remaining": 0,
+      "pack_kind": null,
+      "packs": [],
+      "phase": "SELECTING_HAND",
+      "remaining_deck": [],
+      "required_hand_slots": [],
+      "round": {
+        "ancient_suit": "H",
+        "boss_rerolled": false,
+        "chips": 99750,
+        "discards_left": 0,
+        "discards_used": 2,
+        "hands_left": 1,
+        "hands_played": 2,
+        "most_played_hand": "High Card",
+        "reroll_cost": 5
+      },
+      "round_no": 22,
+      "selection_limit": 5,
+      "shop": [],
+      "stake": "GOLD",
+      "used_vouchers": [],
+      "vouchers": [],
+      "won": false
+    },
+    "accepted_actions": [
+      {
+        "type": "play_cards",
+        "cards": [
+          0
+        ]
+      }
+    ],
+    "rationale": "Constructed final-hand local oracle, not a recorded win. Play only the King: Photograph and Hanging Chad give (5 + 3*10)*2^3 = 280 chips, clearing the 250-chip deficit. Ace alone or Ace+King score 5 + 3*11 = 38 because High Card scores only the Ace. Zero discards, one hand, no draws; other 10 deck cards have already been discarded. Eternal scoring Jokers cannot be sold."
+  },
+  {
+    "id": "black_gold_endless_hold_red_steel_king",
+    "provenance": "constructed",
+    "objective": "endless",
+    "observation": {
+      "ante": 9,
+      "antes_cleared": 8,
+      "blinds": [
+        {
+          "disabled": false,
+          "effect": "",
+          "kind": "SMALL",
+          "name": "Small Blind",
+          "score": 300,
+          "status": "DEFEATED",
+          "tag_effect": "Gain money",
+          "tag_name": "Investment Tag"
+        },
+        {
+          "disabled": false,
+          "effect": "",
+          "kind": "BIG",
+          "name": "Big Blind",
+          "score": 10000000,
+          "status": "CURRENT",
+          "tag_effect": "",
+          "tag_name": ""
+        },
+        {
+          "disabled": false,
+          "effect": "",
+          "kind": "BOSS",
+          "name": "The Head",
+          "score": 600,
+          "status": "UPCOMING",
+          "tag_effect": "",
+          "tag_name": ""
+        }
+      ],
+      "consumable_limit": 2,
+      "consumables": [],
+      "deck": "BLACK",
+      "deck_size": 12,
+      "draw_count": 0,
+      "full_deck": [
+        {
+          "card": {
+            "debuffed": false,
+            "edition": null,
+            "effect_text": "",
+            "enhancement": null,
+            "permanent_bonus": 0,
+            "rank": "A",
+            "seal": null,
+            "suit": "S"
+          },
+          "count": 1
+        },
+        {
+          "card": {
+            "debuffed": false,
+            "edition": null,
+            "effect_text": "",
+            "enhancement": "STEEL",
+            "permanent_bonus": 0,
+            "rank": "K",
+            "seal": "RED",
+            "suit": "H"
+          },
+          "count": 1
+        },
+        {
+          "card": {
+            "debuffed": false,
+            "edition": null,
+            "effect_text": "",
+            "enhancement": null,
+            "permanent_bonus": 0,
+            "rank": "2",
+            "seal": null,
+            "suit": "D"
+          },
+          "count": 10
+        }
+      ],
+      "hand": [
+        {
+          "debuffed": false,
+          "edition": null,
+          "effect_text": "",
+          "enhancement": null,
+          "permanent_bonus": 0,
+          "rank": "A",
+          "seal": null,
+          "suit": "S"
+        },
+        {
+          "debuffed": false,
+          "edition": null,
+          "effect_text": "",
+          "enhancement": "STEEL",
+          "permanent_bonus": 0,
+          "rank": "K",
+          "seal": "RED",
+          "suit": "H"
+        }
+      ],
+      "hand_limit": 8,
+      "hand_stats": [
+        {
+          "chips": 95,
+          "level": 10,
+          "mult": 10,
+          "name": "High Card",
+          "played": 0,
+          "played_this_round": 0
+        }
+      ],
+      "joker_limit": 5,
+      "jokers": [
+        {
+          "buy_cost": null,
+          "debuffed": false,
+          "edition": null,
+          "effect_text": "",
+          "eternal": true,
+          "key": "j_mime",
+          "kind": "JOKER",
+          "label": "Mime",
+          "perishable_rounds": null,
+          "rental": false,
+          "runtime": null,
+          "sell_cost": null
+        },
+        {
+          "buy_cost": null,
+          "debuffed": false,
+          "edition": null,
+          "effect_text": "",
+          "eternal": true,
+          "key": "j_baron",
+          "kind": "JOKER",
+          "label": "Baron",
+          "perishable_rounds": null,
+          "rental": false,
+          "runtime": null,
+          "sell_cost": null
+        }
+      ],
+      "last_tarot_planet": null,
+      "money": 0,
+      "opened_pack": [],
+      "pack_choices_remaining": 0,
+      "pack_kind": null,
+      "packs": [],
+      "phase": "SELECTING_HAND",
+      "remaining_deck": [],
+      "required_hand_slots": [],
+      "round": {
+        "ancient_suit": "H",
+        "boss_rerolled": false,
+        "chips": 9988000,
+        "discards_left": 0,
+        "discards_used": 2,
+        "hands_left": 1,
+        "hands_played": 2,
+        "most_played_hand": "High Card",
+        "reroll_cost": 5
+      },
+      "round_no": 25,
+      "selection_limit": 5,
+      "shop": [],
+      "stake": "GOLD",
+      "used_vouchers": [],
+      "vouchers": [],
+      "won": true
+    },
+    "accepted_actions": [
+      {
+        "type": "play_cards",
+        "cards": [
+          0
+        ]
+      }
+    ],
+    "rationale": "Constructed immediate-score oracle with no future draw assumptions. Play Ace and hold the red-seal Steel King. Base (95+11)*10 is multiplied by Steel and Baron on each of three held triggers (normal, red seal, Mime): 1060*(3/2)^6 = 12074.0625, above the 12000 deficit. Playing King alone retriggers its chips through red seal and scores (95+2*10)*10 = 1150; playing both scores (95+11)*10 = 1060. The other 10 cards are already discarded."
+  },
+  {
+    "id": "gold_sell_unproductive_rental",
+    "provenance": "constructed",
+    "objective": "ante8",
+    "observation": {
+      "ante": 8,
+      "antes_cleared": 7,
+      "blinds": [
+        {
+          "disabled": false,
+          "effect": "",
+          "kind": "SMALL",
+          "name": "Small Blind",
+          "score": 300,
+          "status": "DEFEATED",
+          "tag_effect": "Gain money",
+          "tag_name": "Investment Tag"
+        },
+        {
+          "disabled": false,
+          "effect": "",
+          "kind": "BIG",
+          "name": "Big Blind",
+          "score": 450,
+          "status": "UPCOMING",
+          "tag_effect": "",
+          "tag_name": ""
+        },
+        {
+          "disabled": false,
+          "effect": "",
+          "kind": "BOSS",
+          "name": "The Head",
+          "score": 600,
+          "status": "UPCOMING",
+          "tag_effect": "",
+          "tag_name": ""
+        }
+      ],
+      "consumable_limit": 2,
+      "consumables": [],
+      "deck": "BLACK",
+      "deck_size": 52,
+      "draw_count": 52,
+      "full_deck": [
+        {
+          "card": {
+            "debuffed": false,
+            "edition": null,
+            "effect_text": "",
+            "enhancement": null,
+            "permanent_bonus": 0,
+            "rank": "A",
+            "seal": null,
+            "suit": "S"
+          },
+          "count": 52
+        }
+      ],
+      "hand": [],
+      "hand_limit": 8,
+      "hand_stats": [
+        {
+          "chips": 5,
+          "level": 1,
+          "mult": 1,
+          "name": "High Card",
+          "played": 0,
+          "played_this_round": 0
+        }
+      ],
+      "joker_limit": 5,
+      "jokers": [
+        {
+          "buy_cost": null,
+          "debuffed": false,
+          "edition": null,
+          "effect_text": "Earn $1 for each 9 in your full deck at end of round",
+          "eternal": false,
+          "key": "j_cloud_9",
+          "kind": "JOKER",
+          "label": "Cloud 9",
+          "perishable_rounds": null,
+          "rental": true,
+          "runtime": null,
+          "sell_cost": 1
+        }
+      ],
+      "last_tarot_planet": null,
+      "money": 0,
+      "opened_pack": [],
+      "pack_choices_remaining": 0,
+      "pack_kind": null,
+      "packs": [],
+      "phase": "SHOP",
+      "remaining_deck": [
+        {
+          "card": {
+            "debuffed": false,
+            "edition": null,
+            "effect_text": "",
+            "enhancement": null,
+            "permanent_bonus": 0,
+            "rank": "A",
+            "seal": null,
+            "suit": "S"
+          },
+          "count": 52
+        }
+      ],
+      "required_hand_slots": [],
+      "round": {
+        "ancient_suit": "H",
+        "boss_rerolled": false,
+        "chips": 0,
+        "discards_left": 4,
+        "discards_used": 0,
+        "hands_left": 4,
+        "hands_played": 0,
+        "most_played_hand": "High Card",
+        "reroll_cost": 5
+      },
+      "round_no": 22,
+      "selection_limit": 5,
+      "shop": [],
+      "stake": "GOLD",
+      "used_vouchers": [],
+      "vouchers": [],
+      "won": false
+    },
+    "accepted_actions": [
+      {
+        "type": "sell_joker",
+        "joker": 0
+      }
+    ],
+    "rationale": "Cloud 9 has zero nines in the full deck, so its round income is $0 and rent is $3. Sell for $1 now; keeping it loses $3 per cleared round. No offers, no reroll funds, no scoring effect or other Joker synergies. This is a local economic oracle, conditional on continuing the run."
+  },
+  {
+    "id": "gold_keep_productive_rental",
+    "provenance": "constructed",
+    "objective": "ante8",
+    "observation": {
+      "ante": 8,
+      "antes_cleared": 7,
+      "blinds": [
+        {
+          "disabled": false,
+          "effect": "",
+          "kind": "SMALL",
+          "name": "Small Blind",
+          "score": 300,
+          "status": "DEFEATED",
+          "tag_effect": "Gain money",
+          "tag_name": "Investment Tag"
+        },
+        {
+          "disabled": false,
+          "effect": "",
+          "kind": "BIG",
+          "name": "Big Blind",
+          "score": 450,
+          "status": "UPCOMING",
+          "tag_effect": "",
+          "tag_name": ""
+        },
+        {
+          "disabled": false,
+          "effect": "",
+          "kind": "BOSS",
+          "name": "The Head",
+          "score": 600,
+          "status": "UPCOMING",
+          "tag_effect": "",
+          "tag_name": ""
+        }
+      ],
+      "consumable_limit": 2,
+      "consumables": [],
+      "deck": "BLACK",
+      "deck_size": 52,
+      "draw_count": 52,
+      "full_deck": [
+        {
+          "card": {
+            "debuffed": false,
+            "edition": null,
+            "effect_text": "",
+            "enhancement": null,
+            "permanent_bonus": 0,
+            "rank": "A",
+            "seal": null,
+            "suit": "S"
+          },
+          "count": 42
+        },
+        {
+          "card": {
+            "debuffed": false,
+            "edition": null,
+            "effect_text": "",
+            "enhancement": null,
+            "permanent_bonus": 0,
+            "rank": "9",
+            "seal": null,
+            "suit": "H"
+          },
+          "count": 10
+        }
+      ],
+      "hand": [],
+      "hand_limit": 8,
+      "hand_stats": [
+        {
+          "chips": 5,
+          "level": 1,
+          "mult": 1,
+          "name": "High Card",
+          "played": 0,
+          "played_this_round": 0
+        }
+      ],
+      "joker_limit": 5,
+      "jokers": [
+        {
+          "buy_cost": null,
+          "debuffed": false,
+          "edition": null,
+          "effect_text": "Earn $1 for each 9 in your full deck at end of round",
+          "eternal": false,
+          "key": "j_cloud_9",
+          "kind": "JOKER",
+          "label": "Cloud 9",
+          "perishable_rounds": null,
+          "rental": true,
+          "runtime": null,
+          "sell_cost": 1
+        }
+      ],
+      "last_tarot_planet": null,
+      "money": 0,
+      "opened_pack": [],
+      "pack_choices_remaining": 0,
+      "pack_kind": null,
+      "packs": [],
+      "phase": "SHOP",
+      "remaining_deck": [
+        {
+          "card": {
+            "debuffed": false,
+            "edition": null,
+            "effect_text": "",
+            "enhancement": null,
+            "permanent_bonus": 0,
+            "rank": "A",
+            "seal": null,
+            "suit": "S"
+          },
+          "count": 42
+        },
+        {
+          "card": {
+            "debuffed": false,
+            "edition": null,
+            "effect_text": "",
+            "enhancement": null,
+            "permanent_bonus": 0,
+            "rank": "9",
+            "seal": null,
+            "suit": "H"
+          },
+          "count": 10
+        }
+      ],
+      "required_hand_slots": [],
+      "round": {
+        "ancient_suit": "H",
+        "boss_rerolled": false,
+        "chips": 0,
+        "discards_left": 4,
+        "discards_used": 0,
+        "hands_left": 4,
+        "hands_played": 0,
+        "most_played_hand": "High Card",
+        "reroll_cost": 5
+      },
+      "round_no": 22,
+      "selection_limit": 5,
+      "shop": [],
+      "stake": "GOLD",
+      "used_vouchers": [],
+      "vouchers": [],
+      "won": false
+    },
+    "accepted_actions": [
+      {
+        "type": "leave_shop"
+      }
+    ],
+    "rationale": "Cloud 9 sees ten nines in the full deck and pays $10 per cleared round, independently of which cards are drawn. After $3 rent it nets $7, strictly above the $1 liquidation value even over one cleared round. With no shop offers or reroll funds, leave and retain it. This is a local economic oracle conditional on clearing a further round, not a certified future win."
+  },
+  {
+    "id": "gold_eternal_rental_cannot_sell",
+    "provenance": "constructed",
+    "objective": "ante8",
+    "observation": {
+      "ante": 8,
+      "antes_cleared": 7,
+      "blinds": [
+        {
+          "disabled": false,
+          "effect": "",
+          "kind": "SMALL",
+          "name": "Small Blind",
+          "score": 300,
+          "status": "DEFEATED",
+          "tag_effect": "Gain money",
+          "tag_name": "Investment Tag"
+        },
+        {
+          "disabled": false,
+          "effect": "",
+          "kind": "BIG",
+          "name": "Big Blind",
+          "score": 450,
+          "status": "UPCOMING",
+          "tag_effect": "",
+          "tag_name": ""
+        },
+        {
+          "disabled": false,
+          "effect": "",
+          "kind": "BOSS",
+          "name": "The Head",
+          "score": 600,
+          "status": "UPCOMING",
+          "tag_effect": "",
+          "tag_name": ""
+        }
+      ],
+      "consumable_limit": 2,
+      "consumables": [],
+      "deck": "BLACK",
+      "deck_size": 52,
+      "draw_count": 52,
+      "full_deck": [
+        {
+          "card": {
+            "debuffed": false,
+            "edition": null,
+            "effect_text": "",
+            "enhancement": null,
+            "permanent_bonus": 0,
+            "rank": "A",
+            "seal": null,
+            "suit": "S"
+          },
+          "count": 52
+        }
+      ],
+      "hand": [],
+      "hand_limit": 8,
+      "hand_stats": [
+        {
+          "chips": 5,
+          "level": 1,
+          "mult": 1,
+          "name": "High Card",
+          "played": 0,
+          "played_this_round": 0
+        }
+      ],
+      "joker_limit": 5,
+      "jokers": [
+        {
+          "buy_cost": null,
+          "debuffed": false,
+          "edition": null,
+          "effect_text": "Earn $1 for each 9 in your full deck at end of round",
+          "eternal": true,
+          "key": "j_cloud_9",
+          "kind": "JOKER",
+          "label": "Cloud 9",
+          "perishable_rounds": null,
+          "rental": true,
+          "runtime": null,
+          "sell_cost": 1
+        }
+      ],
+      "last_tarot_planet": null,
+      "money": 0,
+      "opened_pack": [],
+      "pack_choices_remaining": 0,
+      "pack_kind": null,
+      "packs": [],
+      "phase": "SHOP",
+      "remaining_deck": [
+        {
+          "card": {
+            "debuffed": false,
+            "edition": null,
+            "effect_text": "",
+            "enhancement": null,
+            "permanent_bonus": 0,
+            "rank": "A",
+            "seal": null,
+            "suit": "S"
+          },
+          "count": 52
+        }
+      ],
+      "required_hand_slots": [],
+      "round": {
+        "ancient_suit": "H",
+        "boss_rerolled": false,
+        "chips": 0,
+        "discards_left": 4,
+        "discards_used": 0,
+        "hands_left": 4,
+        "hands_played": 0,
+        "most_played_hand": "High Card",
+        "reroll_cost": 5
+      },
+      "round_no": 22,
+      "selection_limit": 5,
+      "shop": [],
+      "stake": "GOLD",
+      "used_vouchers": [],
+      "vouchers": [],
+      "won": false
+    },
+    "accepted_actions": [
+      {
+        "type": "leave_shop"
+      }
+    ],
+    "rationale": "Cloud 9 has no nines and would lose $3 per cleared round, but its eternal sticker forbids selling. The empty shop and $0 balance make LeaveShop the only legal action. This is a legality oracle, not an assertion that the run is winnable."
+  }
+]

@@ -237,7 +237,14 @@ def test_same_workspace_fresh_context_and_no_previous_response(monkeypatch, tmp_
 
 
 def test_response_schema_carries_an_optional_follow_up_chain() -> None:
-    assert _RESPONSE_SCHEMA["required"] == ["request_id", "action_json", "plan", "then"]
+    assert _RESPONSE_SCHEMA["required"] == [
+        "request_id",
+        "action_json",
+        "plan",
+        "explanation",
+        "then",
+    ]
+    assert _RESPONSE_SCHEMA["properties"]["explanation"] == {"type": ["string", "null"]}
     chain = _RESPONSE_SCHEMA["properties"]["then"]
     # Strict structured output needs every key required and optionality as null.
     assert chain["type"] == ["array", "null"]
@@ -339,3 +346,26 @@ def test_codex_child_keeps_the_default_home_without_a_login_file(monkeypatch, tm
     CodexCoach(str(executable)).choose(_packet(), timeout=10)
     calls = [json.loads(line) for line in log.read_text().splitlines()]
     assert {c["codex_home"] for c in calls} == {str(tmp_path / "missing")}
+
+
+@pytest.mark.parametrize("invalid", [False, True])
+def test_single_attempt_probe_does_not_hedge_or_retry(monkeypatch, tmp_path, invalid):
+    executable = _fake_codex(tmp_path)
+    log = tmp_path / "calls.jsonl"
+    monkeypatch.setenv("FAKE_CODEX_LOG", str(log))
+    monkeypatch.setenv("FAKE_RESPONSE", "invalid" if invalid else json.dumps(_response()))
+    if not invalid:
+        monkeypatch.setenv("FAKE_SLEEP", "0.15")
+    coach = CodexCoach(str(executable))
+    coach.allow_second_attempt = False
+    coach.hedge_after_seconds = 0.01
+    try:
+        if invalid:
+            with pytest.raises(RuntimeError):
+                coach.choose(_packet(), timeout=2)
+        else:
+            assert coach.choose(_packet(), timeout=2) == _response()
+    finally:
+        coach.close()
+    calls = [json.loads(line) for line in log.read_text().splitlines()]
+    assert len([c for c in calls if c["argv"][:1] == ["exec"]]) == 1

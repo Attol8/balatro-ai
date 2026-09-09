@@ -1,8 +1,15 @@
 # Balatro AI
 
-**GPT-6 Astra has cleared Ante 8 in all five published games.**
+**GPT-6 Astra has beaten Black Deck on Gold Stake on two fresh random seeds.**
 
-Four earlier-policy games and one round-production-advice game on the real client,
+Both wins used the real game, public-information tools and an all-unlocked
+profile. Final boss scores: **435,408 / 400,000** and **420,305 / 400,000**, each
+with one hand remaining. [Results, full traces and fair-play disclosures](docs/black-gold-results.md).
+These are demonstrations, not a win-rate estimate; earlier development attempts
+included losses.
+
+The separate Red Deck / White Stake results comprise four earlier-policy games
+and one round-production-advice game on the real client:
 five Ante 8 clears, four carried on into endless mode past Ante 10 and one to
 Ante 13 with a single hand of
 **134,231,931,235 chips**. No other public agent reports a run like it: the best
@@ -17,6 +24,11 @@ the [BalatroBot](https://github.com/coder/balatrobot) mod. No training, no
 simulator, no fallback policy, no hidden information.
 
 ## Watch it play
+
+To capture future games without a window on your desktop, use the
+[private Docker recording workflow](docs/virtual-recording.md). It also generates
+a video review page with timestamped bot actions, explanations and numerical advice,
+plus an uploadable MP4 with explanations beside the cursor-free gameplay.
 
 ![Time-lapse of a recorded game beside the live dashboard](evidence/astra-low-QD3F4XVW/recording-timelapse.gif)
 
@@ -33,6 +45,16 @@ best of them reached Ante 6 with a 14,700 peak; the model reached Ante 10 with
 ![Ante reached per game by policy](benchmarks/results/figures/ante-reached-by-policy.svg)
 
 ## Results
+
+Black Deck / Gold Stake results are documented separately from the Red/White
+baseline panel below:
+
+| Seed | Final boss score / requirement | Peak hand | Executed actions | Model requests | Evidence |
+|---|---|---|---|---|---|
+| MSVP7ABY | 435,408 / 400,000 | 247,230 | 264 | 220 | [Headless win](evidence/astra-black-gold-MSVP7ABY/README.md) |
+| PI4T2AH8 | 420,305 / 400,000 | 227,383 | 270 | 227 | [Recorded win](evidence/astra-black-gold-PI4T2AH8/README.md) |
+
+Both cleared Ante 8. [Setup, recoveries, scoring limitations and recording details](docs/black-gold-results.md).
 
 | System | Games | Ante 8 cleared | Notes |
 |---|---|---|---|
@@ -103,6 +125,10 @@ pytest -q                   # recorded observations and fake transports only
 
 CI rebuilds the tables and fails if they change. New real-game results are added by
 pointing the builder at run directories: `python -m benchmarks --runs runs/*`.
+
+For inexpensive decision checks before a full game, see [decision probes](docs/decision-probes.md).
+Black Deck / Gold Stake is selectable with `--deck BLACK --stake GOLD` on `play`
+or `supervise`; existing defaults remain Red/White.
 
 ## Play a game
 

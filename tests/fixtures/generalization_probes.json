@@ -1,0 +1,832 @@
+[
+  {
+    "id": "gold_active_perishable_rental_pair",
+    "provenance": "constructed",
+    "evaluation_split": "development",
+    "objective": "ante8",
+    "observation": {
+      "ante": 5,
+      "antes_cleared": 4,
+      "blinds": [
+        {
+          "disabled": false,
+          "effect": "",
+          "kind": "SMALL",
+          "name": "Small Blind",
+          "score": 300,
+          "status": "DEFEATED",
+          "tag_effect": "Gain money",
+          "tag_name": "Investment Tag"
+        },
+        {
+          "disabled": false,
+          "effect": "",
+          "kind": "BIG",
+          "name": "Big Blind",
+          "score": 200,
+          "status": "CURRENT",
+          "tag_effect": "",
+          "tag_name": ""
+        },
+        {
+          "disabled": false,
+          "effect": "",
+          "kind": "BOSS",
+          "name": "The Head",
+          "score": 600,
+          "status": "UPCOMING",
+          "tag_effect": "",
+          "tag_name": ""
+        }
+      ],
+      "consumable_limit": 2,
+      "consumables": [],
+      "deck": "BLACK",
+      "deck_size": 3,
+      "draw_count": 0,
+      "full_deck": [
+        {
+          "card": {
+            "rank": "8",
+            "suit": "H",
+            "debuffed": false,
+            "edition": null,
+            "enhancement": null,
+            "seal": null,
+            "permanent_bonus": 0,
+            "effect_text": ""
+          },
+          "count": 1
+        },
+        {
+          "card": {
+            "rank": "8",
+            "suit": "D",
+            "debuffed": false,
+            "edition": null,
+            "enhancement": null,
+            "seal": null,
+            "permanent_bonus": 0,
+            "effect_text": ""
+          },
+          "count": 1
+        },
+        {
+          "card": {
+            "rank": "2",
+            "suit": "C",
+            "debuffed": false,
+            "edition": null,
+            "enhancement": null,
+            "seal": null,
+            "permanent_bonus": 0,
+            "effect_text": ""
+          },
+          "count": 1
+        }
+      ],
+      "hand": [
+        {
+          "rank": "8",
+          "suit": "H",
+          "debuffed": false,
+          "edition": null,
+          "enhancement": null,
+          "seal": null,
+          "permanent_bonus": 0,
+          "effect_text": ""
+        },
+        {
+          "rank": "8",
+          "suit": "D",
+          "debuffed": false,
+          "edition": null,
+          "enhancement": null,
+          "seal": null,
+          "permanent_bonus": 0,
+          "effect_text": ""
+        },
+        {
+          "rank": "2",
+          "suit": "C",
+          "debuffed": false,
+          "edition": null,
+          "enhancement": null,
+          "seal": null,
+          "permanent_bonus": 0,
+          "effect_text": ""
+        }
+      ],
+      "hand_limit": 8,
+      "hand_stats": [
+        {
+          "name": "High Card",
+          "level": 1,
+          "chips": 5,
+          "mult": 1,
+          "played": 0,
+          "played_this_round": 0
+        },
+        {
+          "name": "Pair",
+          "level": 1,
+          "chips": 10,
+          "mult": 2,
+          "played": 0,
+          "played_this_round": 0
+        }
+      ],
+      "joker_limit": 6,
+      "jokers": [
+        {
+          "key": "j_jolly",
+          "label": "Jolly Joker",
+          "kind": "JOKER",
+          "effect_text": "+8 Mult if played hand contains a Pair",
+          "buy_cost": null,
+          "sell_cost": 1,
+          "debuffed": false,
+          "edition": null,
+          "eternal": false,
+          "perishable_rounds": 1,
+          "rental": true,
+          "runtime": null
+        }
+      ],
+      "last_tarot_planet": null,
+      "money": 4,
+      "opened_pack": [],
+      "pack_choices_remaining": 0,
+      "pack_kind": null,
+      "packs": [],
+      "phase": "SELECTING_HAND",
+      "remaining_deck": [],
+      "required_hand_slots": [],
+      "round": {
+        "ancient_suit": "H",
+        "boss_rerolled": false,
+        "chips": 0,
+        "discards_left": 0,
+        "discards_used": 2,
+        "hands_left": 1,
+        "hands_played": 2,
+        "most_played_hand": "High Card",
+        "reroll_cost": 5
+      },
+      "round_no": 13,
+      "selection_limit": 5,
+      "shop": [],
+      "stake": "GOLD",
+      "used_vouchers": [],
+      "vouchers": [],
+      "won": false
+    },
+    "accepted_actions": [
+      {
+        "type": "play_cards",
+        "cards": [
+          0,
+          1
+        ]
+      },
+      {
+        "type": "play_cards",
+        "cards": [
+          0,
+          1,
+          2
+        ]
+      }
+    ],
+    "rationale": "Synthetic public state, not a recorded run and not derived from a seed. No remaining draws; one hand left. Jolly is still active on its last perishable round despite rent. Pair of Eights scores (10+8+8)*(2+8)=260, enough for 200. Selling it leaves at most 52. Its future $3 rental charge does not justify losing now. Both pair selections win; the Two is a harmless kicker."
+  },
+  {
+    "id": "gold_expired_perishable_pair_planet",
+    "provenance": "constructed",
+    "evaluation_split": "held_out",
+    "objective": "ante8",
+    "observation": {
+      "ante": 5,
+      "antes_cleared": 4,
+      "blinds": [
+        {
+          "disabled": false,
+          "effect": "",
+          "kind": "SMALL",
+          "name": "Small Blind",
+          "score": 300,
+          "status": "DEFEATED",
+          "tag_effect": "Gain money",
+          "tag_name": "Investment Tag"
+        },
+        {
+          "disabled": false,
+          "effect": "",
+          "kind": "BIG",
+          "name": "Big Blind",
+          "score": 300,
+          "status": "CURRENT",
+          "tag_effect": "",
+          "tag_name": ""
+        },
+        {
+          "disabled": false,
+          "effect": "",
+          "kind": "BOSS",
+          "name": "The Head",
+          "score": 600,
+          "status": "UPCOMING",
+          "tag_effect": "",
+          "tag_name": ""
+        }
+      ],
+      "consumable_limit": 2,
+      "consumables": [
+        {
+          "key": "c_mercury",
+          "label": "Mercury",
+          "kind": "PLANET",
+          "effect_text": "Level up Pair +1 Mult and +15 chips",
+          "buy_cost": null,
+          "sell_cost": 1,
+          "debuffed": false,
+          "edition": null,
+          "eternal": false,
+          "perishable_rounds": null,
+          "rental": false,
+          "runtime": null
+        }
+      ],
+      "deck": "BLACK",
+      "deck_size": 3,
+      "draw_count": 0,
+      "full_deck": [
+        {
+          "card": {
+            "rank": "9",
+            "suit": "S",
+            "debuffed": false,
+            "edition": null,
+            "enhancement": null,
+            "seal": null,
+            "permanent_bonus": 0,
+            "effect_text": ""
+          },
+          "count": 1
+        },
+        {
+          "card": {
+            "rank": "9",
+            "suit": "C",
+            "debuffed": false,
+            "edition": null,
+            "enhancement": null,
+            "seal": null,
+            "permanent_bonus": 0,
+            "effect_text": ""
+          },
+          "count": 1
+        },
+        {
+          "card": {
+            "rank": "2",
+            "suit": "D",
+            "debuffed": false,
+            "edition": null,
+            "enhancement": null,
+            "seal": null,
+            "permanent_bonus": 0,
+            "effect_text": ""
+          },
+          "count": 1
+        }
+      ],
+      "hand": [
+        {
+          "rank": "9",
+          "suit": "S",
+          "debuffed": false,
+          "edition": null,
+          "enhancement": null,
+          "seal": null,
+          "permanent_bonus": 0,
+          "effect_text": ""
+        },
+        {
+          "rank": "9",
+          "suit": "C",
+          "debuffed": false,
+          "edition": null,
+          "enhancement": null,
+          "seal": null,
+          "permanent_bonus": 0,
+          "effect_text": ""
+        },
+        {
+          "rank": "2",
+          "suit": "D",
+          "debuffed": false,
+          "edition": null,
+          "enhancement": null,
+          "seal": null,
+          "permanent_bonus": 0,
+          "effect_text": ""
+        }
+      ],
+      "hand_limit": 8,
+      "hand_stats": [
+        {
+          "name": "High Card",
+          "level": 1,
+          "chips": 5,
+          "mult": 1,
+          "played": 0,
+          "played_this_round": 0
+        },
+        {
+          "name": "Pair",
+          "level": 1,
+          "chips": 10,
+          "mult": 2,
+          "played": 0,
+          "played_this_round": 0
+        }
+      ],
+      "joker_limit": 6,
+      "jokers": [
+        {
+          "key": "j_jolly",
+          "label": "Jolly Joker",
+          "kind": "JOKER",
+          "effect_text": "All abilities are disabled",
+          "buy_cost": null,
+          "sell_cost": 1,
+          "debuffed": true,
+          "edition": null,
+          "eternal": false,
+          "perishable_rounds": 0,
+          "rental": false,
+          "runtime": null
+        },
+        {
+          "key": "j_odd_todd",
+          "label": "Odd Todd",
+          "kind": "JOKER",
+          "effect_text": "Played cards with odd rank give +31 Chips when scored",
+          "buy_cost": null,
+          "sell_cost": 1,
+          "debuffed": false,
+          "edition": null,
+          "eternal": false,
+          "perishable_rounds": null,
+          "rental": false,
+          "runtime": null
+        }
+      ],
+      "last_tarot_planet": null,
+      "money": 0,
+      "opened_pack": [],
+      "pack_choices_remaining": 0,
+      "pack_kind": null,
+      "packs": [],
+      "phase": "SELECTING_HAND",
+      "remaining_deck": [],
+      "required_hand_slots": [],
+      "round": {
+        "ancient_suit": "H",
+        "boss_rerolled": false,
+        "chips": 0,
+        "discards_left": 0,
+        "discards_used": 2,
+        "hands_left": 1,
+        "hands_played": 2,
+        "most_played_hand": "High Card",
+        "reroll_cost": 5
+      },
+      "round_no": 13,
+      "selection_limit": 5,
+      "shop": [],
+      "stake": "GOLD",
+      "used_vouchers": [],
+      "vouchers": [],
+      "won": false
+    },
+    "accepted_actions": [
+      {
+        "type": "use_consumable",
+        "consumable": 0,
+        "targets": []
+      },
+      {
+        "type": "sell_joker",
+        "joker": 0
+      }
+    ],
+    "rationale": "Synthetic public state, not a recorded run and not derived from a seed. No remaining draws; one hand left. Expired Jolly contributes nothing. Odd Todd pair of Nines scores (10+18+62)*2=180, below 300. Mercury raises Pair to 25 chips/3 Mult: (25+18+62)*3=315 wins. Use Mercury, or first sell the expired Joker for $1 and then use Mercury. Selling Odd Todd or the planet destroys the winning line."
+  },
+  {
+    "id": "gold_supported_planet_constellation",
+    "provenance": "constructed",
+    "evaluation_split": "development",
+    "objective": "ante8",
+    "observation": {
+      "ante": 5,
+      "antes_cleared": 4,
+      "blinds": [
+        {
+          "disabled": false,
+          "effect": "",
+          "kind": "SMALL",
+          "name": "Small Blind",
+          "score": 300,
+          "status": "DEFEATED",
+          "tag_effect": "Gain money",
+          "tag_name": "Investment Tag"
+        },
+        {
+          "disabled": false,
+          "effect": "",
+          "kind": "BIG",
+          "name": "Big Blind",
+          "score": 320,
+          "status": "CURRENT",
+          "tag_effect": "",
+          "tag_name": ""
+        },
+        {
+          "disabled": false,
+          "effect": "",
+          "kind": "BOSS",
+          "name": "The Head",
+          "score": 600,
+          "status": "UPCOMING",
+          "tag_effect": "",
+          "tag_name": ""
+        }
+      ],
+      "consumable_limit": 2,
+      "consumables": [
+        {
+          "key": "c_pluto",
+          "label": "Pluto",
+          "kind": "PLANET",
+          "effect_text": "Level up High Card +1 Mult and +10 chips",
+          "buy_cost": null,
+          "sell_cost": 1,
+          "debuffed": false,
+          "edition": null,
+          "eternal": false,
+          "perishable_rounds": null,
+          "rental": false,
+          "runtime": null
+        }
+      ],
+      "deck": "BLACK",
+      "deck_size": 1,
+      "draw_count": 0,
+      "full_deck": [
+        {
+          "card": {
+            "rank": "A",
+            "suit": "D",
+            "debuffed": false,
+            "edition": null,
+            "enhancement": null,
+            "seal": null,
+            "permanent_bonus": 0,
+            "effect_text": ""
+          },
+          "count": 1
+        }
+      ],
+      "hand": [
+        {
+          "rank": "A",
+          "suit": "D",
+          "debuffed": false,
+          "edition": null,
+          "enhancement": null,
+          "seal": null,
+          "permanent_bonus": 0,
+          "effect_text": ""
+        }
+      ],
+      "hand_limit": 8,
+      "hand_stats": [
+        {
+          "name": "High Card",
+          "level": 1,
+          "chips": 5,
+          "mult": 1,
+          "played": 0,
+          "played_this_round": 0
+        },
+        {
+          "name": "Pair",
+          "level": 1,
+          "chips": 10,
+          "mult": 2,
+          "played": 0,
+          "played_this_round": 0
+        }
+      ],
+      "joker_limit": 6,
+      "jokers": [
+        {
+          "key": "j_joker",
+          "label": "Joker",
+          "kind": "JOKER",
+          "effect_text": "+4 Mult",
+          "buy_cost": null,
+          "sell_cost": 1,
+          "debuffed": false,
+          "edition": null,
+          "eternal": false,
+          "perishable_rounds": null,
+          "rental": false,
+          "runtime": null
+        },
+        {
+          "key": "j_constellation",
+          "label": "Constellation",
+          "kind": "JOKER",
+          "effect_text": "This Joker gains X0.1 Mult every time a Planet card is used (Currently X2 Mult)",
+          "buy_cost": null,
+          "sell_cost": 1,
+          "debuffed": false,
+          "edition": null,
+          "eternal": false,
+          "perishable_rounds": null,
+          "rental": false,
+          "runtime": {
+            "current_chips": null,
+            "current_dollars": null,
+            "current_hand_size_bonus": null,
+            "current_mult": null,
+            "current_x_mult": 2.0,
+            "castle_suit": null,
+            "driver_tally": null,
+            "invisible_rounds": null,
+            "loyalty_remaining": null,
+            "mail_rank": null,
+            "remaining_discards": null,
+            "remaining_hands": null,
+            "target_hand": null,
+            "target_rank": null,
+            "target_suit": null
+          }
+        }
+      ],
+      "last_tarot_planet": null,
+      "money": 25,
+      "opened_pack": [],
+      "pack_choices_remaining": 0,
+      "pack_kind": null,
+      "packs": [],
+      "phase": "SELECTING_HAND",
+      "remaining_deck": [],
+      "required_hand_slots": [],
+      "round": {
+        "ancient_suit": "H",
+        "boss_rerolled": false,
+        "chips": 0,
+        "discards_left": 0,
+        "discards_used": 2,
+        "hands_left": 1,
+        "hands_played": 2,
+        "most_played_hand": "High Card",
+        "reroll_cost": 5
+      },
+      "round_no": 13,
+      "selection_limit": 5,
+      "shop": [],
+      "stake": "GOLD",
+      "used_vouchers": [],
+      "vouchers": [],
+      "won": false
+    },
+    "accepted_actions": [
+      {
+        "type": "use_consumable",
+        "consumable": 0,
+        "targets": []
+      }
+    ],
+    "rationale": "Synthetic public state, not a recorded run and not derived from a seed. No remaining draws; one hand left. Current Ace scores (5+11)*(1+4)*2=160. Pluto raises High Card to 15 chips/2 Mult and grows Constellation from X2 to X2.1, giving (15+11)*(2+4)*2.1=327.6. Either effect alone misses 320 (312 for level alone; 168 for Constellation alone). Use the supported growth already in inventory before the last play; this is not a speculative shop-purchase oracle."
+  },
+  {
+    "id": "gold_plant_retrigger_pair_escape",
+    "provenance": "constructed",
+    "evaluation_split": "held_out",
+    "objective": "ante8",
+    "observation": {
+      "ante": 5,
+      "antes_cleared": 4,
+      "blinds": [
+        {
+          "disabled": false,
+          "effect": "",
+          "kind": "SMALL",
+          "name": "Small Blind",
+          "score": 300,
+          "status": "DEFEATED",
+          "tag_effect": "Gain money",
+          "tag_name": "Investment Tag"
+        },
+        {
+          "disabled": false,
+          "effect": "",
+          "kind": "BIG",
+          "name": "Big Blind",
+          "score": 80,
+          "status": "DEFEATED",
+          "tag_effect": "",
+          "tag_name": ""
+        },
+        {
+          "disabled": false,
+          "effect": "All face cards are debuffed",
+          "kind": "BOSS",
+          "name": "The Plant",
+          "score": 80,
+          "status": "CURRENT",
+          "tag_effect": "",
+          "tag_name": ""
+        }
+      ],
+      "consumable_limit": 2,
+      "consumables": [],
+      "deck": "BLACK",
+      "deck_size": 3,
+      "draw_count": 0,
+      "full_deck": [
+        {
+          "card": {
+            "rank": "K",
+            "suit": "C",
+            "debuffed": false,
+            "edition": null,
+            "enhancement": null,
+            "seal": null,
+            "permanent_bonus": 0,
+            "effect_text": ""
+          },
+          "count": 1
+        },
+        {
+          "card": {
+            "rank": "8",
+            "suit": "S",
+            "debuffed": false,
+            "edition": null,
+            "enhancement": null,
+            "seal": null,
+            "permanent_bonus": 0,
+            "effect_text": ""
+          },
+          "count": 1
+        },
+        {
+          "card": {
+            "rank": "8",
+            "suit": "H",
+            "debuffed": false,
+            "edition": null,
+            "enhancement": null,
+            "seal": null,
+            "permanent_bonus": 0,
+            "effect_text": ""
+          },
+          "count": 1
+        }
+      ],
+      "hand": [
+        {
+          "rank": "K",
+          "suit": "C",
+          "debuffed": true,
+          "edition": null,
+          "enhancement": null,
+          "seal": null,
+          "permanent_bonus": 0,
+          "effect_text": ""
+        },
+        {
+          "rank": "8",
+          "suit": "S",
+          "debuffed": false,
+          "edition": null,
+          "enhancement": null,
+          "seal": null,
+          "permanent_bonus": 0,
+          "effect_text": ""
+        },
+        {
+          "rank": "8",
+          "suit": "H",
+          "debuffed": false,
+          "edition": null,
+          "enhancement": null,
+          "seal": null,
+          "permanent_bonus": 0,
+          "effect_text": ""
+        }
+      ],
+      "hand_limit": 8,
+      "hand_stats": [
+        {
+          "name": "High Card",
+          "level": 1,
+          "chips": 5,
+          "mult": 1,
+          "played": 0,
+          "played_this_round": 0
+        },
+        {
+          "name": "Pair",
+          "level": 1,
+          "chips": 10,
+          "mult": 2,
+          "played": 0,
+          "played_this_round": 0
+        }
+      ],
+      "joker_limit": 6,
+      "jokers": [
+        {
+          "key": "j_photograph",
+          "label": "Photograph",
+          "kind": "JOKER",
+          "effect_text": "First played face card gives X2 Mult when scored",
+          "buy_cost": null,
+          "sell_cost": 1,
+          "debuffed": false,
+          "edition": null,
+          "eternal": true,
+          "perishable_rounds": null,
+          "rental": false,
+          "runtime": null
+        },
+        {
+          "key": "j_hanging_chad",
+          "label": "Hanging Chad",
+          "kind": "JOKER",
+          "effect_text": "Retrigger first played card used in scoring 2 additional times",
+          "buy_cost": null,
+          "sell_cost": 1,
+          "debuffed": false,
+          "edition": null,
+          "eternal": true,
+          "perishable_rounds": null,
+          "rental": false,
+          "runtime": null
+        }
+      ],
+      "last_tarot_planet": null,
+      "money": 4,
+      "opened_pack": [],
+      "pack_choices_remaining": 0,
+      "pack_kind": null,
+      "packs": [],
+      "phase": "SELECTING_HAND",
+      "remaining_deck": [],
+      "required_hand_slots": [],
+      "round": {
+        "ancient_suit": "H",
+        "boss_rerolled": false,
+        "chips": 0,
+        "discards_left": 0,
+        "discards_used": 2,
+        "hands_left": 1,
+        "hands_played": 2,
+        "most_played_hand": "High Card",
+        "reroll_cost": 5
+      },
+      "round_no": 13,
+      "selection_limit": 5,
+      "shop": [],
+      "stake": "GOLD",
+      "used_vouchers": [],
+      "vouchers": [],
+      "won": false
+    },
+    "accepted_actions": [
+      {
+        "type": "play_cards",
+        "cards": [
+          1,
+          2
+        ]
+      },
+      {
+        "type": "play_cards",
+        "cards": [
+          0,
+          1,
+          2
+        ]
+      }
+    ],
+    "rationale": "Synthetic public state, not a recorded run and not derived from a seed. No remaining draws; one hand left. The Plant debuffs the King, so the face-based Photograph finish is unavailable. Pair of Eights with Hanging Chad scores (10+4*8)*2=84, clearing 80; either pair selection wins. King-only/high-card alternatives do not clear. Under an ordinary blind the same King would score (5+3*10)*8=280. A useful build must adapt to the visible boss rather than repeat its usual face play."
+  }
+]

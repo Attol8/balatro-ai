@@ -24,7 +24,7 @@ def enrich_runtime(
     observation: PublicObservation,
     history: tuple[HistoryStep, ...],
 ) -> PublicObservation:
-    """Replace stale Loyalty Card state with a public-history countdown."""
+    """Recover scoring runtime from witnessed public actions."""
 
     loyalty_indexes = [
         index
@@ -32,7 +32,7 @@ def enrich_runtime(
         if isinstance(joker, PublicItem) and joker.key == "j_loyalty_card"
     ]
     if not loyalty_indexes:
-        return observation
+        return _enrich_mouth(observation, history)
     remaining = _loyalty_remaining(observation, history)
     jokers = list(observation.jokers)
     for index in loyalty_indexes:
@@ -51,7 +51,47 @@ def enrich_runtime(
                 else replace(runtime, loyalty_remaining=remaining)
             ),
         )
-    return replace(observation, jokers=tuple(jokers))
+    return replace(
+        observation, jokers=tuple(jokers), round=_enrich_mouth(observation, history).round
+    )
+
+
+def _enrich_mouth(observation, history):
+    if not any(
+        blind.name == "The Mouth" and blind.status == "CURRENT" and not blind.disabled
+        for blind in observation.blinds
+    ):
+        return observation
+    if not history or history[-1].after != observation:
+        return observation
+    if any(
+        previous.after != following.before
+        for previous, following in zip(history, history[1:], strict=False)
+    ):
+        return observation
+    for step in reversed(history):
+        if (step.before.ante, step.before.round_no) != (observation.ante, observation.round_no):
+            continue
+        if (step.after.ante, step.after.round_no) != (observation.ante, observation.round_no):
+            continue
+        if not isinstance(step.action, PlayCards) or step.before.round.hands_played != 0:
+            continue
+        if step.after.round.hands_played != 1:
+            continue
+        # The first hand's public tally reveals the locked family, even if its
+        # playing cards were hidden. Later rejected hands also increment tallies.
+        before_counts = {hand.name: hand.played_this_round for hand in step.before.hand_stats}
+        families = {
+            hand.name
+            for hand in step.after.hand_stats
+            if hand.played_this_round - before_counts.get(hand.name, 0) == 1
+        }
+        if len(families) == 1:
+            return replace(
+                observation,
+                round=replace(observation.round, mouth_hand_family=families.pop()),
+            )
+    return observation
 
 
 def _loyalty_remaining(

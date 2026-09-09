@@ -40,8 +40,8 @@ def test_mime_vs_holographic_cloud_9_grid(base_mult: int, steel_count: int) -> N
     mime_score = score_play(replace(observation, jokers=(mime,)), (HandSlot(0),))[0]
     cloud_score = score_play(replace(observation, jokers=(cloud,)), (HandSlot(0),))[0]
 
-    assert mime_score == chips * base_mult * Fraction(3, 2) ** (2 * steel_count)
-    assert cloud_score == chips * (base_mult * Fraction(3, 2) ** steel_count + 10)
+    assert mime_score == math.floor(chips * base_mult * Fraction(3, 2) ** (2 * steel_count))
+    assert cloud_score == math.floor(chips * (base_mult * Fraction(3, 2) ** steel_count + 10))
     assert (mime_score > cloud_score) is (
         base_mult * Fraction(3, 2) ** (2 * steel_count)
         > base_mult * Fraction(3, 2) ** steel_count + 10
@@ -74,9 +74,11 @@ def test_blueprint_position_selects_mime_x8_or_baron_x9_arithmetic() -> None:
         0
     ]
 
-    assert copy_mime == 7 * Fraction(3, 2) ** 8
-    assert copy_baron == 7 * Fraction(3, 2) ** 9
-    assert copy_baron == copy_mime * Fraction(3, 2)
+    mime_product = 7 * Fraction(3, 2) ** 8
+    baron_product = mime_product * Fraction(3, 2)
+    assert copy_mime == math.floor(mime_product) == 179
+    assert copy_baron == math.floor(baron_product) == 269
+    assert copy_baron > copy_mime
 
 
 def test_fibonacci_is_reapplied_when_hack_retriggers_a_two() -> None:
@@ -172,7 +174,7 @@ def test_joker_editions_add_fifty_chips_ten_mult_or_multiply_by_one_and_a_half(
     score, family = score_play(replace(observation, jokers=(joker,)), (HandSlot(0),))
 
     assert family == "High Card"
-    assert score == expected
+    assert score == math.floor(expected)
 
 
 # --- Headless run TAF7DNTX -------------------------------------------------
@@ -259,7 +261,7 @@ def test_steel_joker_reads_the_whole_deck_and_ignores_the_played_card(steel: int
         deck_size=52,
     )
 
-    assert score_play(observation, (HandSlot(0),))[0] == 7 * (1 + Fraction(steel, 5))
+    assert score_play(observation, (HandSlot(0),))[0] == math.floor(7 * (1 + Fraction(steel, 5)))
 
 
 def test_the_tooth_charges_one_dollar_for_every_card_played() -> None:

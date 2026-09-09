@@ -24,7 +24,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .client import BalatroBotClient
-from .runner import Limits, load_resume, run_game, write_json
+from .runner import Limits, load_resume, resolve_settings, run_game, saved_settings, write_json
 
 DEFAULT_MAX_RESTARTS = 8
 # A crashed server or a stalled Codex recovers in seconds, not milliseconds;
@@ -192,7 +192,7 @@ def recover_game(
     return state
 
 
-def default_runner(*, port, seed, endless, limits, model=None):
+def default_runner(*, port, seed, endless, limits, model=None, deck=None, stake=None):
     """The real runner: one segment of ``balatro play``, resumed when asked."""
 
     def runner(directory, resume):
@@ -209,6 +209,8 @@ def default_runner(*, port, seed, endless, limits, model=None):
             directory,
             limits=limits,
             seed=run_seed,
+            deck=deck,
+            stake=stake,
             continuation=continuation,
             endless=endless,
         )
@@ -245,6 +247,8 @@ def supervise(
     output,
     *,
     seed=None,
+    deck=None,
+    stake=None,
     endless=False,
     port=12346,
     limits=None,
@@ -261,11 +265,15 @@ def supervise(
     """Run one game to its end, restarting the runner around recoverable exits."""
 
     root = Path(output)
+    resume = resume_source(root)
+    deck, stake = resolve_settings(
+        deck, stake, saved=saved_settings(resume) if resume is not None else None
+    )
     root.mkdir(parents=True, exist_ok=True)
     limits = limits or Limits()
     client_factory = client_factory or (lambda: BalatroBotClient(port=port))
     runner = runner or default_runner(
-        port=port, seed=seed, endless=endless, limits=limits, model=model
+        port=port, seed=seed, endless=endless, limits=limits, model=model, deck=deck, stake=stake
     )
     log = log or _print_line
     log_path = root / "server.log"
@@ -275,6 +283,8 @@ def supervise(
     state = dict(
         root=str(root),
         seed=seed,
+        deck=deck,
+        stake=stake,
         endless=endless,
         max_restarts=max_restarts,
         started_at=_now(),

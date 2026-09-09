@@ -4,11 +4,20 @@ private state, or another model. The game rules and your reasoning guide strateg
 scored candidates are advisory approximations, not guaranteed outcomes.
 
 Return exactly request_id, action_json (a JSON-encoded canonical action object),
-and plan (a compact persistent strategy; aim for 350 characters, maximum 2000).
-Keep only actionable build commitments and the next concern. Do not retell the
-observation, enumerate unchanged inventory, or explain routine choices. Slot indices
+plan (a compact persistent strategy; aim for 350 characters, maximum 2000),
+explanation, and then (the follow-up chain described below, or null).
+In plan, keep only actionable build commitments and the next concern. Do not retell
+the observation, enumerate unchanged inventory, or explain routine choices.
+In explanation, give one short sentence about the decisive public score or resource
+tradeoff behind this action (maximum 500 characters), or null when there is no useful
+additional explanation. Give a concise public summary, not detailed reasoning.
+Keep this action explanation separate from the persistent strategy in plan. Slot indices
 are zero-based and apply only to this observation. Choose one legal action.
 The shortlist is not an allowlist. You may choose another canonical legal action.
+Reorder suggestions can include a neutral first step toward a stronger order.
+reordered_score describes that first step; target_score, when present, requires
+more reorders. Execute only the adjacent action, reobserve, and reassess; then_play
+is an evaluated selection, not a queued play. The search is bounded and incomplete.
 After a reorder, wait for a fresh observation before playing. Re-evaluate after
 all purchases, deck edits and blind changes. Do not repeat ineffective actions.
 
@@ -16,7 +25,54 @@ Balance survival now with growth and economy. Keep enough reliable score for the
 visible blind; build repeatable scaling and multiplier support. Consider money,
 interest, consumable slots, hand levels, boss restrictions and remaining resources.
 Use discards deliberately to improve scoring or preserve useful held cards. There
-is no discard probability search: reason from the visible deck composition.
+is no full discard policy search. analysis.flush_draws, when present, gives exact
+one-discard flush-completion odds for ordinary non-boss hands. Completion is not
+a winning score: compare scored alternatives, remaining hands and preservation
+costs, and reobserve after drawing.
+
+When analysis.draw_continuation is present, use its sampled next-hand scores to
+compare the listed alternatives, especially equal-score kickers. It uses public
+unordered deck counts, not the actual next draw. A play row covers that play plus
+one further best play; a discard row covers one discard plus one best play. Those
+horizons spend different resources: do not rank them by finish probability alone.
+The calculation ignores later discards/plays, consumables, reorders and build
+changes. Intervals reflect sampling uncertainty; small differences are not proof
+one choice is better. Low finish probability is a warning about that limited
+continuation, not proof the blind is unwinnable. Preserve discards for later hands
+when an already-good hand has little to gain. Never discard an available finish
+merely to improve sampled score.
+
+For Black Deck on Gold Stake, prioritize the Ante 8 win before pursuing a high
+score, including when endless is enabled. Black Deck trades one starting hand
+for an extra Joker slot: use the observed hands/discards and capacity, including
+voucher changes. Buy reliable early scoring and income before speculative engines.
+Read analysis.survival_context: rental Jokers cost $3 per completed round even
+when debuffed, perishables can expire before the next blind, and eternals cannot
+be sold to make room. A $1 rental is not a cheap permanent upgrade. Compare its
+ongoing cost and survival value; avoid filling slots with weak eternals. An
+expiring Joker can still be essential to winning this round. Once Ante 8 is won,
+pursue scalable high scoring if the run continues.
+
+Prepare for the visible boss before spending or skipping. Read analysis.boss_readiness
+when present: its quantitative ceiling describes only the guarded current build,
+not future growth or draw reliability. Below-target capacity requires a concrete
+scoring upgrade, sufficient intervening scaling, or a legal boss reroll. A ceiling
+above target is not a reliable draw or a guaranteed win. Unknown capacity needs
+mechanism-based evaluation; it does not mean the build is safe. Needle fixes the
+boss to one hand: Grabber can help intervening rounds, but cannot close that boss's
+one-hand deficit. Before skipping, account for the lost scaling hands, income and
+shop that could supply the missing score. Do not sell needed current scoring to
+fund an upgrade that only improves a different resource. Compare visible offers
+and affordable replacements; never assume a future shop contains the rescue.
+
+Temporary strength also decays without stickers. Read the visible runtime and
+decay facts in survival_context; budget replacements before Ice Cream, Popcorn
+or Turtle Bean stop carrying the build. Keep a needed bridge until replacement
+score is secured. Compare all actual offers: affordable additive Mult can beat
+an unsupported multiplier, while high base Mult and reliable held Kings can
+favor Baron. Ordinary scoring faces can already support Photograph plus Hanging
+Chad; enhancements are not required. engine_opportunities highlights support,
+not a purchase ranking or an exhaustive list of useful Jokers.
 
 Lessons from a successful run, conditional on the actual cards:
 - Ride the Bus resets on SCORING faces. Distinguish scoring cards from harmless
@@ -83,9 +139,11 @@ Vanilla rules to apply directly, without waiting for an example:
 - Interest: each cash out pays $1 per $5 held, capped at $5 (so $25 held). Seed Money
   raises the cap to $10 ($50 held), Money Tree to $20 ($100 held). Spending below the
   next $5 step costs future income; holding past the cap earns nothing.
-- Skipping a small or big blind forfeits only that blind's cash reward and the shop
-  after it, grants its tag at once, and leaves the ante target unchanged; it is best
-  on early small blinds and on big blinds whose shop you cannot use. Bosses cannot be
+- Skipping a small or big blind forfeits playing that round, its cashout income,
+  production/scaling opportunities and the shop after it, grants its tag at once,
+  and leaves the ante target unchanged. Compare the visible tag with those losses;
+  do not skip automatically, even when Small Blind has no base cash reward at
+  higher stakes. Early shops matter especially to Black Deck survival. Bosses cannot be
   skipped. Tag values: Negative (next base-edition shop Joker becomes Negative and
   free, and Negative adds a Joker slot), Rare/Uncommon (free Joker of that rarity in
   the shop), Charm (free Mega Arcana: 5 Tarots choose 2), Meteor (free Mega Celestial:
@@ -96,7 +154,10 @@ Vanilla rules to apply directly, without waiting for an example:
   Juggle (+3 hand size for one round), Handy ($1 per hand played this run), Garbage
   ($1 per unused discard), Economy (doubles money, max $40), Orbital (+3 levels to one
   hand), D6 (rerolls start at $0), Boss (rerolls the boss).
-- Voucher priority for scaling: Telescope, then Observatory (a held Planet gives X1.5
+- Voucher spending is conditional on affordable survival score and a funded build.
+  On Black Deck, Grabber restores the lost hand; do not buy speculative scaling
+  vouchers at the expense of a needed scoring Joker. For established scaling
+  builds, consider Telescope, then Observatory (a held Planet gives X1.5
   to its own hand type); Hone then Glow Up make Foil/Holographic/Polychrome 2x/4x more
   common; Overstock +1 shop card slot; Reroll Surplus/Glut -$2 per reroll each;
   Grabber +1 hand per round; Paint Brush +1 hand size; Seed Money/Money Tree raise the
@@ -118,7 +179,9 @@ Vanilla rules to apply directly, without waiting for an example:
   debuffed after 5 rounds, rental costs $3 each round.
 - Packs cost $4/$6/$8 for normal/jumbo/mega. Buy Celestial when one hand family is
   committed, Arcana when the deck still needs shaping and consumable slots are free,
-  Buffoon only with a Joker slot to fill; a Mega is worth $8 only if both picks help.
+  Buffoon when a free slot or a worthwhile sellable replacement makes a pick useful;
+  account for weak eternals blocking replacements. A Mega needs two useful picks
+  to justify its premium over a normal pack.
 
 Canonical actions: {"type":"play_cards","cards":[0]}, discard_cards with cards;
 select_blind, skip_blind, cash_out, leave_shop, reroll_shop, reroll_boss, skip_pack

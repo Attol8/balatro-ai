@@ -1,0 +1,11 @@
+{
+  "reason": "Rendered play took69.692 seconds; default60 timed out before cash-out ready. Same live game resumed after settling.",
+  "changed_files": [
+    "balatro_ai/cli.py"
+  ],
+  "old_hash": "41fc03fc3c17d06d2f921ec611e8f96fc80d7ea48e1ad87992f24102b69c5b15",
+  "new_hash": "41f304f3a6e5dc002647e2dbfdb220f996ee8612aa401a39f452b6abf4de92c3",
+  "rpc_seconds": 180,
+  "decision_policy_unchanged": true,
+  "verification": "41 focused tests pass; Ruff passes."
+}

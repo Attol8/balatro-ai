@@ -1,0 +1,21 @@
+{
+  "model": "gpt-6-astra",
+  "reasoning_effort": "low",
+  "requested_model": "gpt-6-astra",
+  "requested_reasoning_effort": "low",
+  "transport": "CodexCoach",
+  "limits": {
+    "max_calls": 450,
+    "max_actions": 750,
+    "seconds": 10800.0,
+    "call_seconds": 90.0
+  },
+  "seed": "PI4T2AH8",
+  "deck": "BLACK",
+  "stake": "GOLD",
+  "profile": "all_unlocked",
+  "endless": false,
+  "continuation_of": "runs/black-gold-reddit-20260909/segment-00",
+  "resume_adjusted": false,
+  "resume_diff": []
+}

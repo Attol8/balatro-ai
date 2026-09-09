@@ -109,7 +109,8 @@ def _phase(value: object) -> Phase:
 def _round(value: object) -> RoundObservation:
     raw = _object(value, "round")
     names = {field.name for field in fields(RoundObservation)}
-    if frozenset(raw) not in {frozenset(names), frozenset(names - {"most_played_hand"})}:
+    optional = {"most_played_hand", "mouth_hand_family"}
+    if not names - optional <= raw.keys() <= names:
         raise PublicCodecError("round fields differ from the contract")
     return RoundObservation(
         chips=_integer(raw["chips"], "round.chips"),
@@ -121,6 +122,7 @@ def _round(value: object) -> RoundObservation:
         boss_rerolled=_boolean(raw["boss_rerolled"], "round.boss_rerolled"),
         ancient_suit=_optional_string(raw["ancient_suit"], "round.ancient_suit"),
         most_played_hand=_optional_string(raw.get("most_played_hand"), "round.most_played_hand"),
+        mouth_hand_family=_optional_string(raw.get("mouth_hand_family"), "round.mouth_hand_family"),
     )
 
 

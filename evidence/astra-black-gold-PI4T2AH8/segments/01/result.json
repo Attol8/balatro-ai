@@ -1,0 +1,15 @@
+{
+  "status": "won",
+  "won": true,
+  "reason": "ante_8_cleared",
+  "decisions": 270,
+  "coach_requests": 227,
+  "coach_timeouts": 0,
+  "forced_actions": 8,
+  "followup_actions": 12,
+  "rpc_timeouts_recovered": 0,
+  "ante_reached": 9,
+  "peak_hand_score": 227383,
+  "ante_8_cleared": true,
+  "seconds": 5606.541
+}

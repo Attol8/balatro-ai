@@ -28,6 +28,49 @@ from .game.codec import public_observation_from_data, public_observation_to_data
 from .game.history import HistoryStep, enrich_runtime
 from .game.state import Phase, PublicObservation
 
+DECKS = (
+    "RED",
+    "BLUE",
+    "YELLOW",
+    "GREEN",
+    "BLACK",
+    "MAGIC",
+    "NEBULA",
+    "GHOST",
+    "ABANDONED",
+    "CHECKERED",
+    "ZODIAC",
+    "PAINTED",
+    "ANAGLYPH",
+    "PLASMA",
+    "ERRATIC",
+)
+STAKES = ("WHITE", "RED", "GREEN", "BLACK", "BLUE", "PURPLE", "ORANGE", "GOLD")
+
+
+def resolve_settings(deck=None, stake=None, *, saved=None):
+    """Default fresh games; inherit and protect the settings of saved games."""
+
+    resolved = []
+    for name, requested, default, choices in (
+        ("deck", deck, "RED", DECKS),
+        ("stake", stake, "WHITE", STAKES),
+    ):
+        previous = saved.get(name, default) if saved is not None else default
+        value = previous if requested is None else requested
+        if value not in choices:
+            raise ValueError(f"invalid {name}: {value!r}")
+        if saved is not None and value != previous:
+            raise ValueError(f"cannot change {name} on resume: saved {previous}, requested {value}")
+        resolved.append(value)
+    return tuple(resolved)
+
+
+def saved_settings(directory):
+    path = Path(directory) / "manifest.json"
+    # Legacy evidence may predate deck/stake fields (or the manifest itself).
+    return json.loads(path.read_text()) if path.exists() else {}
+
 
 @dataclass(frozen=True)
 class Limits:
@@ -62,6 +105,8 @@ class Continuation:
     prior_timeouts: int = 0
     # Observation fields the live game had already moved on by when resuming.
     adjusted_fields: tuple[str, ...] = ()
+    deck: str = "RED"
+    stake: str = "WHITE"
 
 
 def load_resume(client, directory) -> Continuation:
@@ -72,6 +117,7 @@ def load_resume(client, directory) -> Continuation:
     """
 
     directory = Path(directory)
+    deck, stake = resolve_settings(saved=saved_settings(directory))
     result_path = directory / "result.json"
     if result_path.exists():
         previous = json.loads(result_path.read_text())
@@ -105,6 +151,8 @@ def load_resume(client, directory) -> Continuation:
     raw = game_rpc(client, "gamestate", None, deadline)
     if raw.get("state") == "MENU":
         raise ValueError("cannot resume: the live game is at MENU")
+    if raw.get("deck") != deck or raw.get("stake") != stake:
+        raise ValueError("cannot resume: live deck or stake differs from the saved run")
     live = settle(client, raw, deadline)
     if live.phase == Phase.GAME_OVER:
         raise ValueError("cannot resume: the live game is over")
@@ -128,6 +176,8 @@ def load_resume(client, directory) -> Continuation:
         prior_followups=previous.get("followup_actions", 0),
         prior_timeouts=previous.get("coach_timeouts", 0),
         adjusted_fields=adjusted,
+        deck=deck,
+        stake=stake,
     )
 
 
@@ -345,14 +395,20 @@ def write_json(path: Path, value):
 
 def validate_response(response, request_id, observation):
     required = {"request_id", "action_json", "plan"}
-    if not isinstance(response, dict) or not required <= set(response) <= required | {"then"}:
+    if not isinstance(response, dict) or not required <= set(response) <= required | {
+        "then",
+        "explanation",
+    }:
         raise ValueError(
-            "coach response must contain request_id, action_json and plan, and may add then"
+            "coach response must contain request_id, action_json and plan, and may add then and explanation"
         )
     if response["request_id"] != request_id:
         raise ValueError("stale coach response")
     if not isinstance(response["plan"], str) or len(response["plan"]) > 2000:
         raise ValueError("coach plan exceeds 2000 characters")
+    explanation = response.get("explanation")
+    if explanation is not None and (not isinstance(explanation, str) or len(explanation) > 500):
+        raise ValueError("coach explanation must be null or a string of at most 500 characters")
     if not isinstance(response["action_json"], str) or len(response["action_json"]) > 4096:
         raise ValueError("invalid action_json")
     action = canonical_action_from_data(json.loads(response["action_json"]))
@@ -474,9 +530,16 @@ def run_game(
     *,
     limits=Limits(),
     seed=None,
+    deck=None,
+    stake=None,
     continuation: Continuation | None = None,
     endless: bool = False,
 ):
+    deck, stake = resolve_settings(
+        deck,
+        stake,
+        saved=dict(deck=continuation.deck, stake=continuation.stake) if continuation else None,
+    )
     output = Path(output)
     output.mkdir(parents=True, exist_ok=False)
     started = time.monotonic()
@@ -522,9 +585,16 @@ def run_game(
             "Seek enough multiplicative scaling for rising targets; clearing Ante 8 is a milestone, not the stopping point.",
         )
     trace = (output / "trajectory.jsonl").open("x")
+    trace_started = time.monotonic()
 
     def record(event, **data):
-        trace.write(json.dumps(dict(event=event, **data), allow_nan=False) + "\n")
+        row = dict(
+            event=event,
+            recorded_at=time.time(),
+            elapsed_seconds=time.monotonic() - trace_started,
+            **data,
+        )
+        trace.write(json.dumps(row, allow_nan=False) + "\n")
         trace.flush()
 
     def budget():
@@ -548,8 +618,8 @@ def run_game(
                 transport=type(coach).__name__,
                 limits=asdict(limits),
                 seed=seed,
-                deck="RED",
-                stake="WHITE",
+                deck=deck,
+                stake=stake,
                 profile="all_unlocked",
                 endless=endless,
                 continuation_of=continuation.source if continuation else None,
@@ -565,7 +635,7 @@ def run_game(
         if hasattr(coach, "preflight"):
             coach.preflight(min(10, max(0.001, deadline - time.monotonic())))
         budget()
-        params = dict(deck="RED", stake="WHITE")
+        params = dict(deck=deck, stake=stake)
         if seed is not None:
             params["seed"] = seed
         if continuation is None:
@@ -575,7 +645,7 @@ def run_game(
             if seed is None:
                 raise ValueError("continuation requires the expected seed")
             raw = initial
-        if raw.get("deck") != "RED" or raw.get("stake") != "WHITE":
+        if raw.get("deck") != deck or raw.get("stake") != stake:
             raise RuntimeError("game started with a different deck or stake")
         if seed is not None and raw.get("seed") != seed:
             raise RuntimeError("game started with a different seed")

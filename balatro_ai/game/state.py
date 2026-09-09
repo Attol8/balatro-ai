@@ -300,12 +300,15 @@ class RoundObservation:
     boss_rerolled: bool
     ancient_suit: str | None = None
     most_played_hand: str | None = None
+    mouth_hand_family: str | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.boss_rerolled, bool):
             raise ValueError("boss_rerolled must be boolean")
         if self.most_played_hand is not None and self.most_played_hand not in _POKER_HAND_NAMES:
             raise ValueError("unsupported most-played poker hand")
+        if self.mouth_hand_family is not None and self.mouth_hand_family not in _POKER_HAND_NAMES:
+            raise ValueError("unsupported Mouth poker hand")
 
 
 @dataclass(frozen=True, slots=True)

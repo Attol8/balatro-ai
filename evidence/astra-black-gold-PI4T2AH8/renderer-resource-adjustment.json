@@ -1,0 +1,10 @@
+{
+  "recorded_at": 1788960091.9102678,
+  "container": "balatro-record-bdeec8610db4",
+  "cpus_before": 2,
+  "cpus_after": 3,
+  "reason": "cgroup throttled99.2percent of sampled periods; renderer CPUbound, memory674MiB/2GiB. Modest increase to relieve recording animation slowdown.",
+  "game_settings_changed": false,
+  "policy_changed": false,
+  "recording_restarted": false
+}

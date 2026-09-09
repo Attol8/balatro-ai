@@ -310,6 +310,30 @@ def test_negative_money_previews_no_interest() -> None:
     assert economy["next_interest_threshold"] == 5
 
 
+def test_expired_to_the_moon_keeps_rent_but_does_not_increase_interest() -> None:
+    observation = replace(
+        _selecting_hand(),
+        deck="BLACK",
+        stake="GOLD",
+        money=17,
+        jokers=(
+            PublicItem(
+                "j_to_the_moon",
+                "To the Moon",
+                "JOKER",
+                perishable_rounds=0,
+                debuffed=True,
+                rental=True,
+            ),
+            PublicItem("j_to_the_moon", "To the Moon", "JOKER"),
+        ),
+    )
+
+    result = analyze(observation)
+    assert (result["economy"]["interest_at_cashout"], result["economy"]["interest_cap"]) == (6, 10)
+    assert result["survival_context"]["visible_rental_charge_per_round"] == 3
+
+
 def test_analysis_names_the_phase_and_legal_action_types() -> None:
     path = Path("evidence/astra-low-2K9H9HN/segments/03/trajectory.jsonl.gz")
     with gzip.open(path, "rt", encoding="utf-8") as stream:
@@ -337,3 +361,14 @@ def test_analysis_reports_inventory_slots() -> None:
     assert slots["jokers"] == f"{len(observation.jokers)}/{observation.joker_limit}"
     assert slots["jokers_full"] == (len(observation.jokers) >= observation.joker_limit)
     assert slots["consumables"].endswith(f"/{observation.consumable_limit}")
+
+
+def test_continuation_probe_oracles_are_exposed_in_analysis():
+    cases = json.loads(Path("tests/fixtures/continuation_probes.json").read_text())
+    for case in cases:
+        observation = public_observation_from_data(case["observation"])
+        advice = analyze(observation)["draw_continuation"]
+        winners = [row["action"] for row in advice["candidates"] if row["finish_probability"] == 1]
+        assert winners == case["accepted_actions"]
+        assert advice["samples"] == 48
+        assert "different resource horizons" in advice["note"]

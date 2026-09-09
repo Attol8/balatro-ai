@@ -1,0 +1,15 @@
+{
+  "status": "error",
+  "won": false,
+  "reason": "BalatroBotRejected: Current round evaluation is not ready to cash out",
+  "decisions": 2,
+  "coach_requests": 2,
+  "coach_timeouts": 0,
+  "forced_actions": 0,
+  "followup_actions": 0,
+  "rpc_timeouts_recovered": 1,
+  "ante_reached": 1,
+  "peak_hand_score": 308,
+  "ante_8_cleared": false,
+  "seconds": 121.671
+}

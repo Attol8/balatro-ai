@@ -1,0 +1,1183 @@
+{
+  "kind": "offline_public_native_run_audit",
+  "root": "/Users/jacopo/Desktop/projects/balatro-ai-v2/runs/black-gold-reddit-20260909",
+  "audit_script_sha256": "36770d903b36e986d129860f7d60cf9f60464dfbe8007db5d96b39f3e0df3208",
+  "scorer_sha256": "b85907eb84e25c38f9e2898b26bdd51b86a5e2ebbd1d3059fd6da7315e098d86",
+  "segments": [
+    {
+      "segment": "segment-00",
+      "manifest": {
+        "model": "gpt-6-astra",
+        "reasoning_effort": "low",
+        "requested_model": "gpt-6-astra",
+        "requested_reasoning_effort": "low",
+        "transport": "CodexCoach",
+        "limits": {
+          "max_calls": 450,
+          "max_actions": 750,
+          "seconds": 10800.0,
+          "call_seconds": 90.0
+        },
+        "seed": "PI4T2AH8",
+        "deck": "BLACK",
+        "stake": "GOLD",
+        "profile": "all_unlocked",
+        "endless": false,
+        "continuation_of": null,
+        "resume_adjusted": null,
+        "resume_diff": null
+      },
+      "result": {
+        "status": "error",
+        "won": false,
+        "reason": "BalatroBotRejected: Current round evaluation is not ready to cash out",
+        "decisions": 2,
+        "coach_requests": 2,
+        "coach_timeouts": 0,
+        "forced_actions": 0,
+        "followup_actions": 0,
+        "rpc_timeouts_recovered": 1,
+        "ante_reached": 1,
+        "peak_hand_score": 308,
+        "ante_8_cleared": false,
+        "seconds": 121.671
+      },
+      "event_counts": {
+        "rpc_attempt": 4,
+        "coach_request": 2,
+        "coach_response": 2,
+        "transition": 2,
+        "rpc_timeout": 1
+      }
+    },
+    {
+      "segment": "segment-01",
+      "manifest": {
+        "model": "gpt-6-astra",
+        "reasoning_effort": "low",
+        "requested_model": "gpt-6-astra",
+        "requested_reasoning_effort": "low",
+        "transport": "CodexCoach",
+        "limits": {
+          "max_calls": 450,
+          "max_actions": 750,
+          "seconds": 10800.0,
+          "call_seconds": 90.0
+        },
+        "seed": "PI4T2AH8",
+        "deck": "BLACK",
+        "stake": "GOLD",
+        "profile": "all_unlocked",
+        "endless": false,
+        "continuation_of": "runs/black-gold-reddit-20260909/segment-00",
+        "resume_adjusted": false,
+        "resume_diff": []
+      },
+      "event_counts": {
+        "continued": 1,
+        "rpc_attempt": 214,
+        "transition": 213,
+        "coach_request": 179,
+        "coach_response": 179
+      }
+    }
+  ],
+  "provided_policy_fingerprints": {
+    "policy-provenance.json": {
+      "policy_frozen_before_model_probes": false,
+      "native_games_authorized": 1,
+      "native_seed": "native random; no seed selection",
+      "files": {
+        "balatro_ai/__init__.py": "d72e6f24c73457805af9d8d959bc4e75c416ab6255c89304be2de7926d1df915",
+        "balatro_ai/__main__.py": "935a1c1166b0c1ea35a82256345000bf2c73ded718d77773bc27a71ecce28f7d",
+        "balatro_ai/analysis.py": "032c22dd957019ddeacd35b9ef7a365db9dbe883fcf76ad45849a875d8ba44b4",
+        "balatro_ai/cli.py": "41fc03fc3c17d06d2f921ec611e8f96fc80d7ea48e1ad87992f24102b69c5b15",
+        "balatro_ai/client.py": "b21bb0297993c1f3adfa35ca1bb22c922c5a255f75a4bd9f864c957e12f6b6b2",
+        "balatro_ai/coach.py": "f2902ed1570d5656e4c5fa1353a4dbcb91198ad60b80db549f19b5843f80fe18",
+        "balatro_ai/continuation.py": "f2d29c9952d28081a52cb0cd61fcaffb1bf4032be4aa6225613926ef104c3f12",
+        "balatro_ai/discard.py": "2e65106935c2873269a1c594e81d8efe7f812582b305757bf482bb768484d310",
+        "balatro_ai/game/__init__.py": "04bdacb4439e79413863d7d6b9dc8d71659a415a221d706af8762192dca83a50",
+        "balatro_ai/game/actions.py": "091f6cf8f648cf062216fb45e878b6cfa5d55abf0fb2657f69be08d63db5582b",
+        "balatro_ai/game/adapter.py": "7d4da01bfc1d35c67c325b869a2a18519af845ecd86be28cdc7c1ff6250fa0aa",
+        "balatro_ai/game/boss_rules.py": "42296f14cf9182bfdfec124fac7047893c49611875273d981e5e82eb8173706c",
+        "balatro_ai/game/codec.py": "a1b3a054596b9ad3b6e43091502c68addf9920e37594c1c8a95aaf3120c5e82a",
+        "balatro_ai/game/consumable_rules.py": "6b360a7730768e4d09027449190e7206cb6c3361c272a98538174be2cf91fbbc",
+        "balatro_ai/game/history.py": "630c64e499040698a0fc5c4356d005811ffb70549a9612646f6367699fea8a60",
+        "balatro_ai/game/mechanics.py": "a5d52dbc2c6ba7846d98b14d9d8fe570b74265ce74d0dd8ad3c6314520904961",
+        "balatro_ai/game/scoring.py": "b85907eb84e25c38f9e2898b26bdd51b86a5e2ebbd1d3059fd6da7315e098d86",
+        "balatro_ai/game/state.py": "f81a6c6db20f2e51ede983e55823ad3dffde968c25c77573bcfab8ae34aa112a",
+        "balatro_ai/packet.py": "a1951e8bfaa2a3d6b4f7f2daff3a8bd4926080801e36225ad7b7b46e6caf2ef0",
+        "balatro_ai/probe.py": "320b6334551449ab3e24946dce1b4560bf64d4657fb7438abb442f282d8d1381",
+        "balatro_ai/production.py": "4bca6fa66f927126b383966f0a7fef588e3183063c8fe63cb4abe69075ad24bf",
+        "balatro_ai/prompts/coach.md": "f9ea4320604fc8e5e0bdb6b104371a2f1d232afaff62a14c882ddc17a50e5100",
+        "balatro_ai/readiness.py": "f11201e7eecf0a87c946511dfee901581f547361dd7c6e002ad864ce90fae46d",
+        "balatro_ai/reordering.py": "8d5708bcc3ecb2994709b6084769edb8fd8e7fa2a2a2bd7ab5854e1d8a2be1a2",
+        "balatro_ai/runner.py": "4bb95cb8d1ecbbf22139fbeb3d109e6cfa10a2c3afd6fcfdb6a85fcacf0db0ef",
+        "balatro_ai/strategy.py": "9b62a42620b9d94b65fb939850edbf0038a31b2f096dcd1f64adc679c970195c",
+        "balatro_ai/supervise.py": "5d104fa8a4a8e32f9d965817c1c25076259a236555a38086b925c6c91a04a489",
+        "balatro_ai/survival.py": "5411a14d84cb2171acf5ac0739550e3966f16f6e8992805bafa331e04b436745",
+        "balatro_ai/watch.py": "eeb7988042b44717453aea28c7d1c8b6dffdd9160b54669a3943eee40d37067a",
+        "balatro_ai/knowledge/decisions.json": "8efaa3462f6d26f3d26ec8e15e4940dc1234440c4a17ea51e39500b54b7a638f"
+      },
+      "policy_frozen_before_full_run": true
+    }
+  },
+  "policy_provenance_verification": {
+    "counts": {
+      "match": 29,
+      "mismatch": 1
+    },
+    "all_provided_files_match": false,
+    "files": [
+      {
+        "file": "balatro_ai/__init__.py",
+        "expected_sha256": "d72e6f24c73457805af9d8d959bc4e75c416ab6255c89304be2de7926d1df915",
+        "current_sha256": "d72e6f24c73457805af9d8d959bc4e75c416ab6255c89304be2de7926d1df915",
+        "status": "match"
+      },
+      {
+        "file": "balatro_ai/__main__.py",
+        "expected_sha256": "935a1c1166b0c1ea35a82256345000bf2c73ded718d77773bc27a71ecce28f7d",
+        "current_sha256": "935a1c1166b0c1ea35a82256345000bf2c73ded718d77773bc27a71ecce28f7d",
+        "status": "match"
+      },
+      {
+        "file": "balatro_ai/analysis.py",
+        "expected_sha256": "032c22dd957019ddeacd35b9ef7a365db9dbe883fcf76ad45849a875d8ba44b4",
+        "current_sha256": "032c22dd957019ddeacd35b9ef7a365db9dbe883fcf76ad45849a875d8ba44b4",
+        "status": "match"
+      },
+      {
+        "file": "balatro_ai/cli.py",
+        "expected_sha256": "41fc03fc3c17d06d2f921ec611e8f96fc80d7ea48e1ad87992f24102b69c5b15",
+        "current_sha256": "41f304f3a6e5dc002647e2dbfdb220f996ee8612aa401a39f452b6abf4de92c3",
+        "status": "mismatch"
+      },
+      {
+        "file": "balatro_ai/client.py",
+        "expected_sha256": "b21bb0297993c1f3adfa35ca1bb22c922c5a255f75a4bd9f864c957e12f6b6b2",
+        "current_sha256": "b21bb0297993c1f3adfa35ca1bb22c922c5a255f75a4bd9f864c957e12f6b6b2",
+        "status": "match"
+      },
+      {
+        "file": "balatro_ai/coach.py",
+        "expected_sha256": "f2902ed1570d5656e4c5fa1353a4dbcb91198ad60b80db549f19b5843f80fe18",
+        "current_sha256": "f2902ed1570d5656e4c5fa1353a4dbcb91198ad60b80db549f19b5843f80fe18",
+        "status": "match"
+      },
+      {
+        "file": "balatro_ai/continuation.py",
+        "expected_sha256": "f2d29c9952d28081a52cb0cd61fcaffb1bf4032be4aa6225613926ef104c3f12",
+        "current_sha256": "f2d29c9952d28081a52cb0cd61fcaffb1bf4032be4aa6225613926ef104c3f12",
+        "status": "match"
+      },
+      {
+        "file": "balatro_ai/discard.py",
+        "expected_sha256": "2e65106935c2873269a1c594e81d8efe7f812582b305757bf482bb768484d310",
+        "current_sha256": "2e65106935c2873269a1c594e81d8efe7f812582b305757bf482bb768484d310",
+        "status": "match"
+      },
+      {
+        "file": "balatro_ai/game/__init__.py",
+        "expected_sha256": "04bdacb4439e79413863d7d6b9dc8d71659a415a221d706af8762192dca83a50",
+        "current_sha256": "04bdacb4439e79413863d7d6b9dc8d71659a415a221d706af8762192dca83a50",
+        "status": "match"
+      },
+      {
+        "file": "balatro_ai/game/actions.py",
+        "expected_sha256": "091f6cf8f648cf062216fb45e878b6cfa5d55abf0fb2657f69be08d63db5582b",
+        "current_sha256": "091f6cf8f648cf062216fb45e878b6cfa5d55abf0fb2657f69be08d63db5582b",
+        "status": "match"
+      },
+      {
+        "file": "balatro_ai/game/adapter.py",
+        "expected_sha256": "7d4da01bfc1d35c67c325b869a2a18519af845ecd86be28cdc7c1ff6250fa0aa",
+        "current_sha256": "7d4da01bfc1d35c67c325b869a2a18519af845ecd86be28cdc7c1ff6250fa0aa",
+        "status": "match"
+      },
+      {
+        "file": "balatro_ai/game/boss_rules.py",
+        "expected_sha256": "42296f14cf9182bfdfec124fac7047893c49611875273d981e5e82eb8173706c",
+        "current_sha256": "42296f14cf9182bfdfec124fac7047893c49611875273d981e5e82eb8173706c",
+        "status": "match"
+      },
+      {
+        "file": "balatro_ai/game/codec.py",
+        "expected_sha256": "a1b3a054596b9ad3b6e43091502c68addf9920e37594c1c8a95aaf3120c5e82a",
+        "current_sha256": "a1b3a054596b9ad3b6e43091502c68addf9920e37594c1c8a95aaf3120c5e82a",
+        "status": "match"
+      },
+      {
+        "file": "balatro_ai/game/consumable_rules.py",
+        "expected_sha256": "6b360a7730768e4d09027449190e7206cb6c3361c272a98538174be2cf91fbbc",
+        "current_sha256": "6b360a7730768e4d09027449190e7206cb6c3361c272a98538174be2cf91fbbc",
+        "status": "match"
+      },
+      {
+        "file": "balatro_ai/game/history.py",
+        "expected_sha256": "630c64e499040698a0fc5c4356d005811ffb70549a9612646f6367699fea8a60",
+        "current_sha256": "630c64e499040698a0fc5c4356d005811ffb70549a9612646f6367699fea8a60",
+        "status": "match"
+      },
+      {
+        "file": "balatro_ai/game/mechanics.py",
+        "expected_sha256": "a5d52dbc2c6ba7846d98b14d9d8fe570b74265ce74d0dd8ad3c6314520904961",
+        "current_sha256": "a5d52dbc2c6ba7846d98b14d9d8fe570b74265ce74d0dd8ad3c6314520904961",
+        "status": "match"
+      },
+      {
+        "file": "balatro_ai/game/scoring.py",
+        "expected_sha256": "b85907eb84e25c38f9e2898b26bdd51b86a5e2ebbd1d3059fd6da7315e098d86",
+        "current_sha256": "b85907eb84e25c38f9e2898b26bdd51b86a5e2ebbd1d3059fd6da7315e098d86",
+        "status": "match"
+      },
+      {
+        "file": "balatro_ai/game/state.py",
+        "expected_sha256": "f81a6c6db20f2e51ede983e55823ad3dffde968c25c77573bcfab8ae34aa112a",
+        "current_sha256": "f81a6c6db20f2e51ede983e55823ad3dffde968c25c77573bcfab8ae34aa112a",
+        "status": "match"
+      },
+      {
+        "file": "balatro_ai/packet.py",
+        "expected_sha256": "a1951e8bfaa2a3d6b4f7f2daff3a8bd4926080801e36225ad7b7b46e6caf2ef0",
+        "current_sha256": "a1951e8bfaa2a3d6b4f7f2daff3a8bd4926080801e36225ad7b7b46e6caf2ef0",
+        "status": "match"
+      },
+      {
+        "file": "balatro_ai/probe.py",
+        "expected_sha256": "320b6334551449ab3e24946dce1b4560bf64d4657fb7438abb442f282d8d1381",
+        "current_sha256": "320b6334551449ab3e24946dce1b4560bf64d4657fb7438abb442f282d8d1381",
+        "status": "match"
+      },
+      {
+        "file": "balatro_ai/production.py",
+        "expected_sha256": "4bca6fa66f927126b383966f0a7fef588e3183063c8fe63cb4abe69075ad24bf",
+        "current_sha256": "4bca6fa66f927126b383966f0a7fef588e3183063c8fe63cb4abe69075ad24bf",
+        "status": "match"
+      },
+      {
+        "file": "balatro_ai/prompts/coach.md",
+        "expected_sha256": "f9ea4320604fc8e5e0bdb6b104371a2f1d232afaff62a14c882ddc17a50e5100",
+        "current_sha256": "f9ea4320604fc8e5e0bdb6b104371a2f1d232afaff62a14c882ddc17a50e5100",
+        "status": "match"
+      },
+      {
+        "file": "balatro_ai/readiness.py",
+        "expected_sha256": "f11201e7eecf0a87c946511dfee901581f547361dd7c6e002ad864ce90fae46d",
+        "current_sha256": "f11201e7eecf0a87c946511dfee901581f547361dd7c6e002ad864ce90fae46d",
+        "status": "match"
+      },
+      {
+        "file": "balatro_ai/reordering.py",
+        "expected_sha256": "8d5708bcc3ecb2994709b6084769edb8fd8e7fa2a2a2bd7ab5854e1d8a2be1a2",
+        "current_sha256": "8d5708bcc3ecb2994709b6084769edb8fd8e7fa2a2a2bd7ab5854e1d8a2be1a2",
+        "status": "match"
+      },
+      {
+        "file": "balatro_ai/runner.py",
+        "expected_sha256": "4bb95cb8d1ecbbf22139fbeb3d109e6cfa10a2c3afd6fcfdb6a85fcacf0db0ef",
+        "current_sha256": "4bb95cb8d1ecbbf22139fbeb3d109e6cfa10a2c3afd6fcfdb6a85fcacf0db0ef",
+        "status": "match"
+      },
+      {
+        "file": "balatro_ai/strategy.py",
+        "expected_sha256": "9b62a42620b9d94b65fb939850edbf0038a31b2f096dcd1f64adc679c970195c",
+        "current_sha256": "9b62a42620b9d94b65fb939850edbf0038a31b2f096dcd1f64adc679c970195c",
+        "status": "match"
+      },
+      {
+        "file": "balatro_ai/supervise.py",
+        "expected_sha256": "5d104fa8a4a8e32f9d965817c1c25076259a236555a38086b925c6c91a04a489",
+        "current_sha256": "5d104fa8a4a8e32f9d965817c1c25076259a236555a38086b925c6c91a04a489",
+        "status": "match"
+      },
+      {
+        "file": "balatro_ai/survival.py",
+        "expected_sha256": "5411a14d84cb2171acf5ac0739550e3966f16f6e8992805bafa331e04b436745",
+        "current_sha256": "5411a14d84cb2171acf5ac0739550e3966f16f6e8992805bafa331e04b436745",
+        "status": "match"
+      },
+      {
+        "file": "balatro_ai/watch.py",
+        "expected_sha256": "eeb7988042b44717453aea28c7d1c8b6dffdd9160b54669a3943eee40d37067a",
+        "current_sha256": "eeb7988042b44717453aea28c7d1c8b6dffdd9160b54669a3943eee40d37067a",
+        "status": "match"
+      },
+      {
+        "file": "balatro_ai/knowledge/decisions.json",
+        "expected_sha256": "8efaa3462f6d26f3d26ec8e15e4940dc1234440c4a17ea51e39500b54b7a638f",
+        "current_sha256": "8efaa3462f6d26f3d26ec8e15e4940dc1234440c4a17ea51e39500b54b7a638f",
+        "status": "match"
+      }
+    ],
+    "note": "Current files are compared with recorded frozen hashes; this does not independently prove which bytes a previous process loaded."
+  },
+  "event_counts": {
+    "rpc_attempt": 218,
+    "coach_request": 181,
+    "coach_response": 181,
+    "transition": 215,
+    "rpc_timeout": 1,
+    "continued": 1
+  },
+  "legality": {
+    "attempted": {
+      "legal": 217
+    },
+    "executed": {
+      "legal": 215
+    }
+  },
+  "action_types": {
+    "attempted": {
+      "select_blind": 21,
+      "play_cards": 35,
+      "cash_out": 21,
+      "buy_pack": 22,
+      "choose_pack_card": 20,
+      "leave_shop": 20,
+      "discard_cards": 20,
+      "buy_shop_card": 9,
+      "reorder_jokers": 17,
+      "skip_pack": 3,
+      "reroll_shop": 20,
+      "use_consumable": 5,
+      "sell_joker": 3,
+      "buy_voucher": 1
+    },
+    "executed": {
+      "select_blind": 20,
+      "play_cards": 35,
+      "cash_out": 20,
+      "buy_pack": 22,
+      "choose_pack_card": 20,
+      "leave_shop": 20,
+      "discard_cards": 20,
+      "buy_shop_card": 9,
+      "reorder_jokers": 17,
+      "skip_pack": 3,
+      "reroll_shop": 20,
+      "use_consumable": 5,
+      "sell_joker": 3,
+      "buy_voucher": 1
+    }
+  },
+  "setup_rpc_attempts": {
+    "start": 1
+  },
+  "score_parity": {
+    "counts": {
+      "match": 32,
+      "mismatch": 3
+    },
+    "plays": [
+      {
+        "segment": "segment-00",
+        "line": 10,
+        "action": {
+          "type": "play_cards",
+          "cards": [
+            0,
+            1,
+            2,
+            3,
+            4
+          ]
+        },
+        "ante": 1,
+        "round": 1,
+        "legal": true,
+        "actual_score": 308,
+        "estimated_score": 308,
+        "family": "Straight",
+        "status": "match",
+        "difference": 0
+      },
+      {
+        "segment": "segment-01",
+        "line": 27,
+        "action": {
+          "type": "play_cards",
+          "cards": [
+            1,
+            2,
+            4,
+            6,
+            7
+          ]
+        },
+        "ante": 1,
+        "round": 2,
+        "legal": true,
+        "actual_score": 288,
+        "estimated_score": 288,
+        "family": "Flush",
+        "status": "match",
+        "difference": 0
+      },
+      {
+        "segment": "segment-01",
+        "line": 35,
+        "action": {
+          "type": "play_cards",
+          "cards": [
+            0,
+            1,
+            2,
+            4,
+            5
+          ]
+        },
+        "ante": 1,
+        "round": 2,
+        "legal": true,
+        "actual_score": 108,
+        "estimated_score": 108,
+        "family": "Two Pair",
+        "status": "match",
+        "difference": 0
+      },
+      {
+        "segment": "segment-01",
+        "line": 39,
+        "action": {
+          "type": "play_cards",
+          "cards": [
+            0,
+            1,
+            3,
+            4
+          ]
+        },
+        "ante": 1,
+        "round": 2,
+        "legal": true,
+        "actual_score": 96,
+        "estimated_score": 96,
+        "family": "Two Pair",
+        "status": "match",
+        "difference": 0
+      },
+      {
+        "segment": "segment-01",
+        "line": 53,
+        "action": {
+          "type": "play_cards",
+          "cards": [
+            0,
+            1,
+            2,
+            3,
+            4
+          ]
+        },
+        "ante": 1,
+        "round": 3,
+        "legal": true,
+        "actual_score": 284,
+        "estimated_score": 284,
+        "family": "Straight",
+        "status": "match",
+        "difference": 0
+      },
+      {
+        "segment": "segment-01",
+        "line": 61,
+        "action": {
+          "type": "play_cards",
+          "cards": [
+            2,
+            3,
+            5,
+            6,
+            7
+          ]
+        },
+        "ante": 1,
+        "round": 3,
+        "legal": true,
+        "actual_score": 260,
+        "estimated_score": 260,
+        "family": "Straight",
+        "status": "match",
+        "difference": 0
+      },
+      {
+        "segment": "segment-01",
+        "line": 69,
+        "action": {
+          "type": "play_cards",
+          "cards": [
+            0,
+            1,
+            2,
+            5,
+            6
+          ]
+        },
+        "ante": 1,
+        "round": 3,
+        "legal": true,
+        "actual_score": 564,
+        "estimated_score": 564,
+        "family": "Flush",
+        "status": "match",
+        "difference": 0
+      },
+      {
+        "segment": "segment-01",
+        "line": 87,
+        "action": {
+          "type": "play_cards",
+          "cards": [
+            0,
+            1,
+            5,
+            6,
+            7
+          ]
+        },
+        "ante": 2,
+        "round": 4,
+        "legal": true,
+        "actual_score": 2520,
+        "estimated_score": 2520,
+        "family": "Flush",
+        "status": "match",
+        "difference": 0
+      },
+      {
+        "segment": "segment-01",
+        "line": 121,
+        "action": {
+          "type": "play_cards",
+          "cards": [
+            0,
+            1,
+            2,
+            4,
+            6
+          ]
+        },
+        "ante": 2,
+        "round": 5,
+        "legal": true,
+        "actual_score": 5600,
+        "estimated_score": 5600,
+        "family": "Flush",
+        "status": "match",
+        "difference": 0
+      },
+      {
+        "segment": "segment-01",
+        "line": 133,
+        "action": {
+          "type": "play_cards",
+          "cards": [
+            0,
+            4,
+            5,
+            6,
+            7
+          ]
+        },
+        "ante": 2,
+        "round": 6,
+        "legal": true,
+        "actual_score": 912,
+        "estimated_score": 912,
+        "family": "Pair",
+        "status": "match",
+        "difference": 0
+      },
+      {
+        "segment": "segment-01",
+        "line": 137,
+        "action": {
+          "type": "play_cards",
+          "cards": [
+            0,
+            1
+          ]
+        },
+        "ante": 2,
+        "round": 6,
+        "legal": true,
+        "actual_score": 1280,
+        "estimated_score": 1280,
+        "family": "Pair",
+        "status": "match",
+        "difference": 0
+      },
+      {
+        "segment": "segment-01",
+        "line": 155,
+        "action": {
+          "type": "play_cards",
+          "cards": [
+            0,
+            3,
+            4,
+            5,
+            6
+          ]
+        },
+        "ante": 3,
+        "round": 7,
+        "legal": true,
+        "actual_score": 6600,
+        "estimated_score": 6600,
+        "family": "Flush",
+        "status": "match",
+        "difference": 0
+      },
+      {
+        "segment": "segment-01",
+        "line": 181,
+        "action": {
+          "type": "play_cards",
+          "cards": [
+            0,
+            2,
+            3,
+            4,
+            5
+          ]
+        },
+        "ante": 3,
+        "round": 8,
+        "legal": true,
+        "actual_score": 6432,
+        "estimated_score": 6432,
+        "family": "Flush",
+        "status": "match",
+        "difference": 0
+      },
+      {
+        "segment": "segment-01",
+        "line": 205,
+        "action": {
+          "type": "play_cards",
+          "cards": [
+            0,
+            1,
+            2,
+            3,
+            4
+          ]
+        },
+        "ante": 3,
+        "round": 9,
+        "legal": true,
+        "actual_score": 7980,
+        "estimated_score": 7980,
+        "family": "Full House",
+        "status": "match",
+        "difference": 0
+      },
+      {
+        "segment": "segment-01",
+        "line": 231,
+        "action": {
+          "type": "play_cards",
+          "cards": [
+            3,
+            4,
+            5,
+            6,
+            7
+          ]
+        },
+        "ante": 4,
+        "round": 10,
+        "legal": true,
+        "actual_score": 7704,
+        "estimated_score": 7704,
+        "family": "Full House",
+        "status": "match",
+        "difference": 0
+      },
+      {
+        "segment": "segment-01",
+        "line": 235,
+        "action": {
+          "type": "play_cards",
+          "cards": [
+            1,
+            2,
+            4,
+            5,
+            6
+          ]
+        },
+        "ante": 4,
+        "round": 10,
+        "legal": true,
+        "actual_score": 9360,
+        "estimated_score": 9360,
+        "family": "Straight",
+        "status": "match",
+        "difference": 0
+      },
+      {
+        "segment": "segment-01",
+        "line": 261,
+        "action": {
+          "type": "play_cards",
+          "cards": [
+            0,
+            1,
+            4,
+            5,
+            7
+          ]
+        },
+        "ante": 4,
+        "round": 11,
+        "legal": true,
+        "actual_score": 11988,
+        "estimated_score": 11988,
+        "family": "Flush",
+        "status": "match",
+        "difference": 0
+      },
+      {
+        "segment": "segment-01",
+        "line": 269,
+        "action": {
+          "type": "play_cards",
+          "cards": [
+            2,
+            3,
+            4,
+            5,
+            6
+          ]
+        },
+        "ante": 4,
+        "round": 11,
+        "legal": true,
+        "actual_score": 7128,
+        "estimated_score": 7128,
+        "family": "Full House",
+        "status": "match",
+        "difference": 0
+      },
+      {
+        "segment": "segment-01",
+        "line": 293,
+        "action": {
+          "type": "play_cards",
+          "cards": [
+            1,
+            2,
+            4,
+            5,
+            7
+          ]
+        },
+        "ante": 4,
+        "round": 12,
+        "legal": true,
+        "actual_score": 14196,
+        "estimated_score": 14196,
+        "family": "Flush",
+        "status": "match",
+        "difference": 0
+      },
+      {
+        "segment": "segment-01",
+        "line": 301,
+        "action": {
+          "type": "play_cards",
+          "cards": [
+            0,
+            1
+          ]
+        },
+        "ante": 4,
+        "round": 12,
+        "legal": true,
+        "actual_score": 4756,
+        "estimated_score": 4756,
+        "family": "Pair",
+        "status": "match",
+        "difference": 0
+      },
+      {
+        "segment": "segment-01",
+        "line": 339,
+        "action": {
+          "type": "play_cards",
+          "cards": [
+            0,
+            1,
+            2,
+            4,
+            5
+          ]
+        },
+        "ante": 5,
+        "round": 13,
+        "legal": true,
+        "actual_score": 29040,
+        "estimated_score": 29040,
+        "family": "Full House",
+        "status": "match",
+        "difference": 0
+      },
+      {
+        "segment": "segment-01",
+        "line": 401,
+        "action": {
+          "type": "play_cards",
+          "cards": [
+            0,
+            1,
+            3,
+            5,
+            7
+          ]
+        },
+        "ante": 5,
+        "round": 14,
+        "legal": true,
+        "actual_score": 29722,
+        "estimated_score": 29722,
+        "family": "Flush",
+        "status": "match",
+        "difference": 0
+      },
+      {
+        "segment": "segment-01",
+        "line": 409,
+        "action": {
+          "type": "play_cards",
+          "cards": [
+            0,
+            1,
+            2,
+            3,
+            4
+          ]
+        },
+        "ante": 5,
+        "round": 14,
+        "legal": true,
+        "actual_score": 31980,
+        "estimated_score": 31980,
+        "family": "Flush",
+        "status": "match",
+        "difference": 0
+      },
+      {
+        "segment": "segment-01",
+        "line": 473,
+        "action": {
+          "type": "play_cards",
+          "cards": [
+            0,
+            1,
+            2,
+            3,
+            4
+          ]
+        },
+        "ante": 5,
+        "round": 15,
+        "legal": true,
+        "actual_score": 38936,
+        "estimated_score": 38936,
+        "family": "Straight",
+        "status": "match",
+        "difference": 0
+      },
+      {
+        "segment": "segment-01",
+        "line": 477,
+        "action": {
+          "type": "play_cards",
+          "cards": [
+            0,
+            4,
+            5,
+            6,
+            7
+          ]
+        },
+        "ante": 5,
+        "round": 15,
+        "legal": true,
+        "actual_score": 40920,
+        "estimated_score": 40920,
+        "family": "Two Pair",
+        "status": "match",
+        "difference": 0
+      },
+      {
+        "segment": "segment-01",
+        "line": 543,
+        "action": {
+          "type": "play_cards",
+          "cards": [
+            0,
+            1,
+            2,
+            3,
+            5
+          ]
+        },
+        "ante": 6,
+        "round": 16,
+        "legal": true,
+        "actual_score": 91124,
+        "estimated_score": 91124,
+        "family": "Flush",
+        "status": "match",
+        "difference": 0
+      },
+      {
+        "segment": "segment-01",
+        "line": 609,
+        "action": {
+          "type": "play_cards",
+          "cards": [
+            0,
+            1,
+            3,
+            4,
+            6
+          ]
+        },
+        "ante": 6,
+        "round": 17,
+        "legal": true,
+        "actual_score": 61906,
+        "estimated_score": 61906,
+        "family": "Flush",
+        "status": "match",
+        "difference": 0
+      },
+      {
+        "segment": "segment-01",
+        "line": 617,
+        "action": {
+          "type": "play_cards",
+          "cards": [
+            1,
+            2,
+            4,
+            5
+          ]
+        },
+        "ante": 6,
+        "round": 17,
+        "legal": true,
+        "actual_score": 32179,
+        "estimated_score": 32179,
+        "family": "Two Pair",
+        "status": "match",
+        "difference": 0
+      },
+      {
+        "segment": "segment-01",
+        "line": 649,
+        "action": {
+          "type": "play_cards",
+          "cards": [
+            0,
+            1,
+            3,
+            5,
+            7
+          ]
+        },
+        "ante": 6,
+        "round": 18,
+        "legal": true,
+        "actual_score": 105831,
+        "estimated_score": 105831,
+        "family": "Flush",
+        "status": "match",
+        "difference": 0
+      },
+      {
+        "segment": "segment-01",
+        "line": 653,
+        "action": {
+          "type": "play_cards",
+          "cards": [
+            1,
+            2,
+            3,
+            4
+          ]
+        },
+        "ante": 6,
+        "round": 18,
+        "legal": true,
+        "actual_score": 45318,
+        "estimated_score": 45318,
+        "family": "Two Pair",
+        "status": "match",
+        "difference": 0
+      },
+      {
+        "segment": "segment-01",
+        "line": 711,
+        "action": {
+          "type": "play_cards",
+          "cards": [
+            0,
+            1,
+            2,
+            4,
+            5
+          ]
+        },
+        "ante": 7,
+        "round": 19,
+        "legal": true,
+        "actual_score": 104182,
+        "estimated_score": 104182,
+        "family": "Flush",
+        "status": "match",
+        "difference": 0
+      },
+      {
+        "segment": "segment-01",
+        "line": 715,
+        "action": {
+          "type": "play_cards",
+          "cards": [
+            0,
+            1,
+            2,
+            3,
+            5
+          ]
+        },
+        "ante": 7,
+        "round": 19,
+        "legal": true,
+        "actual_score": 102440,
+        "estimated_score": 102440,
+        "family": "Flush",
+        "status": "match",
+        "difference": 0
+      },
+      {
+        "segment": "segment-01",
+        "line": 755,
+        "action": {
+          "type": "play_cards",
+          "cards": [
+            0,
+            1,
+            2,
+            3,
+            4
+          ]
+        },
+        "ante": 7,
+        "round": 20,
+        "legal": true,
+        "actual_score": 124253,
+        "estimated_score": 124254,
+        "family": "Flush",
+        "status": "mismatch",
+        "difference": -1
+      },
+      {
+        "segment": "segment-01",
+        "line": 759,
+        "action": {
+          "type": "play_cards",
+          "cards": [
+            1,
+            2,
+            3,
+            4,
+            5
+          ]
+        },
+        "ante": 7,
+        "round": 20,
+        "legal": true,
+        "actual_score": 19115,
+        "estimated_score": 19116,
+        "family": "Pair",
+        "status": "mismatch",
+        "difference": -1
+      },
+      {
+        "segment": "segment-01",
+        "line": 763,
+        "action": {
+          "type": "play_cards",
+          "cards": [
+            5,
+            6,
+            7
+          ]
+        },
+        "ante": 7,
+        "round": 20,
+        "legal": true,
+        "actual_score": 22832,
+        "estimated_score": 22833,
+        "family": "Three of a Kind",
+        "status": "mismatch",
+        "difference": -1
+      }
+    ]
+  },
+  "max_ante": 7,
+  "max_antes_cleared": 6,
+  "settings": [
+    {
+      "deck": "BLACK",
+      "stake": "GOLD"
+    }
+  ],
+  "latest_public_state": {
+    "phase": "BLIND_SELECT",
+    "ante": 7,
+    "round": 20,
+    "chips": 0,
+    "hands_left": 4,
+    "won": false,
+    "terminal": false
+  },
+  "latest_cumulative_result": {
+    "status": "error",
+    "won": false,
+    "reason": "BalatroBotRejected: Current round evaluation is not ready to cash out",
+    "decisions": 2,
+    "coach_requests": 2,
+    "coach_timeouts": 0,
+    "forced_actions": 0,
+    "followup_actions": 0,
+    "rpc_timeouts_recovered": 1,
+    "ante_reached": 1,
+    "peak_hand_score": 308,
+    "ante_8_cleared": false,
+    "seconds": 121.671
+  },
+  "observed_coach_response_seconds": 1714.8309999999997,
+  "issues": [
+    {
+      "segment": "segment-00",
+      "line": 9,
+      "event": "rpc_timeout",
+      "method": "play",
+      "recovery": "reply timed out; the live state shows the action landed"
+    }
+  ],
+  "notes": [
+    "Event and legality counts are observed segment-local totals. Latest resumed result counters are cumulative and are never summed.",
+    "Only each executed PlayCards transition's own before/after score delta is compared; requests and attempts do not supply substitute score endpoints.",
+    "Unsupported, stochastic, missing-history and malformed states remain visible. Matches establish observed scorer parity, not optimal decisions or general engine correctness.",
+    "Reports may cover partial live logs; result presence is not inferred from log length. No game or model calls are made."
+  ]
+}

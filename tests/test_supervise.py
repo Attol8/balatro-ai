@@ -208,3 +208,75 @@ def test_the_default_save_file_is_the_platform_autosave():
     save = default_save_file(home="/home/player")
     assert save.name == "save.jkr" and save.parent.name == "1"
     assert "Balatro" in str(save)
+
+
+def test_supervisor_inherits_settings_after_restart(tmp_path, monkeypatch):
+    root = tmp_path / "game"
+    segment = root / "segment-00"
+    segment.mkdir(parents=True)
+    (segment / "manifest.json").write_text(json.dumps(dict(deck="BLACK", stake="GOLD")))
+    (segment / "trajectory.jsonl").write_text('{"event":"transition"}\n')
+    runner = FakeRunner([WON])
+    captured = {}
+
+    def factory(**kwargs):
+        captured.update(kwargs)
+        return runner
+
+    monkeypatch.setattr("balatro_ai.supervise.default_runner", factory)
+    summary = supervise(
+        root,
+        client_factory=lambda: FakeClient(),
+        sleep=lambda _: None,
+        save_file=tmp_path / "missing",
+        log=lambda _: None,
+    )
+    assert summary["status"] == "won"
+    assert (captured["deck"], captured["stake"]) == ("BLACK", "GOLD")
+    state = json.loads((root / "supervisor.json").read_text())
+    assert (state["deck"], state["stake"]) == ("BLACK", "GOLD")
+    assert runner.calls == [("segment-01", "segment-00")]
+
+
+def test_supervisor_rejects_changing_saved_settings(tmp_path):
+    import pytest
+
+    root = tmp_path / "game"
+    segment = root / "segment-00"
+    segment.mkdir(parents=True)
+    (segment / "manifest.json").write_text(json.dumps(dict(deck="BLACK", stake="GOLD")))
+    (segment / "trajectory.jsonl").write_text('{"event":"transition"}\n')
+    with pytest.raises(ValueError, match="cannot change stake"):
+        supervise(root, stake="WHITE")
+    assert not (root / "supervisor.json").exists()
+
+
+def test_default_runner_keeps_settings_across_segments(tmp_path, monkeypatch):
+    from balatro_ai.runner import Limits
+    from balatro_ai.supervise import default_runner
+    from tests.test_cli import _paused_game, _resume_dir
+
+    game, observation = _paused_game(monkeypatch)
+    game.raw.update(deck="BLACK", stake="GOLD")
+    previous = _resume_dir(tmp_path, observation, game.raw["seed"])
+    (previous / "manifest.json").write_text(
+        json.dumps(dict(seed=game.raw["seed"], deck="BLACK", stake="GOLD"))
+    )
+    captured = []
+
+    def run_game(*args, **kwargs):
+        captured.append(kwargs)
+        return WON
+
+    monkeypatch.setattr("balatro_ai.supervise.BalatroBotClient", lambda port: game)
+    monkeypatch.setattr("balatro_ai.supervise.run_game", run_game)
+    runner = default_runner(
+        port=12346, seed=None, endless=False, limits=Limits(), deck="BLACK", stake="GOLD"
+    )
+    runner(tmp_path / "first", None)
+    runner(tmp_path / "second", previous)
+    assert [(call["deck"], call["stake"]) for call in captured] == [("BLACK", "GOLD")] * 2
+    assert captured[0]["continuation"] is None
+    assert captured[1]["continuation"].deck == "BLACK"
+    assert captured[1]["seed"] == game.raw["seed"]
+    assert "start" not in game.calls

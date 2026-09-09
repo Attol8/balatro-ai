@@ -1,0 +1,21 @@
+{
+  "model": "gpt-6-astra",
+  "reasoning_effort": "low",
+  "requested_model": "gpt-6-astra",
+  "requested_reasoning_effort": "low",
+  "transport": "CodexCoach",
+  "limits": {
+    "max_calls": 200,
+    "max_actions": 380,
+    "seconds": 3600.0,
+    "call_seconds": 90.0
+  },
+  "seed": "MSVP7ABY",
+  "deck": "BLACK",
+  "stake": "GOLD",
+  "profile": "all_unlocked",
+  "endless": false,
+  "continuation_of": "runs/black-gold-readiness-20260909/segment-00",
+  "resume_adjusted": false,
+  "resume_diff": []
+}

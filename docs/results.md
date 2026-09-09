@@ -1,13 +1,18 @@
 # Results
 
-All numbers here are read from files under `evidence/` by `python -m benchmarks`,
+The Red/White benchmark numbers below are read from files under `evidence/` by `python -m benchmarks`,
 which writes the machine-generated tables to
 [`benchmarks/results/results.md`](../benchmarks/results/results.md) and
 [`results.json`](../benchmarks/results/results.json). CI rebuilds them and fails if
 they change. This page explains what they show. Method and disclosure rules are in
 [methodology.md](methodology.md).
 
-Setting throughout: real Balatro through BalatroBot, Red Deck, White Stake,
+Two additional **Black Deck / Gold Stake wins**, with full archived traces and
+fair-play disclosures, are reported in [Black/Gold results](black-gold-results.md).
+They use a different difficulty and policy and are not pooled into the generated
+Red/White tables or figures.
+
+Setting for the tables below: real Balatro through BalatroBot, Red Deck, White Stake,
 all-unlocked profile, complete games from Ante 1. A win is clearing the Ante 8 boss.
 
 ## Headline
