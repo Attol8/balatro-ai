@@ -1,251 +1,108 @@
 # Balatro AI
 
-GPT-6 Astra has beaten **Black Deck on Gold Stake on two fresh random seeds**.
-[Results and fair-play disclosures](docs/black-gold-results.md).
+An AI agent that plays real Balatro using GPT-6 Astra and public-information
+numerical tools. It chooses hands, discards, purchases and Joker arrangements,
+then executes legal actions through [BalatroBot](https://github.com/coder/balatrobot).
 
-How: GPT-6 Astra, at low reasoning effort, makes every strategic decision from public
-information only. Python does what a strong player's arithmetic does, enumerating
-legal moves, scoring hands exactly, validating each reply and executing it through
-the [BalatroBot](https://github.com/coder/balatrobot) mod. No training, no
-simulator, no fallback policy, no hidden information.
+The bot has beaten **Black Deck on Gold Stake on two fresh random seeds** and
+reached **Ante 13** in an earlier Red Deck / White Stake run.
+[Results and limitations](#results) are documented below.
 
-## Watch it play
+## What it does
 
-To capture future games without a window on your desktop, use the
-[private Docker recording workflow](docs/virtual-recording.md). It also generates
-a video review page with timestamped bot actions, explanations and numerical advice,
-plus an uploadable MP4 with explanations beside the cursor-free gameplay.
+- Plays a complete game, with optional continuation into endless mode.
+- Evaluates legal hands, discard options, scoring combinations and upcoming blinds.
+- Uses public game information: the model receives no seed, future shop contents
+  or hidden draw order.
+- Supports headless play, bounded runs, checked resumes and a live status dashboard.
+- Saves decisions and outcomes so each run can be inspected afterwards.
 
-![Time-lapse of a recorded game beside the live dashboard](evidence/astra-low-QD3F4XVW/recording-timelapse.gif)
+The model makes strategic decisions; Python supplies calculations, validates
+responses and sends actions to the game. Scoring is exact for supported deterministic
+situations; random or hidden effects can limit the advice available.
+[How it works](docs/architecture.md).
 
-One full game in twenty seconds: the real game on the left, the live `balatro watch`
-dashboard on the right. Seed QD3F4XVW, played end to end by `balatro supervise`
-with no human input: Ante 8 cleared against Cerulean Bell, Ante 11 reached in
-endless mode with a 7,052,918 hand, and not one illegal reply in 388 model calls.
-Full length: [`recording-timelapse.mp4`](evidence/astra-low-QD3F4XVW/recording-timelapse.mp4);
-last frame: [`final-frame.jpg`](evidence/astra-low-QD3F4XVW/final-frame.jpg). On the
-baseline seed D0000000, where every heuristic in the panel played the same cards, the
-best of them reached Ante 6 with a 14,700 peak; the model reached Ante 10 with
-1,840,907 ([`evidence/astra-low-D0000000`](evidence/astra-low-D0000000)).
+## Quick start
 
-![Ante reached per game by policy](benchmarks/results/figures/ante-reached-by-policy.svg)
-
-## Earlier Red Deck / White Stake results
-
-The separate Red Deck / White Stake results comprise four earlier-policy games
-and one round-production-advice game on the real client:
-five Ante 8 clears, four carried on into endless mode past Ante 10 and one to
-Ante 13 with a single hand of
-**134,231,931,235 chips**. No other public agent reports a run like it: the best
-model on the [BalatroBench](https://gigazine.net/gsc_news/en/20260213-balatrobench/)
-leaderboard clears Ante 8 in 9 of 15 runs, and the ten heuristic and search
-policies in this repository's own baseline panel won at most 3 games in 20.
-
-| System | Games | Ante 8 cleared | Notes |
-|---|---|---|---|
-| Astra low + tools, round-production advice | 1 | 1 | Fresh seed XV2MP8L5, policy `9395d7a`. Lost to The Arm at Ante 12, peak 326,543,967. 515 decisions from 421 calls, zero rejected replies or restarts. [Evidence](evidence/astra-round-production-XV2MP8L5/README.md). |
-| Astra low + tools, headless | 1 | 1 | Seed TAF7DNTX. Won, then reached Ante 13 in endless with a 134,231,931,235 hand. 456 decisions from 404 model calls; the runner was restarted four times at safe moments to deploy fixes, never inside a blind. |
-| Astra low + tools, supervised | 1 | 1 | Seed QD3F4XVW. Won, then reached Ante 11 in endless with a 7,052,918 hand. 473 decisions from 388 model calls, zero rejected replies, one automatic restart; recorded end to end. |
-| Astra low + tools, on a panel seed | 1 | 1 | Seed D0000000. Won, then reached Ante 10 in endless with a 1,840,907 hand. 315 decisions from 265 model calls, zero rejected replies. Every heuristic baseline played this seed; the best reached Ante 6. |
-| Astra low + tools | 1 | 1 | Seed 2K9H9HN. Won, then reached Ante 11 in endless with a 1,239,454 hand. Supervised run with adapter fixes between segments. |
-| Terra low + tools, supervised | 2 | 0 | Seed QD3F4XVW, `gpt-5.6-terra` at low effort, same tools and prompts as the astra game on this seed. Both games lost at the Ante 2 boss The Mouth: the clean game with 356 of 1,600 after 30 model calls, the first attempt with 496 of 1,600 after a runner fault cost it a joker pack. Per-call latency matched astra. |
-| search-v6 (best heuristic) | 20 | 3 | Bounded public-information search, the strongest of ten non-model policies. |
-| Ten heuristic and search policies | 200 | 0 to 3 each | Same game, same settings, seeds D0000000 to D0000019. |
-
-The astra results comprise four historical single games and one fresh-seed game
-with the new round-production advice, labelled separately. Four seeds are outside
-the baseline panel and one is on a panel seed. This is not a matched policy
-comparison. They show the system can beat the game and keep scaling
-in endless mode; they do not estimate a win rate, and the unattended win rate is
-unmeasured. The two terra games are the only other model tried so far: one seed,
-one effort level, both lost at Ante 2, so they rank nothing. Full tables, figures and every caveat: [docs/results.md](docs/results.md).
-How the numbers are produced and what is disclosed: [docs/methodology.md](docs/methodology.md).
-
-![Chips scored against the blind requirement](benchmarks/results/figures/score-vs-requirement.svg)
-
-## Black Deck / Gold Stake — two verified wins
-
-| Seed | Final boss score / requirement | Peak hand | Executed actions | Model requests | Evidence |
-|---|---|---|---|---|---|
-| MSVP7ABY | 435,408 / 400,000 | 247,230 | 264 | 220 | [Headless win](evidence/astra-black-gold-MSVP7ABY/README.md) |
-| PI4T2AH8 | 420,305 / 400,000 | 227,383 | 270 | 227 | [Recorded win](evidence/astra-black-gold-PI4T2AH8/README.md) |
-
-**Both cleared Ante 8 with one hand remaining.** No seed was supplied for either
-attempt. The first win was headless; the second was recorded in a private virtual
-display with the bot's explanations alongside gameplay.
-
-![Native Black Deck Gold Stake victory: 420,305 against 400,000, one hand remaining](evidence/astra-black-gold-PI4T2AH8/final-game-frame.png)
-
-The recorded run's actual ending screen. [Full traces, rules checked in the video,
-recoveries and scoring limitations](docs/black-gold-results.md).
-
-## How it works
-
-```mermaid
-flowchart LR
-    Game[Real Balatro via BalatroBot] --> Public[Typed public state]
-    Public --> Tools[Legal actions and exact scoring]
-    Tools --> Coach[GPT-6 Astra in Codex]
-    Coach --> Validate[Validate one action]
-    Validate --> Game
-    Coach --> Plan[Persistent build plan]
-    Plan --> Coach
-```
-
-- **Information firewall.** The model receives typed public observations and
-  unordered deck counts. Seeds, draw order, hidden Joker identities and future shop
-  contents never reach it. Tests assert the boundary.
-- **Exact tools, advisory only.** Candidate plays come with exact scores where the
-  outcome is deterministic. On the recorded run, 46 of 47 plays with visible Jokers
-  replayed exactly. The model may choose any validated legal move.
-- **One call, several actions.** Each decision runs in a fresh sandboxed Codex process
-  with a compact persistent plan. A reply may chain follow-up shop actions and a
-  bounded reroll loop; every follow-up is re-validated against fresh state and the
-  chain stops silently at the first problem. Invalid replies get at most two
-  corrections. An uncertain game mutation is never replayed.
-- **Bounded work.** Calls, actions, wall-clock and per-call time are capped before
-  anything runs. The runner acts alone only on cashouts and on forced moves where a
-  single legal action exists.
-
-Details: [docs/architecture.md](docs/architecture.md). The coach instructions are
-in [`balatro_ai/prompts/coach.md`](balatro_ai/prompts/coach.md); the offline
-strategy library and its retrieval rules are described in
-[docs/strategy-library.md](docs/strategy-library.md).
-
-## Reproduce the benchmarks
-
-Everything in `benchmarks/results/` is rebuilt from `evidence/` without a game or
-a model:
+Requires Python 3.11+, macOS or Linux, your own copy of Balatro with BalatroBot
+installed, and access to the configured model through a signed-in Codex CLI.
+This repository includes no game assets. Run these commands from a local checkout:
 
 ```sh
-python3 -m venv .venv && . .venv/bin/activate
-pip install -e '.[dev,bench]'
-python -m benchmarks        # writes benchmarks/results/{results.json,results.md,figures/}
-pytest -q                   # recorded observations and fake transports only
-```
-
-CI rebuilds the tables and fails if they change. New real-game results are added by
-pointing the builder at run directories: `python -m benchmarks --runs runs/*`.
-
-For inexpensive decision checks before a full game, see [decision probes](docs/decision-probes.md).
-Black Deck / Gold Stake is selectable with `--deck BLACK --stake GOLD` on `play`
-or `supervise`; existing defaults remain Red/White.
-
-## Play a game
-
-Requires Python 3.11+, macOS or Linux, the Codex CLI signed into ChatGPT (developed
-against 0.153.4), and your own copy of Balatro with BalatroBot installed. The runner
-does not install or launch the game and ships no game assets.
-
-```sh
+python3 -m venv .venv
+source .venv/bin/activate
 pip install -e .
 codex login
+```
+
+Start the game server headlessly in one terminal:
+
+```sh
 BALATROBOT_ALL_UNLOCKED=1 uvx balatrobot serve --fast --headless --logs-path runs/logs
-balatro doctor                     # read-only readiness check, no model calls
-balatro play --endless --output runs/endless-001
 ```
 
-The product defaults to `gpt-6-astra` at low reasoning effort; `--model` on `play`
-and `supervise` selects another Codex model and records it in the manifest. Defaults cap a run
-at 450 coach calls, 750 actions, 7200 seconds and 60 seconds per call
-(`--max-calls`, `--max-actions`, `--seconds`, `--call-seconds`); they bound work,
-not price. They are sized for a full endless game — the recorded Ante 13 run took
-456 decisions, 404 model calls and 98 active minutes — so an Ante 8 win (drop
-`--endless`) finishes well inside them. `--seed` selects a reproducible seed that
-stays in the manifest. Use one game instance: separate BalatroBot ports do not
-isolate the shared profile.
-
-The Codex service stalls on roughly one call in ten, with the process idle and no
-output. A call that has not answered after twenty seconds is hedged with a second
-identical process and the first valid answer wins; a call that hits
-`--call-seconds` is re-asked with a fresh request id, up to six attempts with a
-pause. Every timeout is recorded in the trajectory and counted in `result.json`
-(`coach_timeouts`). None of this touches the game: an uncertain game mutation is
-never retried.
-
-Ctrl-C records an interruption and stops the Codex child; the game is left alone.
-`balatro play --resume runs/endless-001 --output runs/endless-001b` continues from
-the recorded trajectory after checking the live game against the last recorded
-transition, so a run can be stopped while it is waiting on a model call and picked
-up later. The manifest reports whether the live state had moved on
-(`resume_adjusted`).
-
-To answer the packets yourself or from another model, use session mode:
+In another terminal with the same virtual environment activated:
 
 ```sh
-balatro play --coach session --output runs/session-001 --call-seconds 600
-balatro next runs/session-001/public            # read the outstanding request
-balatro reply runs/session-001/public response.json
+balatro doctor
+balatro play --output runs/game-001
 ```
 
-Each run writes `manifest.json`, `trajectory.jsonl` and `result.json`. The
-trajectory is append-only JSON lines, so `tail -f` it to watch a game live;
-`balatro inspect DIR` prints the result, for example
-`balatro inspect evidence/astra-low-TAF7DNTX`. For a live view, `balatro watch DIR`
-serves a dashboard at http://127.0.0.1:8765 from the standard library alone: the
-requirement-versus-best-hand chart, the model's current plan, the action feed and a
-compact status line, with the full stat tiles behind `?tiles=1` and `?zoom=0.8` for
-narrow windows. Point it at a game root and it follows every segment.
-
-For an unattended game, use the supervisor instead of `play`:
+The default is Red Deck / White Stake, stopping after the Ante 8 win. To play
+Black Deck / Gold Stake instead:
 
 ```sh
-balatro supervise --endless --seed QD3F4XVW --output runs/game-002 \
-  --server-command 'BALATROBOT_ALL_UNLOCKED=1 uvx balatrobot serve --gamespeed 1 --no-fast --animation-fps 60'
+balatro play --deck BLACK --stake GOLD --output runs/black-gold-001
 ```
 
-It writes one segment directory per runner process under the root, resumes
-automatically after any exit that is not a finished game, relaunches the server
-if it is unreachable, restores the run from Balatro's autosave if the game process
-died, and stops on a real end, a Codex login problem, an exhausted budget or the
-restart cap. `balatro watch runs/game-002` shows the whole game.
+Use `--endless` to continue after Ante 8. Each run uses model calls and records
+its result and action history. Run one game instance at a time.
+[Run limits, resumes, supervision and inspection](docs/usage.md).
 
-## Evidence
+## Results
 
-- [`evidence/astra-round-production-XV2MP8L5/`](evidence/astra-round-production-XV2MP8L5):
-  fresh-seed round-production-advice run, Ante 12 and 326,543,967 peak, one
-  uninterrupted segment with hashes and supervisor records.
-- [Expert video review and implementation follow-up](docs/high-score-video-review.md):
-  strategy comparisons, implemented advice and the limits of this single-game evaluation.
-- [`evidence/astra-low-TAF7DNTX/`](evidence/astra-low-TAF7DNTX): the headless
-  Ante 13 run, five hash-chained segments with the runner revision and reason for
-  each restart.
-- [`evidence/astra-low-QD3F4XVW/`](evidence/astra-low-QD3F4XVW): the supervised,
-  recorded game, two segments, supervisor records, time-lapse video and GIF, the
-  final frame and the dashboard at game over.
-- [`evidence/astra-low-D0000000/`](evidence/astra-low-D0000000): the recorded
-  game on the baseline seed, four segments, the same-seed comparison with every
-  heuristic, the time-lapse video and GIF, and the dashboard at game over.
-- [`evidence/terra-low-QD3F4XVW/`](evidence/terra-low-QD3F4XVW) and
-  [`evidence/terra-low-QD3F4XVW-attempt1/`](evidence/terra-low-QD3F4XVW-attempt1):
-  two games with `gpt-5.6-terra` on the seed of the recorded astra game, both lost
-  at Ante 2; the first attempt with the runner faults that it exposed.
-- [`evidence/astra-low-2K9H9HN/`](evidence/astra-low-2K9H9HN): the earlier win
-  and endless continuation, in hash-chained segments with the interrupted first
-  attempt kept separately.
-- [`evidence/first-win/`](evidence/first-win): an earlier high-effort run of a
-  previous version of this system, kept for the record. It is not part of the
-  published results.
-- [`evidence/baselines/`](evidence/baselines): twelve real-game panels of the earlier
-  non-model policies, with [provenance](evidence/baselines/PROVENANCE.md).
-- [docs/coached-win.md](docs/coached-win.md) and
-  [docs/trajectory-review.md](docs/trajectory-review.md): what the runs did, what
-  they got wrong, and what was fixed afterwards.
+A win means clearing the Ante 8 boss. These are documented runs from several bot
+versions, **not a measured win rate or a guarantee of reliable wins**.
 
-## Limitations
+| Setting | Demonstrated result | Evidence |
+|---|---|---|
+| Red Deck / White Stake | Five published Astra Ante 8 clears across earlier versions; highest ante reached: 13 | [Results and run disclosures](docs/results.md) |
+| Red Deck / White Stake, highest score | **134,231,931,235 chips in one hand** | [Ante 13 run](evidence/astra-low-TAF7DNTX/README.md) |
+| Black Deck / Gold Stake | Two fresh-seed wins: **435,408 / 400,000** and **420,305 / 400,000**, both with one hand unused | [Full traces and rules audit](docs/black-gold-results.md) |
+| Non-model baselines | Best policies won 3 of 20 games on a fixed Red/White seed panel | [Benchmark tables](benchmarks/results/results.md) |
 
-- Four coached wins on four seeds. No win rate, no model-without-tools control.
-  The D0000000 game is the only same-seed comparison with the heuristics.
-- Both runs were watched by an operator. The earlier one had adapter fixes between
-  segments; the later one had runner restarts at safe moments to deploy the retry,
-  resume and hedging fixes, with the model never given hints or corrections.
-- The Codex service stalls on roughly one call in ten. Hedged calls and retries
-  keep a game alive through that, at a cost in wall-clock time; a decision takes
-  about nine seconds when the service answers promptly.
-- Scoring approximates random effects and withholds advice when hidden cards or
-  Jokers make an estimate unsound.
-- Model access is your own Codex CLI and ChatGPT account. There is no API client
-  and no token or cost accounting in the evidence.
+The coached runs are not a matched comparison with the baseline panel. Development
+included losses, some earlier games used fixes between segments, and the two
+Black/Gold wins do not establish a success rate. The reports retain failures,
+restarts, policy versions and scoring discrepancies.
+
+## Scope and limitations
+
+The published runs use the native game with BalatroBot automation and an
+all-unlocked profile. This bypasses content unlock progression; it is a modded
+setup, not a fresh-account achievement run. The Black/Gold report checks every
+cumulative stake rule against the recorded game state.
+
+The bot uses numerical assistance rather than vision alone. Its decisions can be
+suboptimal, scoring advice has coverage limits, and model-service timeouts can
+interrupt runs. Reliability across a representative seed set remains unmeasured.
+[Evaluation methodology](docs/methodology.md).
+
+## Development
+
+Tests use recorded observations and fake transports; they do not start the game
+or spend model calls.
+
+```sh
+pip install -e '.[dev,bench]'
+pytest -q
+ruff check .
+python -m benchmarks
+```
+
+For small checks before a full run, see [decision probes](docs/decision-probes.md).
+See [CONTRIBUTING.md](CONTRIBUTING.md) for validation and evidence requirements,
+and the [documentation index](docs/README.md) for technical details.
 
 ## License
 

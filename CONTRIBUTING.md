@@ -1,5 +1,7 @@
 # Contributing
 
+See [the documentation index](docs/README.md) for usage, architecture and results.
+
 ## Setup
 
 ```bash
@@ -70,10 +72,10 @@ resume's `resume_adjusted`, and the rejected replies and model-call timeouts fro
 - Never include seeds or private game state in prompts sent to the model.
 - Never retry an uncertain game mutation; treat ambiguous action outcomes as
   failures rather than resubmitting them.
-- Every number that appears in the documentation must trace back to a file
-  under `evidence/`.
+- Every reported experimental result must trace back to a file under `evidence/`.
 
 ## License
 
-By contributing, you agree that your contributions are licensed under
-AGPL-3.0-or-later, the same license that covers the rest of the codebase.
+Code contributions are licensed under AGPL-3.0-or-later ([LICENSE](LICENSE)).
+Documentation, evidence and generated results are licensed under CC BY 4.0
+([LICENSE-DOCS](LICENSE-DOCS)).

@@ -23,11 +23,12 @@ Each dot is one complete game of a non-model policy on the fixed seed panel
 D0000000 to D0000019. The stars are the coached games: the astra wins, and at
 Ante 2 the two terra losses on the seed of the recorded astra game. The best heuristic
 policies cleared Ante 8 in 3 of 20 games and reached Ante 8 or beyond in 7 of 20.
-The coached system, GPT-6 Astra at low reasoning effort with exact numerical tools,
-cleared Ante 8 in both recorded games on seeds outside the panel and continued in
-endless mode to Ante 11 and then Ante 13, the latter with a peak hand of
-134,231,931,235 chips. Two games are a demonstration, not a rate. The unattended
-win rate of the coached system is unmeasured.
+The coached system, GPT-6 Astra at low reasoning effort with numerical tools,
+has five published Red/White Ante 8 clears across four historical runs and one
+round-production-advice run. The highest ante reached was 13, with a peak hand of
+134,231,931,235 chips. These runs used different versions and include documented
+interventions; they demonstrate capability rather than estimate a win rate.
+The unattended win rate remains unmeasured.
 
 The fresh-seed round-production-advice run (`9395d7a`, XV2MP8L5) also cleared
 Ante 8 and reached Ante 12, peaking at 326,543,967 chips. It is a separate policy
