@@ -7,6 +7,7 @@ Setting: Red Deck / White Stake / all unlocked. Every number is read from a file
 | Policy | Attempted | Completed | Ante-8 clears | Reached Ante >=8 | Median ante | Mean ante | Coach calls / decisions | Follow-ups / forced / stalls | Seed panel | Notes |
 |---|---|---|---|---|---|---|---|---|---|---|
 | **Astra low (gpt-6-astra), seed TAF7DNTX** | 1 | 1 | 1 | 1 | 13 | 13 | 404/456 = 0.89 | 31 / 13 / 15 | TAF7DNTX | single game, seed TAF7DNTX: headless, endless; cleared Ante 8, then lost at ante 13 |
+| **Astra low (gpt-6-astra), round-production advice (9395d7a)** | 1 | 1 | 1 | 1 | 12 | 12 | 421/515 = 0.82 | 48 / 14 / 6 | XV2MP8L5 | single game, seed XV2MP8L5: round-production advice at 9395d7a; cleared Ante 8, then lost at the ante 12 boss The Arm; one recovered RPC timeout, no rejected replies or restarts |
 | **Astra low (gpt-6-astra), seed QD3F4XVW** | 1 | 1 | 1 | 1 | 11 | 11 | 388/473 = 0.82 | 50 / 6 / 3 | QD3F4XVW | supervised end to end, one automatic restart, game visible at speed 2, recorded |
 | **Astra low (gpt-6-astra), seed 2K9H9HN** | 1 | 1 | 1 | 1 | 11 | 11 | 357/384 = 0.93 | - | 2K9H9HN | single game, seed 2K9H9HN: cleared Ante 8 (303 decisions, ante 9), then continued in endless and lost at ante 11 |
 | **Astra low (gpt-6-astra), seed D0000000** | 1 | 1 | 1 | 1 | 10 | 10 | 265/315 = 0.84 | 34 / 5 / 5 | D0000000 | visible game, endless; on the baseline panel seed; cleared Ante 8, lost at ante 10 |
@@ -25,7 +26,7 @@ Setting: Red Deck / White Stake / all unlocked. Every number is read from a file
 | strategic (strategic-unlocked-001) | 20 | 20 | 0 | 0 | 5 | 4.7 | - | - | D0000000-D0000019 | - |
 | baseline-v1 | 11 | 10 | 0 | 0 | 4 | 3.4 | - | - | D0000000-D0000010 | partial panel: 11 of 20 seeds attempted; 1 game(s) errored and are excluded from ante statistics |
 
-1. Each coached row is a single game: TAF7DNTX, QD3F4XVW, 2K9H9HN are seeds outside the D0000000-D0000019 baseline panel, D0000000 is that panel's first seed. They are demonstrations, not win-rate estimates.
+1. Each coached row is a single game: TAF7DNTX, XV2MP8L5, QD3F4XVW, 2K9H9HN are seeds outside the D0000000-D0000019 baseline panel, D0000000 is that panel's first seed. They are demonstrations, not win-rate estimates.
 2. The two gpt-5.6-terra rows are the same seed as the recorded gpt-6-astra game QD3F4XVW, played with the same tools, prompts and limits; both lost at the ante 2 boss. One seed at one effort level is not a model ranking. They are not part of Table C or the score figure, which cover the Astra-low runs. See evidence/terra-low-QD3F4XVW/README.md.
 3. On seed D0000000 the best heuristic (search-v5) reached ante 6 with a 14,700 peak hand; the coached run reached ante 10 with 1,840,907.
 4. Seed QD3F4XVW was played end to end by the supervisor: one automatic restart after the mod refused a boss reroll, no operator intervention, and 0 rejected replies. Hieroglyph and Petroglyph each lowered the ante by one, so blinds at antes 9 and 10 were played twice.

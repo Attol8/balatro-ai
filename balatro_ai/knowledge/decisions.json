@@ -233,7 +233,7 @@
       "Add more Baron-style held XMult.",
       "Add more held-card repetitions through Mime or a copier."
     ],
-    "lesson": "Balance effect count against retrigger count using the cards actually held; neither Joker is universally the better copy target.",
+    "lesson": "Balance held multipliers against retriggers. Set Mime/copy targets before the terminal play for held-card and end-of-round effects; automatic cashout may leave no reorder window after scoring.",
     "reversal": "Favor the side that is currently scarcer after counting held effects, seals, and copy placement.",
     "provenance": "constructed",
     "sources": [
@@ -986,7 +986,7 @@
       "Hold the consumable and leave to copy it.",
       "Use or sell it before leaving."
     ],
-    "lesson": "On leaving the shop, Perkeo randomly copies one held consumable as Negative; manage the possible targets. Negative copies bypass normal capacity.",
+    "lesson": "Before leaving the shop, set compatible copiers to Perkeo and manage its random held-consumable targets. Each activation creates a Negative copy beyond ordinary capacity; compare accumulation time with the next blind.",
     "reversal": "Use the original first when its immediate effect is more valuable than another copy.",
     "provenance": "constructed",
     "sources": [
@@ -1011,7 +1011,7 @@
       "Copy the supported rank or enhanced card.",
       "Preserve hand economy and current consistency."
     ],
-    "lesson": "DNA copies a single-card first hand; Death converts one selected card into another, so target identity and order matter.",
+    "lesson": "DNA copies a single-card first hand; set compatible copiers before that play, then reobserve before restoring scoring targets. Death copies the rightmost selected card; preserve a scoring finish after setup.",
     "reversal": "Do not force duplication when the setup hand risks the blind or the target cannot be selected legally.",
     "provenance": "constructed",
     "sources": [
@@ -1902,8 +1902,8 @@
       "Buy it and keep matching Planets in hand.",
       "Spend the money on scoring or economy instead."
     ],
-    "lesson": "Observatory turns each held Planet into X1.5 Mult for its own hand type, so it pays only if consumable slots are kept free to hold those Planets rather than using them immediately for levels.",
-    "reversal": "It is poor when consumable slots are always full or when Planets are consumed on sight for hand levels.",
+    "lesson": "Observatory gives X1.5 per held matching Planet. Ordinary Planets compete for consumable slots; Negative copies can exceed normal capacity. Compare repeated value and accumulation time with leveling and immediate survival.",
+    "reversal": "Pass when the next blind needs another scoring upgrade or too few matching Planets can accumulate before the engine must pay off.",
     "provenance": "constructed",
     "sources": [
       "game:game.lua:620",
@@ -2146,7 +2146,7 @@
       "Bank the money and keep rerolling for another Joker.",
       "Spend on Glass supply: Justice, Strength on a Glass Ten, or a Standard pack."
     ],
-    "lesson": "Every retrigger rolls the Glass one-in-four break, so the lead card is consumed fastest: the recorded deck fell from seven Glass cards to four across two blinds and lost both Glass faces before the boss.",
+    "lesson": "Glass normally has one 1-in-4 break roll per scored card, not per retrigger. The recorded run lost three Glass cards across two relevant hands; a Glass Jack of Spades remained at the final observation.",
     "reversal": "Stop buying Glass supply when the remaining blinds fall to held-card or XMult scaling that does not destroy its own cards.",
     "provenance": "recorded",
     "sources": [
@@ -2359,11 +2359,11 @@
     ],
     "situation": "Endless play continues past Ante 8 with Seed Money owned and a shop offering rerolls and small purchases.",
     "options": [
-      "Spend down each shop hunting one more upgrade.",
-      "Hold $50 and buy only what raises the multiplier engine."
+      "Spend on an available investment with a credible payoff.",
+      "Preserve interest while no productive investment is offered."
     ],
-    "lesson": "Interest is the only compounding income: the recorded run let its $50 floor lapse after Ante 7, and its last eight cash outs paid $25 of a possible $80, arriving at Ante 13 with $2.",
-    "reversal": "Spend below the floor when the purchase is the engine upgrade the next blind actually needs; forgone interest is cheap next to a failed blind.",
+    "lesson": "The recorded final eight cashouts paid $25 versus $80 at $50 held. This is forgone income, not proof every purchase was bad: compare productive income, generation, deck edits and scoring with interest lost.",
+    "reversal": "Spend below the cap when survival or a supported investment repays the cost; avoid speculative rerolls that exhaust cash needed for actual offers.",
     "provenance": "recorded",
     "sources": [
       "evidence:TAF7DNTX:04:823",
@@ -2389,8 +2389,8 @@
       "Use the Planets for permanent hand levels and free the slots.",
       "Hold both and take X1.5 each on every hand of that family."
     ],
-    "lesson": "The recorded run spent its last $10 on Observatory and held two Jupiters; the next two Flushes scored 125,384,579,763 and 134,231,931,235, but the full slots then blocked every Tarot in the final shops.",
-    "reversal": "Use the Planets when the extra levels clear the blind anyway, or when a slot is needed for a deck edit the engine depends on.",
+    "lesson": "The run held two ordinary Jupiters after buying Observatory: both gave X1.5 to Flushes but occupied normal slots and blocked Tarots. Negative Planets can accumulate beyond ordinary capacity.",
+    "reversal": "Use ordinary Planets when levels suffice or a necessary deck edit needs their slot; keep Negative copies when their repeated scoring value is greater.",
     "provenance": "recorded",
     "sources": [
       "evidence:TAF7DNTX:04:847",

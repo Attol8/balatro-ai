@@ -61,6 +61,6 @@ def test_score_vs_requirement_draws_one_panel_per_run(tmp_path: Path):
 
 def test_headline_strip_marks_the_panel_seed_star(tmp_path: Path):
     body = (render_all(tmp_path)[0]).read_text(encoding="utf-8")
-    assert "6 coached games, 1 on a panel seed" in body
+    assert "7 coached games, 1 on a panel seed" in body
     assert "Coached game on a panel seed" in body
     assert "n=1, endless after win" in body

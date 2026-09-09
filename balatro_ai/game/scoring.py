@@ -266,6 +266,10 @@ NO_SCORING_EFFECT_JOKERS = frozenset(
 """Joker keys that never touch chips, Mult or xMult during a played hand."""
 
 
+class MouthFamilyUnavailable(ValueError):
+    """Public counters cannot identify the first hand without its history."""
+
+
 @dataclass(frozen=True, slots=True)
 class _PreparedScoreContext:
     observation: PublicObservation
@@ -279,12 +283,22 @@ class _PreparedScoreContext:
     held_retrigger_jokers: tuple[PublicItem, ...]
     main_jokers: tuple[PublicItem | None, ...]
     splash: bool
+    mouth_hand_family: str | None = None
     misprint_value: int | None = None
 
 
 def _prepare_score_context(observation: PublicObservation) -> _PreparedScoreContext:
     if any(isinstance(joker, HiddenJokerSlot) for joker in observation.jokers):
         raise ValueError("exact scoring is unavailable for face-down Jokers")
+    current_boss = _current_boss_rule(observation)
+    mouth_family = observation.round.mouth_hand_family
+    if current_boss is not None and current_boss.single_hand_family and mouth_family is None:
+        families = {hand.name for hand in observation.hand_stats if hand.played_this_round > 0}
+        if len(families) > 1 or (not families and observation.round.hands_played > 0):
+            raise MouthFamilyUnavailable(
+                "The Mouth's first hand family is unavailable from public history"
+            )
+        mouth_family = next(iter(families), None)
     active_jokers = tuple(
         joker
         for joker in observation.jokers
@@ -292,7 +306,8 @@ def _prepare_score_context(observation: PublicObservation) -> _PreparedScoreCont
     )
     return _PreparedScoreContext(
         observation=observation,
-        current_boss=_current_boss_rule(observation),
+        current_boss=current_boss,
+        mouth_hand_family=mouth_family,
         active_keys=frozenset(joker.key for joker in active_jokers),
         baseball_count=sum(joker.key == "j_baseball" for joker in active_jokers),
         hiker_count=sum(joker.key == "j_hiker" for joker in active_jokers),
@@ -357,8 +372,10 @@ def _score_play_prepared(
             return 0, hand_name
         if current_boss.repeat_hand_restriction and stat is not None and stat.played_this_round > 0:
             return 0, hand_name
-        if current_boss.single_hand_family and any(
-            hand.played_this_round > 0 and hand.name != hand_name for hand in stats.values()
+        if (
+            current_boss.single_hand_family
+            and context.mouth_hand_family is not None
+            and context.mouth_hand_family != hand_name
         ):
             return 0, hand_name
     scoring_cards = (
@@ -503,7 +520,18 @@ def _score_play_prepared(
                 and planet_hand(consumable.key) == hand_name
             ):
                 mult *= _THREE_HALVES
-    return chips * mult, hand_name
+    score = chips * mult
+    # Native awards floor(hand_chips * mult), after every scoring effect.
+    # Random Joker paths are expected-value estimates, not realized outcomes;
+    # flooring their mean would not compute the expected awarded score.
+    stochastic_estimate = (
+        context.misprint_value is None
+        and any(joker is not None and joker.key == "j_misprint" for joker in context.main_jokers)
+    ) or (
+        any(joker.key == "j_bloodstone" for joker in context.played_individual_jokers)
+        and any(card.suit == "H" and not card.debuffed for card in scoring_cards)
+    )
+    return (score if stochastic_estimate else score // 1), hand_name
 
 
 def _effective_joker_for_pass(

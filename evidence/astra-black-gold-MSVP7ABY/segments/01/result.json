@@ -1,0 +1,15 @@
+{
+  "status": "stopped",
+  "won": false,
+  "reason": "coach_call_limit",
+  "decisions": 240,
+  "coach_requests": 200,
+  "coach_timeouts": 4,
+  "forced_actions": 4,
+  "followup_actions": 20,
+  "rpc_timeouts_recovered": 0,
+  "ante_reached": 8,
+  "peak_hand_score": 147900,
+  "ante_8_cleared": false,
+  "seconds": 2721.732
+}

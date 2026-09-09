@@ -1,0 +1,32 @@
+[
+  {
+    "segment": "00",
+    "original_directory": "runs/black-gold-reddit-20260909/segment-00",
+    "part_of_completed_game": true,
+    "sha256_uncompressed": {
+      "manifest.json": "661e77dd3a1bf817330cf7c09e0654d90f685ae47f0e61e515b43bb084f8d5a7",
+      "result.json": "abb8e206eac821dde7a48fea879390365fd6a4c6ad50e0516a8c5f1b03acc1d9",
+      "trajectory.jsonl": "1ef7e9823c2124c2bf96561ba3a56e9e92cc3c4624352ae47b4f0b6516438472"
+    },
+    "status": "error",
+    "reason": "BalatroBotRejected: Current round evaluation is not ready to cash out",
+    "ante_reached": 1,
+    "decisions": 2,
+    "coach_requests": 2
+  },
+  {
+    "segment": "01",
+    "original_directory": "runs/black-gold-reddit-20260909/segment-01",
+    "part_of_completed_game": true,
+    "sha256_uncompressed": {
+      "manifest.json": "627838244c3b6005b25f20ed326b23f35bfd5feaa43b11bd5934306bc5e053f8",
+      "result.json": "7a12982fc57724d974611521e7d7fa0b516a85716f8cb140fca30147a70aea4d",
+      "trajectory.jsonl": "e159c420946ff6ce615ba4c54a704feb16d97a1d2a9af258ee563f38f52168c3"
+    },
+    "status": "won",
+    "reason": "ante_8_cleared",
+    "ante_reached": 9,
+    "decisions": 270,
+    "coach_requests": 227
+  }
+]

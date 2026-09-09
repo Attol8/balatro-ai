@@ -1,13 +1,7 @@
 # Balatro AI
 
-**The strongest published Balatro AI we know of: it has won every game it has played.**
-
-Four recorded games on the real game client, four Ante 8 clears, three of them
-carried on into endless mode past Ante 10 and one to Ante 13 with a single hand of
-**134,231,931,235 chips**. No other public agent reports a run like it: the best
-model on the [BalatroBench](https://gigazine.net/gsc_news/en/20260213-balatrobench/)
-leaderboard clears Ante 8 in 9 of 15 runs, and the ten heuristic and search
-policies in this repository's own baseline panel won at most 3 games in 20.
+GPT-6 Astra has beaten **Black Deck on Gold Stake on two fresh random seeds**.
+[Results and fair-play disclosures](docs/black-gold-results.md).
 
 How: GPT-6 Astra, at low reasoning effort, makes every strategic decision from public
 information only. Python does what a strong player's arithmetic does, enumerating
@@ -16,6 +10,11 @@ the [BalatroBot](https://github.com/coder/balatrobot) mod. No training, no
 simulator, no fallback policy, no hidden information.
 
 ## Watch it play
+
+To capture future games without a window on your desktop, use the
+[private Docker recording workflow](docs/virtual-recording.md). It also generates
+a video review page with timestamped bot actions, explanations and numerical advice,
+plus an uploadable MP4 with explanations beside the cursor-free gameplay.
 
 ![Time-lapse of a recorded game beside the live dashboard](evidence/astra-low-QD3F4XVW/recording-timelapse.gif)
 
@@ -31,10 +30,20 @@ best of them reached Ante 6 with a 14,700 peak; the model reached Ante 10 with
 
 ![Ante reached per game by policy](benchmarks/results/figures/ante-reached-by-policy.svg)
 
-## Results
+## Earlier Red Deck / White Stake results
+
+The separate Red Deck / White Stake results comprise four earlier-policy games
+and one round-production-advice game on the real client:
+five Ante 8 clears, four carried on into endless mode past Ante 10 and one to
+Ante 13 with a single hand of
+**134,231,931,235 chips**. No other public agent reports a run like it: the best
+model on the [BalatroBench](https://gigazine.net/gsc_news/en/20260213-balatrobench/)
+leaderboard clears Ante 8 in 9 of 15 runs, and the ten heuristic and search
+policies in this repository's own baseline panel won at most 3 games in 20.
 
 | System | Games | Ante 8 cleared | Notes |
 |---|---|---|---|
+| Astra low + tools, round-production advice | 1 | 1 | Fresh seed XV2MP8L5, policy `9395d7a`. Lost to The Arm at Ante 12, peak 326,543,967. 515 decisions from 421 calls, zero rejected replies or restarts. [Evidence](evidence/astra-round-production-XV2MP8L5/README.md). |
 | Astra low + tools, headless | 1 | 1 | Seed TAF7DNTX. Won, then reached Ante 13 in endless with a 134,231,931,235 hand. 456 decisions from 404 model calls; the runner was restarted four times at safe moments to deploy fixes, never inside a blind. |
 | Astra low + tools, supervised | 1 | 1 | Seed QD3F4XVW. Won, then reached Ante 11 in endless with a 7,052,918 hand. 473 decisions from 388 model calls, zero rejected replies, one automatic restart; recorded end to end. |
 | Astra low + tools, on a panel seed | 1 | 1 | Seed D0000000. Won, then reached Ante 10 in endless with a 1,840,907 hand. 315 decisions from 265 model calls, zero rejected replies. Every heuristic baseline played this seed; the best reached Ante 6. |
@@ -43,14 +52,32 @@ best of them reached Ante 6 with a 14,700 peak; the model reached Ante 10 with
 | search-v6 (best heuristic) | 20 | 3 | Bounded public-information search, the strongest of ten non-model policies. |
 | Ten heuristic and search policies | 200 | 0 to 3 each | Same game, same settings, seeds D0000000 to D0000019. |
 
-The astra games are four single games, three on seeds outside the baseline panel
-and one on a panel seed. They show the system can beat the game and keep scaling
+The astra results comprise four historical single games and one fresh-seed game
+with the new round-production advice, labelled separately. Four seeds are outside
+the baseline panel and one is on a panel seed. This is not a matched policy
+comparison. They show the system can beat the game and keep scaling
 in endless mode; they do not estimate a win rate, and the unattended win rate is
 unmeasured. The two terra games are the only other model tried so far: one seed,
 one effort level, both lost at Ante 2, so they rank nothing. Full tables, figures and every caveat: [docs/results.md](docs/results.md).
 How the numbers are produced and what is disclosed: [docs/methodology.md](docs/methodology.md).
 
 ![Chips scored against the blind requirement](benchmarks/results/figures/score-vs-requirement.svg)
+
+## Black Deck / Gold Stake — two verified wins
+
+| Seed | Final boss score / requirement | Peak hand | Executed actions | Model requests | Evidence |
+|---|---|---|---|---|---|
+| MSVP7ABY | 435,408 / 400,000 | 247,230 | 264 | 220 | [Headless win](evidence/astra-black-gold-MSVP7ABY/README.md) |
+| PI4T2AH8 | 420,305 / 400,000 | 227,383 | 270 | 227 | [Recorded win](evidence/astra-black-gold-PI4T2AH8/README.md) |
+
+**Both cleared Ante 8 with one hand remaining.** No seed was supplied for either
+attempt. The first win was headless; the second was recorded in a private virtual
+display with the bot's explanations alongside gameplay.
+
+![Native Black Deck Gold Stake victory: 420,305 against 400,000, one hand remaining](evidence/astra-black-gold-PI4T2AH8/final-game-frame.png)
+
+The recorded run's actual ending screen. [Full traces, rules checked in the video,
+recoveries and scoring limitations](docs/black-gold-results.md).
 
 ## How it works
 
@@ -99,6 +126,10 @@ pytest -q                   # recorded observations and fake transports only
 
 CI rebuilds the tables and fails if they change. New real-game results are added by
 pointing the builder at run directories: `python -m benchmarks --runs runs/*`.
+
+For inexpensive decision checks before a full game, see [decision probes](docs/decision-probes.md).
+Black Deck / Gold Stake is selectable with `--deck BLACK --stake GOLD` on `play`
+or `supervise`; existing defaults remain Red/White.
 
 ## Play a game
 
@@ -171,6 +202,11 @@ restart cap. `balatro watch runs/game-002` shows the whole game.
 
 ## Evidence
 
+- [`evidence/astra-round-production-XV2MP8L5/`](evidence/astra-round-production-XV2MP8L5):
+  fresh-seed round-production-advice run, Ante 12 and 326,543,967 peak, one
+  uninterrupted segment with hashes and supervisor records.
+- [Expert video review and implementation follow-up](docs/high-score-video-review.md):
+  strategy comparisons, implemented advice and the limits of this single-game evaluation.
 - [`evidence/astra-low-TAF7DNTX/`](evidence/astra-low-TAF7DNTX): the headless
   Ante 13 run, five hash-chained segments with the runner revision and reason for
   each restart.

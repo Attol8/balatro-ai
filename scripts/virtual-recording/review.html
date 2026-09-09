@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Balatro · recording review</title>
+<style>
+:root{color-scheme:dark;font:15px/1.5 system-ui;background:#0d0d0d;color:#fff}
+body{margin:24px}h1{font-size:22px}h2{font-size:16px;color:#c3c2b7}
+main{display:grid;grid-template-columns:minmax(0,3fr) minmax(320px,2fr);gap:24px}
+video{width:100%;background:#000}section,aside{min-width:0}pre{white-space:pre-wrap;overflow-wrap:anywhere;font:13px/1.5 monospace}
+.panel{background:#1a1a19;padding:16px;border-radius:8px;margin-bottom:12px}
+#events{max-height:240px;overflow:auto;display:grid;gap:4px}button,input{font:inherit;background:#242424;color:white;border:1px solid #555;border-radius:4px;padding:6px;text-align:left}
+button[aria-current=true]{border-color:#3987e5;background:#18334e}small,.muted{color:#aaa}input{width:65px}
+@media(max-width:850px){main{grid-template-columns:1fr}body{margin:12px}}
+</style>
+<h1>Balatro · recording review</h1>
+<p class="muted">Private game footage with recorded decisions. No explanations are reconstructed after the fact.</p>
+<main><section>
+<video id="video" src="gameplay.mp4" controls preload="metadata"></video>
+<p><label>Trace offset <input id="offset" type="number" step="0.1" value="0"> seconds</label>
+<small>Clock anchored before capture startup; adjust for a small startup delay. Positive shifts events later.</small></p>
+<div id="events" aria-label="Seek to trace event"></div>
+</section><aside>
+<div class="panel"><h2 id="status">Before first recorded event</h2><pre id="action"></pre><p id="explanation"></p></div>
+<div class="panel"><h2>Recorded strategy</h2><p id="plan">No strategy recorded yet.</p></div>
+<details class="panel"><summary>Full event · state and numerical advice when present</summary><pre id="details"></pre></details>
+<p class="muted">Coach replies are proposals until validated. Rejected replies and forced or queued actions are labelled in the trace. Estimates in coach requests are predictions; transitions contain observed outcomes.</p>
+</aside></main>
+<script id="data" type="application/json">__EVENT_DATA__</script>
+<script>
+const rows=JSON.parse(document.getElementById('data').textContent);
+const $=id=>document.getElementById(id), video=$('video'), offset=$('offset');
+let shown=-2, selected=null;
+const labels={coach_response:'Bot decision · proposal',coach_request:'Public state and numerical advice',rpc_attempt:'Sending action',transition:'Executed action',continued:'Continued game',coach_rejected:'Rejected proposal',coach_timeout:'Bot response timed out'};
+function label(event){return labels[event]||event.replaceAll('_',' ')}
+const buttons=rows.map((row,i)=>{
+  const b=document.createElement('button');
+  b.textContent=`${Math.max(0,row.time).toFixed(1)}s · ${label(row.data.event)} · ${row.trace}`;
+  b.onclick=()=>{video.pause();selected=i;video.currentTime=Math.max(0,row.time+Number(offset.value||0));show(i)};
+  $('events').append(b);return b;
+});
+function canonical(value){
+  if(Array.isArray(value))return '['+value.map(canonical).join(',')+']';
+  if(value&&typeof value==='object')return '{'+Object.keys(value).sort().map(k=>JSON.stringify(k)+':'+canonical(value[k])).join(',')+'}';
+  return JSON.stringify(value);
+}
+function actionLabel(value){
+  if(typeof value==='string'){try{value=JSON.parse(value)}catch{return value}}
+  if(!value)return '';
+  if(!value.type)return JSON.stringify(value);
+  const title=value.type.replaceAll('_',' ');
+  if(Array.isArray(value.cards))return title+' · card positions '+value.cards.map(i=>i+1).join(', ')+' (from the left)';
+  const rest={...value};delete rest.type;
+  return title+(Object.keys(rest).length?' · '+JSON.stringify(rest):'');
+}
+function show(i){
+  if(i===shown)return;shown=i;
+  buttons.forEach((b,j)=>b.setAttribute('aria-current',String(i===j)));
+  const d=rows[i]?.data;
+  $('status').textContent=d?`${label(d.event)}${d.source?' · '+d.source:''}`:'Before first recorded event';
+  $('details').textContent=d?JSON.stringify(d,null,2):'';
+  $('action').textContent=d?actionLabel(d.action??d.response?.action_json??d.method??''):'';
+  let strategy='No strategy recorded yet.';
+  for(let j=i;j>=0;j--){const p=rows[j].data.response?.plan;if(p&&p!=='='){strategy=p;break}}
+  $('plan').textContent=strategy;
+  let explanation=d?.response?.explanation;
+  // Carry a proposal's explanation only to its own coach-sourced RPC/transition.
+  if(d?.source==='coach'&&d.action){
+    for(let j=i-1;j>=0;j--){const prior=rows[j].data;
+      if(prior.event==='coach_rejected'||prior.event==='coach_request')break;
+      if(prior.event==='coach_response'){
+        try{if(canonical(JSON.parse(prior.response.action_json))===canonical(d.action))explanation=prior.response.explanation}catch{}
+        break;
+      }
+    }
+  }
+  $('explanation').textContent=explanation||'No per-action explanation recorded for this event.';
+}
+function sync(){if(selected!==null&&video.paused){show(selected);return}let i=-1;const t=video.currentTime-Number(offset.value||0);for(let j=0;j<rows.length&&rows[j].time<=t;j++)i=j;show(i)}
+for(const event of ['play','pointerdown','keydown'])video.addEventListener(event,()=>{selected=null});
+video.addEventListener('timeupdate',sync);video.addEventListener('seeked',sync);offset.addEventListener('input',()=>{selected=null;shown=-2;sync()});sync();
+</script>
+</html>

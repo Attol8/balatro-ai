@@ -6,6 +6,8 @@ import json
 from pathlib import Path
 
 from benchmarks.tables import (
+    ASTRA_ROUND_PRODUCTION,
+    COACHED_RUNS,
     build_results,
     built_in_coached_rows,
     load_extra_runs,
@@ -19,17 +21,24 @@ def test_table_a_rows_cover_baselines_and_all_coached_runs():
     table = build_results()["table_a"]
     assert table["title"].endswith("Red Deck / White Stake / all unlocked")
     assert len(table["baselines"]) == 12
-    assert len(table["coached"]) == 6
-    headless, recorded, low, panel, terra, terra_first = table["coached"]
+    assert len(table["coached"]) == len(COACHED_RUNS) == 7
+    headless, production, recorded, low, panel, terra, terra_first = table["coached"]
     assert [row["seed_panel"] for row in table["coached"]] == [
         "TAF7DNTX",
+        "XV2MP8L5",
         "QD3F4XVW",
         "2K9H9HN",
         "D0000000",
         "QD3F4XVW",
         "QD3F4XVW",
     ]
-    assert [row["median_ante"] for row in table["coached"]] == [13, 11, 11, 10, 2, 2]
+    assert [row["median_ante"] for row in table["coached"]] == [13, 12, 11, 11, 10, 2, 2]
+    assert production["run_dir"] == f"evidence/{ASTRA_ROUND_PRODUCTION}"
+    assert production["policy"] == "Astra low (gpt-6-astra), round-production advice (9395d7a)"
+    assert production["ante8_clears"] == 1
+    assert production["peak_hand_score"] == 326543967
+    assert production["panel_seed"] is False
+    assert "The Arm" in production["notes"][0]
     assert terra["display_name"] == "Terra low (gpt-5.6-terra)"
     assert terra["ante8_clears"] == 0 and terra["decisions"] == 36
     assert terra["coach_requests"] == 30
@@ -68,7 +77,12 @@ def test_table_a_rows_cover_baselines_and_all_coached_runs():
 
 def test_table_a_reports_coach_calls_per_decision():
     table = build_results()["table_a"]
-    headless, recorded, low, panel, _terra, _terra_first = table["coached"]
+    by_seed = {row["seed_panel"]: row for row in table["coached"] if row["model"] == "gpt-6-astra"}
+    headless, recorded, low, panel, production = (
+        by_seed[seed] for seed in ("TAF7DNTX", "QD3F4XVW", "2K9H9HN", "D0000000", "XV2MP8L5")
+    )
+    assert (production["coach_requests"], production["decisions"]) == (421, 515)
+    assert production["calls_per_decision"] == "421/515 = 0.82"
     assert (recorded["coach_requests"], recorded["decisions"]) == (388, 473)
     assert recorded["calls_per_decision"] == "388/473 = 0.82"
     assert (headless["coach_requests"], headless["decisions"]) == (404, 456)
@@ -81,7 +95,15 @@ def test_table_a_reports_coach_calls_per_decision():
 
 
 def test_table_a_reports_followups_forced_moves_and_stalls():
-    headless, recorded, low, panel, _terra, _terra_first = build_results()["table_a"]["coached"]
+    by_seed = {
+        row["seed_panel"]: row
+        for row in build_results()["table_a"]["coached"]
+        if row["model"] == "gpt-6-astra"
+    }
+    headless, recorded, low, panel, production = (
+        by_seed[seed] for seed in ("TAF7DNTX", "QD3F4XVW", "2K9H9HN", "D0000000", "XV2MP8L5")
+    )
+    assert production["followups_forced_stalls"] == "48 / 14 / 6"
     assert recorded["followups_forced_stalls"] == "50 / 6 / 3"
     assert panel["followups_forced_stalls"] == "34 / 5 / 5"
     assert (panel["followup_actions"], panel["forced_actions"], panel["coach_timeouts"]) == (
@@ -443,4 +465,4 @@ def test_extra_runs_are_grouped_by_model_and_effort(tmp_path: Path):
     labels = [entry["policy"] for entry in results["table_a"]["coached"]]
     assert labels[-1] == "gpt-6-astra (low)"
     assert row.calls_per_decision == "11/21 = 0.52"
-    assert len(built_in_coached_rows()) == 6
+    assert len(built_in_coached_rows()) == len(COACHED_RUNS) == 7

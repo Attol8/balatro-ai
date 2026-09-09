@@ -381,6 +381,77 @@ def _high_card_ace() -> PublicObservation:
     )
 
 
+@pytest.mark.parametrize(
+    "rank,x_mult,expected",
+    [("9", 1.1, 15), ("2", 1.5, 10)],
+)
+def test_awarded_score_floors_the_final_fraction(rank, x_mult, expected) -> None:
+    observation = replace(
+        _high_card_ace(),
+        hand=(VisiblePlayingCard(rank, "S"),),
+        jokers=(
+            PublicItem(
+                "j_constellation",
+                "Constellation",
+                "JOKER",
+                runtime=PublicJokerRuntime(current_x_mult=x_mult),
+            ),
+        ),
+    )
+    # Native floors 14 * 1.1 = 15.4 and 7 * 1.5 = 10.5 only at award time.
+    assert score_play(observation, (HandSlot(0),)) == (expected, "High Card")
+
+
+def test_awarded_score_preserves_fractional_mult_until_all_effects_finish() -> None:
+    observation = replace(
+        _high_card_ace(),
+        hand=(
+            VisiblePlayingCard("2", "S"),
+            VisiblePlayingCard("4", "H", enhancement="STEEL"),
+        ),
+        jokers=(
+            PublicItem(
+                "j_constellation",
+                "Constellation",
+                "JOKER",
+                runtime=PublicJokerRuntime(current_x_mult=1.5),
+            ),
+        ),
+    )
+    # Seven chips * 1.5 held Steel * 1.5 Constellation = 15.75, awarded as 15.
+    assert score_play(observation, (HandSlot(0),))[0] == 15
+
+
+@pytest.mark.parametrize(
+    "key,rank,suit,expected",
+    [
+        ("j_misprint", "2", "S", Fraction(175, 2)),
+        ("j_bloodstone", "2", "H", Fraction(35, 4)),
+    ],
+)
+def test_random_joker_expected_estimates_remain_fractional(key, rank, suit, expected) -> None:
+    observation = replace(
+        _high_card_ace(),
+        hand=(VisiblePlayingCard(rank, suit),),
+        jokers=(PublicItem(key, key, "JOKER"),),
+    )
+    assert score_play(observation, (HandSlot(0),))[0] == expected
+
+
+def test_resolved_misprint_endpoint_uses_final_awarded_score() -> None:
+    observation = replace(
+        _high_card_ace(),
+        hand=(
+            VisiblePlayingCard("2", "S"),
+            VisiblePlayingCard("4", "H", enhancement="STEEL"),
+        ),
+        jokers=(PublicItem("j_misprint", "Misprint", "JOKER"),),
+    )
+    context = replace(public_scoring._prepare_score_context(observation), misprint_value=2)
+    # Seven chips * (1.5 held Steel + 2 realized Misprint) = 24.5.
+    assert public_scoring._score_play_prepared(observation, (HandSlot(0),), None, context)[0] == 24
+
+
 def _with_deck_enhancements(
     observation: PublicObservation, *, steel: int = 0, stone: int = 0
 ) -> PublicObservation:
@@ -439,7 +510,7 @@ def test_a_debuffed_unknown_joker_is_not_reported_as_a_scoring_gap() -> None:
 
 @pytest.mark.parametrize(
     ("steel", "expected"),
-    [(0, 16), (1, Fraction(96, 5)), (4, Fraction(144, 5))],
+    [(0, 16), (1, 19), (4, 28)],
 )
 def test_steel_joker_scales_with_the_full_deck_steel_tally(steel, expected) -> None:
     observation = _with_deck_enhancements(
@@ -507,7 +578,7 @@ def test_blueprint_copies_steel_joker_from_the_widened_main_pass() -> None:
     )
 
     # 16 * X1.8 applied by the copy and again by the target itself.
-    assert score_play(observation, (HandSlot(0),))[0] == Fraction(16 * 81, 25)
+    assert score_play(observation, (HandSlot(0),))[0] == 51
 
 
 def test_brainstorm_copies_the_hanging_chad_retrigger() -> None:
@@ -538,7 +609,7 @@ def test_blueprint_through_brainstorm_resolves_to_brainstorms_own_target() -> No
     )
 
     # Brainstorm copies slot 0, and Blueprint copies Brainstorm's resolution.
-    assert score_play(observation, (HandSlot(0),))[0] == Fraction(16 * 729, 125)
+    assert score_play(observation, (HandSlot(0),))[0] == 93
 
 
 def test_a_debuffed_copy_target_makes_both_the_copy_and_the_target_inert() -> None:

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import gzip
 import json
+from math import floor
 from pathlib import Path
 
 from balatro_ai.game.actions import PlayCards, action_from_data
@@ -30,6 +31,7 @@ def test_first_win_retains_public_scoring_and_result_evidence() -> None:
     history: list[HistoryStep] = []
     prediction_differences: list[float] = []
     actual_differences: list[tuple[int, float]] = []
+    historical_differences: list[tuple[int, float]] = []
     source_counts = {"coach": 0, "numerical_delegate": 0, "automatic": 0}
 
     for index in sorted(decisions):
@@ -50,10 +52,15 @@ def test_first_win_retains_public_scoring_and_result_evidence() -> None:
 
         if isinstance(action, PlayCards):
             score, _ = score_play(enrich_runtime(before, tuple(history)), action.cards)
+            # Preserve the archived fractional predictions; native awards floor
+            # only after all effects, which the corrected scorer now reproduces.
+            assert score == floor(decision["predicted_score"])
             prediction_differences.append(abs(float(score) - decision["predicted_score"]))
             observed = transition["observed_score"]
             if observed is not None and float(score) != observed:
                 actual_differences.append((index, abs(float(score) - observed)))
+            if observed is not None and decision["predicted_score"] != observed:
+                historical_differences.append((index, abs(decision["predicted_score"] - observed)))
 
         history.append(HistoryStep(before, action, after))
 
@@ -68,18 +75,16 @@ def test_first_win_retains_public_scoring_and_result_evidence() -> None:
         }
     )
     assert len(prediction_differences) == audit["play_actions_scored"] == 54
-    assert (
-        max(prediction_differences)
-        == audit["recorded_prediction_comparison"]["max_absolute_difference"]
-        == 0
-    )
-    assert sum(difference != 0 for difference in prediction_differences) == 0
-    assert [index for index, _ in actual_differences] == audit["actual_game_comparison"][
+    assert audit["recorded_prediction_comparison"]["max_absolute_difference"] == 0
+    assert max(prediction_differences) == 0.875
+    assert sum(difference != 0 for difference in prediction_differences) == 18
+    assert actual_differences == []
+    assert [index for index, _ in historical_differences] == audit["actual_game_comparison"][
         "discrepancy_indices"
     ]
-    assert len(actual_differences) == audit["actual_game_comparison"]["discrepancy_count"] == 18
+    assert len(historical_differences) == audit["actual_game_comparison"]["discrepancy_count"] == 18
     assert (
-        max(difference for _, difference in actual_differences)
+        max(difference for _, difference in historical_differences)
         == audit["actual_game_comparison"]["max_absolute_difference"]
         == 0.875
     )

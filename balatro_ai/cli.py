@@ -7,7 +7,7 @@ import subprocess
 from pathlib import Path
 
 from .client import BalatroBotClient
-from .runner import Limits, load_resume, run_game
+from .runner import DECKS, STAKES, Limits, load_resume, resolve_settings, run_game, saved_settings
 
 
 def main(argv=None):
@@ -39,6 +39,11 @@ def main(argv=None):
         "--max-actions", type=int, default=750, help="game actions before the run stops"
     )
     play.add_argument("--seconds", type=float, default=7200, help="wall-clock budget for the run")
+    play.add_argument(
+        "--rpc-seconds",
+        type=float,
+        help="game API timeout; increase for slow rendered recordings (default 60)",
+    )
     play.add_argument(
         "--call-seconds",
         type=float,
@@ -79,6 +84,16 @@ def main(argv=None):
     reply = sub.add_parser("reply", help="submit a response JSON file to a session")
     reply.add_argument("public", type=Path)
     reply.add_argument("response", type=Path)
+    for command in (play, keep):
+        command.add_argument(
+            "--deck", type=str.upper, choices=DECKS, help="deck (default RED; inherited on resume)"
+        )
+        command.add_argument(
+            "--stake",
+            type=str.upper,
+            choices=STAKES,
+            help="stake (default WHITE; inherited on resume)",
+        )
     args = parser.parse_args(argv)
     try:
         if args.command == "inspect":
@@ -103,6 +118,8 @@ def main(argv=None):
             summary = supervise(
                 args.output,
                 seed=args.seed,
+                deck=args.deck,
+                stake=args.stake,
                 endless=args.endless,
                 port=args.port,
                 limits=Limits(args.max_calls, args.max_actions, args.seconds, args.call_seconds),
@@ -113,7 +130,17 @@ def main(argv=None):
             )
             print(json.dumps(summary, indent=2))
             return 0 if summary.get("status") in {"won", "lost"} else 1
-        client = BalatroBotClient(port=args.port)
+        rpc_seconds = getattr(args, "rpc_seconds", None)
+        if rpc_seconds is not None:
+            import math
+
+            if not math.isfinite(rpc_seconds) or rpc_seconds <= 0:
+                raise ValueError("--rpc-seconds must be positive and finite")
+        client = (
+            BalatroBotClient(port=args.port, timeout=rpc_seconds)
+            if rpc_seconds is not None
+            else BalatroBotClient(port=args.port)
+        )
         if args.command == "doctor":
             checks = {}
             for name, command in (
@@ -143,6 +170,11 @@ def main(argv=None):
             raise ValueError("--resume takes its seed from the resumed run; drop --seed")
         if args.seed is not None and re.fullmatch(r"[A-Za-z0-9]{1,8}", args.seed) is None:
             raise ValueError("seed must be 1–8 ASCII letters or digits")
+        deck, stake = resolve_settings(
+            args.deck,
+            args.stake,
+            saved=saved_settings(args.resume) if args.resume is not None else None,
+        )
         limits = Limits(args.max_calls, args.max_actions, args.seconds, args.call_seconds)
         from .coach import CodexCoach, SessionCoach
 
@@ -160,6 +192,8 @@ def main(argv=None):
             args.output,
             limits=limits,
             seed=seed,
+            deck=deck,
+            stake=stake,
             continuation=continuation,
             endless=args.endless,
         )

@@ -1,0 +1,462 @@
+[
+  {
+    "id": "black_gold_continuation_preserve_pair_kicker",
+    "provenance": "constructed",
+    "objective": "ante8",
+    "observation": {
+      "ante": 1,
+      "antes_cleared": 0,
+      "blinds": [
+        {
+          "disabled": false,
+          "effect": "",
+          "kind": "SMALL",
+          "name": "Small Blind",
+          "score": 300,
+          "status": "DEFEATED",
+          "tag_effect": "Gain money",
+          "tag_name": "Investment Tag"
+        },
+        {
+          "disabled": false,
+          "effect": "",
+          "kind": "BIG",
+          "name": "Big Blind",
+          "score": 40,
+          "status": "CURRENT",
+          "tag_effect": "",
+          "tag_name": ""
+        },
+        {
+          "disabled": false,
+          "effect": "",
+          "kind": "BOSS",
+          "name": "The Head",
+          "score": 600,
+          "status": "UPCOMING",
+          "tag_effect": "",
+          "tag_name": ""
+        }
+      ],
+      "consumable_limit": 2,
+      "consumables": [],
+      "deck": "BLACK",
+      "deck_size": 5,
+      "draw_count": 2,
+      "full_deck": [
+        {
+          "card": {
+            "rank": "A",
+            "suit": "S",
+            "enhancement": null,
+            "edition": null,
+            "seal": null,
+            "debuffed": false,
+            "permanent_bonus": 0,
+            "effect_text": ""
+          },
+          "count": 1
+        },
+        {
+          "card": {
+            "rank": "2",
+            "suit": "H",
+            "enhancement": null,
+            "edition": null,
+            "seal": null,
+            "debuffed": false,
+            "permanent_bonus": 0,
+            "effect_text": ""
+          },
+          "count": 1
+        },
+        {
+          "card": {
+            "rank": "3",
+            "suit": "C",
+            "enhancement": null,
+            "edition": null,
+            "seal": null,
+            "debuffed": false,
+            "permanent_bonus": 0,
+            "effect_text": ""
+          },
+          "count": 1
+        },
+        {
+          "card": {
+            "rank": "2",
+            "suit": "D",
+            "enhancement": null,
+            "edition": null,
+            "seal": null,
+            "debuffed": false,
+            "permanent_bonus": 0,
+            "effect_text": ""
+          },
+          "count": 1
+        },
+        {
+          "card": {
+            "rank": "4",
+            "suit": "S",
+            "enhancement": null,
+            "edition": null,
+            "seal": null,
+            "debuffed": false,
+            "permanent_bonus": 0,
+            "effect_text": ""
+          },
+          "count": 1
+        }
+      ],
+      "hand": [
+        {
+          "rank": "A",
+          "suit": "S",
+          "enhancement": null,
+          "edition": null,
+          "seal": null,
+          "debuffed": false,
+          "permanent_bonus": 0,
+          "effect_text": ""
+        },
+        {
+          "rank": "2",
+          "suit": "H",
+          "enhancement": null,
+          "edition": null,
+          "seal": null,
+          "debuffed": false,
+          "permanent_bonus": 0,
+          "effect_text": ""
+        },
+        {
+          "rank": "3",
+          "suit": "C",
+          "enhancement": null,
+          "edition": null,
+          "seal": null,
+          "debuffed": false,
+          "permanent_bonus": 0,
+          "effect_text": ""
+        }
+      ],
+      "hand_limit": 3,
+      "hand_stats": [
+        {
+          "name": "High Card",
+          "level": 1,
+          "chips": 5,
+          "mult": 1,
+          "played": 0,
+          "played_this_round": 0
+        },
+        {
+          "name": "Pair",
+          "level": 1,
+          "chips": 10,
+          "mult": 2,
+          "played": 0,
+          "played_this_round": 0
+        }
+      ],
+      "joker_limit": 6,
+      "jokers": [],
+      "last_tarot_planet": null,
+      "money": 0,
+      "opened_pack": [],
+      "pack_choices_remaining": 0,
+      "pack_kind": null,
+      "packs": [],
+      "phase": "SELECTING_HAND",
+      "remaining_deck": [
+        {
+          "card": {
+            "rank": "2",
+            "suit": "D",
+            "enhancement": null,
+            "edition": null,
+            "seal": null,
+            "debuffed": false,
+            "permanent_bonus": 0,
+            "effect_text": ""
+          },
+          "count": 1
+        },
+        {
+          "card": {
+            "rank": "4",
+            "suit": "S",
+            "enhancement": null,
+            "edition": null,
+            "seal": null,
+            "debuffed": false,
+            "permanent_bonus": 0,
+            "effect_text": ""
+          },
+          "count": 1
+        }
+      ],
+      "required_hand_slots": [],
+      "round": {
+        "ancient_suit": "H",
+        "boss_rerolled": false,
+        "chips": 0,
+        "discards_left": 0,
+        "discards_used": 2,
+        "hands_left": 2,
+        "hands_played": 1,
+        "most_played_hand": "High Card",
+        "reroll_cost": 5
+      },
+      "round_no": 1,
+      "selection_limit": 5,
+      "shop": [],
+      "stake": "GOLD",
+      "used_vouchers": [],
+      "vouchers": [],
+      "won": false
+    },
+    "accepted_actions": [
+      {
+        "type": "play_cards",
+        "cards": [
+          0,
+          2
+        ]
+      }
+    ],
+    "rationale": "Artificial reduced-hand/deck public-state probe, not a natural Black Deck opening or recorded game. Hand limit is explicitly 3, full deck 5 cards; public unseen cards are 2D and 4S in unknown order. No hidden draw order is supplied. All Ace-containing plays score 16 immediately. Play Ace+3 to retain 2 and draw both unseen cards; the remaining pair of Twos scores (10+2+2)*2=28, totaling 44 against 40. Ace alone wins on only one of two equally likely draws; playing Ace+2 or all three destroys the pair out and cannot reach 40."
+  },
+  {
+    "id": "black_gold_continuation_discard_keep_pair_out",
+    "provenance": "constructed",
+    "objective": "ante8",
+    "observation": {
+      "ante": 1,
+      "antes_cleared": 0,
+      "blinds": [
+        {
+          "disabled": false,
+          "effect": "",
+          "kind": "SMALL",
+          "name": "Small Blind",
+          "score": 300,
+          "status": "DEFEATED",
+          "tag_effect": "Gain money",
+          "tag_name": "Investment Tag"
+        },
+        {
+          "disabled": false,
+          "effect": "",
+          "kind": "BIG",
+          "name": "Big Blind",
+          "score": 25,
+          "status": "CURRENT",
+          "tag_effect": "",
+          "tag_name": ""
+        },
+        {
+          "disabled": false,
+          "effect": "",
+          "kind": "BOSS",
+          "name": "The Head",
+          "score": 600,
+          "status": "UPCOMING",
+          "tag_effect": "",
+          "tag_name": ""
+        }
+      ],
+      "consumable_limit": 2,
+      "consumables": [],
+      "deck": "BLACK",
+      "deck_size": 5,
+      "draw_count": 2,
+      "full_deck": [
+        {
+          "card": {
+            "rank": "A",
+            "suit": "S",
+            "enhancement": null,
+            "edition": null,
+            "seal": null,
+            "debuffed": false,
+            "permanent_bonus": 0,
+            "effect_text": ""
+          },
+          "count": 1
+        },
+        {
+          "card": {
+            "rank": "2",
+            "suit": "H",
+            "enhancement": null,
+            "edition": null,
+            "seal": null,
+            "debuffed": false,
+            "permanent_bonus": 0,
+            "effect_text": ""
+          },
+          "count": 1
+        },
+        {
+          "card": {
+            "rank": "3",
+            "suit": "C",
+            "enhancement": null,
+            "edition": null,
+            "seal": null,
+            "debuffed": false,
+            "permanent_bonus": 0,
+            "effect_text": ""
+          },
+          "count": 1
+        },
+        {
+          "card": {
+            "rank": "2",
+            "suit": "D",
+            "enhancement": null,
+            "edition": null,
+            "seal": null,
+            "debuffed": false,
+            "permanent_bonus": 0,
+            "effect_text": ""
+          },
+          "count": 1
+        },
+        {
+          "card": {
+            "rank": "4",
+            "suit": "S",
+            "enhancement": null,
+            "edition": null,
+            "seal": null,
+            "debuffed": false,
+            "permanent_bonus": 0,
+            "effect_text": ""
+          },
+          "count": 1
+        }
+      ],
+      "hand": [
+        {
+          "rank": "A",
+          "suit": "S",
+          "enhancement": null,
+          "edition": null,
+          "seal": null,
+          "debuffed": false,
+          "permanent_bonus": 0,
+          "effect_text": ""
+        },
+        {
+          "rank": "2",
+          "suit": "H",
+          "enhancement": null,
+          "edition": null,
+          "seal": null,
+          "debuffed": false,
+          "permanent_bonus": 0,
+          "effect_text": ""
+        },
+        {
+          "rank": "3",
+          "suit": "C",
+          "enhancement": null,
+          "edition": null,
+          "seal": null,
+          "debuffed": false,
+          "permanent_bonus": 0,
+          "effect_text": ""
+        }
+      ],
+      "hand_limit": 3,
+      "hand_stats": [
+        {
+          "name": "High Card",
+          "level": 1,
+          "chips": 5,
+          "mult": 1,
+          "played": 0,
+          "played_this_round": 0
+        },
+        {
+          "name": "Pair",
+          "level": 1,
+          "chips": 10,
+          "mult": 2,
+          "played": 0,
+          "played_this_round": 0
+        }
+      ],
+      "joker_limit": 6,
+      "jokers": [],
+      "last_tarot_planet": null,
+      "money": 0,
+      "opened_pack": [],
+      "pack_choices_remaining": 0,
+      "pack_kind": null,
+      "packs": [],
+      "phase": "SELECTING_HAND",
+      "remaining_deck": [
+        {
+          "card": {
+            "rank": "2",
+            "suit": "D",
+            "enhancement": null,
+            "edition": null,
+            "seal": null,
+            "debuffed": false,
+            "permanent_bonus": 0,
+            "effect_text": ""
+          },
+          "count": 1
+        },
+        {
+          "card": {
+            "rank": "4",
+            "suit": "S",
+            "enhancement": null,
+            "edition": null,
+            "seal": null,
+            "debuffed": false,
+            "permanent_bonus": 0,
+            "effect_text": ""
+          },
+          "count": 1
+        }
+      ],
+      "required_hand_slots": [],
+      "round": {
+        "ancient_suit": "H",
+        "boss_rerolled": false,
+        "chips": 0,
+        "discards_left": 1,
+        "discards_used": 1,
+        "hands_left": 1,
+        "hands_played": 2,
+        "most_played_hand": "High Card",
+        "reroll_cost": 5
+      },
+      "round_no": 1,
+      "selection_limit": 5,
+      "shop": [],
+      "stake": "GOLD",
+      "used_vouchers": [],
+      "vouchers": [],
+      "won": false
+    },
+    "accepted_actions": [
+      {
+        "type": "discard_cards",
+        "cards": [
+          0,
+          2
+        ]
+      }
+    ],
+    "rationale": "Artificial reduced-hand/deck public-state probe, not a natural Black Deck opening or recorded game. Hand limit is explicitly 3, full deck 5 cards; public unseen cards are 2D and 4S in unknown order. No hidden draw order is supplied. No current play reaches 25. Discard Ace+3 to retain 2 and draw both unseen cards; pair of Twos scores (10+2+2)*2=28. Discarding only Ace or only 3 succeeds on one of two draws; every discard removing 2 fails. One remaining play and no further discard after this action."
+  }
+]

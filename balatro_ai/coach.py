@@ -66,9 +66,10 @@ _RESPONSE_SCHEMA: dict[str, object] = {
         "request_id": {"type": "string"},
         "action_json": {"type": "string"},
         "plan": {"type": "string"},
+        "explanation": {"type": ["string", "null"]},
         "then": {"type": ["array", "null"], "items": _FOLLOWUP_SCHEMA},
     },
-    "required": ["request_id", "action_json", "plan", "then"],
+    "required": ["request_id", "action_json", "plan", "explanation", "then"],
     "additionalProperties": False,
 }
 
@@ -82,6 +83,7 @@ class CodexCoach:
     # A second identical process starts if the first has not answered by then; the
     # first valid answer wins. Live calls take ~9 s; service stalls take minutes.
     hedge_after_seconds = 20.0
+    allow_second_attempt = True
 
     def __init__(self, codex_executable: str = "codex", model: str | None = None) -> None:
         self.codex_executable = codex_executable
@@ -185,6 +187,7 @@ class CodexCoach:
                 deadline=deadline,
                 stdin=prompt,
                 hedge_after=self.hedge_after_seconds,
+                allow_second_attempt=self.allow_second_attempt,
             )
             self.last_timings["codex_seconds"] = time.monotonic() - execution_started
             self.last_timings["hedged"] = hedged
@@ -259,6 +262,7 @@ def _run_hedged(
     deadline: float,
     stdin: bytes,
     hedge_after: float,
+    allow_second_attempt: bool = True,
 ) -> tuple[dict[str, object], bool, int]:
     """Run one Codex call, starting a second identical process if the first stalls.
 
@@ -315,11 +319,13 @@ def _run_hedged(
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 raise TimeoutError(f"Codex CLI timed out; codex output tail: {_tail(logs[0])}")
-            wait_for = remaining if hedged else min(remaining, hedge_after)
+            wait_for = (
+                remaining if hedged or not allow_second_attempt else min(remaining, hedge_after)
+            )
             try:
                 index, return_code, error = finished.get(timeout=max(0.0, wait_for))
             except queue.Empty:
-                if not hedged and deadline - time.monotonic() > 0:
+                if allow_second_attempt and not hedged and deadline - time.monotonic() > 0:
                     hedged = True
                     start(1)
                 continue
@@ -334,7 +340,7 @@ def _run_hedged(
                 )
             live = [p for p in processes if p.poll() is None]
             if not live:
-                if not hedged and deadline - time.monotonic() > 0:
+                if allow_second_attempt and not hedged and deadline - time.monotonic() > 0:
                     # The only process failed outright; one more try is cheaper than
                     # surfacing a transport blip as a rejected decision.
                     hedged = True

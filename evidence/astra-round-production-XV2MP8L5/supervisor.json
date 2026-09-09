@@ -1,0 +1,24 @@
+{
+  "root": "runs/astra-round-production-20260908",
+  "seed": null,
+  "endless": true,
+  "max_restarts": 8,
+  "started_at": "2026-09-07T23:17:09+00:00",
+  "restarts": 0,
+  "restores": 0,
+  "segments": [
+    {
+      "index": 0,
+      "directory": "segment-00",
+      "resumed_from": null,
+      "started_at": "2026-09-07T23:17:09+00:00",
+      "ended_at": "2026-09-08T01:13:07+00:00",
+      "status": "lost",
+      "reason": "endless_game_over",
+      "disposition": "finished"
+    }
+  ],
+  "stopped": true,
+  "stop_reason": "the game finished: endless_game_over",
+  "updated_at": "2026-09-08T01:13:07+00:00"
+}

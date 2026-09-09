@@ -151,6 +151,9 @@ def test_complete_loop_and_public_boundary(tmp_path):
         "rpc_attempt",
         "transition",
     ]
+    assert all(t["recorded_at"] > 0 for t in trace)
+    elapsed = [t["elapsed_seconds"] for t in trace]
+    assert elapsed == sorted(elapsed)
 
 
 @pytest.mark.parametrize("stale,timeout", [(True, False), (False, True)])
@@ -203,6 +206,49 @@ def test_validation_rejects_extra_action_fields_and_illegal_action():
             validate_response(
                 {"request_id": "a", "action_json": json.dumps(action), "plan": ""}, "a", obs
             )
+
+
+@pytest.mark.parametrize("explanation", [None, "Preserve cash for interest.", "x" * 500])
+def test_public_explanation_preserves_action_and_persistent_plan(explanation):
+    obs = public_state(state())
+    response = {
+        "request_id": "a",
+        "action_json": json.dumps({"type": "select_blind"}),
+        "plan": "Build reliable scoring.",
+    }
+    legacy = validate_response(response, "a", obs)
+    assert validate_response(dict(response, explanation=explanation), "a", obs) == legacy
+
+
+@pytest.mark.parametrize("explanation", ["x" * 501, 1, False, [], {}])
+def test_invalid_public_explanation_is_rejected(explanation):
+    with pytest.raises(ValueError, match="coach explanation"):
+        validate_response(
+            {
+                "request_id": "a",
+                "action_json": json.dumps({"type": "select_blind"}),
+                "plan": "",
+                "explanation": explanation,
+            },
+            "a",
+            public_state(state()),
+        )
+
+
+def test_public_explanation_is_retained_in_trace(tmp_path):
+    class ExplainingCoach(Coach):
+        def choose(self, packet, timeout):
+            response = super().choose(packet, timeout)
+            response["explanation"] = "Enter the blind to earn money."
+            return response
+
+    result = run_game(Game(), ExplainingCoach(), tmp_path / "run")
+    assert result["status"] == "won"
+    events = [
+        json.loads(line) for line in (tmp_path / "run/trajectory.jsonl").read_text().splitlines()
+    ]
+    response = next(event["response"] for event in events if event["event"] == "coach_response")
+    assert response["explanation"] == "Enter the blind to earn money."
 
 
 def test_output_not_overwritten(tmp_path):
@@ -614,9 +660,10 @@ def test_timed_out_model_call_is_re_asked_with_a_fresh_id(tmp_path):
     sent = [row for row in rows if row["event"] == "coach_request"]
     assert len({row["request_id"] for row in sent}) == 2
     assert timeouts[0]["request_id"] == sent[0]["request_id"]
-    # The retry re-asks the same decision; only the request id is new.
-    assert {key: value for key, value in sent[0].items() if key != "request_id"} == {
-        key: value for key, value in sent[1].items() if key != "request_id"
+    # The retry re-asks the same decision with fresh identity and event timing.
+    metadata = {"request_id", "recorded_at", "elapsed_seconds"}
+    assert {key: value for key, value in sent[0].items() if key not in metadata} == {
+        key: value for key, value in sent[1].items() if key not in metadata
     }
 
 
@@ -861,3 +908,34 @@ def test_settle_waits_for_pack_cards_to_be_dealt(monkeypatch):
     settled = settle(client, deepcopy(empty), deadline=float("inf"))
     assert len(settled.opened_pack) == 2
     assert client.gamestate_calls >= 5 + 5  # empties and partials, then six stable reads
+
+
+@pytest.mark.parametrize("deck,stake", [("RED", "WHITE"), ("BLACK", "GOLD")])
+def test_start_settings_are_sent_and_recorded(tmp_path, deck, stake):
+    game = Game()
+    game.raw.update(deck=deck, stake=stake)
+    result = run_game(game, Coach(), tmp_path / "run", deck=deck, stake=stake)
+    assert result["status"] == "won"
+    manifest = json.loads((tmp_path / "run/manifest.json").read_text())
+    assert (manifest["deck"], manifest["stake"]) == (deck, stake)
+    events = [
+        json.loads(line) for line in (tmp_path / "run/trajectory.jsonl").read_text().splitlines()
+    ]
+    start = next(event for event in events if event.get("method") == "start")
+    assert start["params"] == dict(deck=deck, stake=stake)
+
+
+def test_start_refuses_a_game_with_different_settings(tmp_path):
+    game, coach = Game(), Coach()
+    result = run_game(game, coach, tmp_path / "run", deck="BLACK", stake="GOLD")
+    assert result["status"] == "error"
+    assert "different deck or stake" in result["reason"]
+    assert not coach.packets
+
+
+@pytest.mark.parametrize("settings", [dict(deck="NOPE"), dict(stake="NOPE")])
+def test_invalid_settings_do_not_touch_the_game(tmp_path, settings):
+    game = Game()
+    with pytest.raises(ValueError, match="invalid"):
+        run_game(game, Coach(), tmp_path / "run", **settings)
+    assert not game.calls and not (tmp_path / "run").exists()
