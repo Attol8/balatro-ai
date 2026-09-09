@@ -1,28 +1,7 @@
 # Balatro AI
 
-**GPT-6 Astra has beaten Black Deck on Gold Stake on two fresh random seeds.**
-
-Both wins used the real game, public-information tools and an all-unlocked
-profile. Final boss scores: **435,408 / 400,000** and **420,305 / 400,000**, each
-with one hand remaining. [Results, full traces and fair-play disclosures](docs/black-gold-results.md).
-These are demonstrations, not a win-rate estimate; earlier development attempts
-included losses.
-
-## Black Deck / Gold Stake — two verified wins
-
-| Seed | Final boss score / requirement | Peak hand | Executed actions | Model requests | Evidence |
-|---|---|---|---|---|---|
-| MSVP7ABY | 435,408 / 400,000 | 247,230 | 264 | 220 | [Headless win](evidence/astra-black-gold-MSVP7ABY/README.md) |
-| PI4T2AH8 | 420,305 / 400,000 | 227,383 | 270 | 227 | [Recorded win](evidence/astra-black-gold-PI4T2AH8/README.md) |
-
-**Both cleared Ante 8 with one hand remaining.** No seed was supplied for either
-attempt. The first win was headless; the second was recorded in a private virtual
-display with the bot's explanations alongside gameplay.
-
-![Native Black Deck Gold Stake victory: 420,305 against 400,000, one hand remaining](evidence/astra-black-gold-PI4T2AH8/final-game-frame.png)
-
-The recorded run's actual ending screen. [Full traces, rules checked in the video,
-recoveries and scoring limitations](docs/black-gold-results.md).
+GPT-6 Astra has beaten **Black Deck on Gold Stake on two fresh random seeds**.
+[Results and fair-play disclosures](docs/black-gold-results.md).
 
 How: GPT-6 Astra, at low reasoning effort, makes every strategic decision from public
 information only. Python does what a strong player's arithmetic does, enumerating
@@ -83,6 +62,22 @@ one effort level, both lost at Ante 2, so they rank nothing. Full tables, figure
 How the numbers are produced and what is disclosed: [docs/methodology.md](docs/methodology.md).
 
 ![Chips scored against the blind requirement](benchmarks/results/figures/score-vs-requirement.svg)
+
+## Black Deck / Gold Stake — two verified wins
+
+| Seed | Final boss score / requirement | Peak hand | Executed actions | Model requests | Evidence |
+|---|---|---|---|---|---|
+| MSVP7ABY | 435,408 / 400,000 | 247,230 | 264 | 220 | [Headless win](evidence/astra-black-gold-MSVP7ABY/README.md) |
+| PI4T2AH8 | 420,305 / 400,000 | 227,383 | 270 | 227 | [Recorded win](evidence/astra-black-gold-PI4T2AH8/README.md) |
+
+**Both cleared Ante 8 with one hand remaining.** No seed was supplied for either
+attempt. The first win was headless; the second was recorded in a private virtual
+display with the bot's explanations alongside gameplay.
+
+![Native Black Deck Gold Stake victory: 420,305 against 400,000, one hand remaining](evidence/astra-black-gold-PI4T2AH8/final-game-frame.png)
+
+The recorded run's actual ending screen. [Full traces, rules checked in the video,
+recoveries and scoring limitations](docs/black-gold-results.md).
 
 ## How it works
 

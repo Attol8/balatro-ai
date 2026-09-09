@@ -34,6 +34,35 @@ does not remove interest or unused-hand income.
 These rules were checked against the installed game's English localization and
 the recorded BLACK/GOLD settings. See also the [stake reference](https://balatrowiki.org/w/Stakes?mobileaction=toggle_view_desktop).
 
+## Rule-by-rule audit of the recorded win
+
+A second independent trace review and direct inspection of the Downloads 2× video
+confirmed the following for PI4T2AH8. Video timestamps below refer to
+`black-deck-gold-reddit-2x.mp4`; sticker offers pass quickly at this speed.
+
+| Rule | Recorded evidence |
+|---|---|
+| Black Deck: +1 Joker slot, −1 hand | At 00:02.1 the native HUD shows six slots, three hands, two discards and the Black Deck back. All 270 transitions retain BLACK/GOLD. |
+| Red: no Small Blind reward | At 00:10 cashout pays only $2 for two unused hands. Trace money increases $4 → $6, with no blind prize. |
+| Green/Purple: increased targets | All eight Small Blind targets match native highest-stake scaling: 300; 1,000; 3,200; 9,000; 25,000; 60,000; 110,000; 200,000. Final boss requires 400,000. |
+| Black: Eternal Jokers | At 00:18.5 the pack offers Eternal/Rental 8 Ball; the trace also records Eternal The Tribe in a shop. |
+| Blue: −1 discard | Opening HUD and ordinary blind starts have two discards. The Water correctly removes both. |
+| Orange: Perishable Jokers | At 01:04.7 the pack offers Ice Cream with a Perishable sticker; the trace records five rounds remaining. Diet Cola later appears with the same penalty. |
+| Gold: Rental Jokers | Rental Stencil costs $1 and charges $3 on each of ten completed rounds (rounds 4–13), stopping after sale. First charge changes $11 → $8 before cashout. |
+
+The bot never acquired an Eternal or Perishable Joker. Their offers confirm the
+mechanics were present; this run does not demonstrate unsellability or expiration.
+Avoiding those offers is legal. Gold does not require buying every sticker type.
+
+The fourth hand later in the video comes from purchasing Grabber; increased hand
+size comes from Paint Brush. Chicot legally disables Amber Acorn's special effect,
+while its 400,000 target remains. The native final score is 420,305, with one hand
+unused. These changes do not waive the deck or stake rules.
+
+The additional 2× export lasts 422.5 seconds. Its embedded speed label still says
+6.787× from the original export; actual gameplay playback is approximately
+13.575×. This is a presentation-label discrepancy, not a change to gameplay.
+
 ## What the fair-play evidence supports
 
 - Each trace begins with exactly one `start` call specifying only BLACK/GOLD,

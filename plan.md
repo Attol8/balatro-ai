@@ -1,3 +1,41 @@
+# Merge the verified results into main
+
+Outcome: keep a brief linked Black/Gold success statement at the top of README,
+move the detailed wins table and screenshot below the existing results, and merge
+the reviewed branch into main. Reuse the current evidence, CI and GitHub merge flow.
+Smallest example: opening README mentions both wins; detailed evidence is lower down.
+
+1. Adjust README hierarchy and retain the rule-by-rule audit and disclosures.
+2. Review the complete branch diff, verify documentation links and required CI.
+3. Commit, push and merge through GitHub; verify main includes the reviewed changes.
+
+Acceptance: main has both win archives and accurate documentation, checks pass,
+no game launches, and unrelated uv.lock remains untouched.
+
+---
+
+# Verify every Black Deck / Gold Stake rule in the published video
+
+Outcome: establish whether the recorded PI4T2AH8 win uses all cumulative penalties.
+Reuse native game sources, original trajectories and the Downloads video; no new game.
+Smallest example: match the visible opening 3 hands / 2 discards / 6 Joker slots to
+native BLACK/GOLD settings, then check every additional stake effect separately.
+
+1. Independently inspect native rules and recorded state for all cumulative effects.
+2. Inspect relevant frames from the actual 2× export, including sticker examples.
+3. Record an evidence-backed verdict, distinguishing visible evidence from trace checks.
+
+Acceptance: every rule accounted for, legitimate upgrades explained, and any unsupported
+claims or presentation limitations explicitly identified.
+
+Completed: native cumulative rules and scaling match the full trace; actual Downloads
+2× frames confirm resource limits, cashout and sticker offers. Independent audit
+verifies ten rental charges, Grabber, Paint Brush and Chicot. No Eternal/Perishable
+Joker was owned, so expiry/unsellability was not exercised. Recorded the stale
+playback-speed label and retained the disclosed modded/all-unlocked setup.
+
+---
+
 # Commit and push the completed Black/Gold work
 
 Outcome: publish the bot improvements, private recording tools and both verified
