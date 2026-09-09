@@ -8,14 +8,21 @@ with one hand remaining. [Results, full traces and fair-play disclosures](docs/b
 These are demonstrations, not a win-rate estimate; earlier development attempts
 included losses.
 
-The separate Red Deck / White Stake results comprise four earlier-policy games
-and one round-production-advice game on the real client:
-five Ante 8 clears, four carried on into endless mode past Ante 10 and one to
-Ante 13 with a single hand of
-**134,231,931,235 chips**. No other public agent reports a run like it: the best
-model on the [BalatroBench](https://gigazine.net/gsc_news/en/20260213-balatrobench/)
-leaderboard clears Ante 8 in 9 of 15 runs, and the ten heuristic and search
-policies in this repository's own baseline panel won at most 3 games in 20.
+## Black Deck / Gold Stake — two verified wins
+
+| Seed | Final boss score / requirement | Peak hand | Executed actions | Model requests | Evidence |
+|---|---|---|---|---|---|
+| MSVP7ABY | 435,408 / 400,000 | 247,230 | 264 | 220 | [Headless win](evidence/astra-black-gold-MSVP7ABY/README.md) |
+| PI4T2AH8 | 420,305 / 400,000 | 227,383 | 270 | 227 | [Recorded win](evidence/astra-black-gold-PI4T2AH8/README.md) |
+
+**Both cleared Ante 8 with one hand remaining.** No seed was supplied for either
+attempt. The first win was headless; the second was recorded in a private virtual
+display with the bot's explanations alongside gameplay.
+
+![Native Black Deck Gold Stake victory: 420,305 against 400,000, one hand remaining](evidence/astra-black-gold-PI4T2AH8/final-game-frame.png)
+
+The recorded run's actual ending screen. [Full traces, rules checked in the video,
+recoveries and scoring limitations](docs/black-gold-results.md).
 
 How: GPT-6 Astra, at low reasoning effort, makes every strategic decision from public
 information only. Python does what a strong player's arithmetic does, enumerating
@@ -44,17 +51,16 @@ best of them reached Ante 6 with a 14,700 peak; the model reached Ante 10 with
 
 ![Ante reached per game by policy](benchmarks/results/figures/ante-reached-by-policy.svg)
 
-## Results
+## Earlier Red Deck / White Stake results
 
-Black Deck / Gold Stake results are documented separately from the Red/White
-baseline panel below:
-
-| Seed | Final boss score / requirement | Peak hand | Executed actions | Model requests | Evidence |
-|---|---|---|---|---|---|
-| MSVP7ABY | 435,408 / 400,000 | 247,230 | 264 | 220 | [Headless win](evidence/astra-black-gold-MSVP7ABY/README.md) |
-| PI4T2AH8 | 420,305 / 400,000 | 227,383 | 270 | 227 | [Recorded win](evidence/astra-black-gold-PI4T2AH8/README.md) |
-
-Both cleared Ante 8. [Setup, recoveries, scoring limitations and recording details](docs/black-gold-results.md).
+The separate Red Deck / White Stake results comprise four earlier-policy games
+and one round-production-advice game on the real client:
+five Ante 8 clears, four carried on into endless mode past Ante 10 and one to
+Ante 13 with a single hand of
+**134,231,931,235 chips**. No other public agent reports a run like it: the best
+model on the [BalatroBench](https://gigazine.net/gsc_news/en/20260213-balatrobench/)
+leaderboard clears Ante 8 in 9 of 15 runs, and the ten heuristic and search
+policies in this repository's own baseline panel won at most 3 games in 20.
 
 | System | Games | Ante 8 cleared | Notes |
 |---|---|---|---|
