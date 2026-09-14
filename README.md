@@ -1,6 +1,11 @@
 # Balatro AI
 
-### An AI that beats Balatro. Then keeps going.
+### Black Deck. Gold Stake. Beaten by a bot.
+
+To our knowledge, **the first publicly documented bot to beat Balatro on Black
+Deck / Gold Stake** — widely regarded as the game's toughest deck at its highest
+difficulty. **Two fresh random seeds, two verified wins, both with a hand to spare.**
+[Watch the victory and inspect the full traces](docs/black-gold-results.md).
 
 **Two Black Deck / Gold Stake wins. Ante 13 in endless. A 134-billion-chip hand.**
 
