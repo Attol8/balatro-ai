@@ -1,12 +1,31 @@
 # Balatro AI
 
-An AI agent that plays real Balatro using GPT-6 Astra and public-information
-numerical tools. It chooses hands, discards, purchases and Joker arrangements,
-then executes legal actions through [BalatroBot](https://github.com/coder/balatrobot).
+### An AI that beats Balatro. Then keeps going.
 
-The bot has beaten **Black Deck on Gold Stake on two fresh random seeds** and
-reached **Ante 13** in an earlier Red Deck / White Stake run.
-[Results and limitations](#results) are documented below.
+**Two Black Deck / Gold Stake wins. Ante 13 in endless. A 134-billion-chip hand.**
+
+GPT-6 Astra plays real Balatro: building a deck, buying Jokers, choosing hands,
+and pushing into endless mode. The model makes the strategic decisions;
+Python supplies numerical tools and executes legal actions through
+[BalatroBot](https://github.com/coder/balatrobot). It plays from public information,
+with no access to the seed, hidden draw order or future shops.
+
+| Black Deck · Gold Stake | Endless · Red / White | Peak single hand · Red / White |
+|:---:|:---:|:---:|
+| **2 fresh-seed wins** | **Ante 13 reached** | **134,231,931,235 chips** |
+| [Victory traces](docs/black-gold-results.md) | [The run](evidence/astra-low-TAF7DNTX/README.md) | [Scoring evidence](evidence/astra-low-TAF7DNTX/README.md) |
+
+[Watch it play](#watch-it-play) · [Results](#results) · [Quick start](#quick-start) · [How it works](docs/architecture.md) · [Docs](docs/README.md)
+
+## Watch it play
+
+[![Time-lapse of Balatro gameplay on the left and the bot's live decision dashboard on the right](evidence/astra-low-QD3F4XVW/recording-timelapse.gif)](evidence/astra-low-QD3F4XVW/recording-timelapse.mp4)
+
+**One full game in twenty seconds.** The game on the left, the live dashboard on
+the right. This Red Deck / White Stake run cleared Ante 8, reached Ante 11 in
+endless, and peaked at **7,052,918 chips** in one hand. No human gameplay input;
+one automatic recovery. [Watch the MP4](evidence/astra-low-QD3F4XVW/recording-timelapse.mp4)
+· [Read the run trace](evidence/astra-low-QD3F4XVW/README.md).
 
 ## What it does
 
@@ -21,6 +40,49 @@ The model makes strategic decisions; Python supplies calculations, validates
 responses and sends actions to the game. Scoring is exact for supported deterministic
 situations; random or hidden effects can limit the advice available.
 [How it works](docs/architecture.md).
+
+## Results
+
+A win means clearing the Ante 8 boss. These are documented runs from several bot
+versions, **not a measured win rate or a guarantee of reliable wins**.
+
+| Setting | Demonstrated result | Evidence |
+|---|---|---|
+| Red Deck / White Stake | Five published Astra Ante 8 clears across earlier versions; highest ante reached: 13 | [Results and run disclosures](docs/results.md) |
+| Red Deck / White Stake, highest score | **134,231,931,235 chips in one hand** | [Ante 13 run](evidence/astra-low-TAF7DNTX/README.md) |
+| Black Deck / Gold Stake | Two fresh-seed wins: **435,408 / 400,000** and **420,305 / 400,000**, both with one hand unused | [Full traces and rules audit](docs/black-gold-results.md) |
+| Non-model baselines | Best policies won 3 of 20 games on a fixed Red/White seed panel | [Benchmark tables](benchmarks/results/results.md) |
+
+The coached runs are not a matched comparison with the baseline panel. Development
+included losses, some earlier games used fixes between segments, and the two
+Black/Gold wins do not establish a success rate. The reports retain failures,
+restarts, policy versions and scoring discrepancies.
+
+### Black Deck. Gold Stake. One hand to spare.
+
+![Native Balatro victory screen: Black Deck on Gold Stake, 420,305 chips against 400,000, with one hand remaining](evidence/astra-black-gold-PI4T2AH8/final-game-frame.png)
+
+The recorded Black/Gold win. **Both fresh-seed wins cleared the Ante 8 boss with
+one hand unused.** [Full traces and cumulative stake-rule audit](docs/black-gold-results.md).
+
+### How far did each policy get?
+
+![Ante reached by non-model baseline policies and individual model-coached runs](benchmarks/results/figures/ante-reached-by-policy.svg)
+
+Red Deck / White Stake: dots show baseline games; stars show individual model
+runs. The best baseline policies won **3 of 20** games on the fixed seed panel.
+The Astra runs demonstrate deeper endless play, but use different policy versions
+and mostly different seeds; this is **not a matched win-rate comparison**.
+[Complete benchmark tables](docs/results.md).
+
+### Keeping up with the blinds
+
+![Best single-hand score per blind against the growing chip requirement in the archived Astra runs](benchmarks/results/figures/score-vs-requirement.svg)
+
+Dots show the best single hand in each blind; the grey steps show the chip
+requirement. A blind can take multiple hands to clear. These are the archived
+Red/White runs; the Black/Gold wins are reported separately above.
+[Scoring details and run disclosures](docs/results.md#score-against-the-requirement).
 
 ## Quick start
 
@@ -58,23 +120,6 @@ balatro play --deck BLACK --stake GOLD --output runs/black-gold-001
 Use `--endless` to continue after Ante 8. Each run uses model calls and records
 its result and action history. Run one game instance at a time.
 [Run limits, resumes, supervision and inspection](docs/usage.md).
-
-## Results
-
-A win means clearing the Ante 8 boss. These are documented runs from several bot
-versions, **not a measured win rate or a guarantee of reliable wins**.
-
-| Setting | Demonstrated result | Evidence |
-|---|---|---|
-| Red Deck / White Stake | Five published Astra Ante 8 clears across earlier versions; highest ante reached: 13 | [Results and run disclosures](docs/results.md) |
-| Red Deck / White Stake, highest score | **134,231,931,235 chips in one hand** | [Ante 13 run](evidence/astra-low-TAF7DNTX/README.md) |
-| Black Deck / Gold Stake | Two fresh-seed wins: **435,408 / 400,000** and **420,305 / 400,000**, both with one hand unused | [Full traces and rules audit](docs/black-gold-results.md) |
-| Non-model baselines | Best policies won 3 of 20 games on a fixed Red/White seed panel | [Benchmark tables](benchmarks/results/results.md) |
-
-The coached runs are not a matched comparison with the baseline panel. Development
-included losses, some earlier games used fixes between segments, and the two
-Black/Gold wins do not establish a success rate. The reports retain failures,
-restarts, policy versions and scoring discrepancies.
 
 ## Scope and limitations
 
