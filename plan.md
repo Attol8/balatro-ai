@@ -1,21 +1,25 @@
-# Simplify the project overview and documentation
+# Restore the README's visual introduction
 
-Outcome: readers quickly understand what the bot does, how to run it and what
-results the evidence supports. Keep a brief Black/Gold win mention near the top.
-Reuse existing commands, result archives and technical docs; retain working
-utilities and evidence while removing recording/development clutter from README.
-Smallest example: a reader can find a headless start command and the two Black/Gold
-wins without navigating recording tools or historical implementation notes.
+Outcome: visitors immediately see an AI beating real Balatro, watch it play, and
+explore the results before getting to installation.
 
-1. Rewrite README around capabilities, quick start, results and limitations.
-2. Move advanced usage into a guide and add a documentation index; reconcile stale
-   result summaries and contributor navigation without changing benchmark data.
-3. Verify links, CLI examples and diff; publish the documentation cleanup via PR.
+Design: bold opening, three headline results, quick navigation, the existing game
+GIF, then results with the native victory screenshot and both benchmark graphs.
+Keep capabilities, quick start, evidence links and limitations accessible.
 
-Acceptance: no unsupported reliability claims, every result linked to evidence,
-no gameplay or code behavior changes, and unrelated uv.lock preserved.
+Smallest example: opening README shows the Black/Gold wins and a game time-lapse;
+scrolling reveals graphs with their settings and comparison caveats.
+Reuse archived media and generated figures; no new assets or configuration.
 
-Completed locally: README reduced to capabilities, headless quick start, compact
-results and limitations. Added usage guide and documentation index; corrected
-stale result counts and contributor license scopes. Local links, all documented
-CLI command help and diff checks pass. No code behavior or evidence changed.
+1. Check README history, existing media and evidence for headline claims.
+2. Restore the visual introduction and place results before installation.
+3. Verify local links, image files, figure captions and the final diff.
+
+Acceptance: GIF and both graphs embedded, claims backed by run evidence, no
+unsupported first-ever or reliability claim, and no code or benchmark changes.
+Preserve the unrelated untracked uv.lock.
+
+Completed locally: restored the GIF, victory screenshot and both graphs; added
+headline results and navigation. Verified all 33 link targets (local paths and
+anchors), parsed both SVGs, decoded every GIF frame and the PNG, and passed
+`git diff --check`. The GIF duration is 20.01 seconds. No code or evidence changed.
