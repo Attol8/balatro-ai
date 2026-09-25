@@ -851,7 +851,15 @@ def _card_code(card: VisiblePlayingCard) -> str:
 
 
 def _best_visible_play(observation: PublicObservation, hand: tuple) -> float:
-    scene = replace(observation, hand=hand, required_hand_slots=())
+    """Best legal play of ``hand``, which keeps the observation's slots (Cerulean Bell's forced card)."""
+
+    scene = replace(observation, hand=hand)
     limit = min(5, observation.selection_limit or 5, len(hand))
-    best, _, _ = _score_pool(scene, _selections(len(hand), tuple(range(1, limit + 1))))
+    forced = {HandSlot(index) for index in observation.required_hand_slots}
+    selections = tuple(
+        selection
+        for selection in _selections(len(hand), tuple(range(1, limit + 1)))
+        if forced.issubset(selection)
+    )
+    best, _, _ = _score_pool(scene, selections)
     return best

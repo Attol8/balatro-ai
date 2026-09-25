@@ -159,3 +159,34 @@ def test_joker_rows_name_editions_and_deja_vu_is_valued_as_a_red_seal() -> None:
     assert all(
         ("edition" in j) == bool(o.edition) for j, o in zip(pace["jokers"], observation.jokers)
     )
+
+
+def test_held_tarot_values_keep_cerulean_bells_forced_card() -> None:
+    """A recorded 2W7A4ADG endless run crashed at an Ante 8 Cerulean Bell while a Tarot was held."""
+
+    observation = _recorded("jbg00002_wheel_shop")
+    hand = (
+        VisiblePlayingCard("A", "S"),
+        VisiblePlayingCard("A", "H"),
+        VisiblePlayingCard("7", "D"),
+        VisiblePlayingCard("4", "C"),
+    )
+    blinds = tuple(
+        replace(blind, status="CURRENT", name="Cerulean Bell")
+        if blind.kind == "BOSS"
+        else replace(blind, status="DEFEATED")
+        for blind in observation.blinds
+    )
+    selecting = replace(
+        observation,
+        phase=Phase.SELECTING_HAND,
+        hand=hand,
+        shop=(),
+        vouchers=(),
+        packs=(),
+        blinds=blinds,
+        required_hand_slots=(3,),
+        consumables=(PublicItem("c_justice", "Justice", "TAROT"),),
+    )
+    rows = hand_tarot_values(selecting)
+    assert rows and rows[0]["best_play_after"] >= rows[0]["best_play_now"] > 0
