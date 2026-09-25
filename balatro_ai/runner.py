@@ -18,6 +18,7 @@ from .client import BalatroBotClient, BalatroBotError, BalatroBotRejected
 from .coach import CoachCallFailed
 from .game.actions import (
     CashOut,
+    ChoosePackCard,
     PublicAction,
     action_to_data,
     canonical_action_from_data,
@@ -538,6 +539,24 @@ _TARGET_PACK_STATES = frozenset({"TAROT_PACK", "SPECTRAL_PACK"})
 PACK_HAND_READS = 40
 
 
+# BalatroBot clears its pack-selection guard only when a pick returns to the shop. A pack
+# opened by a skip tag closes to blind select instead: that pick's reply never arrives
+# and every later pick is refused ("Pack selection already in progress") until a skip.
+# The final pick of a pack therefore waits briefly for its reply, and once the pack has
+# closed a skip sent with no pack open clears the guard without touching the game.
+FINAL_PACK_PICK_SECONDS = 10.0
+
+
+def reset_pack_guard(client, deadline) -> bool:
+    """Clear BalatroBot's pack guard, only when the live game has no pack open."""
+
+    raw = game_rpc(client, "gamestate", None, deadline)
+    if raw.get("state") in _PACK_STATES or (raw.get("pack") or {}).get("cards"):
+        return False
+    game_rpc(client, "pack", {"skip": True}, deadline)
+    return True
+
+
 def _awaiting_hand(raw) -> bool:
     return raw.get("state") in _TARGET_PACK_STATES and not (raw.get("hand") or {}).get("cards")
 
@@ -745,8 +764,14 @@ def run_game(
             # means the action did not land and the send may be repeated once; a
             # changed state means it landed, and play continues from that state.
             recovered = None
+            final_pick = (
+                isinstance(action, ChoosePackCard) and observation.pack_choices_remaining <= 1
+            )
+            sender = client
+            if final_pick and isinstance(client, BalatroBotClient):
+                sender = replace(client, timeout=min(client.timeout, FINAL_PACK_PICK_SECONDS))
             try:
-                raw = game_rpc(client, method, params, deadline)
+                raw = game_rpc(sender, method, params, deadline)
                 if method == "skip" and skip_opens_pack(observation):
                     raw = await_pack(client, raw, deadline)
                 after = settle(client, raw, deadline)
@@ -762,6 +787,8 @@ def run_game(
                     after = live
                 result["rpc_timeouts_recovered"] += 1
                 record("rpc_timeout", method=method, params=params, recovery=recovered)
+            if isinstance(action, ChoosePackCard) and after.phase != Phase.PACK:
+                record("pack_guard_reset", sent=reset_pack_guard(client, deadline))
             record(
                 "transition",
                 before=public_observation_to_data(state),

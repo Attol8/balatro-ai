@@ -1083,3 +1083,25 @@ def test_a_failed_model_call_is_re_asked_like_a_timeout(tmp_path):
     result = run_game(Game(), FailingOnceCoach(), tmp_path / "run")
     assert result["status"] == "won" and result["coach_failures"] == 1
     assert result["coach_requests"] == 2 and result["coach_timeouts"] == 0
+
+
+def test_pack_guard_reset_never_skips_an_open_pack():
+    """BalatroBot's pack guard sticks after a tag pack closes to blind select; the reset
+    skip must only ever be sent when no pack is open."""
+
+    from balatro_ai.runner import reset_pack_guard
+
+    class Client:
+        def __init__(self, raw):
+            self.raw, self.calls = raw, []
+
+        def rpc(self, method, params=None):
+            self.calls.append((method, params))
+            return deepcopy(self.raw)
+
+    closed = Client(state("BLIND_SELECT"))
+    assert reset_pack_guard(closed, deadline=float("inf")) is True
+    assert closed.calls[-1] == ("pack", {"skip": True})
+    opened = Client(_tarot_pack_with_hand())
+    assert reset_pack_guard(opened, deadline=float("inf")) is False
+    assert [method for method, _ in opened.calls] == ["gamestate"]
