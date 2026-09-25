@@ -52,7 +52,7 @@ _SAMPLES = 32
 _BOOTSTRAP = 1000
 # Each discard is assumed to replace about three cards, spread evenly over the hands.
 _CARDS_PER_DISCARD = 3
-_BUDGET_SECONDS = 2.5
+_BUDGET_SECONDS = 3.5
 _DECK_CANDIDATES = 6
 _FACE_RANKS = frozenset({"J", "Q", "K"})
 _NEXT_RANK = dict(zip("23456789TJQKA", "3456789TJQKA2", strict=True))
@@ -88,6 +88,10 @@ _HAND_VOUCHERS = {"v_grabber": 1, "v_nacho_tong": 1}
 # using the first samples only to bound the time.
 _POTENTIAL_EDITS = (6, 12)
 _POTENTIAL_SAMPLES = 16
+# Held-card engines are simulated over whole rounds: cards kept in hand stay there
+# while played cards are replaced, which is how Kings pile up for Baron.
+_ROUND_SAMPLES = 12
+_HELD_EDITS = (12, 24)
 _HELD_RANKS = {"j_baron": "K", "j_shoot_the_moon": "Q"}
 # Mime retriggers and Steel Joker counts held Steel, so they feed on held Steel cards.
 _HELD_STEEL_JOKERS = frozenset({"j_mime", "j_steel_joker"})
@@ -933,6 +937,10 @@ def _engine_potential(
         return None
     kind, cards = feed
     played, held = _usage(view)
+    if kind == "held":
+        return _held_potential(
+            view, current, with_item, item, key, cards, played, held, budget, sellable
+        )
     small = replace(view, samples=view.samples[:_POTENTIAL_SAMPLES])
     after = after[:_POTENTIAL_SAMPLES]
     tarot = "Chariot (Steel)" if kind == "held" else "Justice (Glass)"
@@ -964,6 +972,102 @@ def _engine_potential(
                 "note": f"hypothetical: {partner} is not owned or offered here",
             }
     return result or None
+
+
+def _round_totals(view: _View, deck, jokers) -> list[float]:
+    """Round totals from playing each sampled round hand by hand, keeping unplayed cards."""
+
+    rnd = replace(view.rnd, boss=None, debuff_suits=(), debuff_ranks=(), debuff_faces=False)
+    return list(_cached_round_totals(view.base, rnd, deck, tuple(jokers)))
+
+
+@lru_cache(maxsize=64)
+def _cached_round_totals(base, rnd, deck, jokers) -> tuple[float, ...]:
+    composition = _composition(deck)
+    totals = []
+    for order in _shuffles(len(deck))[:_ROUND_SAMPLES]:
+        live = [index for index in order if deck[index] is not None]
+        hand, drawn, total = live[: rnd.hand_limit], rnd.hand_limit, 0.0
+        for position in range(rnd.hands):
+            if not hand:
+                break
+            cards = tuple(deck[index] for index in hand)
+            scene = _scene(base, rnd, cards, position, jokers=jokers, full_deck=composition)
+            best, selection, _ = _score_pool(
+                scene, _selections(len(cards), _sizes(jokers, deck, len(cards)))
+            )
+            total += best
+            played = {hand[slot.value] for slot in selection}
+            hand = [index for index in hand if index not in played]
+            hand += live[drawn : drawn + len(played)]
+            drawn += len(played)
+        totals.append(total)
+    return tuple(totals)
+
+
+def _holds_through(observation: PublicObservation, totals: list[float]) -> int:
+    """The last ante whose typical boss these round totals beat at least half the time.
+
+    Engines are judged past Ante 8 too, since that is where they pay off in endless play.
+    """
+
+    last = observation.ante - 1
+    for ante in range(observation.ante, observation.ante + 12):
+        target = ante_base(ante, observation.stake)
+        if target is None or sum(total >= 2 * target for total in totals) * 2 < len(totals):
+            break
+        last = ante
+    return last
+
+
+def _round_change(before: list[float], after: list[float]) -> float:
+    ordered_before, ordered_after = sorted(before), sorted(after)
+    middle = len(ordered_before) // 2
+    base = ordered_before[middle]
+    return round(ordered_after[middle] / base - 1, 3) if base > 0 else 0.0
+
+
+def _held_potential(view, current, with_item, item, key, cards, played, held, budget, sellable):
+    """Held-card engines over whole rounds: the last ante each build survives, today and fed.
+
+    Each level compares the current build, the build with this Joker, and, for a known
+    pair, the build completed with its partner, all on the same fed deck.
+    """
+
+    observation = view.base
+    partner = _PARTNERS.get(key)
+    owned = {getattr(joker, "key", None) for joker in with_item}
+    paired = None
+    if partner and partner not in owned:
+        paired = _with_partner(view, with_item, item, partner, sellable)
+    result: dict[str, object] = {
+        "method": "whole rounds keeping unplayed cards; last ante survived"
+    }
+    levels = [("today", view.deck, 0)]
+    fuel = None
+    for edits in _HELD_EDITS:
+        deck, changed, fed, copies = _fuel(view.deck, "held", cards, played, held, edits)
+        if changed:
+            fuel = fuel or f"Chariot (Steel) on {_describe(fed if cards else [])}"
+            levels.append((f"after_{len(changed)}_edits", deck, copies))
+    if fuel:
+        result["fuel"] = fuel + "; Death or Strength make the copies"
+    for label, deck, copies in levels:
+        if not budget.left():
+            budget.skipped.append(f"engine_potential:{item.key}:{label}")
+            break
+        row: dict[str, object] = {
+            "build": _holds_through(observation, _round_totals(view, deck, observation.jokers)),
+            "with_it": _holds_through(observation, _round_totals(view, deck, with_item)),
+        }
+        if paired is not None and label != "today":
+            row[f"with_{partner}"] = _holds_through(observation, _round_totals(view, deck, paired))
+        if copies:
+            row["copies_needed"] = copies
+        result[label] = row
+    if paired is not None:
+        result["note"] = f"with_{partner} is hypothetical: it is not owned or offered here"
+    return result
 
 
 def _with_partner(view: _View, with_item, item, partner: str, sellable):

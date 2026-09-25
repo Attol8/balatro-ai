@@ -77,14 +77,17 @@ Tarot. no_direct_score marks Jokers whose value is money or effects rather than 
 not_modelled marks Jokers the scorer cannot value. When the build is short of pace, fund
 the affordable change with the largest clear-chance gain; when it is comfortably ahead,
 bank money for interest and later engines.
-per_hand_change is today's value only. Engine Jokers (held-card, retrigger, per-card and
-copier Jokers) also carry engine_potential: the same comparison on decks fed for them by
-6 and 12 edits (fuel names the Tarot, copies_needed the Death or Strength copies), and,
-for known pairs such as Baron and Mime, the value once completed with the partner, marked
-hypothetical. An engine that is weak today but grows with edits is how runs reach very
-high antes: when next_ante.growth_needed is large or the objective is endless, prefer the
-engine with the steepest potential you can fund and feed, then buy and use its fuel
-Tarots, rather than a flat upgrade that only wins this ante. Keep today's survival first.
+per_hand_change is today's value only. Engine Jokers also carry engine_potential, priced
+on decks fed for them; fuel names the Tarot and copies_needed the Death or Strength copies.
+Held-card engines (Baron, Mime, Shoot the Moon, Steel Joker) are simulated over whole
+rounds, since unplayed cards stay in hand: each level gives the last ante survived by the
+current build, with_it, and for a known pair such as Baron and Mime with the partner
+(hypothetical until it is offered). Played-card engines give per-hand change after 6 and
+12 Glass edits. An engine that is weak today but survives far more antes once fed is how
+runs reach very high antes, while flat upgrades stall: when next_ante.growth_needed is
+large or the objective is endless, buy the engine whose fed level survives furthest if
+you can fund and feed it, keep it where an owned copier repeats it, and then buy and use
+its fuel Tarots every shop. Keep today's survival first.
 Plan an ante ahead with build_pace.next_ante: it compares the next ante's Big Blind and a
 typical boss (twice the base; The Wall and Violet Vessel are larger) with the build as it
 will be once expiring_before_boss Jokers are gone. growth_needed above 1 is the factor the
