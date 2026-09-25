@@ -68,7 +68,8 @@ _ENHANCEMENT_TAROTS = {
     "c_tower": "STONE",
 }
 _SUIT_TAROTS = {"c_star": "D", "c_moon": "C", "c_sun": "H", "c_world": "S"}
-_HAND_TAROTS = frozenset({*_ENHANCEMENT_TAROTS, *_SUIT_TAROTS, "c_strength"})
+# Deja Vu is a Spectral, valued the same way: its red seal retriggers the card.
+_HAND_TAROTS = frozenset({*_ENHANCEMENT_TAROTS, *_SUIT_TAROTS, "c_strength", "c_deja_vu"})
 # Destroying cards never raises a visible hand's best play; its value is deck thinning.
 _DECK_TAROTS = _HAND_TAROTS | {"c_hanged_man"}
 _TAROT_MAX_TARGETS = {
@@ -77,6 +78,13 @@ _TAROT_MAX_TARGETS = {
     **dict.fromkeys(_SUIT_TAROTS, 3),
 }
 _HAND_VOUCHERS = {"v_grabber": 1, "v_nacho_tong": 1}
+# Vanilla get_blind_amount: base chips per ante for each stake scaling level.
+_ANTE_BASES = {
+    1: (300, 800, 2000, 5000, 11000, 20000, 35000, 50000),
+    2: (300, 900, 2600, 8000, 20000, 36000, 60000, 100000),
+    3: (300, 1000, 3200, 9000, 25000, 60000, 110000, 200000),
+}
+_STAKE_SCALING = {"GREEN": 2, "BLACK": 2, "BLUE": 2, "PURPLE": 3, "ORANGE": 3, "GOLD": 3}
 _DISCARD_VOUCHERS = {"v_wasteful": 1, "v_recyclomancy": 1}
 _HAND_SIZE_VOUCHERS = {"v_paint_brush": 1, "v_palette": 1}
 
@@ -144,6 +152,9 @@ def build_pace(observation: PublicObservation) -> dict[str, object]:
         "focus": focus.name,
     }
     view = _View(base, focus, focus_round, samples, deck)
+    horizon = _next_ante(observation, blinds, view, rounds, baselines)
+    if horizon:
+        result["next_ante"] = horizon
     jokers = _joker_rows(observation, blinds, view)
     if jokers:
         result["jokers"] = jokers
@@ -520,6 +531,83 @@ def _blind_row(blind: PublicBlind, rnd: _Round, scores: list[float]) -> dict[str
     return row
 
 
+def ante_base(ante: int, stake: str) -> int | None:
+    """Vanilla base chips for ``ante``; Big is 1.5x and most bosses 2x. None past float range."""
+
+    amounts = _ANTE_BASES[_STAKE_SCALING.get(stake, 1)]
+    if ante < 1:
+        return 100
+    if ante <= 8:
+        return amounts[ante - 1]
+    extra = ante - 8
+    try:
+        amount = math.floor(amounts[7] * (1.6 + (0.75 * extra) ** (1 + 0.2 * extra)) ** extra)
+    except OverflowError:
+        return None
+    return amount - amount % (10 ** math.floor(math.log10(amount) - 1))
+
+
+def _next_ante(observation, blinds, view: _View, rounds, baselines) -> dict[str, object]:
+    """The next ante's targets against the build that will still be active by its boss."""
+
+    if observation.ante >= 8 and not observation.won:
+        return {}
+    base_chips = ante_base(observation.ante + 1, observation.stake)
+    if base_chips is None:
+        return {}
+    plain = next(
+        (
+            rnd
+            for rnd in rounds.values()
+            if rnd.boss is None
+            and not rnd.debuff_suits
+            and not rnd.debuff_ranks
+            and not rnd.debuff_faces
+        ),
+        None,
+    )
+    if plain is None:
+        plain = _Round(view.rnd.hands, max(0, observation.round.discards_left), view.rnd.hand_limit)
+    samples = baselines.get(plain) or _baseline(view.base, plain, view.deck)
+    scores = [sample.best for sample in samples]
+    boss = 2 * base_chips
+    row: dict[str, object] = {
+        "ante": observation.ante + 1,
+        "big_target": base_chips * 3 // 2,
+        "typical_boss_target": boss,
+        "needed_per_hand": math.ceil(boss / plain.hands),
+        "per_hand_median": _number(_quantile(scores, 0.5)),
+        "boss_clear_chance": _clear_chance(scores, plain.hands, boss),
+    }
+    # Blinds left this ante, then the next ante's Small, Big and boss (skips ignored).
+    rounds_to_boss = len(blinds) + 3
+    expiring = [
+        joker
+        for joker in observation.jokers
+        if isinstance(joker, PublicItem)
+        and joker.perishable_rounds is not None
+        and joker.perishable_rounds < rounds_to_boss
+    ]
+    if expiring:
+        kept = tuple(joker for joker in observation.jokers if joker not in expiring)
+        after = _variant_scores(replace(view, rnd=plain, samples=samples), jokers=kept)
+        row["expiring_before_boss"] = [joker.key for joker in expiring]
+        row["per_hand_median_without_expiring"] = _number(_quantile(after, 0.5))
+        row["boss_clear_chance_without_expiring"] = _clear_chance(after, plain.hands, boss)
+        scores = after
+    median = _quantile(scores, 0.5)
+    row["growth_needed"] = round(row["needed_per_hand"] / median, 2) if median > 0 else None
+    # The last ante whose typical boss this build still clears at least half the time.
+    last = observation.ante
+    for ante in range(observation.ante + 1, (observation.ante + 12) if observation.won else 9):
+        target = ante_base(ante, observation.stake)
+        if target is None or _clear_chance(scores, plain.hands, 2 * target) < 0.5:
+            break
+        last = ante
+    row["build_holds_through_ante"] = last
+    return row
+
+
 def _rounds_until(blinds: list[PublicBlind], target: PublicBlind) -> int:
     """1 when ``target`` is the next blind to play, 2 when one blind comes first, and so on."""
 
@@ -548,6 +636,8 @@ def _joker_rows(observation, blinds, view: _View) -> list[dict[str, object]]:
             row[f"active_at_{view.focus.kind.lower()}"] = active
         if joker.rental:
             row["rental"] = True
+        if joker.edition:
+            row["edition"] = joker.edition
         rows.append(row)
     return rows
 
@@ -635,6 +725,8 @@ def _apply_tarot(key: str, card: VisiblePlayingCard) -> VisiblePlayingCard | Non
     if key == "c_hanged_man":
         return None
     card = replace(card, effect_text="", debuffed=False)
+    if key == "c_deja_vu":
+        return replace(card, seal="RED")
     if key in _ENHANCEMENT_TAROTS:
         enhancement = _ENHANCEMENT_TAROTS[key]
         if enhancement == "STONE":

@@ -254,7 +254,7 @@ def test_response_schema_carries_an_optional_follow_up_chain() -> None:
     assert entry["additionalProperties"] is False
     until = entry["properties"]["until"]
     assert until["type"] == ["object", "null"]
-    assert set(until["properties"]) == {"shop_has_any", "money_at_least"}
+    assert set(until["properties"]) == {"shop_has_any", "money_at_least", "pace_gain_at_least"}
     assert until["additionalProperties"] is False
 
 

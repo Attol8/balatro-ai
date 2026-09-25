@@ -28,6 +28,7 @@ from .game.codec import public_observation_from_data, public_observation_to_data
 from .game.history import HistoryStep, enrich_runtime
 from .game.mechanics import joker_rarity
 from .game.state import Phase, PublicObservation
+from .pace import build_pace
 
 DECKS = (
     "RED",
@@ -260,10 +261,12 @@ _COACH_RETRY_SECONDS = 30
 MAX_FOLLOWUPS = 6
 MAX_REPEAT = 6
 _FOLLOWUP_FIELDS = {"action_json", "repeat", "until"}
-_UNTIL_FIELDS = {"shop_has_any", "money_at_least"}
+_UNTIL_FIELDS = {"shop_has_any", "money_at_least", "pace_gain_at_least"}
 # Hand slots move under the coach's feet, so they are never chained blindly.
-_HAND_ACTIONS = {"play_cards", "discard_cards", "choose_pack_card", "reorder_hand"}
+_HAND_ACTIONS = {"play_cards", "discard_cards", "reorder_hand"}
 _KEYED_FIELDS = {
+    # A later pick from an open pack is chained by key; its slots shift after each pick.
+    "choose_pack_card": ("card", "opened_pack"),
     "buy_shop_card": ("card", "shop"),
     "buy_voucher": ("voucher", "vouchers"),
     "buy_pack": ("pack", "packs"),
@@ -309,6 +312,7 @@ class FollowUp:
     repeat: int
     shop_has_any: tuple[str, ...]
     money_at_least: int | None
+    pace_gain_at_least: float | None = None
 
     def describe(self) -> str:
         return f"{self.action_type} key {self.key}" if self.key else self.action_type
@@ -344,6 +348,12 @@ class FollowUp:
             and observation.money - observation.round.reroll_cost < self.money_at_least
         ):
             return f"another reroll would drop money below {self.money_at_least}"
+        if self.pace_gain_at_least is not None:
+            pace = build_pace(observation)
+            for row in (*pace.get("offers", ()), *pace.get("tarots", ())):
+                gain = row.get("per_hand_change") or 0
+                if row["zone"] == "shop" and gain >= self.pace_gain_at_least:
+                    return f"the shop offers {row['key']} (+{gain:.0%} per-hand score)"
         return None
 
 
@@ -370,6 +380,8 @@ def _validate_followup(entry) -> FollowUp:
     kind = data.get("type")
     if kind in _HAND_ACTIONS or data.get("targets"):
         raise ValueError("follow-up actions cannot use hand slots")
+    if kind == "choose_pack_card" and not isinstance(data.get("card"), dict):
+        raise ValueError('a chained pack pick must name its card by key: {"key": "<item key>"}')
     field = zone = key = None
     named = _KEYED_FIELDS.get(kind)
     if named is not None and isinstance(data.get(named[0]), dict):
@@ -382,10 +394,12 @@ def _validate_followup(entry) -> FollowUp:
         data = dict(data, **{field: 0})
     canonical_action_from_data(data)
     repeat = _validate_repeat(entry.get("repeat"))
-    shop_has_any, money_at_least = _validate_until(entry.get("until"))
-    if kind != "reroll_shop" and (repeat != 1 or shop_has_any or money_at_least is not None):
+    shop_has_any, money_at_least, pace_gain = _validate_until(entry.get("until"))
+    if kind != "reroll_shop" and (
+        repeat != 1 or shop_has_any or money_at_least is not None or pace_gain is not None
+    ):
         raise ValueError("repeat and until are accepted only on reroll_shop")
-    return FollowUp(kind, data, field, zone, key, repeat, shop_has_any, money_at_least)
+    return FollowUp(kind, data, field, zone, key, repeat, shop_has_any, money_at_least, pace_gain)
 
 
 def _validate_repeat(value) -> int:
@@ -396,9 +410,9 @@ def _validate_repeat(value) -> int:
     return value
 
 
-def _validate_until(value) -> tuple[tuple[str, ...], int | None]:
+def _validate_until(value) -> tuple[tuple[str, ...], int | None, float | None]:
     if value is None:
-        return (), None
+        return (), None, None
     if not isinstance(value, dict) or not set(value) <= _UNTIL_FIELDS:
         raise ValueError("until accepts only shop_has_any and money_at_least")
     keys = value.get("shop_has_any")
@@ -409,7 +423,12 @@ def _validate_until(value) -> tuple[tuple[str, ...], int | None]:
     money = value.get("money_at_least")
     if money is not None and (isinstance(money, bool) or not isinstance(money, int)):
         raise ValueError("until.money_at_least must be an integer")
-    return tuple(keys or ()), money
+    gain = value.get("pace_gain_at_least")
+    if gain is not None and (
+        isinstance(gain, bool) or not isinstance(gain, int | float) or not 0 < gain <= 10
+    ):
+        raise ValueError("until.pace_gain_at_least must be a number in (0, 10]")
+    return tuple(keys or ()), money, None if gain is None else float(gain)
 
 
 def write_json(path: Path, value):

@@ -1025,3 +1025,42 @@ def test_invalid_settings_do_not_touch_the_game(tmp_path, settings):
     with pytest.raises(ValueError, match="invalid"):
         run_game(game, Coach(), tmp_path / "run", **settings)
     assert not game.calls and not (tmp_path / "run").exists()
+
+
+def test_a_reroll_loop_can_stop_on_a_forecast_upgrade():
+    import json as _json
+    from pathlib import Path as _Path
+
+    from balatro_ai.game.codec import public_observation_from_data
+    from balatro_ai.runner import _validate_followup
+
+    fixture = _Path(__file__).parent / "fixtures" / "pace" / "jbg00002_wheel_shop.json"
+    shop = public_observation_from_data(_json.loads(fixture.read_text())["observation"])
+    loop = _validate_followup(
+        {"action_json": REROLL, "repeat": 4, "until": {"pace_gain_at_least": 0.03}}
+    )
+    assert loop.reroll_stop(shop).startswith("the shop offers c_saturn (+4")
+    strict = _validate_followup(
+        {"action_json": REROLL, "repeat": 4, "until": {"pace_gain_at_least": 0.5}}
+    )
+    assert strict.reroll_stop(shop) is None
+    for bad in (True, 0, -0.1, "0.1", 11):
+        with pytest.raises(ValueError):
+            _validate_followup({"action_json": REROLL, "until": {"pace_gain_at_least": bad}})
+    with pytest.raises(ValueError):
+        _validate_followup({"action_json": LEAVE, "until": {"pace_gain_at_least": 0.1}})
+
+
+def test_a_later_pack_pick_is_chained_only_by_key():
+    from balatro_ai.runner import _validate_followup
+
+    pick = _validate_followup(
+        {"action_json": '{"type":"choose_pack_card","card":{"key":"c_fool"},"targets":[]}'}
+    )
+    assert (pick.zone, pick.key) == ("opened_pack", "c_fool")
+    for action in (
+        '{"type":"choose_pack_card","card":1,"targets":[]}',
+        '{"type":"choose_pack_card","card":{"key":"c_justice"},"targets":[0]}',
+    ):
+        with pytest.raises(ValueError):
+            _validate_followup({"action_json": action})

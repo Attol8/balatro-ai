@@ -77,6 +77,14 @@ Tarot. no_direct_score marks Jokers whose value is money or effects rather than 
 not_modelled marks Jokers the scorer cannot value. When the build is short of pace, fund
 the affordable change with the largest clear-chance gain; when it is comfortably ahead,
 bank money for interest and later engines.
+Plan an ante ahead with build_pace.next_ante: it compares the next ante's Big Blind and a
+typical boss (twice the base; The Wall and Violet Vessel are larger) with the build as it
+will be once expiring_before_boss Jokers are gone. growth_needed above 1 is the factor the
+build must grow by before then; start closing it now with multipliers, hand levels, deck
+edits and replacements for expiring Jokers, rather than in the last shop before the boss.
+Targets multiply every ante, and in endless mode by far more than any additive upgrade:
+build_holds_through_ante is the last ante whose typical boss the lasting build clears at
+least half the time, so buy the engine that moves it before the current build runs out.
 
 Money and Tarots drive most winning builds. Money compounds through interest:
 economy.spend_keeping_interest is what you can spend without lowering this cash-out, and
@@ -236,15 +244,19 @@ than asking one action at a time.
 In then only, an item may be addressed by key instead of slot index: replace the
 integer card, consumable, joker, voucher or pack field with {"key":"c_pluto"}. The
 runner resolves it against the fresh state; zero or several matches stop the chain.
-Hand actions are never allowed in then: play_cards, discard_cards, choose_pack_card,
-reorder_hand, or any non-empty targets make the whole reply invalid.
+Hand actions are never allowed in then: play_cards, discard_cards, reorder_hand, or any
+non-empty targets make the whole reply invalid. A later pick from an open pack may be
+chained by key with empty targets, e.g. after choosing one card of a Mega pack:
+{"action_json":"{\"type\":\"choose_pack_card\",\"card\":{\"key\":\"c_fool\"},\"targets\":[]}","repeat":null,"until":null}.
 repeat and until are accepted only on reroll_shop. until takes optional shop_has_any
-(stop as soon as an offered card, voucher or pack has one of those keys) and
-money_at_least (stop before a reroll would drop money below it).
+(stop as soon as an offered card, voucher or pack has one of those keys), money_at_least
+(stop before a reroll would drop money below it) and pace_gain_at_least (stop as soon as
+build_pace rates a shop Joker, Planet or Tarot at that per-hand gain or more, e.g. 0.1).
+Prefer one bounded loop with these conditions over one reply per reroll.
 Examples: "then":[{"action_json":"{\"type\":\"buy_shop_card\",\"card\":{\"key\":\"c_pluto\"},\"mode\":\"store\"}","repeat":null,"until":null},
 {"action_json":"{\"type\":\"use_consumable\",\"consumable\":{\"key\":\"c_pluto\"},\"targets\":[]}","repeat":null,"until":null},
 {"action_json":"{\"type\":\"leave_shop\"}","repeat":null,"until":null}]
-and "then":[{"action_json":"{\"type\":\"reroll_shop\"}","repeat":4,"until":{"shop_has_any":["j_blueprint","j_baron"],"money_at_least":12}}]
+and "then":[{"action_json":"{\"type\":\"reroll_shop\"}","repeat":4,"until":{"shop_has_any":["j_blueprint","j_baron"],"money_at_least":12,"pace_gain_at_least":0.1}}]
 Bosses cannot be skipped; consider reroll_boss when legal before selecting one.
 - Read analysis.legal_action_types and economy before any shop or pack action; a shop
   Joker or Buffoon pick is illegal with Joker slots full, so sell first, reobserve, buy.

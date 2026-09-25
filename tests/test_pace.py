@@ -122,3 +122,40 @@ def test_held_tarot_targets_are_scored_on_the_visible_hand() -> None:
     assert rows and rows[0]["key"] == "c_justice"
     assert rows[0]["best_play_after"] > rows[0]["best_play_now"]
     assert set(rows[0]["best_targets"]) <= {0, 1}
+
+
+def test_ante_targets_follow_the_vanilla_table_into_endless() -> None:
+    from balatro_ai.pace import ante_base
+
+    assert [ante_base(ante, "WHITE") for ante in (1, 8, 9, 10, 13)] == [
+        300,
+        50000,
+        110000,
+        560000,
+        47_000_000_000,
+    ]
+    assert [ante_base(ante, "GOLD") for ante in (5, 6, 8)] == [25000, 60000, 200000]
+    assert ante_base(20, "WHITE") > 10**43
+    assert ante_base(200, "WHITE") is None
+
+
+def test_next_ante_prices_the_build_without_jokers_that_expire_first() -> None:
+    observation = _recorded("jbg00001_ante5_big_shop")
+    expiring = next(j for j in observation.jokers if j.perishable_rounds is not None)
+    horizon = build_pace(observation)["next_ante"]
+    assert horizon["ante"] == 6 and horizon["typical_boss_target"] == 120000
+    assert expiring.key in horizon["expiring_before_boss"]
+    assert horizon["growth_needed"] > 1
+    ante8 = build_pace(replace(observation, ante=8))
+    assert "next_ante" not in ante8
+
+
+def test_joker_rows_name_editions_and_deja_vu_is_valued_as_a_red_seal() -> None:
+    observation = _recorded("jbg00002_wheel_shop")
+    deja_vu = PublicItem("c_deja_vu", "Deja Vu", "SPECTRAL", buy_cost=4)
+    pace = build_pace(replace(observation, shop=(deja_vu,)))
+    row = pace["tarots"][0]
+    assert row["key"] == "c_deja_vu" and row["per_hand_change"] > 0
+    assert all(
+        ("edition" in j) == bool(o.edition) for j, o in zip(pace["jokers"], observation.jokers)
+    )

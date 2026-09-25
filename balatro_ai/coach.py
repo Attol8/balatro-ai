@@ -52,8 +52,9 @@ _FOLLOWUP_SCHEMA: dict[str, object] = {
             "properties": {
                 "shop_has_any": {"type": ["array", "null"], "items": {"type": "string"}},
                 "money_at_least": {"type": ["integer", "null"]},
+                "pace_gain_at_least": {"type": ["number", "null"]},
             },
-            "required": ["shop_has_any", "money_at_least"],
+            "required": ["shop_has_any", "money_at_least", "pace_gain_at_least"],
             "additionalProperties": False,
         },
     },

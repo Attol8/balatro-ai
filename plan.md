@@ -4,7 +4,7 @@
 
 `balatro play --coach astra-fast` plays a complete Black Deck / Gold Stake game
 in visible fast mode (`balatrobot serve --fast`, no headless). Astra keeps
-authority over every strategic decision. Three tracks:
+authority over every strategic decision. Four tracks:
 
 - **Speed:** a much faster visible game and fewer Astra calls, with no loss of
   strength.
@@ -13,8 +13,23 @@ authority over every strategic decision. Three tracks:
   earns interest. Tarots build the deck the engine scores with.
 - **Evaluation:** frozen versions compared on matched seeds. A faster game
   makes enough seeds affordable to measure strength at all.
+- **High scores:** survive deep into endless mode (Track D).
 
 Astra's strength is the floor; a change that loses to it is rejected.
+
+## Status
+
+- **A1 done.** Visible `--fast` cut the client from 59.4 to 2.2 minutes a game;
+  Astra is now 86% of wall time.
+- **A2 done, A2–A3 dropped** by the rule in step 2: only 14 of 406 recorded
+  in-blind decisions (3.4%) were routable, all agreeing with Astra.
+- **A4 partly done:** reroll chains stop on notable offers and on forecast
+  upgrades (`pace_gain_at_least`); later Mega-pack picks chain by key.
+- **B1–B5 done,** plus the next-ante horizon, and the Arcana-pack hand fix
+  that had made targeted Tarots illegal on the first pick of nearly every pack.
+- **First visible game:** lost the Black/Gold Ante 8 boss (295,956/400,000) in
+  28.2 minutes. The build could not grow in time for Ante 8 once its
+  Perishables expired, which the horizon now reports an ante ahead.
 
 ## Evidence
 
@@ -185,6 +200,36 @@ Report clears, antes, wall time, Astra calls, timeouts, money at each cash-out,
 Tarots used, and every failed or stopped run. The panel size is set once A1
 gives game time.
 
+## Track D: high scores in endless
+
+Vanilla targets grow slowly to Ante 8 and then explode: Ante 12 is 3×10⁸ base,
+Ante 13 4.7×10¹⁰, Ante 16 8.6×10²⁰ and Ante 20 4.3×10⁴³, a 10³–10⁶ jump per ante
+from Ante 14 on. The bot's best is Ante 13 (TAF7DNTX, peak hand 1.3×10¹¹).
+Additive Mult and hand levels stop mattering by about Ante 11; only
+multipliers that themselves grow each ante keep up:
+
+- held Steel Kings with Baron and Mime, red seals and Blueprint/Brainstorm
+  copies, where each extra King multiplies the score;
+- Glass or face cards with Hanging Chad, Photograph and retriggers;
+- Perkeo with Observatory, where each Negative Planet copy adds X1.5;
+- hand size and deck density: thinning, Cryptid copies, Deja Vu red seals.
+
+Ante 20 needs such an engine assembled by about Ante 10 and grown every shop.
+It is a stretch; Ante 14–16 is a realistic next target. Steps:
+
+1. **Horizon (done):** `next_ante.growth_needed` and `build_holds_through_ante`
+   show, every shop, which ante the current build dies at.
+2. **Engine growth values:** per-shop and per-ante multiplier gain for Steel
+   Kings, red seals, copies and Observatory Planets, so a +1 King reads as a
+   multiplicative gain rather than a small per-hand change.
+3. **Endless run limits and time:** about 500–700 calls to Ante 20; raise
+   `--max-calls` and `--seconds` for endless runs.
+4. **Scorer coverage for long retrigger chains** at 10³⁰+ scores, checked
+   against the game on recorded high-score hands.
+
+Acceptance: an endless Red/White run whose recorded horizon matches the ante it
+actually dies at, then a run past Ante 13.
+
 ## Order
 
 A1 first. Track B runs alongside A2–A3, because it needs no gameplay until its
@@ -230,7 +275,7 @@ probes pass. A4's Tarot interrupt depends on B1–B3. Track C runs after both.
 - Discard value in the forecast (for example Wasteful).
 - The docs' alternate-engine timing advice
   (`docs/high-score-video-review.md`, Priority 2).
-- Spectral values, on the same pattern as B3.
+- Spectral values beyond Deja Vu, on the same pattern as B3.
 - More Astra effort on the remaining strategic calls. This is a user decision.
 
 ## Anti-goals
