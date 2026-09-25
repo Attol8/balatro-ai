@@ -219,9 +219,12 @@ It is a stretch; Ante 14–16 is a realistic next target. Steps:
 
 1. **Horizon (done):** `next_ante.growth_needed` and `build_holds_through_ante`
    show, every shop, which ante the current build dies at.
-2. **Engine growth values:** per-shop and per-ante multiplier gain for Steel
-   Kings, red seals, copies and Observatory Planets, so a +1 King reads as a
-   multiplicative gain rather than a small per-hand change.
+2. **Engine potential (done):** engine Joker offers are also priced on decks fed
+   for them (6 and 12 edits of Steel for held-card engines, Glass for played-card
+   engines, feeds found from the scorer's own rules), with the value of known pairs
+   such as Baron and Mime, and copiers placed where they copy. On 2W7A4ADG this
+   turned Baron (−10% today) into +59% with Mime, and Mime (−7%) into +229% with
+   Baron. Still missing: red seals, thinning and Observatory Planets in the fuel.
 3. **Endless run limits and time:** about 500–700 calls to Ante 20; raise
    `--max-calls` and `--seconds` for endless runs.
 4. **Scorer coverage for long retrigger chains** at 10³⁰+ scores, checked

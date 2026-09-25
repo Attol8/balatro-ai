@@ -22,9 +22,15 @@ from balatro_ai.game.consumable_rules import iter_public_targets
 from balatro_ai.game.mechanics import planet_hand
 from balatro_ai.game.scoring import (
     _HAND_LEVEL_GAINS,
+    _PLAYED_INDIVIDUAL_ADDITIVE_JOKERS,
+    _PLAYED_INDIVIDUAL_XMULT_JOKERS,
+    _PLAYED_RETRIGGER_JOKERS,
     NO_SCORING_EFFECT_JOKERS,
     SCORING_RULE_JOKERS,
     MouthFamilyUnavailable,
+    _card_joker_effect,
+    _card_repetitions,
+    _individual_joker_card_xmult,
     _prepare_score_context,
     _score_play_prepared,
     unmodelled_scoring_jokers,
@@ -46,7 +52,7 @@ _SAMPLES = 32
 _BOOTSTRAP = 1000
 # Each discard is assumed to replace about three cards, spread evenly over the hands.
 _CARDS_PER_DISCARD = 3
-_BUDGET_SECONDS = 1.5
+_BUDGET_SECONDS = 2.5
 _DECK_CANDIDATES = 6
 _FACE_RANKS = frozenset({"J", "Q", "K"})
 _NEXT_RANK = dict(zip("23456789TJQKA", "3456789TJQKA2", strict=True))
@@ -78,6 +84,30 @@ _TAROT_MAX_TARGETS = {
     **dict.fromkeys(_SUIT_TAROTS, 3),
 }
 _HAND_VOUCHERS = {"v_grabber": 1, "v_nacho_tong": 1}
+# Engine potential: an offer is also priced on decks with these many feeding edits,
+# using the first samples only to bound the time.
+_POTENTIAL_EDITS = (6, 12)
+_POTENTIAL_SAMPLES = 16
+_HELD_RANKS = {"j_baron": "K", "j_shoot_the_moon": "Q"}
+# Mime retriggers and Steel Joker counts held Steel, so they feed on held Steel cards.
+_HELD_STEEL_JOKERS = frozenset({"j_mime", "j_steel_joker"})
+_COPIERS = frozenset({"j_blueprint", "j_brainstorm"})
+# Engine pieces whose value multiplies together; a lone piece can look break-even.
+_PARTNERS = {
+    "j_baron": "j_mime",
+    "j_shoot_the_moon": "j_mime",
+    "j_mime": "j_baron",
+    "j_photograph": "j_hanging_chad",
+    "j_hanging_chad": "j_photograph",
+}
+_RANK_NAMES = dict(
+    zip(
+        "23456789TJQKA",
+        ("2s", "3s", "4s", "5s", "6s", "7s", "8s", "9s", "10s", "Jacks", "Queens", "Kings", "Aces"),
+        strict=True,
+    )
+)
+_SUIT_NAMES = {"S": "Spades", "H": "Hearts", "C": "Clubs", "D": "Diamonds"}
 # Vanilla get_blind_amount: base chips per ante for each stake scaling level.
 _ANTE_BASES = {
     1: (300, 800, 2000, 5000, 11000, 20000, 35000, 50000),
@@ -98,9 +128,14 @@ class _Round:
     debuff_ranks: tuple[str, ...] = ()
     debuff_faces: bool = False
     boss: PublicBlind | None = None
+    # Held-card effects count only the cards actually in hand, so the sample is exactly
+    # one hand; otherwise discards add a few replacement cards to choose plays from.
+    hold: bool = False
 
     @property
     def pool(self) -> int:
+        if self.hold:
+            return self.hand_limit
         extra = int(_CARDS_PER_DISCARD * self.discards / max(1, self.hands) + 0.5)
         return self.hand_limit + min(5, extra)
 
@@ -139,7 +174,8 @@ def build_pace(observation: PublicObservation) -> dict[str, object]:
     budget = _Budget(_BUDGET_SECONDS)
     base = _base(observation)
     deck = _deck(observation)
-    rounds = {blind.name: _round_for(observation, blind) for blind in blinds}
+    hold = _holds(observation, deck)
+    rounds = {blind.name: replace(_round_for(observation, blind), hold=hold) for blind in blinds}
     focus = next((b for b in blinds if b.kind == "BOSS"), blinds[-1])
     focus_round = rounds[focus.name]
     baselines = {rnd: _baseline(base, rnd, deck) for rnd in set(rounds.values())}
@@ -259,6 +295,24 @@ def _greedy_hand_targets(observation, key, legal, budget):
             break
         best, chosen = step, step[1]
     return best
+
+
+_HELD_KEYS = _HELD_EFFECT_JOKERS | frozenset(_HELD_RANKS) | _HELD_STEEL_JOKERS
+
+
+def _holds(observation: PublicObservation, deck) -> bool:
+    """Whether held cards matter to this build or to a visible offer that would change it."""
+
+    visible = (
+        *observation.jokers,
+        *observation.shop,
+        *observation.opened_pack,
+        *observation.consumables,
+    )
+    keys = {getattr(item, "key", None) for item in visible}
+    return bool(keys & (_HELD_KEYS | {"c_chariot"})) or any(
+        card.enhancement == "STEEL" for card in deck
+    )
 
 
 def _hidden_jokers(observation: PublicObservation) -> bool:
@@ -474,19 +528,26 @@ def _variant_scores(view: _View, **changes) -> list[float]:
     return scores
 
 
-def _deck_scores(view: _View, deck, changed: set[int]) -> list[float]:
-    """Rescore only the sampled hands whose pool contains a changed deck card."""
+def _deck_scores(view: _View, deck, changed: set[int], jokers=None, unchanged=None):
+    """Rescore only the sampled hands whose pool contains a changed deck card.
 
+    ``unchanged`` gives each sample's score when its pool is untouched (default: baseline).
+    """
+
+    jokers = view.base.jokers if jokers is None else jokers
+    unchanged = view.scores if unchanged is None else unchanged
     composition = _composition(deck)
     scores = []
-    orders = _shuffles(len(deck))
+    orders = _shuffles(len(deck))[: len(view.samples)]
     for position, (order, sample) in enumerate(zip(orders, view.samples, strict=True)):
         indices = _pool(order, deck, view.rnd.pool)
         if changed.isdisjoint(indices) and indices == sample.indices:
-            scores.append(sample.best)
+            scores.append(unchanged[position])
             continue
         scores.append(
-            _sample_pool(view.base, view.rnd, deck, indices, position, full_deck=composition).best
+            _sample_pool(
+                view.base, view.rnd, deck, indices, position, full_deck=composition, jokers=jokers
+            ).best
         )
     return scores
 
@@ -575,7 +636,12 @@ def _next_ante(observation, blinds, view: _View, rounds, baselines) -> dict[str,
         None,
     )
     if plain is None:
-        plain = _Round(view.rnd.hands, max(0, observation.round.discards_left), view.rnd.hand_limit)
+        plain = _Round(
+            view.rnd.hands,
+            max(0, observation.round.discards_left),
+            view.rnd.hand_limit,
+            hold=view.rnd.hold,
+        )
     samples = baselines.get(plain) or _baseline(view.base, plain, view.deck)
     scores = [sample.best for sample in samples]
     boss = 2 * base_chips
@@ -694,7 +760,14 @@ def _offer_rows(observation, view: _View, jokers, budget) -> list[dict[str, obje
                 sold = sellable[0]
                 row["replaces"] = sold["key"]
                 current = current[: sold["slot"]] + current[sold["slot"] + 1 :]
-            after = _variant_scores(view, jokers=(*current, item))
+            position, with_item, after = _best_position(view, current, item)
+            if position != len(current):
+                row["position"] = position
+            potential = _engine_potential(
+                view, current, with_item, position, item, after, budget, sellable
+            )
+            if potential:
+                row["engine_potential"] = potential
             if item.key in NO_SCORING_EFFECT_JOKERS:
                 row["no_direct_score"] = True
             elif item.key not in SCORING_RULE_JOKERS:
@@ -718,6 +791,198 @@ def _offer_rows(observation, view: _View, jokers, budget) -> list[dict[str, obje
         row[view.label()] = [clear_before, view.clear(after, hands)]
         rows.append(row)
     return rows
+
+
+def _best_position(view: _View, current, item):
+    """Insert ``item`` where it scores best when a copier's target depends on order."""
+
+    copier = item.key in _COPIERS or any(
+        isinstance(joker, PublicItem) and joker.key in _COPIERS for joker in current
+    )
+    positions = range(len(current) + 1) if copier else (len(current),)
+    best = None
+    for position in positions:
+        jokers = (*current[:position], item, *current[position:])
+        scores = _variant_scores(view, jokers=jokers)
+        if best is None or _mean(scores) > _mean(best[2]):
+            best = (position, jokers, scores)
+    return best
+
+
+def _usage(view: _View) -> tuple[Counter, Counter]:
+    """How often each deck card is played, and held, in the samples' best plays."""
+
+    played, held = Counter(), Counter()
+    for sample in view.samples:
+        chosen = {sample.indices[slot.value] for slot in sample.best_selection}
+        played.update(chosen)
+        held.update(index for index in sample.indices if index not in chosen)
+    return played, held
+
+
+def _feed(view: _View, key: str, jokers) -> tuple[str, list[int]] | None:
+    """The deck cards an engine Joker acts on, and whether it wants them held or played.
+
+    Played-card rules come from the scorer itself, so every modelled per-card Joker
+    is covered; an empty held list means any card kept in hand.
+    """
+
+    deck, base = view.deck, view.base
+    cards = [(index, card) for index, card in enumerate(deck) if card is not None]
+    if key in _HELD_RANKS:
+        return "held", [index for index, card in cards if card.rank == _HELD_RANKS[key]]
+    if key in _HELD_STEEL_JOKERS:
+        ranks = {
+            _HELD_RANKS[j.key] for j in jokers if isinstance(j, PublicItem) and j.key in _HELD_RANKS
+        }
+        return "held", [index for index, card in cards if card.rank in ranks]
+    item = PublicItem(key, key, "JOKER")
+    keys = frozenset({key})
+    if key in _PLAYED_INDIVIDUAL_ADDITIVE_JOKERS:
+        return "played", [i for i, c in cards if _card_joker_effect(key, (c,), keys) != (0, 0)]
+    if key in _PLAYED_INDIVIDUAL_XMULT_JOKERS:
+        return "played", [
+            i
+            for i, c in cards
+            if _individual_joker_card_xmult(base, c, item, first_face=c.rank in _FACE_RANKS) != 1
+        ]
+    if key in _PLAYED_RETRIGGER_JOKERS:
+        return "played", [i for i, c in cards if _card_repetitions(base, c, 0, (item,), keys) > 0]
+    return None
+
+
+def _fuel(deck, kind: str, feed: list[int], played: Counter, held: Counter, edits: int):
+    """Apply the feeding edits: Chariot (Steel) for held engines, Justice (Glass) for played.
+
+    Feed cards are edited first; the rest are Death or Strength copies of an edited feed
+    card made from the cards the build uses least.
+    """
+
+    edit = "STEEL" if kind == "held" else "GLASS"
+    use = held if kind == "held" else played
+    if not feed:
+        feed = sorted(
+            (i for i, card in enumerate(deck) if card is not None and card.rank != "?"),
+            key=lambda i: (-use[i], i),
+        )[:edits]
+    order = sorted(feed, key=lambda i: (-use[i], i))
+    variant, changed = list(deck), set()
+    for index in order:
+        if len(changed) >= edits:
+            break
+        if deck[index].enhancement not in {edit, "STONE"}:
+            variant[index] = replace(deck[index], enhancement=edit)
+            changed.add(index)
+    copies = 0
+    if order and len(changed) < edits:
+        model = replace(deck[order[0]], enhancement=edit)
+        spare = sorted(
+            (
+                i
+                for i, c in enumerate(deck)
+                if c is not None and i not in feed and not c.enhancement
+            ),
+            key=lambda i: (played[i] + held[i], i),
+        )
+        for index in spare[: edits - len(changed)]:
+            variant[index] = model
+            changed.add(index)
+            copies += 1
+    return tuple(variant), changed, [deck[i] for i in order], copies
+
+
+def _describe(cards: list[VisiblePlayingCard]) -> str:
+    ranks = {card.rank for card in cards}
+    suits = {card.suit for card in cards}
+    if len(ranks) == 1 and next(iter(ranks)) in _RANK_NAMES:
+        return _RANK_NAMES[next(iter(ranks))]
+    if ranks and ranks <= _FACE_RANKS:
+        return "face cards"
+    if len(suits) == 1 and next(iter(suits)) in _SUIT_NAMES:
+        return _SUIT_NAMES[next(iter(suits))]
+    return "the cards it rewards" if cards else "cards kept in hand"
+
+
+def _engine_potential(
+    view: _View, current, with_item, position: int, item, after, budget, sellable=()
+):
+    """Price an engine Joker on decks fed for it, against the current build on those decks.
+
+    An engine sits where an owned copier repeats it, since that is how engines compound.
+    """
+
+    key = item.key
+    if key not in _COPIERS:
+        for index, joker in enumerate(current):
+            if isinstance(joker, PublicItem) and joker.key in _COPIERS:
+                position = index + 1 if joker.key == "j_blueprint" else len(current)
+                with_item = (*current[:position], item, *current[position:])
+                after = _variant_scores(view, jokers=with_item)
+                break
+    if key in _COPIERS:
+        # A copier's potential is the potential of the Joker it copies.
+        targets = with_item[position + 1 : position + 2] if key == "j_blueprint" else with_item[:1]
+        if not targets or not isinstance(targets[0], PublicItem):
+            return None
+        key = targets[0].key
+    if not budget.left():
+        budget.skipped.append(f"engine_potential:{item.key}")
+        return None
+    feed = _feed(view, key, with_item)
+    if feed is None:
+        return None
+    kind, cards = feed
+    played, held = _usage(view)
+    small = replace(view, samples=view.samples[:_POTENTIAL_SAMPLES])
+    after = after[:_POTENTIAL_SAMPLES]
+    tarot = "Chariot (Steel)" if kind == "held" else "Justice (Glass)"
+    result: dict[str, object] = {}
+    for edits in _POTENTIAL_EDITS:
+        if not budget.left():
+            break
+        deck, changed, fed, copies = _fuel(view.deck, kind, cards, played, held, edits)
+        if not changed:
+            break
+        with_scores = _deck_scores(small, deck, changed, with_item, after)
+        without = _deck_scores(small, deck, changed, None, view.scores[:_POTENTIAL_SAMPLES])
+        result.setdefault("fuel", f"{tarot} on {_describe(fed if cards else [])}")
+        result[f"after_{len(changed)}_edits"] = {
+            "per_hand_median": _number(_quantile(with_scores, 0.5)),
+            "per_hand_change": _change(without, with_scores),
+            "copies_needed": copies,
+        }
+    partner = _PARTNERS.get(key)
+    owned = {getattr(joker, "key", None) for joker in with_item}
+    if result and partner and partner not in owned and budget.left():
+        paired = _with_partner(view, with_item, item, partner, sellable)
+        if paired is not None:
+            unchanged = _variant_scores(small, jokers=paired)
+            paired_scores = _deck_scores(small, deck, changed, paired, unchanged)
+            result[f"with_{partner}_after_{len(changed)}_edits"] = {
+                "per_hand_median": _number(_quantile(paired_scores, 0.5)),
+                "per_hand_change": _change(without, paired_scores),
+                "note": f"hypothetical: {partner} is not owned or offered here",
+            }
+    return result or None
+
+
+def _with_partner(view: _View, with_item, item, partner: str, sellable):
+    """The build with ``partner`` added, selling the weakest sellable Joker if slots are full."""
+
+    jokers = list(with_item)
+    if len(jokers) >= view.base.joker_limit:
+        weakest = next(
+            (
+                row["key"]
+                for row in sellable
+                if row["key"] in {j.key for j in jokers} and row["key"] != item.key
+            ),
+            None,
+        )
+        if weakest is None:
+            return None
+        jokers.remove(next(j for j in jokers if j.key == weakest))
+    return (*jokers, PublicItem(partner, partner, "JOKER"))
 
 
 def _level_up(stats: tuple[HandStat, ...], family: str) -> tuple[HandStat, ...]:
@@ -810,7 +1075,8 @@ def _deck_tarot_rows(observation, view: _View, budget) -> list[dict[str, object]
             # Thinning removes the cards the build plays least.
             pool.sort(key=lambda index: (usage[index], index))
         else:
-            pool.sort(key=lambda index: (-usage[index], index))
+            fed = _owned_feed(view, item.key)
+            pool.sort(key=lambda index: (index not in fed, -usage[index], index))
         candidates, seen = [], set()
         for index in pool:
             if _apply_tarot(item.key, deck[index]) == deck[index] or deck[index] in seen:
@@ -848,6 +1114,21 @@ def _deck_tarot_rows(observation, view: _View, budget) -> list[dict[str, object]
         row[view.label()] = [view.clear(view.scores), view.clear(after)]
         rows.append(row)
     return rows
+
+
+def _owned_feed(view: _View, tarot: str) -> set[int]:
+    """Deck cards that owned engines feed on, for the Tarot that makes their fuel."""
+
+    kind = {"c_chariot": "held", "c_justice": "played"}.get(tarot)
+    if kind is None:
+        return set()
+    fed: set[int] = set()
+    for joker in view.base.jokers:
+        if isinstance(joker, PublicItem) and not joker.debuffed:
+            feed = _feed(view, joker.key, view.base.jokers)
+            if feed is not None and feed[0] == kind:
+                fed.update(feed[1])
+    return fed
 
 
 def _card_code(card: VisiblePlayingCard) -> str:

@@ -198,3 +198,41 @@ def test_a_build_short_of_this_antes_boss_does_not_hold_through_it() -> None:
     wheel = build_pace(_recorded("jbg00002_wheel_shop"))["blinds"][0]
     assert wheel["clear_chance"] < 0.5
     assert horizon["build_holds_through_ante"] == 4
+
+
+def _shop_offer(pace: dict, key: str) -> dict:
+    return next(row for row in pace["offers"] if row["zone"] == "shop" and row["key"] == key)
+
+
+def test_engine_potential_shows_what_todays_value_hides() -> None:
+    """2W7A4ADG offered Baron (Ante 4) and Mime (Ante 5); both read negative today."""
+
+    baron = _shop_offer(build_pace(_recorded("2w7a4adg_ante4_baron_shop")), "j_baron")
+    assert baron["per_hand_change"] < 0
+    potential = baron["engine_potential"]
+    assert potential["fuel"].startswith("Chariot (Steel) on Kings")
+    assert potential["with_j_mime_after_12_edits"]["per_hand_change"] > 0.3
+    mime = _shop_offer(build_pace(_recorded("2w7a4adg_ante5_mime_shop")), "j_mime")
+    grows = mime["engine_potential"]
+    assert mime["per_hand_change"] < 0
+    assert grows["after_12_edits"]["per_hand_change"] > grows["after_6_edits"]["per_hand_change"]
+    assert grows["with_j_baron_after_12_edits"]["per_hand_change"] > 1
+
+
+def test_a_copier_offer_is_placed_where_it_copies_something() -> None:
+    blueprint = _shop_offer(build_pace(_recorded("2w7a4adg_ante4_blueprint_shop")), "j_blueprint")
+    assert blueprint["position"] < 5 and blueprint["per_hand_change"] > 0.2
+
+
+def test_played_card_engines_find_their_feed_from_the_scorer_rules() -> None:
+    observation = _recorded("2w7a4adg_ante4_blueprint_shop")
+    offers = (
+        PublicItem("j_photograph", "Photograph", "JOKER", buy_cost=5),
+        PublicItem("j_hack", "Hack", "JOKER", buy_cost=6),
+    )
+    pace = build_pace(replace(observation, shop=offers))
+    assert _shop_offer(pace, "j_photograph")["engine_potential"]["fuel"] == (
+        "Justice (Glass) on face cards"
+    )
+    assert "Justice (Glass)" in _shop_offer(pace, "j_hack")["engine_potential"]["fuel"]
+    assert pace["seconds"] < 2.5

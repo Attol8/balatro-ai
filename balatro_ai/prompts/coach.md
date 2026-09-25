@@ -77,6 +77,14 @@ Tarot. no_direct_score marks Jokers whose value is money or effects rather than 
 not_modelled marks Jokers the scorer cannot value. When the build is short of pace, fund
 the affordable change with the largest clear-chance gain; when it is comfortably ahead,
 bank money for interest and later engines.
+per_hand_change is today's value only. Engine Jokers (held-card, retrigger, per-card and
+copier Jokers) also carry engine_potential: the same comparison on decks fed for them by
+6 and 12 edits (fuel names the Tarot, copies_needed the Death or Strength copies), and,
+for known pairs such as Baron and Mime, the value once completed with the partner, marked
+hypothetical. An engine that is weak today but grows with edits is how runs reach very
+high antes: when next_ante.growth_needed is large or the objective is endless, prefer the
+engine with the steepest potential you can fund and feed, then buy and use its fuel
+Tarots, rather than a flat upgrade that only wins this ante. Keep today's survival first.
 Plan an ante ahead with build_pace.next_ante: it compares the next ante's Big Blind and a
 typical boss (twice the base; The Wall and Violet Vessel are larger) with the build as it
 will be once expiring_before_boss Jokers are gone. growth_needed above 1 is the factor the
@@ -90,7 +98,8 @@ Money and Tarots drive most winning builds. Money compounds through interest:
 economy.spend_keeping_interest is what you can spend without lowering this cash-out, and
 each further $5 costs interest_lost_per_5_spent every round it stays spent; economy.this_shop
 counts this visit's rerolls and spend. Spend below the next $5 step only for a forecast gain
-that beats the lost interest, and reroll below it only when build_pace shows the build short.
+(today's, or engine_potential for an engine you will feed) that beats the lost interest,
+and reroll below it only when build_pace shows the build short.
 Tarots reshape the deck the engine scores with: in a blind, analysis.tarot_values gives each
 held Tarot's best targets and the best play before and after; in shops and packs,
 build_pace.tarots names deck targets (hand_slots in an open pack) and the change they make.
