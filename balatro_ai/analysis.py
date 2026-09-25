@@ -270,7 +270,10 @@ def _play_entry(
     assert all(isinstance(card, VisiblePlayingCard) for card in selected)
     visible = tuple(card for card in selected if isinstance(card, VisiblePlayingCard))
     splash = _active_joker(observation, "j_splash")
-    scoring = visible if splash else _scoring_cards(visible, family)
+    keys = frozenset(
+        j.key for j in observation.jokers if isinstance(j, PublicItem) and not j.debuffed
+    )
+    scoring = visible if splash else _scoring_cards(visible, family, keys)
     scoring_slots = _matching_slots(action.cards, visible, scoring)
     scoring_set = set(scoring_slots)
     pareidolia = _active_joker(observation, "j_pareidolia")

@@ -106,7 +106,13 @@ def _candidates(observation: PublicObservation, play_candidates: list[dict]) -> 
         ]
     top, score, family = min(supplied, key=lambda row: (-row[1], len(row[0].cards), row[0].cards))
     scoring = Counter(
-        _scoring_cards(tuple(observation.hand[slot.value] for slot in top.cards), family)
+        _scoring_cards(
+            tuple(observation.hand[slot.value] for slot in top.cards),
+            family,
+            frozenset(
+                j.key for j in observation.jokers if isinstance(j, PublicItem) and not j.debuffed
+            ),
+        )
     )
     core = []
     for slot in top.cards:

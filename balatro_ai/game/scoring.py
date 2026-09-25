@@ -381,7 +381,7 @@ def _score_play_prepared(
     scoring_cards = (
         tuple(card for card in cards if isinstance(card, VisiblePlayingCard))
         if context.splash
-        else _scoring_cards(cards, hand_name)
+        else _scoring_cards(cards, hand_name, context.active_keys)
     )
     base_chips = stat.chips if stat is not None else 0
     base_mult = stat.mult if stat is not None else 1
@@ -722,6 +722,11 @@ def _joker_main_effect(
     chips = 0
     mult: int | Fraction = 0
     xmult: int | Fraction = 1
+    active = frozenset(
+        item.key
+        for item in observation.jokers
+        if isinstance(item, PublicItem) and not item.debuffed
+    )
     if key == "j_joker":
         mult += 4
     if key in _TYPE_MULT_JOKERS:
@@ -738,7 +743,7 @@ def _joker_main_effect(
         if key == "j_green_joker":
             runtime_mult += 1
         elif key == "j_ride_the_bus":
-            scoring = _scoring_cards(cards, hand_name)
+            scoring = _scoring_cards(cards, hand_name, active)
             runtime_mult = (
                 0
                 if any(not card.debuffed and card.rank in _FACE_RANKS for card in scoring)
@@ -759,7 +764,7 @@ def _joker_main_effect(
     elif key == "j_ride_the_bus":
         # Fresh Ride the Bus follows the same source-defined zero initial
         # state. Its first non-face scoring hand becomes +1 immediately.
-        scoring = _scoring_cards(cards, hand_name)
+        scoring = _scoring_cards(cards, hand_name, active)
         if not any(not card.debuffed and card.rank in _FACE_RANKS for card in scoring):
             mult += 1
     if runtime is not None and runtime.current_chips is not None:
@@ -770,7 +775,8 @@ def _joker_main_effect(
             runtime_chips += 4
         elif key == "j_wee":
             runtime_chips += 8 * sum(
-                card.rank == "2" and not card.debuffed for card in _scoring_cards(cards, hand_name)
+                card.rank == "2" and not card.debuffed
+                for card in _scoring_cards(cards, hand_name, active)
             )
         chips += runtime_chips
     if runtime is not None and runtime.current_x_mult is not None:
@@ -854,13 +860,15 @@ def _joker_main_effect(
         if all(isinstance(card, VisiblePlayingCard) and card.suit in {"C", "S"} for card in held):
             xmult *= 3
     elif key == "j_flower_pot":
-        scoring = _scoring_cards(cards, hand_name)
+        scoring = _scoring_cards(cards, hand_name, active)
         suits = {card.suit for card in scoring if card.enhancement != "WILD"}
         live_wilds = sum(card.enhancement == "WILD" and not card.debuffed for card in scoring)
         if len(suits) + live_wilds >= 4:
             xmult *= 3
     elif key == "j_seeing_double":
-        suits = {card.suit for card in _scoring_cards(cards, hand_name) if not card.debuffed}
+        suits = {
+            card.suit for card in _scoring_cards(cards, hand_name, active) if not card.debuffed
+        }
         if "C" in suits and bool(suits - {"C"}):
             xmult *= 2
     elif key == "j_drivers_license" and runtime is not None and (runtime.driver_tally or 0) >= 16:
@@ -972,6 +980,52 @@ def _has_flush(
     return False
 
 
+def _flush_part(cards, required: int, joker_keys: frozenset[str]) -> set[int]:
+    """Vanilla get_flush: every card of the first suit, in S, H, C, D order, that flushes."""
+
+    smeared = "j_smeared" in joker_keys
+    for suit in ("S", "H", "C", "D"):
+        part = {
+            index
+            for index, card in enumerate(cards)
+            if card.enhancement == "WILD"
+            or card.suit == suit
+            or (smeared and {card.suit, suit}.issubset({"H", "D"}))
+            or (smeared and {card.suit, suit}.issubset({"S", "C"}))
+        }
+        if len(part) >= required:
+            return part
+    return set()
+
+
+def _straight_part(cards, required: int, shortcut: bool) -> set[int]:
+    """Vanilla get_straight: the cards of the run that makes the straight, Ace high or low."""
+
+    by_rank: dict[int, list[int]] = {}
+    for index, card in enumerate(cards):
+        rank = _RANK_ORDER.get(card.rank, 0)
+        if 1 < rank < 15:
+            by_rank.setdefault(rank, []).append(index)
+    run: list[int] = []
+    length, found, skipped = 0, False, False
+    for position in range(1, 15):
+        here = by_rank.get(14 if position == 1 else position)
+        if here:
+            length += 1
+            skipped = False
+            run.extend(here)
+        elif shortcut and not skipped and position != 14:
+            skipped = True
+        else:
+            length, skipped = 0, False
+            if found:
+                break
+            run = []
+        if length >= required:
+            found = True
+    return set(run) if found else set()
+
+
 def _has_straight(
     ranks: list[int],
     required: int,
@@ -1002,10 +1056,24 @@ def _has_straight(
 def _scoring_cards(
     cards: tuple[VisiblePlayingCard | HiddenHandCard, ...],
     hand_name: str,
+    joker_keys: frozenset[str] = frozenset(),
 ) -> tuple[VisiblePlayingCard, ...]:
     visible = tuple(card for card in cards if isinstance(card, VisiblePlayingCard))
     stones = tuple(card for card in visible if card.enhancement == "STONE")
     playing = tuple(card for card in visible if card.enhancement != "STONE")
+    if hand_name in {"Flush", "Straight", "Straight Flush"} and joker_keys & {
+        "j_four_fingers",
+        "j_shortcut",
+    }:
+        # Four Fingers and Shortcut let a card outside the flush or straight ride
+        # along; vanilla scores only the cards in those parts (get_flush/get_straight).
+        required = 4 if "j_four_fingers" in joker_keys else 5
+        part: set[int] = set()
+        if hand_name != "Straight":
+            part |= _flush_part(playing, required, joker_keys)
+        if hand_name != "Flush":
+            part |= _straight_part(playing, required, "j_shortcut" in joker_keys)
+        return (*(card for index, card in enumerate(playing) if index in part), *stones)
     if hand_name == "High Card":
         if not playing:
             return stones

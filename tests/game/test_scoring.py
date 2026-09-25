@@ -637,3 +637,28 @@ def test_a_copy_cycle_between_two_copy_jokers_scores_nothing() -> None:
     )
 
     assert score_play(observation, (HandSlot(0),))[0] == 16
+
+
+def _played(cards: str, jokers: tuple[str, ...]) -> PublicObservation:
+    hand = tuple(VisiblePlayingCard(code[0], code[1]) for code in cards.split())
+    return replace(
+        to_public_observation(state("SELECTING_HAND")),
+        hand=hand,
+        jokers=tuple(PublicItem(key, key, "JOKER") for key in jokers),
+        hand_stats=(HandStat("Flush", 1, 35, 4, 0, 0), HandStat("Straight", 1, 30, 4, 0, 0)),
+    )
+
+
+@pytest.mark.parametrize(
+    "cards,jokers,expected",
+    [
+        # Recorded 2W7A4ADG Ante 6: the off-suit Ace rode along but did not score.
+        ("AS AD JS 7S 4S", ("j_four_fingers",), ((35 + 11 + 10 + 7 + 4) * 4, "Flush")),
+        ("5H 6S 7D 8C KH", ("j_four_fingers",), ((30 + 5 + 6 + 7 + 8) * 4, "Straight")),
+        ("2H 4S 6D 8C TH", ("j_shortcut",), ((30 + 2 + 4 + 6 + 8 + 10) * 4, "Straight")),
+        ("AS KS QS JS 9S", (), ((35 + 11 + 10 + 10 + 10 + 9) * 4, "Flush")),
+    ],
+)
+def test_only_the_flush_or_straight_part_scores(cards, jokers, expected) -> None:
+    observation = _played(cards, jokers)
+    assert score_play(observation, tuple(HandSlot(i) for i in range(5))) == expected
