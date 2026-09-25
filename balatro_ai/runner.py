@@ -26,6 +26,7 @@ from .game.actions import (
 from .game.adapter import ObservationError, action_to_rpc, to_public_observation
 from .game.codec import public_observation_from_data, public_observation_to_data
 from .game.history import HistoryStep, enrich_runtime
+from .game.mechanics import joker_rarity
 from .game.state import Phase, PublicObservation
 
 DECKS = (
@@ -272,6 +273,30 @@ _KEYED_FIELDS = {
 }
 
 
+# A reroll chain hands control back when one of these appears among fresh offers.
+_NOTABLE_EDITIONS = frozenset({"POLYCHROME", "NEGATIVE"})
+
+
+def _offer_signatures(observation: PublicObservation) -> frozenset[tuple[str, str | None]]:
+    return frozenset((item.key, item.edition) for item in observation.shop if hasattr(item, "key"))
+
+
+def notable_offer(observation: PublicObservation, seen, wanted=()) -> str | None:
+    """Name a new Rare/Legendary Joker or Polychrome/Negative offer the coach has not seen.
+
+    Keys the chain already waits for keep their own stop condition and message.
+    """
+
+    for item in observation.shop:
+        if not hasattr(item, "key") or (item.key, item.edition) in seen or item.key in wanted:
+            continue
+        if item.edition in _NOTABLE_EDITIONS:
+            return f"the shop now offers {item.edition.lower()} {item.key}"
+        if item.kind == "JOKER" and joker_rarity(item.key) >= 3:
+            return f"the shop now offers {'legendary' if joker_rarity(item.key) == 4 else 'rare'} {item.key}"
+    return None
+
+
 @dataclass(frozen=True)
 class FollowUp:
     """One validated follow-up action, resolved against fresh state later."""
@@ -487,6 +512,16 @@ def _dealing(raw) -> bool:
     return raw.get("state") in _PACK_STATES and not (raw.get("pack") or {}).get("cards")
 
 
+# Arcana and Spectral packs deal the hand their targets come from after the pack
+# cards. Settling before it arrives leaves every targeted Tarot illegal to pick.
+_TARGET_PACK_STATES = frozenset({"TAROT_PACK", "SPECTRAL_PACK"})
+PACK_HAND_READS = 40
+
+
+def _awaiting_hand(raw) -> bool:
+    return raw.get("state") in _TARGET_PACK_STATES and not (raw.get("hand") or {}).get("cards")
+
+
 def _stable_reads(raw) -> int:
     """Identical consecutive reads, 0.1 s apart, before a state counts as settled.
 
@@ -496,14 +531,16 @@ def _stable_reads(raw) -> int:
 
 
 def settle(client, raw, deadline):
-    previous, stable = None, 0
-    for _ in range(100):
+    previous, stable, hand_waits = None, 0, 0
+    for _ in range(100 + PACK_HAND_READS):
         if time.monotonic() >= deadline:
             raise TimeoutError("game time limit reached while settling")
         if raw.get("state") == "MENU":
             raise RuntimeError("game unexpectedly returned to MENU")
         state = None
-        if raw.get("state") in _SETTLED_STATES and not _dealing(raw):
+        waiting = not _dealing(raw) and _awaiting_hand(raw) and hand_waits < PACK_HAND_READS
+        hand_waits += waiting
+        if raw.get("state") in _SETTLED_STATES and not _dealing(raw) and not waiting:
             try:
                 state = public_state(raw)
             except ObservationError as exc:
@@ -723,12 +760,18 @@ def run_game(
             unchanged = unchanged + 1 if after == state else 0
             return after
 
-        def run_chain(followups, state):
-            """Run the reply's follow-ups; the first problem ends the chain silently."""
+        def run_chain(followups, state, primary, seen):
+            """Run the reply's follow-ups; the first problem ends the chain silently.
+
+            ``seen`` holds the offers the coach saw; a reroll that brings a notable new
+            offer ends the chain so the coach can judge it.
+            """
 
             executed = 0
             stopped = None
-            for entry in followups:
+            if action_to_data(primary)["type"] == "reroll_shop":
+                stopped = notable_offer(state, seen)
+            for entry in followups if stopped is None else ():
                 for _ in range(entry.repeat):
                     if result["decisions"] >= limits.max_actions:
                         stopped = "the action limit was reached"
@@ -755,6 +798,10 @@ def run_game(
                         break
                     executed += 1
                     result["followup_actions"] += 1
+                    if entry.action_type == "reroll_shop":
+                        stopped = notable_offer(state, seen, entry.shop_has_any)
+                        if stopped:
+                            break
                 if stopped:
                     break
             step_chains[-1] = f"{executed} follow-up actions ran from one reply" + (
@@ -798,7 +845,7 @@ def run_game(
                     plan=plan,
                     validation_feedback=validation_feedback,
                     observation=public_observation_to_data(observation),
-                    analysis=analyze(observation),
+                    analysis=analyze(observation, tuple(history)),
                     recent_outcomes=[
                         dict(
                             action=action_to_data(h.action),
@@ -927,7 +974,7 @@ def run_game(
                 continue
             refused = 0
             if followups:
-                state = run_chain(followups, state)
+                state = run_chain(followups, state, action, _offer_signatures(observation))
             if unchanged >= 3:
                 raise RuntimeError("three actions produced no visible progress")
     except KeyboardInterrupt:

@@ -5,7 +5,7 @@ import pytest
 
 from balatro_ai.client import BalatroBotError
 from balatro_ai.runner import Limits, public_state, run_game, validate_response
-from tests.game.state_factory import item_card, shop_area, state
+from tests.game.state_factory import item_card, playing_card, shop_area, state
 
 
 class Game:
@@ -520,6 +520,47 @@ def test_reroll_chain_stops_on_a_wanted_key(tmp_path):
     )
 
 
+def test_reroll_chain_hands_back_a_notable_new_offer(tmp_path):
+    """A queued reroll must not roll past a Polychrome Joker the coach never saw."""
+
+    game = ShopGame(
+        money=40,
+        rerolls=[
+            [item_card("j_jolly", card_id=50, kind="JOKER", buy=4)],
+            [item_card("j_delayed_grat", card_id=51, kind="JOKER", buy=9, modifier=["POLYCHROME"])],
+            [item_card("j_zany", card_id=52, kind="JOKER", buy=4)],
+        ],
+    )
+    coach = ScriptedCoach(
+        {
+            "action_json": REROLL,
+            "then": [
+                {
+                    "action_json": REROLL,
+                    "repeat": 4,
+                    "until": {"shop_has_any": ["j_baron"], "money_at_least": None},
+                }
+            ],
+        },
+        {"action_json": LEAVE},
+    )
+    result = run_game(game, coach, tmp_path / "run")
+    assert game.calls.count("reroll") == 2 and result["followup_actions"] == 1
+    chain = coach.packets[1]["recent_outcomes"][-1]["chain"]
+    assert "chain stopped: the shop now offers polychrome j_delayed_grat" in chain
+
+
+def test_notable_offer_ignores_offers_the_coach_already_saw():
+    from balatro_ai.runner import _offer_signatures, notable_offer
+
+    raw = state("SHOP")
+    raw["shop"] = shop_area([item_card("j_blueprint", card_id=70, kind="JOKER", buy=10)])
+    observation = public_state(raw)
+    assert notable_offer(observation, frozenset()) == "the shop now offers rare j_blueprint"
+    assert notable_offer(observation, _offer_signatures(observation)) is None
+    assert notable_offer(observation, frozenset(), wanted=("j_blueprint",)) is None
+
+
 def test_reroll_chain_stops_on_the_money_floor(tmp_path):
     offers = [
         [item_card(key, card_id=60 + index, kind="JOKER", buy=4)]
@@ -886,9 +927,7 @@ def test_settle_waits_for_pack_cards_to_be_dealt(monkeypatch):
     from balatro_ai.runner import settle
 
     monkeypatch.setattr(runner.time, "sleep", lambda seconds: None)
-    dealt = state("TAROT_PACK")
-    dealt["pack"]["cards"].append(item_card("c_fool", card_id=31, kind="TAROT", buy=3))
-    dealt["pack"]["count"] = 2
+    dealt = _tarot_pack_with_hand()
     empty = deepcopy(dealt)
     empty["pack"]["cards"], empty["pack"]["count"] = [], 0
     partial = deepcopy(dealt)
@@ -908,6 +947,53 @@ def test_settle_waits_for_pack_cards_to_be_dealt(monkeypatch):
     settled = settle(client, deepcopy(empty), deadline=float("inf"))
     assert len(settled.opened_pack) == 2
     assert client.gamestate_calls >= 5 + 5  # empties and partials, then six stable reads
+
+
+def _tarot_pack_with_hand():
+    dealt = state("TAROT_PACK")
+    dealt["pack"]["cards"].append(item_card("c_fool", card_id=31, kind="TAROT", buy=3))
+    dealt["pack"]["count"] = 2
+    hand = [playing_card(key, card_id=40 + i) for i, key in enumerate(("S_Q", "H_J", "C_T"))]
+    dealt["hand"] = {"cards": hand, "count": 3, "highlighted_limit": 5, "limit": 8}
+    return dealt
+
+
+def test_settle_waits_for_the_hand_an_arcana_pack_deals(monkeypatch):
+    """An Arcana pack deals its target hand after the pack cards; settling on the
+    empty hand made every targeted Tarot illegal on the first pick of every pack."""
+    from balatro_ai import runner
+    from balatro_ai.runner import settle
+
+    monkeypatch.setattr(runner.time, "sleep", lambda seconds: None)
+    dealt = _tarot_pack_with_hand()
+    handless = deepcopy(dealt)
+    handless["hand"] = {"cards": [], "count": 0, "highlighted_limit": 5, "limit": 8}
+    reads = iter([handless] * 8 + [dealt] * 12)
+
+    class Client:
+        def rpc(self, method, params=None):
+            return deepcopy(next(reads))
+
+    settled = settle(Client(), deepcopy(handless), deadline=float("inf"))
+    assert len(settled.hand) == 3 and len(settled.opened_pack) == 2
+
+
+def test_settle_accepts_a_handless_pack_after_a_bounded_wait(monkeypatch):
+    from balatro_ai import runner
+    from balatro_ai.runner import PACK_HAND_READS, settle
+
+    monkeypatch.setattr(runner.time, "sleep", lambda seconds: None)
+    handless = _tarot_pack_with_hand()
+    handless["hand"] = {"cards": [], "count": 0, "highlighted_limit": 5, "limit": 8}
+    calls = []
+
+    class Client:
+        def rpc(self, method, params=None):
+            calls.append(method)
+            return deepcopy(handless)
+
+    settled = settle(Client(), deepcopy(handless), deadline=float("inf"))
+    assert settled.hand == () and len(calls) <= PACK_HAND_READS + 10
 
 
 @pytest.mark.parametrize("deck,stake", [("RED", "WHITE"), ("BLACK", "GOLD")])

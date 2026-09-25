@@ -65,6 +65,30 @@ shop that could supply the missing score. Do not sell needed current scoring to
 fund an upgrade that only improves a different resource. Compare visible offers
 and affordable replacements; never assume a future shop contains the rescue.
 
+Read analysis.build_pace outside blinds. Each blinds row compares the build's sampled
+per-hand score (best single play from hand size plus a few replacement cards per discard,
+with current Jokers and levels frozen: no future growth, sequencing or skill) with
+needed_per_hand, and estimates clear_chance. Trust relative changes more than absolute
+levels. jokers[].share_of_score is the score each Joker carries now: an eternal near zero is
+a permanently wasted slot, and a Perishable with active_at_boss false will not help there.
+offers[] and tarots[] give per_hand_change and the focus blind's clear chance before and
+after each visible buy, sell-then-buy (replaces names the Joker sold), Planet, voucher or
+Tarot. no_direct_score marks Jokers whose value is money or effects rather than score;
+not_modelled marks Jokers the scorer cannot value. When the build is short of pace, fund
+the affordable change with the largest clear-chance gain; when it is comfortably ahead,
+bank money for interest and later engines.
+
+Money and Tarots drive most winning builds. Money compounds through interest:
+economy.spend_keeping_interest is what you can spend without lowering this cash-out, and
+each further $5 costs interest_lost_per_5_spent every round it stays spent; economy.this_shop
+counts this visit's rerolls and spend. Spend below the next $5 step only for a forecast gain
+that beats the lost interest, and reroll below it only when build_pace shows the build short.
+Tarots reshape the deck the engine scores with: in a blind, analysis.tarot_values gives each
+held Tarot's best targets and the best play before and after; in shops and packs,
+build_pace.tarots names deck targets (hand_slots in an open pack) and the change they make.
+Use or pick a Tarot when it raises score or clear chance, and value Hermit and Temperance by
+economy.money_sources, which shows what each pays now.
+
 Temporary strength also decays without stickers. Read the visible runtime and
 decay facts in survival_context; budget replacements before Ice Cream, Popcorn
 or Turtle Bean stop carrying the build. Keep a needed bridge until replacement
@@ -141,11 +165,12 @@ Vanilla rules to apply directly, without waiting for an example:
   next $5 step costs future income; holding past the cap earns nothing.
 - Skipping a small or big blind forfeits playing that round, its cashout income,
   production/scaling opportunities and the shop after it, grants its tag at once,
-  and leaves the ante target unchanged. Compare the visible tag with those losses;
-  do not skip automatically, even when Small Blind has no base cash reward at
-  higher stakes. Early shops matter especially to Black Deck survival. Bosses cannot be
-  skipped. Tag values: Negative (next base-edition shop Joker becomes Negative and
-  free, and Negative adds a Joker slot), Rare/Uncommon (free Joker of that rarity in
+  and leaves the ante target unchanged. Compare analysis.skip_value with those losses:
+  reward_if_played is the base cash you give up, $0 for the Small Blind from Red Stake up,
+  so a free Joker, edition or Mega pack often beats a rewardless Small Blind and a shop you
+  cannot afford. Bosses cannot be skipped. Tag values: Negative, Polychrome, Holographic
+  and Foil (the next base-edition shop Joker is free and becomes Negative with +1 Joker
+  slot, Polychrome X1.5 Mult, Holographic +10 Mult or Foil +50 chips), Rare/Uncommon (free Joker of that rarity in
   the shop), Charm (free Mega Arcana: 5 Tarots choose 2), Meteor (free Mega Celestial:
   5 Planets choose 2), Buffoon (free Mega Buffoon: 4 Jokers choose 2), Standard (free
   Mega Standard: 5 cards choose 2), Ethereal (free Spectral pack: 2 choose 1), Double
@@ -198,7 +223,10 @@ this one reply. Each entry is
 {"action_json": <canonical action>, "repeat": <1-6 or null>, "until": <object or null>}.
 Every reply costs about ten seconds, so decide a whole shop visit at once whenever
 you already know the next steps: primary action plus follow-ups ending in
-leave_shop, or a reroll loop with an until condition. Return [] only when the next
+leave_shop (then select_blind or skip_blind once you have decided the next blind), or a
+reroll loop with an until condition. A reroll loop also stops by itself when a Rare or
+Legendary Joker or a Polychrome or Negative offer you have not seen appears, so you can
+judge it; searching with a bounded loop is safe. Return [] only when the next
 step depends on something not yet visible (a pack's contents, the next blind, a
 reroll you are not conditioning on). Follow-ups run in order after the primary
 action settles, are re-validated against the fresh state, and the chain stops

@@ -24,6 +24,8 @@ been inspected and are excluded from future holdout evaluation.
 | Fast coach (Jev decides, Astra advises) | Black/Gold JBG00000 | Lost Ante 1 (378/600) twice at 0.77 s median decisions | same tag, `docs/fast.md` |
 | Fast selective v2 (Jev + selective Astra reviews) | Black/Gold JBG00000 | Lost Ante 4 (6,836/13,500) in 518 s | same tag, `evidence/fast-selective-*` |
 | GPT-6 Luna xhigh, pure Codex coach | Black/Gold, headless | Lost Ante 2 after 1,332 s; 30 s median latency, 4 timeouts | tag `archive/2026-09-25/luna-xhigh-headless` |
+| Blind-search replay (kernel ported, no routing) | Recorded in-blind decisions from both wins, XV2MP8L5 and the pilot Astra arms | 85 of 406 covered; 14 (3.4%) routable after excluding scaling/money Jokers, held Tarots and inexact results, all "play a covered clearing hand", 14/14 agreeing with Astra; never proves Astra worse. Dropped per `plan.md` A2 | port and report left unmerged in an agent worktree |
+| **Astra low + pace, money, Tarot and skip values; visible `--fast`** | Black/Gold, random fresh seed, 25 Sep 2026 | Lost the Ante 8 boss (Crimson Heart, 295,956/400,000) after clearing Antes 1–7; 28.2 min, 148 calls, 6 skips | `runs/astra-fast-bg-001` (not committed); `balatro_ai/pace.py`, `balatro_ai/economy.py` |
 | Offline strategy knowledge base | Offline | In progress, uncommitted, on branch `strategy-knowledge-base` in the primary checkout | not archived by this cleanup |
 
 ## Lessons
@@ -49,8 +51,15 @@ been inspected and are excluded from future holdout evaluation.
 | PI4T2AH8 (win) | 95.5 min | 36.0 min | 59.4 min | 227, 9.2 s |
 | MSVP7ABY (win) | 97.7 min | 48.8 min | 48.9 min | 216, 10.2 s |
 | Pilot Astra runs | 22–27 min | 70–72% | 28–30% | 98–122, 8.6–9.5 s |
+| astra-fast-bg-001 (visible `--fast`, lost Ante 8) | 28.2 min | 24.3 min | 2.2 min | 148, 9.3 s |
 
-- Local analysis is negligible: about 0.01 s per decision.
+- Local analysis is negligible: about 0.01 s per decision. The pace forecast adds a
+  median 0.4 s (p90 2.4 s) to shop decisions.
+- Visible `--fast` mode cut a `play` from 8.7 s to 0.72 s median; Astra is now 86%
+  of wall time, so the number of calls is the remaining lever.
+- Until 25 Sep 2026 the runner settled Arcana and Spectral packs before their hand
+  was dealt, so targeted Tarots were illegal on the first pick of nearly every pack
+  (PI4T2AH8: 12 of 64 pack observations had a hand).
 - The wins were recorded in visible, slowed-down mode. With visible 2×
   animations, a `play` takes 8.7 s median in the client. A clean
   `--fast --headless` measurement does not exist yet.

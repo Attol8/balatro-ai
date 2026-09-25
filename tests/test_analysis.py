@@ -10,6 +10,7 @@ from balatro_ai.game.adapter import to_public_observation
 from balatro_ai.game.codec import public_observation_from_data
 from balatro_ai.game.state import (
     HandStat,
+    HiddenHandCard,
     PublicBlind,
     PublicItem,
     PublicJokerRuntime,
@@ -268,6 +269,9 @@ def test_interest_preview_uses_the_base_cap_without_a_voucher() -> None:
         "interest_cap": 5,
         "next_interest_threshold": 20,
         "reroll_cost": 5,
+        "spend_keeping_interest": 2,
+        "interest_lost_per_5_spent": 1,
+        "next_blind_reward": 3,
     }
 
 
@@ -372,3 +376,17 @@ def test_continuation_probe_oracles_are_exposed_in_analysis():
         assert winners == case["accepted_actions"]
         assert advice["samples"] == 48
         assert "different resource horizons" in advice["note"]
+
+
+def test_face_down_cards_leave_the_visible_plays_scored() -> None:
+    """The Wheel turns some cards face down; the face-up ones can still be scored."""
+
+    observation = replace(
+        _selecting_hand(),
+        hand=(VisiblePlayingCard("K", "H"), HiddenHandCard(), VisiblePlayingCard("K", "S")),
+    )
+    result = analyze(observation)
+    played = [row["action"]["cards"] for row in result["play_candidates"]]
+    assert [0, 2] in played and all(1 not in cards for cards in played)
+    assert "face-down" in result["hidden_hand_note"]
+    assert "numerical_play_status" not in result

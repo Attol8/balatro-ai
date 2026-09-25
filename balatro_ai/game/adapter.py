@@ -150,9 +150,15 @@ def to_public_observation(raw: Mapping[str, Any]) -> PublicObservation:
     joker_area = _area(raw, "jokers")
     consumable_area = _area(raw, "consumables")
     raw_pack_choices = _required_int(raw, "pack_choices_remaining")
+    jokers = tuple(_joker_card(card) for card in joker_area["cards"])
+    # Vanilla probabilities start at 1 and each active Oops! All 6s doubles them.
+    probability = 2 ** sum(
+        isinstance(joker, PublicItem) and joker.key == "j_oops" and not joker.debuffed
+        for joker in jokers
+    )
     blinds = tuple(
         sorted(
-            (_blind(value) for value in blinds_raw.values()),
+            (_blind(value, probability) for value in blinds_raw.values()),
             key=lambda blind: ("SMALL", "BIG", "BOSS").index(blind.kind),
         )
     )
@@ -209,7 +215,7 @@ def to_public_observation(raw: Mapping[str, Any]) -> PublicObservation:
                 key=lambda hand: hand.name,
             )
         ),
-        jokers=tuple(_joker_card(card) for card in joker_area["cards"]),
+        jokers=jokers,
         joker_limit=_required_int(joker_area, "limit"),
         consumables=tuple(_item(card) for card in consumable_area["cards"]),
         consumable_limit=_required_int(consumable_area, "limit"),
@@ -585,14 +591,19 @@ def _runtime_string(ability: Mapping[str, Any], key: str) -> str | None:
     return value
 
 
-def _blind(raw: object) -> PublicBlind:
+def _blind(raw: object, probability: int = 1) -> PublicBlind:
     if not isinstance(raw, Mapping):
         raise ObservationError("blind must be an object")
+    name = _required_string(raw, "name")
+    effect = str(raw.get("effect") or "")
+    if name == "The Wheel":
+        # The mod sends the vanilla text template; #1# is the probability numerator.
+        effect = effect.replace("#1#", str(probability))
     return PublicBlind(
         kind=_required_string(raw, "type"),
         status=_required_string(raw, "status"),
-        name=_required_string(raw, "name"),
-        effect=str(raw.get("effect") or ""),
+        name=name,
+        effect=effect,
         score=_required_score_int(raw, "score"),
         disabled=_required_bool(raw, "disabled"),
         tag_name=str(raw.get("tag_name") or ""),

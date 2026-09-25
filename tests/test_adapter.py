@@ -163,3 +163,12 @@ def test_fortune_teller_rejects_malformed_current_mult(display: str) -> None:
 
     with pytest.raises(ObservationError, match="non-negative integer"):
         to_public_observation(raw)
+
+
+def test_the_wheel_text_fills_its_probability_placeholder():
+    raw = state()
+    raw["blinds"]["boss"].update(name="The Wheel", effect="#1# in 7 cards get drawn face down")
+    assert to_public_observation(raw).blinds[-1].effect == "1 in 7 cards get drawn face down"
+    raw["jokers"]["cards"] = [item_card("j_oops", card_id=90, kind="JOKER")]
+    raw["jokers"]["count"] = 1
+    assert to_public_observation(raw).blinds[-1].effect == "2 in 7 cards get drawn face down"

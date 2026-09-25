@@ -8,6 +8,14 @@ from fractions import Fraction
 
 from balatro_ai.continuation import continuation_advice
 from balatro_ai.discard import flush_draws
+from balatro_ai.economy import (
+    blind_reward,
+    interest,
+    money_sources,
+    next_blind,
+    shop_visit,
+    skip_value,
+)
 from balatro_ai.game.actions import (
     DiscardCards,
     HandSlot,
@@ -20,6 +28,7 @@ from balatro_ai.game.actions import (
     is_legal,
     iter_legal_actions,
 )
+from balatro_ai.game.history import HistoryStep
 from balatro_ai.game.scoring import (
     MouthFamilyUnavailable,
     _prepare_score_context,
@@ -35,6 +44,7 @@ from balatro_ai.game.state import (
     PublicObservation,
     VisiblePlayingCard,
 )
+from balatro_ai.pace import build_pace, hand_tarot_values
 from balatro_ai.production import copier_timing, round_production
 from balatro_ai.readiness import boss_readiness
 from balatro_ai.reordering import joker_reorder_advice
@@ -46,11 +56,6 @@ _MAX_STRATEGIC_ACTIONS = 24
 _MAX_REORDER_SUGGESTIONS = 4
 _FACE_RANKS = frozenset({"J", "Q", "K"})
 _BLACK_SUITS = frozenset({"S", "C"})
-# Vanilla raises the interest cap by voucher: $25 held earns the base $5, Seed
-# Money lifts that to $50 held for $10, and Money Tree to $100 held for $20.
-_INTEREST_CAP_MONEY = {"v_seed_money": 50, "v_money_tree": 100}
-_BASE_INTEREST_CAP_MONEY = 25
-_INTEREST_STEP = 5
 _COPY_ENGINE_KEYS = frozenset(
     {
         "j_card_sharp",
@@ -67,7 +72,9 @@ _COPY_ENGINE_KEYS = frozenset(
 )
 
 
-def analyze(observation: PublicObservation) -> dict[str, object]:
+def analyze(
+    observation: PublicObservation, history: tuple[HistoryStep, ...] = ()
+) -> dict[str, object]:
     """Describe bounded legal choices without choosing an action.
 
     The caller may submit any separately validated raw action; the shortlist is
@@ -97,7 +104,7 @@ def analyze(observation: PublicObservation) -> dict[str, object]:
         "shortlist_is_not_allowlist": True,
         "mechanism_reminders": _mechanism_reminders(observation),
         "unmodelled_jokers": _unmodelled_joker_rows(observation),
-        "economy": _economy(observation),
+        "economy": _economy(observation, history),
     }
     examples = retrieve_examples(observation)
     survival = survival_context(observation)
@@ -123,6 +130,20 @@ def analyze(observation: PublicObservation) -> dict[str, object]:
     opportunities = _engine_opportunities(observation)
     if opportunities:
         result["engine_opportunities"] = opportunities
+    pace = build_pace(observation)
+    if pace:
+        result["build_pace"] = pace
+    tarots = hand_tarot_values(observation)
+    if tarots:
+        result["tarot_values"] = tarots
+    skip = skip_value(observation)
+    if skip:
+        result["skip_value"] = skip
+    if plays and any(isinstance(card, HiddenHandCard) for card in observation.hand):
+        result["hidden_hand_note"] = (
+            "Scored plays use only face-up cards; face-down cards are held unscored and "
+            "any held effects they have are omitted."
+        )
     if observation.phase == Phase.SELECTING_HAND and not plays:
         if unavailable:
             result["numerical_play_status"] = f"unavailable: {unavailable}"
@@ -160,31 +181,32 @@ def _slots(observation: PublicObservation) -> dict[str, object]:
     }
 
 
-def _economy(observation: PublicObservation) -> dict[str, object]:
-    """Preview cashout interest from public money, vouchers and Jokers."""
+def _economy(
+    observation: PublicObservation, history: tuple[HistoryStep, ...] = ()
+) -> dict[str, object]:
+    """Preview cashout interest and money from public money, vouchers, Jokers and offers."""
 
-    cap_money = max(
-        [_BASE_INTEREST_CAP_MONEY]
-        + [
-            amount
-            for voucher, amount in _INTEREST_CAP_MONEY.items()
-            if voucher in observation.used_vouchers
-        ]
-    )
-    # Vanilla pays interest_amount per $5 held; each To the Moon adds one.
-    per_step = 1 + sum(
-        isinstance(joker, PublicItem) and joker.key == "j_to_the_moon" and not joker.debuffed
-        for joker in observation.jokers
-    )
-    steps = max(0, observation.money) // _INTEREST_STEP
-    cap_steps = cap_money // _INTEREST_STEP
-    return {
+    paid = interest(observation)
+    result: dict[str, object] = {
         "money": observation.money,
-        "interest_at_cashout": per_step * min(steps, cap_steps),
-        "interest_cap": per_step * cap_steps,
-        "next_interest_threshold": (None if steps >= cap_steps else (steps + 1) * _INTEREST_STEP),
+        "interest_at_cashout": paid["at_cashout"],
+        "interest_cap": paid["cap"],
+        "next_interest_threshold": paid["next_threshold"],
         "reroll_cost": observation.round.reroll_cost,
     }
+    if paid["at_cashout"] < paid["cap"] or paid["spend_keeping_interest"]:
+        result["spend_keeping_interest"] = paid["spend_keeping_interest"]
+        result["interest_lost_per_5_spent"] = paid["per_step"] if paid["at_cashout"] else 0
+    blind = next_blind(observation)
+    if blind is not None and observation.phase != Phase.ROUND_EVAL:
+        result["next_blind_reward"] = blind_reward(observation, blind)
+    sources = money_sources(observation)
+    if sources:
+        result["money_sources"] = sources
+    visit = shop_visit(history)
+    if visit is not None:
+        result["this_shop"] = visit
+    return result
 
 
 def _play_advice(
@@ -192,15 +214,18 @@ def _play_advice(
 ) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
     if observation.phase != Phase.SELECTING_HAND:
         return [], []
-    if any(isinstance(card, HiddenHandCard) for card in observation.hand):
-        return [], []
     if any(isinstance(joker, HiddenJokerSlot) for joker in observation.jokers):
+        return [], []
+    # Face-down cards (The Wheel, The House, ...) cannot be scored; plays of the
+    # visible cards still can, with the hidden cards held unscored.
+    hidden = {i for i, card in enumerate(observation.hand) if isinstance(card, HiddenHandCard)}
+    if len(hidden) == len(observation.hand):
         return [], []
 
     context = _prepare_score_context(observation)
     scored: list[tuple[PlayCards, int | Fraction, str]] = []
     for action in iter_legal_actions(observation):
-        if isinstance(action, PlayCards):
+        if isinstance(action, PlayCards) and hidden.isdisjoint(s.value for s in action.cards):
             score, family = _score_play_prepared(observation, action.cards, None, context)
             scored.append((action, score, family))
 
@@ -378,7 +403,10 @@ def _strategic_actions(
         row = action_to_data(action)
         key = (
             row["type"],
-            *(row.get(field) for field in ("consumable", "card", "joker", "voucher", "pack", "mode")),
+            *(
+                row.get(field)
+                for field in ("consumable", "card", "joker", "voucher", "pack", "mode")
+            ),
             len(row.get("targets", [])),
         )
         groups.setdefault(key, deque()).append(row)
