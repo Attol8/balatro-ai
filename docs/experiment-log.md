@@ -26,6 +26,7 @@ been inspected and are excluded from future holdout evaluation.
 | GPT-6 Luna xhigh, pure Codex coach | Black/Gold, headless | Lost Ante 2 after 1,332 s; 30 s median latency, 4 timeouts | tag `archive/2026-09-25/luna-xhigh-headless` |
 | Blind-search replay (kernel ported, no routing) | Recorded in-blind decisions from both wins, XV2MP8L5 and the pilot Astra arms | 85 of 406 covered; 14 (3.4%) routable after excluding scaling/money Jokers, held Tarots and inexact results, all "play a covered clearing hand", 14/14 agreeing with Astra; never proves Astra worse. Dropped per `plan.md` A2 | port and report left unmerged in an agent worktree |
 | **Astra low + pace, money, Tarot and skip values; visible `--fast`** | Black/Gold, random fresh seed, 25 Sep 2026 | Lost the Ante 8 boss (Crimson Heart, 295,956/400,000) after clearing Antes 1–7; 28.2 min, 148 calls, 6 skips | `runs/astra-fast-bg-001` (not committed); `balatro_ai/pace.py`, `balatro_ai/economy.py` |
+| Same bot + next-ante horizon, forecast-gated rerolls; visible `--fast`, endless | Red/White, seed 2W7A4ADG, 25 Sep 2026 | **Won Ante 8**; endless lost the Ante 11 Big Blind (2,671,670/10,800,000). 55.3 min and 278 calls in three segments: an Ante 8 Cerulean Bell crash and a transient Codex exit, both fixed and resumed | `runs/red-white-2W7A4ADG-endless*` (not committed) |
 | Offline strategy knowledge base | Offline | In progress, uncommitted, on branch `strategy-knowledge-base` in the primary checkout | not archived by this cleanup |
 
 ## Lessons
@@ -57,6 +58,14 @@ been inspected and are excluded from future holdout evaluation.
   median 0.4 s (p90 2.4 s) to shop decisions.
 - Visible `--fast` mode cut a `play` from 8.7 s to 0.72 s median; Astra is now 86%
   of wall time, so the number of calls is the remaining lever.
+- The 2W7A4ADG run chained 47 follow-up actions (20 rerolls inside loops) against
+  19 in the previous game; median call time stayed at 9.5 s.
+- The live run found three bugs, all fixed: Four Fingers flushes scored an off-suit
+  card (38,808 estimated, 24,716 real), held-Tarot scoring and targets ignored
+  Cerulean Bell's forced card, and a failed Codex process was not retried.
+- The pace forecast freezes growing Jokers (Obelisk, Supernova) at their current
+  value, so it is conservative for builds that grow inside a round: it gave the
+  Ante 10 boss under 50% and the bot cleared it with 1.43M of 1.12M.
 - Until 25 Sep 2026 the runner settled Arcana and Spectral packs before their hand
   was dealt, so targeted Tarots were illegal on the first pick of nearly every pack
   (PI4T2AH8: 12 of 64 pack observations had a hand).
