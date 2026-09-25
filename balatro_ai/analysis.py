@@ -130,12 +130,15 @@ def analyze(
     opportunities = _engine_opportunities(observation)
     if opportunities:
         result["engine_opportunities"] = opportunities
-    pace = build_pace(observation)
-    if pace:
-        result["build_pace"] = pace
-    tarots = hand_tarot_values(observation)
-    if tarots:
-        result["tarot_values"] = tarots
+    for name, compute in (("build_pace", build_pace), ("tarot_values", hand_tarot_values)):
+        # Advisory numbers must never end a game: a failure is reported, not raised.
+        try:
+            value = compute(observation)
+        except Exception as exc:  # noqa: BLE001 - surfaced to the coach and the trace
+            result[f"{name}_unavailable"] = f"{type(exc).__name__}: {exc}"[:300]
+            continue
+        if value:
+            result[name] = value
     skip = skip_value(observation)
     if skip:
         result["skip_value"] = skip

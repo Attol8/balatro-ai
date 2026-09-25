@@ -237,3 +237,32 @@ def test_played_card_engines_find_their_feed_from_the_scorer_rules() -> None:
     )
     assert "Justice (Glass)" in _shop_offer(pace, "j_hack")["engine_potential"]["fuel"]
     assert pace["seconds"] < 3.5
+
+
+def test_an_idol_offer_keeps_its_target_card_when_priced() -> None:
+    """A 2W7A4ADG replay stopped at Ante 6 when The Idol was rebuilt without its target."""
+
+    from balatro_ai.game.state import PublicJokerRuntime
+
+    observation = _recorded("2w7a4adg_ante4_blueprint_shop")
+    idol = PublicItem(
+        "j_idol",
+        "The Idol",
+        "JOKER",
+        buy_cost=6,
+        runtime=PublicJokerRuntime(target_rank="K", target_suit="S"),
+    )
+    row = _shop_offer(build_pace(replace(observation, shop=(idol,))), "j_idol")
+    assert row["engine_potential"]["fuel"].startswith("Justice (Glass)")
+
+
+def test_a_failing_forecast_is_reported_instead_of_ending_the_game(monkeypatch) -> None:
+    from balatro_ai import analysis
+
+    def broken(observation):
+        raise ValueError("synthetic forecast failure")
+
+    monkeypatch.setattr(analysis, "build_pace", broken)
+    result = analysis.analyze(_recorded("jbg00002_wheel_shop"))
+    assert result["build_pace_unavailable"] == "ValueError: synthetic forecast failure"
+    assert "build_pace" not in result and result["economy"]

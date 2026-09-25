@@ -824,14 +824,14 @@ def _usage(view: _View) -> tuple[Counter, Counter]:
     return played, held
 
 
-def _feed(view: _View, key: str, jokers) -> tuple[str, list[int]] | None:
+def _feed(view: _View, joker: PublicItem, jokers) -> tuple[str, list[int]] | None:
     """The deck cards an engine Joker acts on, and whether it wants them held or played.
 
     Played-card rules come from the scorer itself, so every modelled per-card Joker
     is covered; an empty held list means any card kept in hand.
     """
 
-    deck, base = view.deck, view.base
+    deck, base, key = view.deck, view.base, joker.key
     cards = [(index, card) for index, card in enumerate(deck) if card is not None]
     if key in _HELD_RANKS:
         return "held", [index for index, card in cards if card.rank == _HELD_RANKS[key]]
@@ -840,7 +840,8 @@ def _feed(view: _View, key: str, jokers) -> tuple[str, list[int]] | None:
             _HELD_RANKS[j.key] for j in jokers if isinstance(j, PublicItem) and j.key in _HELD_RANKS
         }
         return "held", [index for index, card in cards if card.rank in ranks]
-    item = PublicItem(key, key, "JOKER")
+    # The real item carries runtime some rules need, such as The Idol's target card.
+    item = joker
     keys = frozenset({key})
     if key in _PLAYED_INDIVIDUAL_ADDITIVE_JOKERS:
         return "played", [i for i, c in cards if _card_joker_effect(key, (c,), keys) != (0, 0)]
@@ -915,7 +916,7 @@ def _engine_potential(
     An engine sits where an owned copier repeats it, since that is how engines compound.
     """
 
-    key = item.key
+    key, engine = item.key, item
     if key not in _COPIERS:
         for index, joker in enumerate(current):
             if isinstance(joker, PublicItem) and joker.key in _COPIERS:
@@ -928,11 +929,11 @@ def _engine_potential(
         targets = with_item[position + 1 : position + 2] if key == "j_blueprint" else with_item[:1]
         if not targets or not isinstance(targets[0], PublicItem):
             return None
-        key = targets[0].key
+        key, engine = targets[0].key, targets[0]
     if not budget.left():
         budget.skipped.append(f"engine_potential:{item.key}")
         return None
-    feed = _feed(view, key, with_item)
+    feed = _feed(view, engine, with_item)
     if feed is None:
         return None
     kind, cards = feed
@@ -954,9 +955,10 @@ def _engine_potential(
         with_scores = _deck_scores(small, deck, changed, with_item, after)
         without = _deck_scores(small, deck, changed, None, view.scores[:_POTENTIAL_SAMPLES])
         result.setdefault("fuel", f"{tarot} on {_describe(fed if cards else [])}")
+        # Medians: a few freak hands must not dominate a feed's value.
         result[f"after_{len(changed)}_edits"] = {
             "per_hand_median": _number(_quantile(with_scores, 0.5)),
-            "per_hand_change": _change(without, with_scores),
+            "per_hand_change": _round_change(without, with_scores),
             "copies_needed": copies,
         }
     partner = _PARTNERS.get(key)
@@ -1229,7 +1231,7 @@ def _owned_feed(view: _View, tarot: str) -> set[int]:
     fed: set[int] = set()
     for joker in view.base.jokers:
         if isinstance(joker, PublicItem) and not joker.debuffed:
-            feed = _feed(view, joker.key, view.base.jokers)
+            feed = _feed(view, joker, view.base.jokers)
             if feed is not None and feed[0] == kind:
                 fed.update(feed[1])
     return fed
