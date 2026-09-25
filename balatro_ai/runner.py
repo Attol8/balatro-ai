@@ -15,6 +15,7 @@ from pathlib import Path
 
 from .analysis import analyze
 from .client import BalatroBotClient, BalatroBotError, BalatroBotRejected
+from .coach import CoachCallFailed
 from .game.actions import (
     CashOut,
     PublicAction,
@@ -608,6 +609,7 @@ def run_game(
         decisions=0,
         coach_requests=0,
         coach_timeouts=0,
+        coach_failures=0,
         forced_actions=0,
         followup_actions=0,
         rpc_timeouts_recovered=0,
@@ -899,10 +901,12 @@ def run_game(
                             packet, min(limits.call_seconds, deadline - time.monotonic())
                         )
                         break
-                    except TimeoutError as exc:
-                        result["coach_timeouts"] += 1
+                    except (TimeoutError, CoachCallFailed) as exc:
+                        # A failed or timed-out call mutated nothing, so it is re-asked.
+                        failed = isinstance(exc, CoachCallFailed)
+                        result["coach_failures" if failed else "coach_timeouts"] += 1
                         record(
-                            "coach_timeout",
+                            "coach_failed" if failed else "coach_timeout",
                             request_id=request_id,
                             seconds=round(time.monotonic() - call_started, 3),
                             attempt=attempt,

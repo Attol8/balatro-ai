@@ -1064,3 +1064,22 @@ def test_a_later_pack_pick_is_chained_only_by_key():
     ):
         with pytest.raises(ValueError):
             _validate_followup({"action_json": action})
+
+
+def test_a_failed_model_call_is_re_asked_like_a_timeout(tmp_path):
+    from balatro_ai.coach import CoachCallFailed
+
+    class FailingOnceCoach(TimingOutCoach):
+        def choose(self, packet, timeout):
+            self.packets.append(packet)
+            if len(self.packets) == 1:
+                raise CoachCallFailed("Codex CLI failed: attempt 0: status 1")
+            return {
+                "request_id": packet["request_id"],
+                "action_json": '{"type":"select_blind"}',
+                "plan": "",
+            }
+
+    result = run_game(Game(), FailingOnceCoach(), tmp_path / "run")
+    assert result["status"] == "won" and result["coach_failures"] == 1
+    assert result["coach_requests"] == 2 and result["coach_timeouts"] == 0

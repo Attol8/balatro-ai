@@ -75,6 +75,10 @@ _RESPONSE_SCHEMA: dict[str, object] = {
 }
 
 
+class CoachCallFailed(RuntimeError):
+    """A model call that ended without a valid reply; nothing reached the game."""
+
+
 class CodexCoach:
     """Make one ephemeral Astra-low Codex CLI call per packet."""
 
@@ -347,7 +351,7 @@ def _run_hedged(
                     hedged = True
                     start(1)
                     continue
-                raise RuntimeError("Codex CLI failed: " + "; ".join(failures))
+                raise CoachCallFailed("Codex CLI failed: " + "; ".join(failures))
     finally:
         kill_all()
 
