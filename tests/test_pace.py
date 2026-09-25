@@ -266,3 +266,15 @@ def test_a_failing_forecast_is_reported_instead_of_ending_the_game(monkeypatch) 
     result = analysis.analyze(_recorded("jbg00002_wheel_shop"))
     assert result["build_pace_unavailable"] == "ValueError: synthetic forecast failure"
     assert "build_pace" not in result and result["economy"]
+
+
+def test_growth_needed_agrees_with_clear_chance_for_all_or_nothing_builds() -> None:
+    """A Straight build scores 1.2M or 24k a hand; its median hand says nothing useful."""
+
+    from balatro_ai.pace import _clear_chance, _growth_needed
+
+    scores = [24_000.0] * 24 + [1_200_000.0] * 8
+    growth = _growth_needed(scores, 4, 1_120_000)
+    assert growth < 5, "the median hand (24k) would claim about 47x"
+    assert _clear_chance([s * growth for s in scores], 4, 1_120_000) >= 0.5
+    assert _clear_chance([s * growth * 0.8 for s in scores], 4, 1_120_000) < 0.5

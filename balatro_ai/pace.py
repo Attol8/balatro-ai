@@ -556,12 +556,29 @@ def _deck_scores(view: _View, deck, changed: set[int], jokers=None, unchanged=No
     return scores
 
 
+def _round_sums(scores: list[float], hands: int) -> list[float]:
+    """Sampled round totals: ``hands`` independent hands drawn from the per-hand samples."""
+
+    rng = Random(_SEED + 7)
+    return [sum(rng.choice(scores) for _ in range(hands)) for _ in range(_BOOTSTRAP)]
+
+
 def _clear_chance(scores: list[float], hands: int, target: int) -> float:
     if not scores or target <= 0:
         return 1.0
-    rng = Random(_SEED + 7)
-    wins = sum(sum(rng.choice(scores) for _ in range(hands)) >= target for _ in range(_BOOTSTRAP))
-    return round(wins / _BOOTSTRAP, 2)
+    return round(sum(total >= target for total in _round_sums(scores, hands)) / _BOOTSTRAP, 2)
+
+
+def _growth_needed(scores: list[float], hands: int, target: int) -> float | None:
+    """The factor every hand must grow by for a 50% clear chance: target over median round.
+
+    Round totals, not the median hand, so all-or-nothing builds (a Straight or nothing)
+    get a sensible figure; it agrees with clear_chance by construction.
+    """
+
+    median = _quantile(_round_sums(scores, hands), 0.5) if scores else 0
+    # Rounded up, so the stated factor is always enough.
+    return math.ceil(target / median * 100) / 100 if median > 0 else None
 
 
 def _quantile(scores: list[float], fraction: float) -> float:
@@ -592,6 +609,7 @@ def _blind_row(blind: PublicBlind, rnd: _Round, scores: list[float]) -> dict[str
         "per_hand_median": _number(_quantile(scores, 0.5)),
         "per_hand_p75": _number(_quantile(scores, 0.75)),
         "per_hand_best": _number(max(scores, default=0)),
+        "round_median": _number(_quantile(_round_sums(scores, rnd.hands), 0.5)) if scores else 0,
         "clear_chance": _clear_chance(scores, rnd.hands, blind.score),
     }
     applied = []
@@ -674,7 +692,7 @@ def _next_ante(observation, blinds, view: _View, rounds, baselines) -> dict[str,
         row["boss_clear_chance_without_expiring"] = _clear_chance(after, plain.hands, boss)
         scores = after
     median = _quantile(scores, 0.5)
-    row["growth_needed"] = round(row["needed_per_hand"] / median, 2) if median > 0 else None
+    row["growth_needed"] = _growth_needed(scores, plain.hands, boss) if median > 0 else None
     # The last ante whose boss this build still clears at least half the time, starting
     # with this ante's own focus blind.
     last = observation.ante if view.clear(view.scores) >= 0.5 else observation.ante - 1
