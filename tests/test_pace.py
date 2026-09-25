@@ -190,3 +190,4 @@ def test_held_tarot_values_keep_cerulean_bells_forced_card() -> None:
     )
     rows = hand_tarot_values(selecting)
     assert rows and rows[0]["best_play_after"] >= rows[0]["best_play_now"] > 0
+    assert 3 in rows[0]["best_targets"], "targets must include the forced card"

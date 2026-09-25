@@ -16,7 +16,7 @@ from functools import lru_cache
 from itertools import combinations
 from random import Random
 
-from balatro_ai.game.actions import HandSlot
+from balatro_ai.game.actions import ConsumableSlot, HandSlot, UseConsumable, is_legal
 from balatro_ai.game.boss_rules import boss_rule
 from balatro_ai.game.consumable_rules import iter_public_targets
 from balatro_ai.game.mechanics import planet_hand
@@ -193,7 +193,15 @@ def hand_tarot_values(observation: PublicObservation) -> list[dict[str, object]]
             continue
         if not budget.left():
             break
-        legal = set(iter_public_targets(observation, item, from_pack=False))
+        # The full action check also applies boss rules such as Cerulean Bell's forced card.
+        legal = {
+            targets
+            for targets in iter_public_targets(observation, item, from_pack=False)
+            if is_legal(
+                observation,
+                UseConsumable(ConsumableSlot(slot), tuple(HandSlot(t) for t in targets)),
+            )
+        }
         best = _greedy_hand_targets(observation, item.key, legal, budget)
         if best is None:
             continue
