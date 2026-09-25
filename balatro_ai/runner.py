@@ -540,21 +540,13 @@ PACK_HAND_READS = 40
 
 
 # BalatroBot clears its pack-selection guard only when a pick returns to the shop. A pack
-# opened by a skip tag closes to blind select instead: that pick's reply never arrives
-# and every later pick is refused ("Pack selection already in progress") until a skip.
-# The final pick of a pack therefore waits briefly for its reply, and once the pack has
-# closed a skip sent with no pack open clears the guard without touching the game.
+# opened by a skip tag closes to blind select instead: that pick's reply never arrives,
+# so the final pick of a pack waits only briefly for it, and every later pick is refused
+# ("Pack selection already in progress") until a skip_pack, the one call the mod lets
+# clear the guard. The mod accepts no pack call outside a pack, so it cannot be cleared
+# earlier; the coach is told instead of being charged three refusals.
 FINAL_PACK_PICK_SECONDS = 10.0
-
-
-def reset_pack_guard(client, deadline) -> bool:
-    """Clear BalatroBot's pack guard, only when the live game has no pack open."""
-
-    raw = game_rpc(client, "gamestate", None, deadline)
-    if raw.get("state") in _PACK_STATES or (raw.get("pack") or {}).get("cards"):
-        return False
-    game_rpc(client, "pack", {"skip": True}, deadline)
-    return True
+_STUCK_PACK_GUARD = "Pack selection already in progress"
 
 
 def _awaiting_hand(raw) -> bool:
@@ -787,8 +779,6 @@ def run_game(
                     after = live
                 result["rpc_timeouts_recovered"] += 1
                 record("rpc_timeout", method=method, params=params, recovery=recovered)
-            if isinstance(action, ChoosePackCard) and after.phase != Phase.PACK:
-                record("pack_guard_reset", sent=reset_pack_guard(client, deadline))
             record(
                 "transition",
                 before=public_observation_to_data(state),
@@ -1014,7 +1004,12 @@ def run_game(
                 validation_feedback = dict(
                     error=f"the game refused the action: {exc}",
                     rejected_response=response,
-                    instruction="No game action was executed. Choose a different legal action.",
+                    instruction=(
+                        "No game action was executed. BalatroBot's pack guard is stuck after "
+                        "an earlier skip-tag pack: only skip_pack is accepted in this pack."
+                        if _STUCK_PACK_GUARD in str(exc)
+                        else "No game action was executed. Choose a different legal action."
+                    ),
                 )
                 record("coach_rejected", **validation_feedback)
                 if refused >= 3:

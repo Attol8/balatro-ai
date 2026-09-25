@@ -1085,23 +1085,22 @@ def test_a_failed_model_call_is_re_asked_like_a_timeout(tmp_path):
     assert result["coach_requests"] == 2 and result["coach_timeouts"] == 0
 
 
-def test_pack_guard_reset_never_skips_an_open_pack():
-    """BalatroBot's pack guard sticks after a tag pack closes to blind select; the reset
-    skip must only ever be sent when no pack is open."""
+def test_a_stuck_pack_guard_tells_the_coach_only_skip_pack_works(tmp_path):
+    """BalatroBot's pack guard sticks after a skip-tag pack closes to blind select."""
 
-    from balatro_ai.runner import reset_pack_guard
+    from balatro_ai.client import BalatroBotRejected
 
-    class Client:
-        def __init__(self, raw):
-            self.raw, self.calls = raw, []
+    game = Game()
+    refused = []
 
-        def rpc(self, method, params=None):
-            self.calls.append((method, params))
-            return deepcopy(self.raw)
+    def rpc(method, params=None):
+        if method == "select" and not refused:
+            refused.append(method)
+            raise BalatroBotRejected("Pack selection already in progress")
+        return Game.rpc(game, method, params)
 
-    closed = Client(state("BLIND_SELECT"))
-    assert reset_pack_guard(closed, deadline=float("inf")) is True
-    assert closed.calls[-1] == ("pack", {"skip": True})
-    opened = Client(_tarot_pack_with_hand())
-    assert reset_pack_guard(opened, deadline=float("inf")) is False
-    assert [method for method, _ in opened.calls] == ["gamestate"]
+    game.rpc = rpc
+    coach = Coach()
+    run_game(game, coach, tmp_path / "run")
+    feedback = coach.packets[1]["validation_feedback"]
+    assert "only skip_pack is accepted" in feedback["instruction"]

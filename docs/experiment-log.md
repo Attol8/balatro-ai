@@ -27,6 +27,7 @@ been inspected and are excluded from future holdout evaluation.
 | Blind-search replay (kernel ported, no routing) | Recorded in-blind decisions from both wins, XV2MP8L5 and the pilot Astra arms | 85 of 406 covered; 14 (3.4%) routable after excluding scaling/money Jokers, held Tarots and inexact results, all "play a covered clearing hand", 14/14 agreeing with Astra; never proves Astra worse. Dropped per `plan.md` A2 | port and report left unmerged in an agent worktree |
 | **Astra low + pace, money, Tarot and skip values; visible `--fast`** | Black/Gold, random fresh seed, 25 Sep 2026 | Lost the Ante 8 boss (Crimson Heart, 295,956/400,000) after clearing Antes 1–7; 28.2 min, 148 calls, 6 skips | `runs/astra-fast-bg-001` (not committed); `balatro_ai/pace.py`, `balatro_ai/economy.py` |
 | Same bot + next-ante horizon, forecast-gated rerolls; visible `--fast`, endless | Red/White, seed 2W7A4ADG, 25 Sep 2026 | **Won Ante 8**; endless lost the Ante 11 Big Blind (2,671,670/10,800,000). 55.3 min and 278 calls in three segments: an Ante 8 Cerulean Bell crash and a transient Codex exit, both fixed and resumed | `runs/red-white-2W7A4ADG-endless*` (not committed) |
+| Same + engine potential (round-simulated held engines), visible `--fast`, endless | Red/White, seed 2W7A4ADG replay, 25 Sep 2026 | **Won Ante 8** (Cerulean Bell 213,750/100,000); endless lost the Ante 12 boss, The Eye (1,332,964/600,000,000). 67 min, 322 calls, peak hand 14.4M. Built The Order + Blueprint Straights, Hologram + Certificate; The Soul gave Perkeo only at Ante 12. Three segments: an Idol runtime crash and a stuck BalatroBot pack guard (restored from Balatro's autosave) | `runs/red-white-2W7A4ADG-engine2*` (not committed) |
 | Offline strategy knowledge base | Offline | In progress, uncommitted, on branch `strategy-knowledge-base` in the primary checkout | not archived by this cleanup |
 
 ## Lessons
@@ -66,6 +67,10 @@ been inspected and are excluded from future holdout evaluation.
 - The pace forecast freezes growing Jokers (Obelisk, Supernova) at their current
   value, so it is conservative for builds that grow inside a round: it gave the
   Ante 10 boss under 50% and the bot cleared it with 1.43M of 1.12M.
+- BalatroBot clears its pack-selection guard only when a pick returns to the shop.
+  After a skip-tag pack closes to blind select, every later pack pick is refused
+  until a `skip_pack`; the runner now tells the coach so. A one-line fix in the
+  mod's `pack.lua` (accept BLIND_SELECT as a finished state) would remove it.
 - Until 25 Sep 2026 the runner settled Arcana and Spectral packs before their hand
   was dealt, so targeted Tarots were illegal on the first pick of nearly every pack
   (PI4T2AH8: 12 of 64 pack observations had a hand).
