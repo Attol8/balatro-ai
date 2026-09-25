@@ -16,6 +16,7 @@
 
 ## Development references
 
+- [Experiment log](experiment-log.md): every approach tried, its outcome and archived code.
 - [Contributing](../CONTRIBUTING.md): local checks and evidence requirements.
 - [Earlier coached runs](coached-win.md) and [trajectory review](trajectory-review.md).
 - [High-score strategy review](high-score-video-review.md).

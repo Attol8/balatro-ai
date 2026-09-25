@@ -1,0 +1,70 @@
+# Experiment log
+
+What has been tried, what happened, and where the code lives. Recorded
+2026-09-25 when the experiment worktrees were cleaned up. Individual game
+results are development evidence, not win rates; seeds JBG00000–JBG00002 have
+been inspected and are excluded from future holdout evaluation.
+
+## Lines of work
+
+| Line | Setting | Outcome | Code and evidence |
+|---|---|---|---|
+| Heuristic search baselines v4–v6 | Red/White, seeds D0000000–19 | 3/20 Ante-8 clears each | `main`: `benchmarks/`, `docs/results.md` |
+| Simulator era (`balatro_ai_v2`, Jackdaw) | Red/White, 200-seed panels | `control-v0` 13/400 wins, 3.6–3.9 mean antes cleared. Losses: 88% had no xMult Joker, 92% still played Pair/Two Pair, 64% died to a boss | tag `archive/2026-09-14/route-merger-wip` (`plan.md`, `docs/plan-lab-notes.md`) |
+| Oracle rollout planner on Jackdaw | Red/White | 55–75% wins, but read hidden state; deleted as unfair | same tag, lab notes |
+| Fair determinized search v2 | Red/White, seeds 1–30 / 31–60 | +1.40 [0.50, 2.30] and +0.60 [0.13, 1.10] mean antes vs control; wins 2 vs 1 and 2 vs 2. About 10–16 min per simulated run | same tag |
+| Parity, legality and sale-guard work | Simulator era | Legality speedups, destructive-sale guard, parity records | tags `archive/2026-09-14/codex/*` |
+| **Astra low + numerical tools** | Red/White | 5 Ante-8 clears across versions; Ante 13 endless; 134,231,931,235-chip peak hand | `main`: `docs/results.md` |
+| **Astra low + numerical tools** | Black/Gold | 2 fresh-seed wins (MSVP7ABY, PI4T2AH8), 9 Sep 2026 | `main`: `docs/black-gold-results.md` |
+| Terra low | Red/White | 2 losses at Ante 2 on QD3F4XVW | `main`: `evidence/terra-low-*` |
+| Jev only | Black/Gold JBG00000 | Infrastructure failure at Ante 1 after 62 s | tag `archive/2026-09-25/jev-balatro` |
+| Hybrid v1–v5 (Jev tactics, Astra strategy) | Black/Gold JBG00000 | v1 lost Ante 1 (292/300); v2 lost Ante 5 (24,470/25,000); v3 lost Ante 1 (560/600); v4 and v5 lost Ante 2 Big Blind | same tag, `docs/hybrid.md` |
+| Hybrid v6 matched pilot | Black/Gold JBG00001–2 | Astra lost Ante 5 twice; hybrid lost Ante 4 and hit the 2,400 s budget alive at Ante 7 | same tag, `evidence/hybrid-v6-matched-pilot/` |
+| Search coach (blind expectimax + Jev + Astra) | Black/Gold JBG00000 | Stopped by the user alive at Ante 2; Astra median 20.4 s | same tag, `docs/blind-search.md` |
+| Fast coach (Jev decides, Astra advises) | Black/Gold JBG00000 | Lost Ante 1 (378/600) twice at 0.77 s median decisions | same tag, `docs/fast.md` |
+| Fast selective v2 (Jev + selective Astra reviews) | Black/Gold JBG00000 | Lost Ante 4 (6,836/13,500) in 518 s | same tag, `evidence/fast-selective-*` |
+| GPT-6 Luna xhigh, pure Codex coach | Black/Gold, headless | Lost Ante 2 after 1,332 s; 30 s median latency, 4 timeouts | tag `archive/2026-09-25/luna-xhigh-headless` |
+| Offline strategy knowledge base | Offline | In progress, uncommitted, on branch `strategy-knowledge-base` in the primary checkout | not archived by this cleanup |
+
+## Lessons
+
+- **Strength has come only from Astra making decisions.** Every attempt to move
+  decision authority to something faster lost strength: Jev, hybrid routing,
+  heuristic rules and fair simulator search.
+- **Fair search helps survival, not wins.** Determinized rollouts added
+  0.6–1.4 antes but barely changed wins. The rollout policy bounds their quality,
+  and the only strong search result used hidden state.
+- **The fast chooser's losses were calculable.** For example, it left Saturn
+  unused (the same Straight scored 256 without it, 658 with it, against a 600
+  target) and played a 24-point pair with 344 chips still needed.
+- **Hand-written strategy rules moved wins by at most one per 50-seed screen**
+  in the simulator era.
+- **Single development games do not measure strength.** Compare frozen versions
+  on untouched matched seeds.
+
+## Where the time goes (measured 2026-09-25 from recorded traces)
+
+| Run | Wall | Astra | Game client | Astra calls, median |
+|---|---|---|---|---|
+| PI4T2AH8 (win) | 95.5 min | 36.0 min | 59.4 min | 227, 9.2 s |
+| MSVP7ABY (win) | 97.7 min | 48.8 min | 48.9 min | 216, 10.2 s |
+| Pilot Astra runs | 22–27 min | 70–72% | 28–30% | 98–122, 8.6–9.5 s |
+
+- Local analysis is negligible: about 0.01 s per decision.
+- The wins were recorded in visible, slowed-down mode. With visible 2×
+  animations, a `play` takes 8.7 s median in the client. A clean
+  `--fast --headless` measurement does not exist yet.
+- Astra's calls in the two wins:
+  - about one third were in-blind plays, discards and reorders (71/227, 73/216);
+  - 42–46% were shop clicks, including 30 and 23 single rerolls;
+  - 11–12% were pack choices;
+  - 7–10% were blind selection.
+
+## Worktree cleanup, 2026-09-25
+
+- `jev-balatro` and `luna-xhigh-headless` were committed as-is and tagged
+  `archive/2026-09-25/<name>`. Restore with, for example,
+  `git worktree add ../restore archive/2026-09-25/jev-balatro`.
+- `balatro-ai-v2.route-merger-wip` was already preserved as
+  `archive/2026-09-14/route-merger-wip`.
+- Active work continues in the `astra-speed` worktree; see its `plan.md`.
