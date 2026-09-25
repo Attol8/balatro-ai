@@ -191,3 +191,10 @@ def test_held_tarot_values_keep_cerulean_bells_forced_card() -> None:
     rows = hand_tarot_values(selecting)
     assert rows and rows[0]["best_play_after"] >= rows[0]["best_play_now"] > 0
     assert 3 in rows[0]["best_targets"], "targets must include the forced card"
+
+
+def test_a_build_short_of_this_antes_boss_does_not_hold_through_it() -> None:
+    horizon = build_pace(_recorded("jbg00002_wheel_shop")).get("next_ante")
+    wheel = build_pace(_recorded("jbg00002_wheel_shop"))["blinds"][0]
+    assert wheel["clear_chance"] < 0.5
+    assert horizon["build_holds_through_ante"] == 4

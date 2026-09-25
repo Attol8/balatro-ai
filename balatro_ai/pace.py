@@ -605,9 +605,12 @@ def _next_ante(observation, blinds, view: _View, rounds, baselines) -> dict[str,
         scores = after
     median = _quantile(scores, 0.5)
     row["growth_needed"] = round(row["needed_per_hand"] / median, 2) if median > 0 else None
-    # The last ante whose typical boss this build still clears at least half the time.
-    last = observation.ante
-    for ante in range(observation.ante + 1, (observation.ante + 12) if observation.won else 9):
+    # The last ante whose boss this build still clears at least half the time, starting
+    # with this ante's own focus blind.
+    last = observation.ante if view.clear(view.scores) >= 0.5 else observation.ante - 1
+    for ante in range(last + 1, (observation.ante + 12) if observation.won else 9):
+        if last < observation.ante:
+            break
         target = ante_base(ante, observation.stake)
         if target is None or _clear_chance(scores, plain.hands, 2 * target) < 0.5:
             break
