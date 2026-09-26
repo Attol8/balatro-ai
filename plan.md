@@ -225,9 +225,15 @@ It is a stretch; Ante 14–16 is a realistic next target. Steps:
    such as Baron and Mime, and copiers placed where they copy. On 2W7A4ADG this
    turned Baron (−10% today) into +59% with Mime, and Mime (−7%) into +229% with
    Baron. Still missing: red seals, thinning and Observatory Planets in the fuel.
-3. **Endless run limits and time:** about 500–700 calls to Ante 20; raise
+3. **Finisher mechanics (done):** Cryptid is priced in hand (every held Cryptid
+   spent on one card, copies held): with Baron-Perkeo-Blueprint-Mime-Brainstorm-
+   Brainstorm and a red-seal Steel King, 5 Cryptids score 5e32, 40 score 8e229 and
+   about 55 pass 1.8e308 (naneinf). Perkeo's stack and a copier-aware Joker order
+   are in the packet. BalatroBot cannot report a naneinf state: its JSON encoder
+   rejects infinity.
+4. **Endless run limits and time:** about 500–700 calls to Ante 20; raise
    `--max-calls` and `--seconds` for endless runs.
-4. **Scorer coverage for long retrigger chains** at 10³⁰+ scores, checked
+5. **Scorer coverage for long retrigger chains** at 10³⁰+ scores, checked
    against the game on recorded high-score hands.
 
 Acceptance: an endless Red/White run whose recorded horizon matches the ante it

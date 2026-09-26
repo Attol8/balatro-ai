@@ -82,6 +82,27 @@ def money_sources(observation: PublicObservation) -> list[dict[str, object]]:
     return rows
 
 
+def perkeo_plan(observation: PublicObservation) -> dict[str, object]:
+    """What Perkeo will multiply: it copies one random held consumable as Negative per shop."""
+
+    if not any(
+        isinstance(joker, PublicItem) and joker.key == "j_perkeo" and not joker.debuffed
+        for joker in observation.jokers
+    ):
+        return {}
+    held: dict[str, int] = {}
+    for item in observation.consumables:
+        held[item.key] = held.get(item.key, 0) + 1
+    return {
+        "held": held,
+        "negative": sum(item.edition == "NEGATIVE" for item in observation.consumables),
+        "note": (
+            "Leaving each shop adds a Negative copy of one random held consumable. Hold only "
+            "the one you want multiplied (such as Cryptid) so every copy is that one."
+        ),
+    }
+
+
 def shop_visit(history: tuple[HistoryStep, ...]) -> dict[str, int] | None:
     """Rerolls and money spent since this shop visit began."""
 

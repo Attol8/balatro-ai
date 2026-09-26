@@ -9,6 +9,7 @@ so every variant of a build is compared on the same sampled hands.
 from __future__ import annotations
 
 import math
+import sys
 import time
 from collections import Counter
 from dataclasses import dataclass, replace
@@ -198,6 +199,9 @@ def build_pace(observation: PublicObservation) -> dict[str, object]:
     jokers = _joker_rows(observation, blinds, view)
     if jokers:
         result["jokers"] = jokers
+    order = _joker_order(observation, view, budget)
+    if order:
+        result["joker_order"] = order
     offers = _offer_rows(observation, view, jokers, budget)
     if offers:
         result["offers"] = offers
@@ -254,7 +258,56 @@ def hand_tarot_values(observation: PublicObservation) -> list[dict[str, object]]
                 "best_play_after": _number(best[0]),
             }
         )
+    cryptids = [
+        slot for slot, item in enumerate(observation.consumables) if item.key == "c_cryptid"
+    ]
+    if cryptids and budget.left():
+        row = _cryptid_value(observation, cryptids, before)
+        if row:
+            rows.append(row)
     return rows
+
+
+def _cryptid_value(observation: PublicObservation, slots: list[int], before: float):
+    """Cryptid puts two copies of one selected card straight into the hand.
+
+    Prices one Cryptid and every held Cryptid spent on the same card, with the copies
+    held (only the original cards are candidates to play).
+    """
+
+    hand = observation.hand
+    targets, seen = [], set()
+    for index, card in enumerate(hand):
+        action = UseConsumable(ConsumableSlot(slots[0]), (HandSlot(index),))
+        if card not in seen and is_legal(observation, action):
+            seen.add(card)
+            targets.append(index)
+    # Rank targets with one Cryptid; price the whole stack only on the best of them.
+    best = None
+    for index in targets:
+        copy = replace(hand[index], effect_text="")
+        one = _best_visible_play(observation, (*hand, copy, copy), playable=len(hand))
+        if best is None or one > best[1]:
+            best = (index, one, one)
+    if best is None:
+        return None
+    if len(slots) > 1:
+        copies = (replace(hand[best[0]], effect_text=""),) * (2 * len(slots))
+        spent = _best_visible_play(observation, (*hand, *copies), playable=len(hand))
+        best = (best[0], best[1], spent)
+    row = {
+        "key": "c_cryptid",
+        "held": len(slots),
+        "consumables": slots,
+        "best_target": best[0],
+        "best_play_now": _number(before),
+        "best_play_after_one": _number(best[1]),
+        "best_play_after_all": _number(best[2]),
+        "note": "copies are held; use all on the target, then play the best single play",
+    }
+    if best[2] >= sys.float_info.max:
+        row["beyond_float_range"] = "past about 1.8e308, the score Balatro shows as naneinf"
+    return row
 
 
 @dataclass(frozen=True, slots=True)
@@ -483,7 +536,7 @@ def _score_pool(scene: PublicObservation, selections) -> tuple[float, tuple[Hand
             score, family = _score_play_prepared(scene, selection, None, context)
         except ValueError:
             continue
-        value = float(score)
+        value = _as_float(score)
         if value > by_family.get(family, (-1.0, ()))[0]:
             by_family[family] = (value, selection)
         if value > best:
@@ -527,7 +580,7 @@ def _variant_scores(view: _View, **changes) -> list[float]:
                 score, _ = _score_play_prepared(scene, selection, None, context)
             except ValueError:
                 continue
-            best = max(best, float(score))
+            best = max(best, _as_float(score))
         scores.append(best)
     return scores
 
@@ -554,6 +607,15 @@ def _deck_scores(view: _View, deck, changed: set[int], jokers=None, unchanged=No
             ).best
         )
     return scores
+
+
+def _as_float(score) -> float:
+    """A score as a float, clamped to the largest finite float past Balatro's naneinf."""
+
+    try:
+        return float(score)
+    except OverflowError:
+        return sys.float_info.max
 
 
 def _round_sums(scores: list[float], hands: int) -> list[float]:
@@ -813,6 +875,47 @@ def _offer_rows(observation, view: _View, jokers, budget) -> list[dict[str, obje
         row[view.label()] = [clear_before, view.clear(after, hands)]
         rows.append(row)
     return rows
+
+
+def _joker_order(observation: PublicObservation, view: _View, budget):
+    """A better order when a copier's target depends on it.
+
+    Blueprint copies the Joker to its right and Brainstorm copies the leftmost, so each
+    other Joker is tried in those places.
+    """
+
+    jokers = tuple(observation.jokers)
+    if not all(isinstance(joker, PublicItem) for joker in jokers):
+        return None
+    candidates = set()
+    for index, joker in enumerate(jokers):
+        if joker.key not in _COPIERS:
+            continue
+        for other_index, other in enumerate(jokers):
+            if other.key in _COPIERS:
+                continue
+            rest = [j for k, j in enumerate(jokers) if k != other_index]
+            if joker.key == "j_brainstorm":
+                candidates.add((other, *rest))
+            else:
+                where = rest.index(joker) + 1
+                candidates.add((*rest[:where], other, *rest[where:]))
+    candidates.discard(jokers)
+    before = _mean(view.scores)
+    best = None
+    for order in candidates:
+        if not budget.left():
+            break
+        gain = _mean(_variant_scores(view, jokers=order)) / before - 1 if before > 0 else 0
+        if best is None or gain > best[0]:
+            best = (gain, order)
+    if best is None or best[0] < 0.05:
+        return None
+    return {
+        "order": [joker.key for joker in best[1]],
+        "per_hand_change": round(best[0], 3),
+        "note": "reorder_jokers swaps two adjacent slots per action; chain the swaps",
+    }
 
 
 def _best_position(view: _View, current, item):
@@ -1266,15 +1369,21 @@ def _card_code(card: VisiblePlayingCard) -> str:
     return code
 
 
-def _best_visible_play(observation: PublicObservation, hand: tuple) -> float:
-    """Best legal play of ``hand``, which keeps the observation's slots (Cerulean Bell's forced card)."""
+def _best_visible_play(
+    observation: PublicObservation, hand: tuple, playable: int | None = None
+) -> float:
+    """Best legal play of ``hand``, which keeps the observation's slots (Cerulean Bell's forced card).
+
+    ``playable`` limits plays to the first cards, leaving any added copies held.
+    """
 
     scene = replace(observation, hand=hand)
-    limit = min(5, observation.selection_limit or 5, len(hand))
+    pool = len(hand) if playable is None else playable
+    limit = min(5, observation.selection_limit or 5, pool)
     forced = {HandSlot(index) for index in observation.required_hand_slots}
     selections = tuple(
         selection
-        for selection in _selections(len(hand), tuple(range(1, limit + 1)))
+        for selection in _selections(pool, tuple(range(1, limit + 1)))
         if forced.issubset(selection)
     )
     best, _, _ = _score_pool(scene, selections)

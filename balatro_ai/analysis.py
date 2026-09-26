@@ -13,6 +13,7 @@ from balatro_ai.economy import (
     interest,
     money_sources,
     next_blind,
+    perkeo_plan,
     shop_visit,
     skip_value,
 )
@@ -142,6 +143,9 @@ def analyze(
     skip = skip_value(observation)
     if skip:
         result["skip_value"] = skip
+    perkeo = perkeo_plan(observation)
+    if perkeo:
+        result["perkeo"] = perkeo
     if plays and any(isinstance(card, HiddenHandCard) for card in observation.hand):
         result["hidden_hand_note"] = (
             "Scored plays use only face-up cards; face-down cards are held unscored and "
@@ -546,9 +550,13 @@ def _scored_sort_key(row: tuple[PlayCards, int | Fraction, str]) -> tuple[object
 
 
 def _json_score(score: int | Fraction) -> int | float:
-    return (
-        score.numerator if isinstance(score, Fraction) and score.denominator == 1 else float(score)
-    )
+    if isinstance(score, Fraction) and score.denominator == 1:
+        return score.numerator
+    try:
+        return float(score)
+    except OverflowError:
+        # Past the float range (Balatro's naneinf); JSON carries the whole integer.
+        return int(score)
 
 
 def _boss_scoring_restriction(observation: PublicObservation, score: int | Fraction) -> str | None:

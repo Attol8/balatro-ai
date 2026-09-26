@@ -278,3 +278,78 @@ def test_growth_needed_agrees_with_clear_chance_for_all_or_nothing_builds() -> N
     assert growth < 5, "the median hand (24k) would claim about 47x"
     assert _clear_chance([s * growth for s in scores], 4, 1_120_000) >= 0.5
     assert _clear_chance([s * growth * 0.8 for s in scores], 4, 1_120_000) < 0.5
+
+
+def _finisher(cryptids: int):
+    """The naneinf finish: Baron-Perkeo-Blueprint-Mime-Brainstorm-Brainstorm, a red-seal
+    Steel King in hand and a stack of Negative Cryptids."""
+
+    observation = _recorded("2w7a4adg_ante4_baron_shop")
+    jokers = tuple(
+        PublicItem(key, key, "JOKER")
+        for key in ("j_baron", "j_perkeo", "j_blueprint", "j_mime", "j_brainstorm", "j_brainstorm")
+    )
+    hand = (
+        VisiblePlayingCard("A", "S", enhancement="STEEL"),
+        VisiblePlayingCard("K", "H", enhancement="STEEL", seal="RED"),
+        VisiblePlayingCard("J", "S"),
+        VisiblePlayingCard("T", "D"),
+    )
+    blinds = tuple(
+        replace(blind, status="CURRENT" if blind.kind == "SMALL" else "UPCOMING")
+        for blind in observation.blinds
+    )
+    return replace(
+        observation,
+        phase=Phase.SELECTING_HAND,
+        hand=hand,
+        jokers=jokers,
+        shop=(),
+        vouchers=(),
+        packs=(),
+        blinds=blinds,
+        consumables=tuple(
+            PublicItem("c_cryptid", "Cryptid", "SPECTRAL", edition="NEGATIVE")
+            for _ in range(cryptids)
+        ),
+    )
+
+
+def test_every_held_cryptid_is_priced_on_the_best_card_to_copy() -> None:
+    row = next(r for r in hand_tarot_values(_finisher(4)) if r["key"] == "c_cryptid")
+    assert row["held"] == 4 and row["best_target"] == 1, "the red-seal Steel King"
+    assert row["best_play_after_all"] > row["best_play_after_one"] > row["best_play_now"]
+
+
+def test_a_finisher_past_the_float_range_is_reported_not_crashed() -> None:
+    from balatro_ai.analysis import analyze
+
+    row = next(r for r in hand_tarot_values(_finisher(60)) if r["key"] == "c_cryptid")
+    assert "naneinf" in row["beyond_float_range"]
+    assert analyze(_finisher(2))["tarot_values"]
+
+
+def test_perkeo_plan_shows_what_it_will_multiply() -> None:
+    from balatro_ai.economy import perkeo_plan
+
+    plan = perkeo_plan(_finisher(3))
+    assert plan["held"] == {"c_cryptid": 3} and plan["negative"] == 3
+    assert perkeo_plan(_recorded("2w7a4adg_ante4_baron_shop")) == {}
+
+
+def test_joker_order_is_a_permutation_that_scores_better() -> None:
+    observation = _recorded("2w7a4adg_ante4_baron_shop")
+    jokers = observation.jokers
+    blueprint = next(j for j in jokers if j.key == "j_blueprint")
+    moved = (blueprint, *(j for j in jokers if j.key != "j_blueprint"))
+    order = build_pace(replace(observation, jokers=moved)).get("joker_order")
+    assert order is not None and sorted(order["order"]) == sorted(j.key for j in moved)
+    assert order["per_hand_change"] >= 0.05
+
+
+def test_scores_past_the_float_range_stay_json_numbers() -> None:
+    from fractions import Fraction
+
+    from balatro_ai.analysis import _json_score
+
+    assert _json_score(Fraction(10**400, 3)) == 10**400 // 3

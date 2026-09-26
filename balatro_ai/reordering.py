@@ -25,8 +25,10 @@ def joker_reorder_advice(
     paths requiring a score loss or a canonical-increasing neutral step.
     """
     items = observation.jokers
-    if not plays or not 2 <= len(items) <= 6 or not all(
-        isinstance(item, PublicItem) for item in items
+    if (
+        not plays
+        or not 2 <= len(items) <= 6
+        or not all(isinstance(item, PublicItem) for item in items)
     ):
         return []
     plays = plays[:3]
@@ -42,8 +44,7 @@ def joker_reorder_advice(
             after = replace(observation, jokers=tuple(items[index] for index in order))
             context = _prepare_score_context(after)
             scored[order] = [
-                _score_play_prepared(after, play.cards, None, context)
-                for play, _, _ in plays
+                _score_play_prepared(after, play.cards, None, context) for play, _, _ in plays
             ]
         return scored[order]
 
@@ -68,29 +69,31 @@ def joker_reorder_advice(
             if target_score > baseline:
                 play, play_baseline, _ = plays[best_index]
                 first_scores = scores(first_step)
-                return [{
-                    "action": action_to_data(action),
-                    "then_play": action_to_data(play),
-                    "family": family,
-                    "baseline_score": _number(play_baseline),
-                    "reordered_score": _number(first_scores[best_index][0]),
-                    "target_score": _number(target_score),
-                    "search_baseline_score": _number(baseline),
-                    "first_step_best_score": _number(max(row[0] for row in first_scores)),
-                    "target_joker_order": list(target),
-                    "adjacent_steps_to_target": depth + 1,
-                    "approximation": approximation,
-                    "selected_before": [slot.value for slot in play.cards],
-                    "selected_after": [slot.value for slot in play.cards],
-                    "note": (
-                        "Execute only this adjacent reorder, then observe and reassess. "
-                        "then_play identifies the evaluated cards, not a queued action. "
-                        "reordered_score is the first-step estimate; target_score requires "
-                        "the remaining reorders. Bounded search over at most 720 joker "
-                        "orders and three plays; neutral steps only in canonical-decreasing "
-                        "order. No global optimality claim."
-                    ),
-                }]
+                return [
+                    {
+                        "action": action_to_data(action),
+                        "then_play": action_to_data(play),
+                        "family": family,
+                        "baseline_score": _number(play_baseline),
+                        "reordered_score": _number(first_scores[best_index][0]),
+                        "target_score": _number(target_score),
+                        "search_baseline_score": _number(baseline),
+                        "first_step_best_score": _number(max(row[0] for row in first_scores)),
+                        "target_joker_order": list(target),
+                        "adjacent_steps_to_target": depth + 1,
+                        "approximation": approximation,
+                        "selected_before": [slot.value for slot in play.cards],
+                        "selected_after": [slot.value for slot in play.cards],
+                        "note": (
+                            "Execute only this adjacent reorder, then observe and reassess. "
+                            "then_play identifies the evaluated cards, not a queued action. "
+                            "reordered_score is the first-step estimate; target_score requires "
+                            "the remaining reorders. Bounded search over at most 720 joker "
+                            "orders and three plays; neutral steps only in canonical-decreasing "
+                            "order. No global optimality claim."
+                        ),
+                    }
+                ]
             if target_score == baseline and tuple(signatures[i] for i in target) < tuple(
                 signatures[i] for i in order
             ):

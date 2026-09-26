@@ -88,6 +88,14 @@ runs reach very high antes, while flat upgrades stall: when next_ante.growth_nee
 large or the objective is endless, buy the engine whose fed level survives furthest if
 you can fund and feed it, keep it where an owned copier repeats it, and then buy and use
 its fuel Tarots every shop. Keep today's survival first.
+Copiers: Blueprint copies the Joker immediately to its right and Brainstorm copies the
+leftmost Joker; build_pace.joker_order gives a better order when one exists. Perkeo adds a
+Negative copy of one random held consumable each time you leave a shop (analysis.perkeo
+shows the stack), so hold only the consumable you want multiplied. Cryptid puts two copies
+of one selected card straight into your hand; tarot_values prices spending every held
+Cryptid on one card. With a held-card engine (Baron, Mime and copies of them, Steel and red
+seals), the finishing round is: discard to find the best held card, use every Cryptid on
+it, then play a single card so every copy stays held.
 Plan an ante ahead with build_pace.next_ante: it compares the next ante's Big Blind and a
 typical boss (twice the base; The Wall and Violet Vessel are larger) with the build as it
 will be once expiring_before_boss Jokers are gone. growth_needed above 1 is the factor the
